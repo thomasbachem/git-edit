@@ -1,0 +1,131 @@
+#!/bin/zsh
+
+# git edit – Easily edit commits via interactive rebase
+# usage: `git edit <commit> [-m | --message-edit]`
+#
+# This Git command script allows you to edit/modify/modify
+# previous Git commits easily. It essentially is a more
+# convenient version of using `git rebase --interactive`
+# for that use case.
+#
+# It will stash any local changes, then reset your local copy
+# to the state of the commit you want to edit via `git rebase`,
+# then pause to let you make changes. After resuming the script,
+# all changes will be added to the commit, and the rebase will
+# continue. The script also pauses in case any conflicts arise,
+# so you can manually resolve them before continuing with the
+# merge/rebase. After completion, your previous local changes
+# will be unstashed/reapplied.
+# If you want to alter the commit message as well, append the
+# `-m` switch.
+#
+# Use it as "git edit" by adding its parent folder to your PATH,
+# e.g. by adding this line to ~./zshrc:
+# export PATH=$PATH:/your/path/to/git-custom-commands
+#
+# WARNING: Note that this will change the SHA1 of the commit
+# as well as of all later commmits – it rewrites the history
+# from that point forward. This is unproblematic as long as
+# you either didn't push these commits yet, or are a single
+# developer. If not, it can cause other maintainers, branches,
+# or forks quite the hassle. So please know what you're doing
+# when using `git push --force`!
+#
+# Released by Thomas Bachem <mail@thomasbachem.com>
+# under the MIT License
+
+
+GIT_STASH () {
+	CMD="git stash"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	eval "$CMD" || ABORT
+}
+
+GIT_UNSTASH () {
+	CMD="git stash pop"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	eval "$CMD"
+}
+
+GIT_REBASE_BEGIN () {
+	CMD="git rebase --interactive $COMMIT_SHORT~"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git rebase --interactive $COMMIT_SHORT~ || ABORT
+}
+
+GIT_ADD_ALL () {
+	CMD="git add --all"
+	echo -e "\e[0;97m$CMD\e[0;90m"
+	eval "$CMD" || ABORT
+}
+
+GIT_COMMIT_AMEND () {
+	if [ -z "$EDIT_MESSAGE" ]; then
+		CMD="git commit --all --amend --no-edit"
+	else
+		CMD="git commit --all --amend"
+	fi
+	echo -e "\e[0;97m$CMD\e[0;90m"
+	eval "$CMD" || ABORT
+}
+
+GIT_REBASE_CONTINUE () {
+	CMD="git rebase --continue"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	RET=$(eval "GIT_EDITOR=true $CMD" || exit 1)
+
+	if [[ "$RET" == *"CONFLICT (content)"* ]]; then
+		echo -e "\n\e[1;93mMerge conflicts! Fix them, then press Enter to continue.\e[0m"
+		read
+
+		GIT_ADD_ALL
+		GIT_REBASE_CONTINUE
+	fi
+}
+
+ABORT () {
+	if [ $UNCOMMITTED_CHANGES ] && [ $CMD != "git stash" ]; then
+		GIT_UNSTASH
+	fi
+	echo -e "\n\e[0;91mAborted.\e[0m"
+	exit 1
+}
+
+
+echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
+echo -e "\e[1;96musage: git edit <commit> [-m | --message-edit]\e[0m"
+
+COMMIT=$1
+if [ -z "$COMMIT" ]; then
+	read -p 'Commit to edit: ' COMMIT
+fi
+COMMIT_SHORT=${COMMIT:0:7}
+
+EDIT_MESSAGE=$2
+if ! [[ "$EDIT_MESSAGE" =~ ^(\s*|-m|--message-edit)$ ]]; then
+	echo -e "\n\e[0;91mOptional 2nd argument needs to be either '-m' or '--message-edit'.\e[0m"
+	exit 1
+fi
+
+git add . && git diff --quiet && git diff --cached --quiet
+UNCOMMITTED_CHANGES=$?
+
+if [ $UNCOMMITTED_CHANGES ]; then
+	GIT_STASH
+fi
+
+GIT_REBASE_BEGIN
+ 
+echo -e "\n\e[1;93mNow make your changes, then press Enter to continue.\e[0m"
+read
+
+GIT_ADD_ALL
+GIT_COMMIT_AMEND
+
+GIT_REBASE_CONTINUE
+
+if [ $UNCOMMITTED_CHANGES ]; then
+	GIT_UNSTASH
+fi
+
+echo -e "\n\e[1;92mgit edit completed.\e[0m"
