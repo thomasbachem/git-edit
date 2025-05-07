@@ -35,6 +35,8 @@
 # under the MIT License
 
 
+set -o pipefail # Make a pipeline fail if any element fails
+
 GIT_STASH () {
 	CMD="git stash"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
@@ -70,30 +72,53 @@ GIT_COMMIT_AMEND () {
 }
 
 GIT_REBASE_CONTINUE () {
-	CMD="git rebase --continue"
+	CMD="git rebase ${1:---continue}"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
-	RET=$(eval "GIT_EDITOR=true $CMD" || exit 1)
+	OUTPUT=$(eval "GIT_EDITOR=true $CMD" 2>&1 | tee /dev/stderr)
+	STATUS=$?
 
-	if [[ "$RET" == *"CONFLICT (content)"* ]]; then
-		echo -e "\n\e[1;93mMerge conflicts! Fix them, then press Enter to continue.\e[0m"
-		read
+	if [[ $STATUS -ne 0 ]]; then
+		if [[ "$OUTPUT" == *"CONFLICT (content)"* ]]; then
+			echo -e "\n\e[1;93mMerge conflicts\e[0;93m – Resolve them and press \e[1;93mEnter\e[0;93m to continue, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
+			CONTINUE_OR_ABORT
 
-		GIT_ADD_ALL
-		GIT_REBASE_CONTINUE
+			GIT_ADD_ALL
+			GIT_REBASE_CONTINUE
+		else
+			echo -e "\n\e[1;91mUnknown error during rebase.\e[0m"
+			ABORT
+		fi
 	fi
 }
 
+CONTINUE_OR_ABORT () {
+	while true; do
+		IFS= read -rs -k1 KEY
+		echo
+		case $KEY in
+			''|$'\r'|$'\n') break ;;
+			$'\e')          ABORT ;;
+			*)              echo "Unknown key, try again." ;;
+		esac
+	done
+}
+
 ABORT () {
+	CMD="git rebase --abort"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	eval "$CMD" 2>/dev/null
+
 	if [ $UNCOMMITTED_CHANGES ] && [ $CMD != "git stash" ]; then
 		GIT_UNSTASH
 	fi
+
 	echo -e "\n\e[0;91mAborted.\e[0m"
 	exit 1
 }
 
 
 echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
-echo -e "\e[1;96musage: git edit <commit> [-m | --message-edit]\e[0m"
+echo -e "\e[0;96musage: git edit <commit> [-m | --message-edit]\e[0m"
 
 COMMIT=$1
 if [ -z "$COMMIT" ]; then
@@ -116,8 +141,8 @@ fi
 
 GIT_REBASE_BEGIN
  
-echo -e "\n\e[1;93mNow make your changes, then press Enter to continue.\e[0m"
-read
+echo -e "\n\e[1;96mNow make your changes\e[0;96m – then press \e[1;96mEnter\e[0;96m to continue, or cancel with \e[1;96mEscape\e[0;96m.\e[0m"
+CONTINUE_OR_ABORT
 
 GIT_ADD_ALL
 GIT_COMMIT_AMEND
