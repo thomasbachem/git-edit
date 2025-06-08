@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # git edit – Easily edit commits via interactive rebase
-# usage: `git edit <commit> [-m | --message-edit]`
+# usage: `git edit <commit> [-m | --message] [-d | --drop]`
 #
 # This Git command script allows you to edit/modify/modify
 # previous Git commits easily. It essentially is a more
@@ -18,6 +18,7 @@
 # will be unstashed/reapplied.
 # If you want to alter the commit message as well, append the
 # `-m` switch.
+# You can also drop (delete) a commit by appending `-d` instead.
 #
 # Use it as "git edit" by adding its parent folder to your PATH,
 # e.g. by adding this line to ~./zshrc:
@@ -49,9 +50,17 @@ GIT_UNSTASH () {
 	eval "$CMD"
 }
 
-GIT_REBASE_BEGIN () {
-	CMD="git rebase --interactive $COMMIT_SHORT~"
+GIT_REBASE_DROP () {
+	CMD="git rebase --interactive $COMMIT_SHORT~ # -> drop"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
+
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" git rebase --interactive $COMMIT_SHORT~ || ABORT
+}
+
+GIT_REBASE_BEGIN_EDIT () {
+	CMD="git rebase --interactive $COMMIT_SHORT~ # -> edit"
+	echo -e "\n\e[0;97m$CMD\e[0;90m"
+
 	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git rebase --interactive $COMMIT_SHORT~ || ABORT
 }
 
@@ -62,10 +71,10 @@ GIT_ADD_ALL () {
 }
 
 GIT_COMMIT_AMEND () {
-	if [ -z "$EDIT_MESSAGE" ]; then
-		CMD="git commit --all --amend --no-edit"
-	else
+	if [[ "$ACTION" == "edit+message" ]]; then
 		CMD="git commit --all --amend"
+	else
+		CMD="git commit --all --amend --no-edit"
 	fi
 	echo -e "\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" || ABORT
@@ -124,7 +133,7 @@ ABORT () {
 
 
 echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
-echo -e "\e[0;96musage: git edit <commit> [-m | --message-edit]\e[0m"
+echo -e "\e[0;96musage: git edit <commit> [-m | --message] [-d | --drop]\e[0m"
 
 COMMIT=$1
 if [ -z "$COMMIT" ]; then
@@ -132,10 +141,16 @@ if [ -z "$COMMIT" ]; then
 fi
 COMMIT_SHORT=${COMMIT:0:7}
 
-EDIT_MESSAGE=$2
-if ! [[ "$EDIT_MESSAGE" =~ ^(\s*|-m|--message-edit)$ ]]; then
-	echo -e "\n\e[0;91mOptional 2nd argument needs to be either '-m' or '--message-edit'.\e[0m"
+ACTION=$2
+if [[ "$ACTION" =~ ^(-m|--message)$ ]]; then
+	ACTION="edit+message"
+elif [[ "$ACTION" =~ ^(-d|--drop)$ ]]; then
+	ACTION="drop"
+elif ! [[ "$ACTION" =~ ^\s*$ ]]; then
+	echo -e "\n\e[0;91mOptional 2nd argument needs to be either '-m'/'--message' or '-d'/'--drop'.\e[0m"
 	exit 1
+else
+	ACTION="edit"
 fi
 
 git add . && git diff --quiet && git diff --cached --quiet
@@ -145,15 +160,21 @@ if [ $UNCOMMITTED_CHANGES ]; then
 	GIT_STASH
 fi
 
-GIT_REBASE_BEGIN
- 
-echo -e "\n\e[1;96mNow make your changes\e[0;96m – then press \e[1;96mEnter\e[0;96m to continue, or cancel with \e[1;96mEscape\e[0;96m.\e[0m"
-CONTINUE_OR_ABORT
+if [[ "$ACTION" == "drop" ]]; then
+	echo -e "\n\e[1;96mDropping commit \e[0;96m$COMMIT_SHORT\e[0m"
 
-GIT_ADD_ALL
-GIT_COMMIT_AMEND
+	GIT_REBASE_DROP
+else
+	GIT_REBASE_BEGIN_EDIT
+	 
+	echo -e "\n\e[1;96mNow make your changes\e[0;96m – then press \e[1;96mEnter\e[0;96m to continue, or cancel with \e[1;96mEscape\e[0;96m.\e[0m"
+	CONTINUE_OR_ABORT
 
-GIT_REBASE_CONTINUE
+	GIT_ADD_ALL
+	GIT_COMMIT_AMEND
+
+	GIT_REBASE_CONTINUE
+fi
 
 if [ $UNCOMMITTED_CHANGES ]; then
 	GIT_UNSTASH
