@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # git edit – Easily edit commits via interactive rebase
-# usage: `git edit <commit> [-m | --message] [-d | --drop]`
+# usage: `git edit [-m | --message | -d | --drop] <commit>`
 #
 # This Git command script allows you to edit/modify/modify
 # previous Git commits easily. It essentially is a more
@@ -16,9 +16,9 @@
 # so you can manually resolve them before continuing with the
 # merge/rebase. After completion, your previous local changes
 # will be unstashed/reapplied.
-# If you want to alter the commit message as well, append the
+# If you want to alter the commit message as well, add the
 # `-m` switch.
-# You can also drop (delete) a commit by appending `-d` instead.
+# You can also drop (delete) a commit by using `-d` instead.
 #
 # Use it as "git edit" by adding its parent folder to your PATH,
 # e.g. by adding this line to ~./zshrc:
@@ -37,6 +37,19 @@
 
 
 set -o pipefail # Make a pipeline fail if any element fails
+
+echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
+
+
+# ------------------------------------------- FUNCTIONS --------------------------------------------
+
+USAGE () {
+	echo -e "\e[0;96musage: git edit [-m | --message | -d | --drop] <commit>\e[0m"
+	echo -e ""
+	echo -e "\e[0;96m       -m, --message     Alter commit message after editing\e[0m"
+	echo -e "\e[0;96m       -d, --drop        Just drop (delete) the commit\e[0m"
+	echo -e ""
+}
 
 GIT_STASH () {
 	CMD="git stash"
@@ -142,26 +155,58 @@ ABORT () {
 }
 
 
-echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
-echo -e "\e[0;96musage: git edit <commit> [-m | --message] [-d | --drop]\e[0m"
+# ---------------------------------------- ARGUMENT PARSING ----------------------------------------
 
-COMMIT=$1
-if [ -z "$COMMIT" ]; then
-	read -p 'Commit to edit: ' COMMIT
-fi
-COMMIT_SHORT=${COMMIT:0:7}
-
-ACTION=$2
-if [[ "$ACTION" =~ ^(-m|--message)$ ]]; then
-	ACTION="edit+message"
-elif [[ "$ACTION" =~ ^(-d|--drop)$ ]]; then
-	ACTION="drop"
-elif ! [[ "$ACTION" =~ ^\s*$ ]]; then
-	echo -e "\n\e[0;91mOptional 2nd argument needs to be either '-m'/'--message' or '-d'/'--drop'.\e[0m"
+# -D pulls parsed flags out of $@
+# -E allows flags/args and positionals to be mixed
+# -F says fail if we find a flag that wasn't defined
+# -K allows us to set default values without zparseopts overwriting them
+# (the first dash is automatically handled, so long options are -opt, not --opt)
+zmodload zsh/zutil
+if ! zparseopts -D -E -F -K -- {m,-message}=OPT_MESSAGE {d,-drop}=OPT_DROP {h,-help}=OPT_HELP; then
+	USAGE
+	echo -e "\e[0;91mUnknown option: $1\e[0m"
 	exit 1
+fi
+
+# -h/--help/help
+if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
+	USAGE
+	exit 0
+fi
+
+# -m/--message | -d/--drop
+if [ ${#OPT_MESSAGE} -gt 0 -a ${#OPT_DROP} -gt 0 ]; then
+	USAGE
+	echo -e "\e[0;91mOptions -m/--message and -d/--drop cannot be combined\e[0m"
+	exit 1
+fi
+if [ ${#OPT_DROP} -gt 0 ]; then
+	ACTION="drop"
+elif [ ${#OPT_MESSAGE} -gt 0 ]; then
+	ACTION="edit+message"
 else
 	ACTION="edit"
 fi
+
+# <commit>
+if [ $# -eq 0 ]; then
+	USAGE
+	echo -e "\e[0;91mMissing <commit> argument\e[0m"
+	exit 1
+else
+	COMMIT=$1
+	shift
+	if [ $# -ne 0 ]; then
+		USAGE
+		echo -e "\e[0;91mOnly one <commit> argument is allowed\e[0m"
+		exit 1
+	fi
+fi
+COMMIT_SHORT=${COMMIT:0:7}
+
+
+# ------------------------------------------- CORE LOGIC -------------------------------------------
 
 git add . && git diff --quiet && git diff --cached --quiet
 UNCOMMITTED_CHANGES=$?
