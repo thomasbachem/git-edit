@@ -51,17 +51,27 @@ GIT_UNSTASH () {
 }
 
 GIT_REBASE_DROP () {
-	CMD="git rebase --interactive $COMMIT_SHORT~ # -> drop"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	# Determine if commit has a parent or is the first commit
+	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
+		CMD=(rebase --interactive "$COMMIT_SHORT~")
+	else
+		CMD=(rebase --interactive --root)
+	fi
+	echo -e "\n\e[0;97mgit ${CMD[*]} # -> drop\e[0;90m"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" git rebase --interactive $COMMIT_SHORT~ || ABORT
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
 }
 
 GIT_REBASE_BEGIN_EDIT () {
-	CMD="git rebase --interactive $COMMIT_SHORT~ # -> edit"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	# Determine if commit has a parent or is the first commit
+	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
+		CMD=(rebase --interactive "$COMMIT_SHORT~")
+	else
+		CMD=(rebase --interactive --root)
+	fi
+	echo -e "\n\e[0;97mgit ${CMD[*]} # -> edit\e[0;90m"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git rebase --interactive $COMMIT_SHORT~ || ABORT
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
 }
 
 GIT_ADD_ALL () {
