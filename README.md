@@ -5,10 +5,11 @@ This Git command script allows you to edit/modify/modify previous Git commits ea
 ## Usage
 
 ```
-git-edit [-m | --message | -d | --drop] <commit>
+git-edit [-m | --message | -d | --drop | -s | --squash] <commit>
 
 -m, --message     Alter commit message after editing
--d, --drop        Just drop (delete) the commit
+-d, --drop        Just delete (drop) the commit
+-s, --squash      Merge (fixup/squash) this commit into the previous one
 ```
 
 ![Screenshot](/screenshot.png?raw=true)
@@ -19,7 +20,7 @@ This script will stash any local changes, then reset your local copy to the stat
 
 The script also pauses in case any merge conflicts arise, so you can manually resolve them before continuing with the merge/rebase. After completion, your previous local changes will be unstashed/reapplied.
 
-If you want to alter the commit message after editing as well, add the `-m`/`--message` switch. You can also drop (delete) a commit instead of editing by using `-d`.
+If you want to alter the commit message after editing as well, add the `-m`/`--message` switch. You can also delete (drop) a commit instead of editing by using `-d`/`--drop`, or merge (fixup/squash) it into the previous one using `-s`/`--squash`.
 
 ## Git Command
 
