@@ -291,6 +291,10 @@ else
 		exit 1
 	fi
 fi
+if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null; then
+	PRINT_ERR "Unknown commit: $COMMIT"
+	exit 1
+fi
 COMMIT_SHORT=${COMMIT:0:7}
 
 
