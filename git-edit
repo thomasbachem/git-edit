@@ -79,17 +79,28 @@ PRINT_ERR () {
 }
 
 GIT_STASH () {
-	local CMD="git stash -u"
+	local CMD="git stash push -u"
 	PRINT_CMD "$CMD"
 
-	eval "$CMD" || ABORT
+	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
+	OUTPUT=$(eval "$CMD -m '$COMMANDLINE'")
+	STATUS=$?
+	
+	if [[ $STATUS -ne 0 ]]; then
+		ABORT
+	elif [[ "$OUTPUT" == *"Saved working directory"* ]]; then
+		STASH_REF="stash@{0}"
+	fi
 }
 
 GIT_UNSTASH () {
-	local CMD="git stash pop"
-	PRINT_CMD "$CMD"
+	if [ -n "$STASH_REF" ]; then
+		local CMD="git stash pop"
+		PRINT_CMD "$CMD"
 
-	eval "$CMD"
+		eval "$CMD '$STASH_REF'"
+		unset STASH_REF
+	fi
 }
 
 GIT_REBASE_DROP () {
@@ -212,9 +223,7 @@ ABORT () {
 
 	eval "$CMD" 2>/dev/null
 
-	if [ $UNCOMMITTED_CHANGES ] && [ $CMD != "git stash" ]; then
-		GIT_UNSTASH
-	fi
+	GIT_UNSTASH
 
 	PRINT_ERR "Aborted."
 	exit 1
@@ -222,6 +231,12 @@ ABORT () {
 
 
 # ---------------------------------------- ARGUMENT PARSING ----------------------------------------
+
+# Remember full original command line
+COMMANDLINE="git edit"
+for ARG in "$@"; do
+	COMMANDLINE+=" $(printf '%q' "$ARG")"
+done
 
 # -D pulls parsed flags out of $@
 # -E allows flags/args and positionals to be mixed
@@ -281,12 +296,7 @@ COMMIT_SHORT=${COMMIT:0:7}
 
 # ------------------------------------------- CORE LOGIC -------------------------------------------
 
-git add . && git diff --quiet && git diff --cached --quiet
-UNCOMMITTED_CHANGES=$?
-
-if [ $UNCOMMITTED_CHANGES ]; then
-	GIT_STASH
-fi
+GIT_STASH
 
 if [[ "$ACTION" == "drop" ]]; then
 	echo -e "\n\e[1;96mDropping commit \e[0;96m$COMMIT_SHORT\e[0m"
@@ -312,8 +322,6 @@ else
 	GIT_REBASE_CONTINUE
 fi
 
-if [ $UNCOMMITTED_CHANGES ]; then
-	GIT_UNSTASH
-fi
+GIT_UNSTASH
 
 echo -e "\n\e[1;92mgit edit completed.\e[0m"
