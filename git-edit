@@ -38,7 +38,9 @@
 # under the MIT License
 
 
-set -o pipefail # Make a pipeline fail if any element fails
+# Make a pipeline fail if any element fails
+# (required for `$?` to work in conjunction with `tee` below)
+set -o pipefail
 
 echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
 
@@ -55,13 +57,13 @@ USAGE () {
 }
 
 GIT_STASH () {
-	CMD="git stash -u"
+	local CMD="git stash -u"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" || ABORT
 }
 
 GIT_UNSTASH () {
-	CMD="git stash pop"
+	local CMD="git stash pop"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
 	eval "$CMD"
 }
@@ -69,9 +71,9 @@ GIT_UNSTASH () {
 GIT_REBASE_DROP () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
+		local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
 	else
-		CMD=(rebase --no-autostash --interactive --root)
+		local CMD=(rebase --no-autostash --interactive --root)
 	fi
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> drop\e[0;90m"
 
@@ -79,29 +81,33 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
-	CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
+	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> squash\e[0;90m"
 
+	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
 	STATUS=$?
+
 	GIT_REBASE_HANDLE_ERRORS "$OUTPUT" $STATUS
 }
 
 GIT_REBASE_FIXUP () {
-	CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
+	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> fixup\e[0;90m"
 
+	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
 	STATUS=$?
+
 	GIT_REBASE_HANDLE_ERRORS "$OUTPUT" $STATUS
 }
 
 GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
+		local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
 	else
-		CMD=(rebase --no-autostash --interactive --root)
+		local CMD=(rebase --no-autostash --interactive --root)
 	fi
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> edit\e[0;90m"
 
@@ -109,16 +115,16 @@ GIT_REBASE_BEGIN_EDIT () {
 }
 
 GIT_ADD_ALL () {
-	CMD="git add --all"
+	local CMD="git add --all"
 	echo -e "\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" || ABORT
 }
 
 GIT_COMMIT_AMEND () {
 	if [ ${#OPT_MESSAGE} -gt 0 ]; then
-		CMD="git commit --all --amend"
+		local CMD="git commit --all --amend"
 	else
-		CMD="git commit --all --amend --no-edit"
+		local CMD="git commit --all --amend --no-edit"
 	fi
 	echo -e "\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" || ABORT
@@ -128,8 +134,10 @@ GIT_REBASE_CONTINUE () {
 	# First arg is the rebase sub-command, defaulting to "--continue"
 	local SUBCMD="${1:---continue}"
 
-	CMD="git rebase $SUBCMD"
+	local CMD="git rebase $SUBCMD"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
+
+	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(eval "GIT_EDITOR=true $CMD" 2>&1 | tee /dev/stderr)
 	STATUS=$?
 
@@ -173,7 +181,7 @@ CONTINUE_OR_ABORT () {
 }
 
 ABORT () {
-	CMD="git rebase --abort"
+	local CMD="git rebase --abort"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" 2>/dev/null
 
