@@ -69,9 +69,9 @@ GIT_UNSTASH () {
 GIT_REBASE_DROP () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		CMD=(rebase --interactive "$COMMIT_SHORT~")
+		CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
 	else
-		CMD=(rebase --interactive --root)
+		CMD=(rebase --no-autostash --interactive --root)
 	fi
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> drop\e[0;90m"
 
@@ -79,7 +79,7 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
-	CMD=(rebase --interactive "$COMMIT_SHORT~2")
+	CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> squash\e[0;90m"
 
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
@@ -88,7 +88,7 @@ GIT_REBASE_SQUASH () {
 }
 
 GIT_REBASE_FIXUP () {
-	CMD=(rebase --interactive "$COMMIT_SHORT~2")
+	CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> fixup\e[0;90m"
 
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
@@ -99,9 +99,9 @@ GIT_REBASE_FIXUP () {
 GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		CMD=(rebase --interactive "$COMMIT_SHORT~")
+		CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
 	else
-		CMD=(rebase --interactive --root)
+		CMD=(rebase --no-autostash --interactive --root)
 	fi
 	echo -e "\n\e[0;97mgit ${CMD[*]} # -> edit\e[0;90m"
 
