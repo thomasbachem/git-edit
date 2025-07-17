@@ -103,6 +103,31 @@ GIT_UNSTASH () {
 	fi
 }
 
+GIT_RUN_AND_HANDLE_CONFLICTS () {
+	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
+	OUTPUT=$(eval "$*" 2>&1 | tee /dev/stderr)
+	STATUS=$?
+
+	if [[ $STATUS -ne 0 ]]; then
+		if [[ "$OUTPUT" == *"CONFLICT (content)"* ]]; then
+			echo -e "\n\e[1;93mMerge conflicts\e[0;93m – Resolve them and press \e[1;93mEnter\e[0;93m to continue, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
+			CONTINUE_OR_ABORT
+
+			GIT_ADD_ALL
+			GIT_REBASE_CONTINUE
+		elif [[ "$OUTPUT" == *"--allow-empty"* ]]; then
+			echo -e "\n\e[1;93mA later commit is now empty\e[0;93m – Press \e[1;93mEnter\e[0;93m to skip (drop) it, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
+			CONTINUE_OR_ABORT
+
+			GIT_ADD_ALL
+			GIT_REBASE_CONTINUE "--skip"
+		else
+			PRINT_ERR "Unknown error during rebase."
+			ABORT
+		fi
+	fi
+}
+
 GIT_REBASE_DROP () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
@@ -112,29 +137,24 @@ GIT_REBASE_DROP () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" \
+	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
 GIT_REBASE_SQUASH () {
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	PRINT_CMD "git ${CMD[*]} # -> squash"
 
-	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
-	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
-	STATUS=$?
-
-	GIT_REBASE_HANDLE_ERRORS "$OUTPUT" $STATUS
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" \
+	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
 GIT_REBASE_FIXUP () {
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	PRINT_CMD "git ${CMD[*]} # -> fixup"
 
-	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
-	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
-	STATUS=$?
-
-	GIT_REBASE_HANDLE_ERRORS "$OUTPUT" $STATUS
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" \
+	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
 GIT_REBASE_BEGIN_EDIT () {
@@ -146,7 +166,8 @@ GIT_REBASE_BEGIN_EDIT () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" \
+	git "${CMD[@]}" || ABORT
 }
 
 GIT_ADD_ALL () {
@@ -174,35 +195,8 @@ GIT_REBASE_CONTINUE () {
 	local CMD="git rebase $SUBCMD"
 	PRINT_CMD "$CMD"
 
-	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
-	OUTPUT=$(eval "GIT_EDITOR=true $CMD" 2>&1 | tee /dev/stderr)
-	STATUS=$?
-
-	GIT_REBASE_HANDLE_ERRORS "$OUTPUT" $STATUS
-}
-
-GIT_REBASE_HANDLE_ERRORS () {
-	local OUTPUT="$1"
-	local STATUS=$2
-
-	if [[ $STATUS -ne 0 ]]; then
-		if [[ "$OUTPUT" == *"CONFLICT (content)"* ]]; then
-			echo -e "\n\e[1;93mMerge conflicts\e[0;93m – Resolve them and press \e[1;93mEnter\e[0;93m to continue, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
-			CONTINUE_OR_ABORT
-
-			GIT_ADD_ALL
-			GIT_REBASE_CONTINUE
-		elif [[ "$OUTPUT" == *"--allow-empty"* ]]; then
-			echo -e "\n\e[1;93mA later commit is now empty\e[0;93m – Press \e[1;93mEnter\e[0;93m to skip (drop) it, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
-			CONTINUE_OR_ABORT
-
-			GIT_ADD_ALL
-			GIT_REBASE_CONTINUE "--skip"
-		else
-			PRINT_ERR "Unknown error during rebase."
-			ABORT
-		fi
-	fi
+	GIT_EDITOR=true \
+	GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 }
 
 CONTINUE_OR_ABORT () {
