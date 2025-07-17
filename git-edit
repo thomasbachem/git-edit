@@ -56,15 +56,39 @@ USAGE () {
 	echo -e ""
 }
 
+PRINT_CMD () {
+	# First arg is the full command string to be printed
+	local CMD="$1"
+
+	# Filter `--no-autostash` arg when printing commands
+	local CMD_FILTERED=$(echo "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
+
+	echo -e "\n\e[0;97m$CMD_FILTERED\e[0;90m"
+}
+
+PRINT_ERR () {
+	local MSG="$1"
+
+	if [[ "$MSG" == *:* ]]; then
+		local PREFIX="${MSG%%:*}"
+		local REST="${MSG#*: }"
+		echo -e "\n\e[1;91m${PREFIX}:\e[0m\e[0;91m ${REST}\e[0m" >&2
+	else
+		echo -e "\n\e[1;91m${MSG}\e[0m" >&2
+	fi
+}
+
 GIT_STASH () {
 	local CMD="git stash -u"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
+
 	eval "$CMD" || ABORT
 }
 
 GIT_UNSTASH () {
 	local CMD="git stash pop"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
+
 	eval "$CMD"
 }
 
@@ -75,14 +99,14 @@ GIT_REBASE_DROP () {
 	else
 		local CMD=(rebase --no-autostash --interactive --root)
 	fi
-	echo -e "\n\e[0;97mgit ${CMD[*]} # -> drop\e[0;90m"
+	PRINT_CMD "git ${CMD[*]} # -> drop"
 
 	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
 }
 
 GIT_REBASE_SQUASH () {
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
-	echo -e "\n\e[0;97mgit ${CMD[*]} # -> squash\e[0;90m"
+	PRINT_CMD "git ${CMD[*]} # -> squash"
 
 	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
@@ -93,7 +117,7 @@ GIT_REBASE_SQUASH () {
 
 GIT_REBASE_FIXUP () {
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
-	echo -e "\n\e[0;97mgit ${CMD[*]} # -> fixup\e[0;90m"
+	PRINT_CMD "git ${CMD[*]} # -> fixup"
 
 	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" git "${CMD[@]}" 2>&1 | tee /dev/stderr)
@@ -109,14 +133,15 @@ GIT_REBASE_BEGIN_EDIT () {
 	else
 		local CMD=(rebase --no-autostash --interactive --root)
 	fi
-	echo -e "\n\e[0;97mgit ${CMD[*]} # -> edit\e[0;90m"
+	PRINT_CMD "git ${CMD[*]} # -> edit"
 
 	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" git "${CMD[@]}" || ABORT
 }
 
 GIT_ADD_ALL () {
 	local CMD="git add --all"
-	echo -e "\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
+
 	eval "$CMD" || ABORT
 }
 
@@ -126,7 +151,8 @@ GIT_COMMIT_AMEND () {
 	else
 		local CMD="git commit --all --amend --no-edit"
 	fi
-	echo -e "\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
+
 	eval "$CMD" || ABORT
 }
 
@@ -135,7 +161,7 @@ GIT_REBASE_CONTINUE () {
 	local SUBCMD="${1:---continue}"
 
 	local CMD="git rebase $SUBCMD"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
 
 	local OUTPUT STATUS # Needs to be separated for `$?` to work properly
 	OUTPUT=$(eval "GIT_EDITOR=true $CMD" 2>&1 | tee /dev/stderr)
@@ -162,7 +188,7 @@ GIT_REBASE_HANDLE_ERRORS () {
 			GIT_ADD_ALL
 			GIT_REBASE_CONTINUE "--skip"
 		else
-			echo -e "\n\e[1;91mUnknown error during rebase.\e[0m"
+			PRINT_ERR "Unknown error during rebase."
 			ABORT
 		fi
 	fi
@@ -182,14 +208,15 @@ CONTINUE_OR_ABORT () {
 
 ABORT () {
 	local CMD="git rebase --abort"
-	echo -e "\n\e[0;97m$CMD\e[0;90m"
+	PRINT_CMD "$CMD"
+
 	eval "$CMD" 2>/dev/null
 
 	if [ $UNCOMMITTED_CHANGES ] && [ $CMD != "git stash" ]; then
 		GIT_UNSTASH
 	fi
 
-	echo -e "\n\e[0;91mAborted.\e[0m"
+	PRINT_ERR "Aborted."
 	exit 1
 }
 
@@ -204,7 +231,7 @@ ABORT () {
 zmodload zsh/zutil
 if ! zparseopts -D -E -F -K -- {m,-message}=OPT_MESSAGE {d,-drop}=OPT_DROP {s,-squash}=OPT_SQUASH {h,-help}=OPT_HELP; then
 	USAGE
-	echo -e "\e[0;91mUnknown option: $1\e[0m"
+	PRINT_ERR "Unknown option: $1"
 	exit 1
 fi
 
@@ -217,13 +244,13 @@ fi
 # -m/--message + -d/--drop
 if [ ${#OPT_MESSAGE} -gt 0 -a ${#OPT_DROP} -gt 0 ]; then
 	USAGE
-	echo -e "\e[0;91mOptions -m/--message and -d/--drop cannot be combined\e[0m"
+	PRINT_ERR "Options -m/--message and -d/--drop cannot be combined"
 	exit 1
 fi
 # -d/--drop + -s/--squash
 if [ ${#OPT_DROP} -gt 0 -a ${#OPT_SQUASH} -gt 0 ]; then
 	USAGE
-	echo -e "\e[0;91mOptions -d/--drop and -s/--squash cannot be combined\e[0m"
+	PRINT_ERR "Options -d/--drop and -s/--squash cannot be combined"
 	exit 1
 fi
 # -d/--drop | -s/--squash
@@ -238,14 +265,14 @@ fi
 # <commit>
 if [ $# -eq 0 ]; then
 	USAGE
-	echo -e "\e[0;91mMissing <commit> argument\e[0m"
+	PRINT_ERR "Missing <commit> argument"
 	exit 1
 else
 	COMMIT=$1
 	shift
 	if [ $# -ne 0 ]; then
 		USAGE
-		echo -e "\e[0;91mOnly one <commit> argument is allowed\e[0m"
+		PRINT_ERR "Only one <commit> argument is allowed"
 		exit 1
 	fi
 fi
