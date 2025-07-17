@@ -55,7 +55,7 @@ USAGE () {
 }
 
 GIT_STASH () {
-	CMD="git stash"
+	CMD="git stash -u"
 	echo -e "\n\e[0;97m$CMD\e[0;90m"
 	eval "$CMD" || ABORT
 }
