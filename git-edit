@@ -311,7 +311,7 @@ elif [[ "$ACTION" == "squash" ]]; then
 else
 	GIT_REBASE_BEGIN_EDIT
 	 
-	echo -e "\n\e[1;96mNow make your changes\e[0;96m – then press \e[1;96mEnter\e[0;96m to continue, or cancel with \e[1;96mEscape\e[0;96m.\e[0m"
+	echo -e "\n\e[1;95mNow make your changes\e[0;95m – then press \e[1;95mEnter\e[0;95m to continue, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
 	CONTINUE_OR_ABORT
 
 	GIT_ADD_ALL
