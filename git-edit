@@ -42,17 +42,17 @@
 # (required for `$?` to work in conjunction with `tee` below)
 set -o pipefail
 
-echo -e "\e[1;96mgit edit – Easily edit commits via interactive rebase\e[0m"
+echo -e "\e[1;94mgit edit – Easily edit commits via interactive rebase\e[0m"
 
 
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	echo -e "\e[0;96musage: git edit [-m | --message | -d | --drop | -s | --squash] <commit>\e[0m"
+	echo -e "\e[0;94musage: git edit [-m | --message | -d | --drop | -s | --squash] <commit>\e[0m"
 	echo -e ""
-	echo -e "\e[0;96m       -m, --message     Alter commit message after editing\e[0m"
-	echo -e "\e[0;96m       -d, --drop        Just delete (drop) the commit\e[0m"
-	echo -e "\e[0;96m       -s, --squash      Merge (fixup/squash) this commit into the previous one\e[0m"
+	echo -e "\e[0;94m       -m, --message     Alter commit message after editing\e[0m"
+	echo -e "\e[0;94m       -d, --drop        Just delete (drop) the commit\e[0m"
+	echo -e "\e[0;94m       -s, --squash      Merge (fixup/squash) this commit into the previous one\e[0m"
 	echo -e ""
 }
 
@@ -61,12 +61,15 @@ PRINT_TEXT () {
 	local COLOR=$1; shift
 	local ARGS=("$@")
 
+	local BASE=$COLOR
+	local BRIGHT=$(( COLOR <= 37 ? COLOR + 60 : COLOR ))
+
 	local TEXT="$MSG"
 	local OUTPUT="\n\e[0;${COLOR}m"
 	local ARG
 	for ARG in "${ARGS[@]}"; do
 		OUTPUT+="${TEXT%%%s*}"
-		OUTPUT+="\e[1;${COLOR}m${ARG}\e[0;${COLOR}m"
+		OUTPUT+="\e[1;${BRIGHT}m${ARG}\e[0;${BASE}m"
 		TEXT="${TEXT#*%s}"
 	done
 	OUTPUT+="$TEXT\e[0m"
@@ -84,7 +87,7 @@ PRINT_ACTION () {
 		ARGS+=("${COMMIT:0:7} (${SUBJECT})")
 	done
 	
-	PRINT_TEXT "$MSG" 96 "${ARGS[@]}"
+	PRINT_TEXT "$MSG" 36 "${ARGS[@]}"
 }
 
 PRINT_CMD () {
@@ -103,7 +106,7 @@ PRINT_ERR () {
 	if [[ "$MSG" == *:* ]]; then
 		local PREFIX="${MSG%%:*}"
 		local REST="${MSG#*: }"
-		echo -e "\n\e[1;91m${PREFIX}:\e[0m\e[0;91m ${REST}\e[0m" >&2
+		echo -e "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
 	else
 		echo -e "\n\e[1;91m${MSG}\e[0m" >&2
 	fi
@@ -141,13 +144,13 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
-			PRINT_TEXT "%s – Resolve them and press %s to continue, or %s to cancel editing." 93 "Merge conflicts" "Enter" "Escape"
+			PRINT_TEXT "%s – Resolve them and press %s to continue, or %s to cancel editing." 33 "Merge conflicts" "Enter" "Escape"
 			CONTINUE_OR_ABORT
 
 			GIT_ADD_ALL
 			GIT_REBASE_CONTINUE
 		elif [[ "$OUTPUT" == *"--allow-empty"* ]] || [[ "$OUTPUT" == *"No changes - did you forget to use"* ]]; then
-			PRINT_TEXT "%s – Press %s to skip (drop) it, or %s to cancel editing." 93 "A later commit is now empty" "Enter" "Escape"
+			PRINT_TEXT "%s – Press %s to skip (drop) it, or %s to cancel editing." 33 "A later commit is now empty" "Enter" "Escape"
 			CONTINUE_OR_ABORT
 
 			GIT_ADD_ALL
@@ -330,14 +333,14 @@ GIT_STASH
 if [[ "$ACTION" == "drop" ]]; then
 	PRINT_ACTION "Dropping %s..." "$COMMIT"
 
-	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
+	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
 	PRINT_ACTION "Merging %s into previous commit..." "$COMMIT"
 
-	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
+	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_SQUASH
@@ -346,7 +349,7 @@ else
 
 	GIT_REBASE_BEGIN_EDIT
 
-	PRINT_TEXT "%s – then press %s to continue, or cancel with %s." 95 "Now make your changes" "Enter" "Escape"
+	PRINT_TEXT "%s – then press %s to continue, or cancel with %s." 35 "Now make your changes" "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_ADD_ALL
