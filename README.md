@@ -5,11 +5,12 @@ This Git command script allows you to edit/modify/merge previous Git commits eas
 ## Usage
 
 ```
-git-edit [-m | --message | -d | --drop | -s | --squash] <commit>
+git-edit [-m | --message | -d | --drop | -s | --squash ] <commit> [<target>]
 
--m, --message     Alter commit message after editing
--d, --drop        Just delete (drop) the commit
--s, --squash      Merge (fixup/squash) this commit into the previous one
+-m, --message                   Alter <commit> message after editing
+-d, --drop                      Just delete (drop) <commit>
+-s, --squash                    Merge (fixup/squash) <commit> into the previous one
+-s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>
 ```
 
 ![Screenshot](/screenshot.png?raw=true)
@@ -20,7 +21,7 @@ This script will stash any local changes, then reset your local copy to the stat
 
 The script also pauses in case any merge conflicts arise, so you can manually resolve them before continuing with the merge/rebase. After completion, your previous local changes will be unstashed/reapplied.
 
-If you want to alter the commit message after editing as well, add the `-m`/`--message` switch. You can also delete (drop) a commit instead of editing by using `-d`/`--drop`, or merge (fixup/squash) it into the previous one using `-s`/`--squash`.
+If you want to alter the commit message after editing as well, add the `-m`/`--message` switch. You can also delete (drop) a commit instead of editing by using `-d`/`--drop`, or merge (fixup/squash) it into another one (defaulting to the previous commit) using `-s`/`--squash`. Whenever two commit hashes are supplied, `-s`/`--squash` is assumed automatically and the older commit becomes the `<target>`.
 
 ## Git Command
 
