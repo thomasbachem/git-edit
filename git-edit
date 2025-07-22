@@ -142,18 +142,13 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
+	local OP; if [[ -n $OPT_MESSAGE ]]; then OP=squash; else OP=fixup; fi
+
+
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
-	PRINT_CMD "git ${CMD[*]} # -> squash"
+	PRINT_CMD "git ${CMD[*]} # -> $OP"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/squash $COMMIT_SHORT/'" \
-	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
-}
-
-GIT_REBASE_FIXUP () {
-	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
-	PRINT_CMD "git ${CMD[*]} # -> fixup"
-
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/fixup $COMMIT_SHORT/'" \
+	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/$OP $COMMIT_SHORT/'" \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -309,11 +304,7 @@ if [[ "$ACTION" == "drop" ]]; then
 elif [[ "$ACTION" == "squash" ]]; then
 	echo -e "\n\e[1;96mMerging commit \e[0;96m$COMMIT_SHORT\e[1;96m into previous commit\e[0m"
 
-	if [ ${#OPT_MESSAGE} -gt 0 ]; then
-		GIT_REBASE_SQUASH
-	else
-		GIT_REBASE_FIXUP
-	fi
+	GIT_REBASE_SQUASH
 else
 	GIT_REBASE_BEGIN_EDIT
 	 
