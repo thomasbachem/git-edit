@@ -161,14 +161,14 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 GIT_REBASE_DROP () {
 	# Determine if commit has a parent or is the first commit
-	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
+	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
+		local CMD=(rebase --no-autostash --interactive "$COMMIT~")
 	else
 		local CMD=(rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/drop '"$COMMIT_SHORT"'/"' \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/drop '"${COMMIT:0:7}"'/"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -176,23 +176,23 @@ GIT_REBASE_SQUASH () {
 	local OP; if [[ -n $OPT_MESSAGE ]]; then OP=squash; else OP=fixup; fi
 
 
-	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
+	local CMD=(rebase --no-autostash --interactive "$COMMIT~2")
 	PRINT_CMD "git ${CMD[*]} # -> $OP"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/$OP '"$COMMIT_SHORT"'/"' \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/$OP '"${COMMIT:0:7}"'/"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
 GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
-	if git show -s --pretty=%P "$COMMIT_SHORT" | grep -q .; then
-		local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~")
+	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
+		local CMD=(rebase --no-autostash --interactive "$COMMIT~")
 	else
 		local CMD=(rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/edit '"$COMMIT_SHORT"'/"' \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/edit '"${COMMIT:0:7}"'/"' \
 	git "${CMD[@]}" || ABORT
 }
 
@@ -321,7 +321,6 @@ if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null; then
 	PRINT_ERR "Unknown commit: $COMMIT"
 	exit 1
 fi
-COMMIT_SHORT=${COMMIT:0:7}
 
 
 # ------------------------------------------- CORE LOGIC -------------------------------------------
@@ -329,21 +328,21 @@ COMMIT_SHORT=${COMMIT:0:7}
 GIT_STASH
 
 if [[ "$ACTION" == "drop" ]]; then
-	PRINT_ACTION "Dropping %s..." "$COMMIT_SHORT"
+	PRINT_ACTION "Dropping %s..." "$COMMIT"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
-	PRINT_ACTION "Merging %s into previous commit..." "$COMMIT_SHORT"
+	PRINT_ACTION "Merging %s into previous commit..." "$COMMIT"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_SQUASH
 else
-	PRINT_ACTION "Editing %s..." "$COMMIT_SHORT"
+	PRINT_ACTION "Editing %s..." "$COMMIT"
 
 	GIT_REBASE_BEGIN_EDIT
 
