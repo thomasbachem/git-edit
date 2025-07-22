@@ -298,14 +298,22 @@ COMMIT_SHORT=${COMMIT:0:7}
 GIT_STASH
 
 if [[ "$ACTION" == "drop" ]]; then
-	echo -e "\n\e[1;96mDropping commit \e[0;96m$COMMIT_SHORT\e[0m"
+	echo -e "\n\e[1;96mDropping commit \e[0;96m$COMMIT_SHORT\e[1;96m...\e[0m"
+
+	echo -e "\n\e[0;95mPress \e[1;95mEnter\e[0;95m to confirm, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
+	CONTINUE_OR_ABORT
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
-	echo -e "\n\e[1;96mMerging commit \e[0;96m$COMMIT_SHORT\e[1;96m into previous commit\e[0m"
+	echo -e "\n\e[1;96mMerging commit \e[0;96m$COMMIT_SHORT\e[1;96m into previous commit...\e[0m"
+
+	echo -e "\n\e[0;95mPress \e[1;95mEnter\e[0;95m to confirm, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
+	CONTINUE_OR_ABORT
 
 	GIT_REBASE_SQUASH
 else
+	echo -e "\n\e[1;96mEditing commit \e[0;96m$COMMIT_SHORT\e[1;96m...\e[0m"
+
 	GIT_REBASE_BEGIN_EDIT
 	 
 	echo -e "\n\e[1;95mNow make your changes\e[0;95m – then press \e[1;95mEnter\e[0;95m to continue, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
