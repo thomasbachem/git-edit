@@ -199,6 +199,16 @@ GIT_REBASE_CONTINUE () {
 	GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 }
 
+GIT_REBASE_ABORT () {
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [[ -n "$GITDIR" && ( -d "$GITDIR/rebase-merge" || -d "$GITDIR/rebase-apply" ) ]]; then
+		local CMD="git rebase --abort"
+		PRINT_CMD "$CMD"
+
+		eval "$CMD" 2>/dev/null
+	fi
+}
+
 CONTINUE_OR_ABORT () {
 	while true; do
 		IFS= read -rs -k1 KEY
@@ -212,10 +222,7 @@ CONTINUE_OR_ABORT () {
 }
 
 ABORT () {
-	local CMD="git rebase --abort"
-	PRINT_CMD "$CMD"
-
-	eval "$CMD" 2>/dev/null
+	GIT_REBASE_ABORT
 
 	GIT_UNSTASH
 
