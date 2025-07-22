@@ -137,7 +137,7 @@ GIT_REBASE_DROP () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/drop $COMMIT_SHORT/'" \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/drop '"$COMMIT_SHORT"'/"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -148,7 +148,7 @@ GIT_REBASE_SQUASH () {
 	local CMD=(rebase --no-autostash --interactive "$COMMIT_SHORT~2")
 	PRINT_CMD "git ${CMD[*]} # -> $OP"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/$OP $COMMIT_SHORT/'" \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/$OP '"$COMMIT_SHORT"'/"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -161,7 +161,7 @@ GIT_REBASE_BEGIN_EDIT () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
-	GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick $COMMIT_SHORT/edit $COMMIT_SHORT/'" \
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"$COMMIT_SHORT"'/edit '"$COMMIT_SHORT"'/"' \
 	git "${CMD[@]}" || ABORT
 }
 
