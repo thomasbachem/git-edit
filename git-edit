@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # git edit – Easily edit commits via interactive rebase
-# usage: `git-edit [-m | --message | -d | --drop | -s | --squash] <commit>`
+# usage: `git-edit [-m | --message | -d | --drop | -s | --squash] <commit> [<target>]`
 #
 # This Git command script allows you to edit/modify/merge
 # previous Git commits easily. It essentially is a more
@@ -19,8 +19,11 @@
 #
 # If you want to alter the commit message as well, add the
 # `-m` switch. You can also delete (drop) a commit by using
-# `-d` instead, or merge (fixup/squash) it into the previous one
-# using `-s`/`--squash`.
+# `-d` instead, or merge (fixup/squash) it into another one
+# (defaulting to the previous commit) using `-s`/`--squash`.
+# Whenever two commit hashes are supplied, `-s`/`--squash` is
+# assumed automatically and the older commit becomes the
+# `<target>`.
 #
 # Use it as "git edit" by adding its parent folder to your PATH,
 # e.g. by adding this line to ~./zshrc:
@@ -48,12 +51,12 @@ echo -e "\e[1;94mgit edit – Easily edit commits via interactive rebase\e[0m"
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	echo -e "\e[0;94musage: git edit [-m | --message | -d | --drop | -s | --squash] <commit>\e[0m"
+	echo -e "\e[0;94musage: git edit [-m | --message | -d | --drop | -s | --squash] <commit> [<target>]\e[0m"
 	echo -e ""
-	echo -e "\e[0;94m       -m, --message     Alter commit message after editing\e[0m"
-	echo -e "\e[0;94m       -d, --drop        Just delete (drop) the commit\e[0m"
-	echo -e "\e[0;94m       -s, --squash      Merge (fixup/squash) this commit into the previous one\e[0m"
-	echo -e ""
+	echo -e "\e[0;94m       -m, --message                   Alter <commit> message after editing\e[0m"
+	echo -e "\e[0;94m       -d, --drop                      Just delete (drop) <commit>\e[0m"
+	echo -e "\e[0;94m       -s, --squash                    Merge (fixup/squash) <commit> into the previous one\e[0m"
+	echo -e "\e[0;94m       -s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>\e[0m"
 }
 
 PRINT_TEXT () {
@@ -176,13 +179,26 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
+	if ! git merge-base --is-ancestor "$TARGET" "$COMMIT"; then
+		PRINT_ERR "Commit ${COMMIT:0:7} is not a descendant of ${TARGET:0:7}"
+		exit 1
+	fi
+
 	local OP; if [[ -n $OPT_MESSAGE ]]; then OP=squash; else OP=fixup; fi
 
+	# Determine if commit has a parent or is the first commit
+	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
+		local CMD=(rebase --no-autostash --interactive "$TARGET^")
+	else
+		local CMD=(rebase --no-autostash --interactive --root)
+	fi
+	PRINT_CMD "git ${CMD[*]} # -> reorder+$OP"
 
-	local CMD=(rebase --no-autostash --interactive "$COMMIT~2")
-	PRINT_CMD "git ${CMD[*]} # -> $OP"
-
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/$OP '"${COMMIT:0:7}"'/"' \
+	# Delete the original "pick <target>" line and append "squash <target>"
+	# or "fixup <target>" right after "pick <commit>"
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "/^pick '"${COMMIT:0:7}"'/d" -e "/^pick '"${TARGET:0:7}"'/a\\
+'"$OP"' '"${COMMIT:0:7}"'
+" "$1"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -270,10 +286,9 @@ done
 # -D pulls parsed flags out of $@
 # -E allows flags/args and positionals to be mixed
 # -F says fail if we find a flag that wasn't defined
-# -K allows us to set default values without zparseopts overwriting them
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -K -- {m,-message}=OPT_MESSAGE {d,-drop}=OPT_DROP {s,-squash}=OPT_SQUASH {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {d,-drop}=OPT_DROP {s,-squash}:=OPT_SQUASH {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -297,32 +312,81 @@ if [ ${#OPT_DROP} -gt 0 -a ${#OPT_SQUASH} -gt 0 ]; then
 	PRINT_ERR "Options -d/--drop and -s/--squash cannot be combined"
 	exit 1
 fi
-# -d/--drop | -s/--squash
-if [ ${#OPT_DROP} -gt 0 ]; then
-	ACTION="drop"
-elif [ ${#OPT_SQUASH} -gt 0 ]; then
-	ACTION="squash"
-else
-	ACTION="edit"
-fi
+# -s[=<target>] / --squash[=<target>]
+if [ ${#OPT_SQUASH} -gt 0 ]; then
+	if [[ "${OPT_SQUASH[1]}" == "-s="* || "${OPT_SQUASH[1]}" == "--squash="* ]]; then
+		TARGET=${OPT_SQUASH[1]#*=}
+	elif [[ ${#OPT_SQUASH} -gt 1 ]]; then
+		if [ $# -ne 0 ]; then
+			# Treat as <target>, since <commit> still follows as a positional
+			TARGET=${OPT_SQUASH[2]}
+		else
+			# Treat as <commit>, since no positionals are left
+			set -- "${OPT_SQUASH[2]}" "$@"
+		fi
+	fi
 
-# <commit>
-if [ $# -eq 0 ]; then
-	USAGE
-	PRINT_ERR "Missing <commit> argument"
-	exit 1
-else
-	COMMIT=$1
-	shift
-	if [ $# -ne 0 ]; then
-		USAGE
-		PRINT_ERR "Only one <commit> argument is allowed"
+	# Validate <target> if given
+	if [ -n "$TARGET" ] && ! git rev-parse --quiet --verify "$TARGET^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <target>: $TARGET"
 		exit 1
 	fi
 fi
-if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null; then
-	PRINT_ERR "Unknown commit: $COMMIT"
-	exit 1
+
+# <commit> + <target> (for -s/--squash)
+case $# in
+	0)
+		USAGE
+		PRINT_ERR "Missing <commit> argument"
+		exit 1
+		;;
+	1)
+		# No <target> supplied
+		COMMIT=$1
+		shift
+		if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null 2>&1; then
+			PRINT_ERR "Unknown <commit>: $COMMIT"
+			exit 1
+		fi
+		# In "squash" mode, default <target> to the parent of <commit>
+		if [ ${#OPT_SQUASH} -gt 0 ] && [ -z "$TARGET" ]; then
+			if git cat-file -e "${COMMIT}^" 2>/dev/null; then
+				TARGET=$(git rev-parse "${COMMIT}^")
+			else
+				PRINT_ERR "Cannot squash <commit> as it has no parent"
+				exit 1
+			fi
+		fi
+		;;
+	2)
+		# If two hashes were supplied, figure out which commit
+		# is older and make it the <target>
+		if git merge-base --is-ancestor $1 $2 2>/dev/null; then
+			TARGET=$1
+			COMMIT=$2
+		elif git merge-base --is-ancestor $2 $1 2>/dev/null; then
+			TARGET=$2
+			COMMIT=$1
+		else
+			PRINT_ERR "Unkown <commit> and/or <target>"
+			exit 1
+		fi
+		shift 2
+		;;
+	*)
+		PRINT_ERR "Too many arguments"
+		USAGE
+		exit 1
+		;;
+esac
+
+# Determine action
+if [ -n "$TARGET" ]; then
+	ACTION="squash"
+elif [ ${#OPT_DROP} -gt 0 ]; then
+	ACTION="drop"
+else
+	ACTION="edit"
 fi
 
 
@@ -338,7 +402,7 @@ if [[ "$ACTION" == "drop" ]]; then
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
-	PRINT_ACTION "Merging %s into previous commit..." "$COMMIT"
+	PRINT_ACTION "Merging %s -> %s..." "$COMMIT" "$TARGET"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
 	CONTINUE_OR_ABORT
