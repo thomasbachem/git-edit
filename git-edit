@@ -56,6 +56,37 @@ USAGE () {
 	echo -e ""
 }
 
+PRINT_TEXT () {
+	local MSG=$1; shift
+	local COLOR=$1; shift
+	local ARGS=("$@")
+
+	local TEXT="$MSG"
+	local OUTPUT="\n\e[0;${COLOR}m"
+	local ARG
+	for ARG in "${ARGS[@]}"; do
+		OUTPUT+="${TEXT%%%s*}"
+		OUTPUT+="\e[1;${COLOR}m${ARG}\e[0;${COLOR}m"
+		TEXT="${TEXT#*%s}"
+	done
+	OUTPUT+="$TEXT\e[0m"
+	echo -e "$OUTPUT"
+}
+
+PRINT_ACTION () {
+	local MSG=$1; shift
+	local COMMITS=("$@")
+
+	local ARGS=()
+	local COMMIT
+	for COMMIT in "${COMMITS[@]}"; do
+		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
+		ARGS+=("${COMMIT:0:7} (${SUBJECT})")
+	done
+	
+	PRINT_TEXT "$MSG" 96 "${ARGS[@]}"
+}
+
 PRINT_CMD () {
 	# First arg is the full command string to be printed
 	local CMD="$1"
@@ -110,13 +141,13 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
-			echo -e "\n\e[1;93mMerge conflicts\e[0;93m – Resolve them and press \e[1;93mEnter\e[0;93m to continue, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
+			PRINT_TEXT "%s – Resolve them and press %s to continue, or %s to cancel editing." 93 "Merge conflicts" "Enter" "Escape"
 			CONTINUE_OR_ABORT
 
 			GIT_ADD_ALL
 			GIT_REBASE_CONTINUE
 		elif [[ "$OUTPUT" == *"--allow-empty"* ]] || [[ "$OUTPUT" == *"No changes - did you forget to use"* ]]; then
-			echo -e "\n\e[1;93mA later commit is now empty\e[0;93m – Press \e[1;93mEnter\e[0;93m to skip (drop) it, or \e[1;93mEscape\e[0;93m to cancel your edit.\e[0m"
+			PRINT_TEXT "%s – Press %s to skip (drop) it, or %s to cancel editing." 93 "A later commit is now empty" "Enter" "Escape"
 			CONTINUE_OR_ABORT
 
 			GIT_ADD_ALL
@@ -298,25 +329,25 @@ COMMIT_SHORT=${COMMIT:0:7}
 GIT_STASH
 
 if [[ "$ACTION" == "drop" ]]; then
-	echo -e "\n\e[1;96mDropping commit \e[0;96m$COMMIT_SHORT\e[1;96m...\e[0m"
+	PRINT_ACTION "Dropping %s..." "$COMMIT_SHORT"
 
-	echo -e "\n\e[0;95mPress \e[1;95mEnter\e[0;95m to confirm, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
+	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
-	echo -e "\n\e[1;96mMerging commit \e[0;96m$COMMIT_SHORT\e[1;96m into previous commit...\e[0m"
+	PRINT_ACTION "Merging %s into previous commit..." "$COMMIT_SHORT"
 
-	echo -e "\n\e[0;95mPress \e[1;95mEnter\e[0;95m to confirm, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
+	PRINT_TEXT "Press %s to confirm, or cancel with %s." 95 "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_REBASE_SQUASH
 else
-	echo -e "\n\e[1;96mEditing commit \e[0;96m$COMMIT_SHORT\e[1;96m...\e[0m"
+	PRINT_ACTION "Editing %s..." "$COMMIT_SHORT"
 
 	GIT_REBASE_BEGIN_EDIT
-	 
-	echo -e "\n\e[1;95mNow make your changes\e[0;95m – then press \e[1;95mEnter\e[0;95m to continue, or cancel with \e[1;95mEscape\e[0;95m.\e[0m"
+
+	PRINT_TEXT "%s – then press %s to continue, or cancel with %s." 95 "Now make your changes" "Enter" "Escape"
 	CONTINUE_OR_ABORT
 
 	GIT_ADD_ALL
