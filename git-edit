@@ -212,7 +212,6 @@ GIT_REBASE_ABORT () {
 CONTINUE_OR_ABORT () {
 	while true; do
 		IFS= read -rs -k1 KEY
-		echo
 		case $KEY in
 			''|$'\r'|$'\n') break ;;
 			$'\e')          ABORT ;;
