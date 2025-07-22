@@ -3,7 +3,7 @@
 # git edit – Easily edit commits via interactive rebase
 # usage: `git-edit [-m | --message | -d | --drop | -s | --squash] <commit>`
 #
-# This Git command script allows you to edit/modify/modify
+# This Git command script allows you to edit/modify/merge
 # previous Git commits easily. It essentially is a more
 # convenient version of using `git rebase --interactive`
 # for that use case.

@@ -1,6 +1,6 @@
 # git edit – Easily edit commits via interactive rebase
 
-This Git command script allows you to edit/modify/modify previous Git commits easily. It essentially is a more convenient version of using `git rebase --interactive` for that use case.
+This Git command script allows you to edit/modify/merge previous Git commits easily. It essentially is a more convenient version of using `git rebase --interactive` for that use case.
 
 ## Usage
 
