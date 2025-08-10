@@ -194,11 +194,12 @@ GIT_REBASE_SQUASH () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> reorder+$OP"
 
-	# Delete the original "pick <target>" line and append "squash <target>"
-	# or "fixup <target>" right after "pick <commit>"
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "/^pick '"${COMMIT:0:7}"'/d" -e "/^pick '"${TARGET:0:7}"'/a\\
+	# Remove any "pick <commit>"+"squash <commit>" lines,
+	# and insert "squash <target>"/"fixup <target>"
+	# immediately after the first "pick <target>"
+	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "/^pick '"${COMMIT:0:7}"'[0-9a-f]*/d" -e "/^squash '"${COMMIT:0:7}"'[0-9a-f]*/d" -e "1,/^pick '"${TARGET:0:7}"'[0-9a-f]*/{ /^pick '"${TARGET:0:7}"'[0-9a-f]*/a\\
 '"$OP"' '"${COMMIT:0:7}"'
-" "$1"' \
+}" "$1"' \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
