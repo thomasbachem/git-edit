@@ -116,6 +116,16 @@ PRINT_ERR () {
 }
 
 GIT_STASH () {
+	# Scan all unmerged paths and auto-stage any that no longer contain conflict markers
+	for FILE in $(git diff --name-only --diff-filter=U); do
+		if ! grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$FILE"; then
+			git add "$FILE"
+			local CMD="git add '$FILE'"
+			PRINT_CMD "$CMD"
+			eval "$CMD"
+		fi
+	done
+
 	local CMD="git stash push -u"
 	PRINT_CMD "$CMD"
 
