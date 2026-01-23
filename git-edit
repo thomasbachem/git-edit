@@ -130,10 +130,20 @@ GIT_STASH () {
 	PRINT_CMD "$CMD"
 
 	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
-	OUTPUT=$(eval "$CMD -m '$COMMANDLINE'")
+	OUTPUT=$(eval "$CMD -m '$COMMANDLINE'" 2>&1)
 	STATUS=$?
 	
 	if [[ $STATUS -ne 0 ]]; then
+		local UNMERGED_FILES=$(git diff --name-only --diff-filter=U)
+		if [[ -n "$UNMERGED_FILES" ]]; then
+			PRINT_ERR "Stash failed because of conflict markers in files"
+			while IFS= read -r FILE; do
+				echo -e "\e[0;31m  - $FILE\e[0m" >&2
+			done <<< "$UNMERGED_FILES"
+		else
+			PRINT_ERR "Stash failed"
+			echo -e "\e[0;31m$OUTPUT\e[0m" >&2
+		fi
 		ABORT
 	elif [[ "$OUTPUT" == *"Saved working directory"* ]]; then
 		STASH_REF="stash@{0}"
