@@ -1,7 +1,9 @@
 #!/bin/zsh
 
 # git edit – Easily edit commits via interactive rebase
-# usage: `git-edit [-m | --message | -d | --drop | -s | --squash] <commit> [<target>]`
+#
+# usage: `git-edit [-m | --message | -s | --squash] <commit> [<target>]`
+#    or: `git-edit [-d | --drop] <commit>...`
 #
 # This Git command script allows you to edit/modify/merge
 # previous Git commits easily. It essentially is a more
@@ -18,12 +20,12 @@
 # will be unstashed/reapplied.
 #
 # If you want to alter the commit message as well, add the
-# `-m` switch. You can also delete (drop) a commit by using
-# `-d` instead, or merge (fixup/squash) it into another one
-# (defaulting to the previous commit) using `-s`/`--squash`.
-# Whenever two commit hashes are supplied, `-s`/`--squash` is
-# assumed automatically and the older commit becomes the
-# `<target>`.
+# `-m` switch. You can also delete (drop) one or more commits
+# (or ranges) by using `-d`, or merge (fixup/squash) a commit
+# into another one (defaulting to the previous commit) using
+# `-s`/`--squash`. Whenever two commit hashes are supplied,
+# `-s`/`--squash` is assumed automatically and the older commit
+# becomes the `<target>`.
 #
 # Use it as "git edit" by adding its parent folder to your PATH,
 # e.g. by adding this line to ~./zshrc:
@@ -51,10 +53,11 @@ echo -e "\e[1;94mgit edit – Easily edit commits via interactive rebase\e[0m"
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	echo -e "\e[0;94musage: git edit [-m | --message | -d | --drop | -s | --squash] <commit> [<target>]\e[0m"
+	echo -e "\e[0;94musage: git edit [-m | --message | -s | --squash] <commit> [<target>]\e[0m"
+	echo -e "\e[0;94m       git edit [-d | --drop] <commit>...\e[0m"
 	echo -e ""
 	echo -e "\e[0;94m       -m, --message                   Alter <commit> message after editing\e[0m"
-	echo -e "\e[0;94m       -d, --drop                      Just delete (drop) <commit>\e[0m"
+	echo -e "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges\e[0m"
 	echo -e "\e[0;94m       -s, --squash                    Merge (fixup/squash) <commit> into the previous one\e[0m"
 	echo -e "\e[0;94m       -s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>\e[0m"
 }
@@ -89,8 +92,33 @@ PRINT_ACTION () {
 		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
 		ARGS+=("${COMMIT:0:7} (${SUBJECT})")
 	done
+
+	# Count placeholders (assumes %s is the only placeholder type used)
+	local PLACEHOLDERS="${MSG//[^%]}"
 	
-	PRINT_TEXT "$MSG" 36 "${ARGS[@]}"
+	# If we have multiple commits but the message only has one "%s", 
+	# it implies we are listing multiple items for a single action
+	if [[ ${#COMMITS[@]} -gt 1 && ${#PLACEHOLDERS} -eq 1 ]]; then
+		local PREFIX="${MSG%%%s*}" # e.g. "Dropping "
+		local SUFFIX="${MSG#*%s}"  # e.g. "..."
+
+		# Transform "Dropping " -> "Dropping:"
+		local NEW_MSG="${PREFIX% }:"
+
+		# Append a newline and indented placeholder for every commit
+		# We use a C-style loop for robust iteration in Zsh
+		for (( i=0; i<${#COMMITS[@]}; i++ )); do
+			NEW_MSG+="\n  - %s"
+		done
+
+		# Re-attach the suffix (e.g. "...") to the very end
+		NEW_MSG+="$SUFFIX"
+		
+		PRINT_TEXT "$NEW_MSG" 36 "${ARGS[@]}"
+	else
+		# Default behavior for single commits or specific pairs (squash A -> B)
+		PRINT_TEXT "$MSG" 36 "${ARGS[@]}"
+	fi
 }
 
 PRINT_CMD () {
@@ -189,7 +217,7 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 }
 
 GIT_REBASE_DROP () {
-	# Determine if commit has a parent or is the first commit
+	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
 		local CMD=(rebase --no-autostash --interactive "$COMMIT~")
 	else
@@ -197,7 +225,12 @@ GIT_REBASE_DROP () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/drop '"${COMMIT:0:7}"'/"' \
+	local SED_SCRIPT=""
+	local DROP_COMMIT
+	for DROP_COMMIT in "${COMMITS[@]}"; do
+		SED_SCRIPT+=' -e "s/^pick '"${DROP_COMMIT:0:7}"'/drop '"${DROP_COMMIT:0:7}"'/"'
+	done
+	GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT" \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -324,85 +357,138 @@ if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
 	exit 0
 fi
 
-# -m/--message + -d/--drop
+# Conflict checks
 if [ ${#OPT_MESSAGE} -gt 0 -a ${#OPT_DROP} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Options -m/--message and -d/--drop cannot be combined"
 	exit 1
 fi
-# -d/--drop + -s/--squash
 if [ ${#OPT_DROP} -gt 0 -a ${#OPT_SQUASH} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Options -d/--drop and -s/--squash cannot be combined"
 	exit 1
 fi
-# -s[=<target>] / --squash[=<target>]
-if [ ${#OPT_SQUASH} -gt 0 ]; then
-	if [[ "${OPT_SQUASH[1]}" == "-s="* || "${OPT_SQUASH[1]}" == "--squash="* ]]; then
-		TARGET=${OPT_SQUASH[1]#*=}
-	elif [[ ${#OPT_SQUASH} -gt 1 ]]; then
-		if [ $# -ne 0 ]; then
-			# Treat as <target>, since <commit> still follows as a positional
-			TARGET=${OPT_SQUASH[2]}
-		else
-			# Treat as <commit>, since no positionals are left
-			set -- "${OPT_SQUASH[2]}" "$@"
-		fi
-	fi
 
-	# Validate <target> if given
-	if [ -n "$TARGET" ] && ! git rev-parse --quiet --verify "$TARGET^{commit}" >/dev/null 2>&1; then
-		PRINT_ERR "Unknown <target>: $TARGET"
-		exit 1
-	fi
-fi
+COMMITS=()
 
-# <commit> + <target> (for -s/--squash)
-case $# in
-	0)
+# -d/--drop
+if [ ${#OPT_DROP} -gt 0 ]; then
+	if [ $# -eq 0 ]; then
 		USAGE
-		PRINT_ERR "Missing <commit> argument"
+		PRINT_ERR "Missing <commit> argument(s)"
 		exit 1
-		;;
-	1)
-		# No <target> supplied
-		COMMIT=$1
-		shift
-		if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null 2>&1; then
-			PRINT_ERR "Unknown <commit>: $COMMIT"
-			exit 1
-		fi
-		# In "squash" mode, default <target> to the parent of <commit>
-		if [ ${#OPT_SQUASH} -gt 0 ] && [ -z "$TARGET" ]; then
-			if git cat-file -e "${COMMIT}^" 2>/dev/null; then
-				TARGET=$(git rev-parse "${COMMIT}^")
-			else
-				PRINT_ERR "Cannot squash <commit> as it has no parent"
+	fi
+
+	# Parse/expand arguments (commits or ranges)
+	for ARG in "$@"; do
+		# Check if the argument is a standard ".." range (excluding "..." symmetric diff)
+		if [[ "$ARG" == *".."* && "$ARG" != *"..."* ]]; then
+			local S="${${ARG%%..*}:-HEAD}"
+			local E="${${ARG#*..}:-HEAD}"
+
+			# Swap if reversed (newer..older)
+			git merge-base --is-ancestor "$E" "$S" 2>/dev/null && { local T="$S"; S="$E"; E="$T"; }
+
+			# Determine range string (inclusive)
+			local RANGE="$E"
+			git rev-parse -q --verify "$S^" >/dev/null && RANGE="$S^..$E"
+
+			# Validate and append
+			if ! git rev-list "$RANGE" >/dev/null 2>&1; then
+				PRINT_ERR "Invalid commit range: $ARG"
 				exit 1
 			fi
-		fi
-		;;
-	2)
-		# If two hashes were supplied, figure out which commit
-		# is older and make it the <target>
-		if git merge-base --is-ancestor $1 $2 2>/dev/null; then
-			TARGET=$1
-			COMMIT=$2
-		elif git merge-base --is-ancestor $2 $1 2>/dev/null; then
-			TARGET=$2
-			COMMIT=$1
+			COMMITS+=($(git rev-list "$RANGE"))
 		else
-			PRINT_ERR "Unkown <commit> and/or <target>"
+			# Handle single commits
+			if ! git rev-parse --quiet --verify "$ARG" >/dev/null 2>&1; then
+				PRINT_ERR "Unknown <commit>: $ARG"
+				exit 1
+			fi
+			COMMITS+=($(git rev-parse "$ARG"))
+		fi
+	done
+
+	# Abort if no commits were found
+	if [ ${#COMMITS[@]} -eq 0 ]; then
+		PRINT_ERR "No valid commits found."
+		exit 1
+	fi
+
+	# Sort selected commits topologically (oldest first)
+	COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
+
+	# Set the main COMMIT variable to the oldest one (for the rebase base)
+	COMMIT=${COMMITS[1]}
+else
+	# -s[=<target>] / --squash[=<target>]
+	if [ ${#OPT_SQUASH} -gt 0 ]; then
+		if [[ "${OPT_SQUASH[1]}" == "-s="* || "${OPT_SQUASH[1]}" == "--squash="* ]]; then
+			TARGET=${OPT_SQUASH[1]#*=}
+		elif [[ ${#OPT_SQUASH} -gt 1 ]]; then
+			if [ $# -ne 0 ]; then
+				# Treat as <target>, since <commit> still follows as a positional
+				TARGET=${OPT_SQUASH[2]}
+			else
+				# Treat as <commit>, since no positionals are left
+				set -- "${OPT_SQUASH[2]}" "$@"
+			fi
+		fi
+		if [ -n "$TARGET" ] && ! git rev-parse --quiet --verify "$TARGET^{commit}" >/dev/null 2>&1; then
+			PRINT_ERR "Unknown <target>: $TARGET"
 			exit 1
 		fi
-		shift 2
-		;;
-	*)
-		PRINT_ERR "Too many arguments"
-		USAGE
-		exit 1
-		;;
-esac
+	fi
+
+	# <commit> + <target> (for -s/--squash)
+	case $# in
+		0)
+			USAGE
+			PRINT_ERR "Missing <commit> argument"
+			exit 1
+			;;
+		1)
+			# No <target> supplied
+			COMMIT=$1
+			shift
+			if ! git rev-parse --quiet --verify "$COMMIT^{commit}" >/dev/null 2>&1; then
+				PRINT_ERR "Unknown <commit>: $COMMIT"
+				exit 1
+			fi
+			# In "squash" mode, default <target> to the parent of <commit>
+			if [ ${#OPT_SQUASH} -gt 0 ] && [ -z "$TARGET" ]; then
+				if git cat-file -e "${COMMIT}^" 2>/dev/null; then
+					TARGET=$(git rev-parse "${COMMIT}^")
+				else
+					PRINT_ERR "Cannot squash <commit> as it has no parent"
+					exit 1
+				fi
+			fi
+			;;
+		2)
+			# If two hashes were supplied, figure out which commit
+			# is older and make it the <target>
+			if git merge-base --is-ancestor $1 $2 2>/dev/null; then
+				TARGET=$1
+				COMMIT=$2
+			elif git merge-base --is-ancestor $2 $1 2>/dev/null; then
+				TARGET=$2
+				COMMIT=$1
+			else
+				PRINT_ERR "Unknown <commit> and/or <target>"
+				exit 1
+			fi
+			shift 2
+			;;
+		*)
+			PRINT_ERR "Too many arguments"
+			USAGE
+			exit 1
+			;;
+	esac
+
+	COMMITS=($COMMIT)
+fi
 
 # Determine action
 if [ -n "$TARGET" ]; then
@@ -419,7 +505,7 @@ fi
 GIT_STASH
 
 if [[ "$ACTION" == "drop" ]]; then
-	PRINT_ACTION "Dropping %s..." "$COMMIT"
+	PRINT_ACTION "Dropping %s..." "${COMMITS[@]}"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
 	CONTINUE_OR_ABORT

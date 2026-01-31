@@ -5,11 +5,12 @@ This Git subcommand script makes it easy to edit, modify, drop, or merge previou
 ## Usage
 
 ```
-git edit [ -m | --message | -d | --drop | -s | --squash ] <commit> [<target>]
+git-edit [-m | --message | -s | --squash] <commit> [<target>]
+git-edit [-d | --drop] <commit>...
 
 MODES:
 -e, --edit                      Edit <commit> (default mode)
--d, --drop                      Delete (drop) <commit>
+-d, --drop                      Delete (drop) <commit>s or ranges
 -s, --squash                    Merge (fixup/squash) <commit> into the previous one
 -s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>
                                 – also assumed when two commits (<commit> <target>) are supplied
