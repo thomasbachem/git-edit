@@ -126,13 +126,17 @@ GIT_STASH () {
 		fi
 	done
 
+	# Capture current stash SHA (if any) to compare later
+	local OLD_STASH=$(git rev-parse -q --verify refs/stash)
+
 	local CMD="git stash push -u"
 	PRINT_CMD "$CMD"
-
-	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
-	OUTPUT=$(eval "$CMD -m '$COMMANDLINE'" 2>&1)
-	STATUS=$?
+	eval "$CMD -m '$COMMANDLINE'"
+	local STATUS=$?
 	
+	# Capture the new stash SHA
+	local NEW_STASH=$(git rev-parse -q --verify refs/stash)
+
 	if [[ $STATUS -ne 0 ]]; then
 		local UNMERGED_FILES=$(git diff --name-only --diff-filter=U)
 		if [[ -n "$UNMERGED_FILES" ]]; then
@@ -142,10 +146,9 @@ GIT_STASH () {
 			done <<< "$UNMERGED_FILES"
 		else
 			PRINT_ERR "Stash failed"
-			echo -e "\e[0;31m$OUTPUT\e[0m" >&2
 		fi
 		ABORT
-	elif [[ "$OUTPUT" == *"Saved working directory"* ]]; then
+	elif [[ "$OLD_STASH" != "$NEW_STASH" ]]; then
 		STASH_REF="stash@{0}"
 	fi
 }
