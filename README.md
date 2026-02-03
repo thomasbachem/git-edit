@@ -5,15 +5,15 @@ This Git subcommand script makes it easy to edit, modify, drop, or merge previou
 ## Usage
 
 ```
-git-edit [-m | --message | -s | --squash] <commit> [<target>]
-git-edit [-d | --drop] <commit>...
+git-edit [-m | --message] <commit>
+git-edit [-d | --drop | -s | --squash] <commit>...
 
 MODES:
 -e, --edit                      Edit <commit> (default mode)
--d, --drop                      Delete (drop) <commit>s or ranges
--s, --squash                    Merge (fixup/squash) <commit> into the previous one
--s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>
-                                – also assumed when two commits (<commit> <target>) are supplied
+-d, --drop                      Delete (drop) one or more <commit>s or ranges
+-s, --squash                    Merge (fixup/squash) one or more <commit>s into the oldest one
+-s <target>, --squash <target>  Merge (fixup/squash) <commit>s into <target>
+                                – also assumed when multiple commits are supplied
 FLAGS:
 -m, --message                   Alter <commit> message after applying changes
 ```
@@ -36,14 +36,16 @@ This will:
 
 ### Merging
 
-Merge two commits, keeping only the target commit's message (or add `-m` to also edit the message):
+Merge multiple commits into the oldest one among them, keeping only the target commit's message (or add `-m` to also edit the message):
 ```
 git edit 0123456789abcdef0123456789abcdef01234567 abcdef0123456789abcdef0123456789abcdef01
 ```
+*Note:* You can also use ranges (e.g., `git edit HEAD~3..HEAD`).
+
 This will:
 1. Stash any current local changes
-2. Determine the older of the two commits, making it the target
-3. **Merge the newer commit into it**
+2. Determine the oldest of the provided commits, making it the target
+3. **Merge the newer commits into it**
 4. Continue the rebase (pausing if merge conflicts occur so you can resolve them)
 5. Restore your stashed changes
 
