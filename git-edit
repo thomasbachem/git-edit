@@ -466,16 +466,26 @@ else
 			fi
 			;;
 		2)
+			# Validate both arguments are real commits first
+			if ! git rev-parse --quiet --verify "$1^{commit}" >/dev/null 2>&1; then
+				PRINT_ERR "Unknown <commit>: $1"
+				exit 1
+			fi
+			if ! git rev-parse --quiet --verify "$2^{commit}" >/dev/null 2>&1; then
+				PRINT_ERR "Unknown <commit>: $2"
+				exit 1
+			fi
+
 			# If two hashes were supplied, figure out which commit
 			# is older and make it the <target>
-			if git merge-base --is-ancestor $1 $2 2>/dev/null; then
+			if git merge-base --is-ancestor "$1" "$2" 2>/dev/null; then
 				TARGET=$1
 				COMMIT=$2
-			elif git merge-base --is-ancestor $2 $1 2>/dev/null; then
+			elif git merge-base --is-ancestor "$2" "$1" 2>/dev/null; then
 				TARGET=$2
 				COMMIT=$1
 			else
-				PRINT_ERR "Unknown <commit> and/or <target>"
+				PRINT_ERR "Commits $1 and $2 are unrelated (neither is an ancestor of the other)"
 				exit 1
 			fi
 			shift 2
