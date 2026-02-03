@@ -187,8 +187,13 @@ GIT_STASH () {
 
 GIT_UNSTASH () {
 	if [ -n "$STASH_REF" ]; then
-		local CMD="git stash pop"
-		PRINT_CMD "$CMD"
+		# Override color config just for this command:
+		# - added (staged)     -> normal (removes green from successful merges)
+		# - changed (unstaged) -> normal (removes red from standard mods)
+		# - untracked          -> normal (removes red from new files)
+		# - unmerged           -> red    (keeps critical conflicts red)
+		local CMD="git -c color.status.added=normal -c color.status.changed=normal -c color.status.untracked=normal -c color.status.unmerged=red stash pop"
+		PRINT_CMD "git stash pop"
 
 		eval "$CMD '$STASH_REF'"
 		unset STASH_REF
