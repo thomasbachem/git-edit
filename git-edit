@@ -311,8 +311,13 @@ GIT_REBASE_CONTINUE () {
 	local CMD="git rebase $SUBCMD"
 	PRINT_CMD "$CMD"
 
-	GIT_EDITOR=true \
-	GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
+	# Only use the interactive editor if we are in "squash" mode AND `-m` was passed
+	if [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
+		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
+	else
+		GIT_EDITOR=true \
+		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
+	fi
 }
 
 GIT_REBASE_ABORT () {
