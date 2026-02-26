@@ -331,17 +331,26 @@ GIT_REBASE_ABORT () {
 }
 
 CONTINUE_OR_ABORT () {
+	# Temporarily trap termination signals while awaiting user input
+	trap "ABORT" INT TERM QUIT HUP
+
 	while true; do
 		IFS= read -rs -k1 KEY
 		case $KEY in
-			''|$'\r'|$'\n') break ;;
-			$'\e')          ABORT ;;
-			*)              echo "Unknown key, try again." ;;
+			''|$'\r'|$'\n')         break ;;
+			$'\e'|$'\003'|$'\004')  ABORT ;; # Escape, Ctrl+C, or Ctrl+D
+			*)                      echo "Unknown key, try again." ;;
 		esac
 	done
+
+	# Disable the trap to prevent interference with Git processes or text editors
+	trap - INT TERM QUIT HUP
 }
 
 ABORT () {
+	# Unregister traps immediately to prevent recursive execution on repeated signals
+	trap - INT TERM QUIT HUP
+
 	GIT_REBASE_ABORT
 
 	GIT_UNSTASH
