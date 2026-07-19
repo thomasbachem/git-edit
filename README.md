@@ -132,6 +132,21 @@ What happens internally:
 
 Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits. Nothing is consumed until the final CAS lands: on any failure or `--abort`, your staged changes are simply still staged, ready for a retry — there is nothing to roll back. On success, the amended commit's `--stat` is printed so no follow-up `git show` is needed.
 
+#### Automatic target discovery (`--amend-into=auto`)
+
+The typical fold targets the newest unpushed commit that last touched the staged files — `auto` resolves exactly that, so the caller skips the `git log` lookup:
+
+```
+git add <files>
+git edit --amend-into=auto
+```
+
+Resolution is conservative: every staged path with history must agree on a single unpushed target (new files follow that consensus). Anything else refuses with the per-path candidate list — which is the same lookup an explicit invocation would have needed, so even a refusal costs nothing:
+
+- Paths pointing at **different** commits → refusal listing `path -> sha (subject)` per path.
+- A path last touched by a **pushed** commit → refusal (its history lies beyond the rewrite horizon).
+- Only new files staged → refusal (no history to infer from).
+
 #### Conflict resolution (`--continue` / `--abort`)
 
 If the autosquash hits a merge conflict (the agent's change overlaps with a later commit that also modifies the same lines), the script doesn't auto-rollback. Instead it pauses, mirroring `git rebase`'s own pause-on-conflict pattern, and prints actionable detail:

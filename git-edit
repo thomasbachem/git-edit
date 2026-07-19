@@ -98,7 +98,7 @@ USAGE () {
 	echo -e "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	echo -e "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
-	echo -e "\e[0;94m       git edit --amend-into=<sha>                          # fold staged changes into <sha>\e[0m"
+	echo -e "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
 	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	echo -e "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
@@ -963,6 +963,62 @@ GIT_AMEND_INTO () {
 	# Export new HEAD + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
 	AMEND_REF=$REF
+}
+
+# Resolves `--amend-into=auto`: the newest unpushed commit touching the
+# staged paths. Conservative – every staged path with history must agree on
+# one target; paths with no history (new files) follow that consensus. Each
+# refusal lists the per-path candidates – exactly the lookup an explicit
+# invocation would have needed anyway.
+_RESOLVE_AMEND_TARGET () {
+	local -a PATHS
+	PATHS=("${(@f)$(git diff --cached --name-only)}")
+	if [ -z "${PATHS[1]}" ]; then
+		PRINT_ERR "No staged changes to amend"
+		echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		exit 1
+	fi
+
+	local P C
+	local -a CAND_LINES
+	local CANDIDATE=""
+	local MULTIPLE=false
+	for P in "${PATHS[@]}"; do
+		C=$(git log -1 --format=%H HEAD -- "$P" 2>/dev/null)
+		if [ -z "$C" ]; then
+			# New file – follows the consensus of the paths with history
+			continue
+		fi
+		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
+			PRINT_ERR "Cannot auto-target: '$P' was last touched by a pushed commit (${C:0:7})"
+			echo -e "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
+			exit 1
+		fi
+		CAND_LINES+=("  $P -> ${C:0:7} ($(git log -1 --format=%s "$C"))")
+		if [ -z "$CANDIDATE" ]; then
+			CANDIDATE=$C
+		elif [ "$C" != "$CANDIDATE" ]; then
+			MULTIPLE=true
+		fi
+	done
+
+	if [ -z "$CANDIDATE" ]; then
+		PRINT_ERR "Cannot auto-target: no staged path has unpushed history"
+		echo -e "\e[0;31m  All staged paths are new files – pass an explicit --amend-into=<sha>.\e[0m" >&2
+		exit 1
+	fi
+	if [ "$MULTIPLE" = "true" ]; then
+		PRINT_ERR "Cannot auto-target: staged paths point at different commits"
+		local LINE
+		for LINE in "${CAND_LINES[@]}"; do
+			echo -e "\e[0;31m$LINE\e[0m" >&2
+		done
+		echo -e "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
+		exit 1
+	fi
+
+	echo -e "\e[0;90mauto-target: newest unpushed commit touching ${#PATHS[@]} staged path(s)\e[0m"
+	AMEND_INTO_TARGET=$CANDIDATE
 }
 
 # Prints the amended commit's stat after a completed --amend-into, so the
@@ -2083,6 +2139,35 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "reports idle" '^git-edit: ok — no operation in flight'
 
+	# --- 15. amend-into=auto: consensus target, new file follows ---
+	echo -e "\e[1;96m[15] amend-into=auto\e[0m"
+	echo "em" > m.txt && git add m.txt && git commit -qm "M commit"
+	echo "en" > n.txt && git add n.txt && git commit -qm "N commit"
+	echo "em2" > m.txt && git add m.txt
+	echo "new" > p.txt && git add p.txt
+	_ST_RUN --amend-into=auto
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "names auto-target" 'auto-target'
+	_ST_EQ "fold landed in M" "$(git show 'HEAD~1:m.txt')" "em2"
+	_ST_CHECK "new file followed consensus" git cat-file -e 'HEAD~1:p.txt'
+
+	# --- 16. auto refuses ambiguous targets ---
+	echo -e "\e[1;96m[16] auto ambiguity refusal\e[0m"
+	echo "em3" > m.txt && echo "en3" > n.txt
+	git add m.txt n.txt
+	_ST_RUN --amend-into=auto
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "lists candidates" 'different commits'
+	git reset -q && git checkout -q -- m.txt n.txt
+
+	# --- 17. auto refuses pushed-only history ---
+	echo -e "\e[1;96m[17] auto pushed-history refusal\e[0m"
+	echo "beta2" > b.txt && git add b.txt
+	_ST_RUN --amend-into=auto
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'pushed commit'
+	git reset -q && git checkout -q -- b.txt
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -2358,6 +2443,10 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		USAGE
 		PRINT_ERR "--amend-into takes no positional arguments (target is the flag's value)"
 		exit 1
+	fi
+	# `auto` resolves to the newest unpushed commit touching the staged paths
+	if [ "$AMEND_INTO_TARGET" = "auto" ]; then
+		_RESOLVE_AMEND_TARGET
 	fi
 	# Verify target is a valid commit ref
 	if ! git rev-parse --quiet --verify "$AMEND_INTO_TARGET^{commit}" >/dev/null 2>&1; then
