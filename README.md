@@ -189,6 +189,16 @@ Conflicts can cascade — resolving one may surface another when the rebase cont
 
 State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
 
+### Splitting a Commit by Pathspec (`--split`)
+
+When a commit mixed two concerns in **different files**, extract one of them into its own commit:
+
+```
+git edit --split=<sha> --text="Extracted: the icons" -- src/svg/
+```
+
+The commit becomes two: first the extracted commit (pathspec-matched changes, message from `--text`), then a commit with the original message carrying the rest — both keeping the original author and date, with descendants rebuilt on top. Pure plumbing: no worktree, no rebase, **no conflicts possible** — the trees are composed directly from the original blobs (binary files and mode changes come along natively), and the tip tree is unchanged by construction. The pathspec must match a nonempty, proper subset of the commit's changes; same-file mixed concerns can't be split this way (that requires hunk-level interaction).
+
 ### Reordering Commits (`--reorder`)
 
 Pass a contiguous span of commits in the **desired new order** (oldest-first):

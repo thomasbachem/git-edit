@@ -99,6 +99,7 @@ USAGE () {
 	echo -e "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
 	echo -e "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
+	echo -e "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
 	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	echo -e "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
@@ -1033,6 +1034,118 @@ _PRINT_AMENDED_SUMMARY () {
 		PRINT_TEXT "%s" 32 "Amended commit:"
 	fi
 	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+}
+
+# Splits a commit by pathspec into two, via plumbing only: an extracted
+# commit carrying the pathspec-matched changes (message from --text), then a
+# commit with the original message carrying the rest. No worktree, no rebase,
+# no conflicts possible – trees are composed directly, descendants rebuilt,
+# and the ref updated in one CAS. Same-file mixed concerns can't be split
+# this way (that needs hunk-level interaction); different-file mixes can.
+GIT_SPLIT () {
+	local -a PATHSPECS
+	PATHSPECS=("$@")
+	local X=$SPLIT_TARGET
+
+	# Capture the ref to update
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local REF
+	if [ -n "$BRANCH" ]; then
+		REF="refs/heads/$BRANCH"
+	else
+		REF="HEAD"
+	fi
+
+	if ! git merge-base --is-ancestor "$X" HEAD 2>/dev/null; then
+		PRINT_ERR "Commit ${X:0:7} is not reachable from HEAD"
+		exit 1
+	fi
+	if ! git rev-parse --verify "$X^" >/dev/null 2>&1; then
+		PRINT_ERR "Cannot split the initial commit"
+		exit 1
+	fi
+	local P_LIST=$(git log -1 --format='%P' "$X")
+	if [[ "$P_LIST" == *" "* ]]; then
+		PRINT_ERR "Cannot split merge commit ${X:0:7}"
+		exit 1
+	fi
+
+	_GUARD_UNPUSHED "$X"
+
+	# The pathspec must match a nonempty, proper subset of the commit's changes
+	local -a ALL_FILES MATCHED
+	ALL_FILES=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X")}")
+	MATCHED=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X" -- "${PATHSPECS[@]}")}")
+	if [ -z "${MATCHED[1]}" ]; then
+		PRINT_ERR "Pathspec matches no changes in ${X:0:7}"
+		exit 1
+	fi
+	if [ ${#MATCHED[@]} -eq ${#ALL_FILES[@]} ]; then
+		PRINT_ERR "Pathspec covers every change in ${X:0:7} – nothing to split off"
+		exit 1
+	fi
+
+	# Extracted tree: the parent's tree with the matched paths at the commit's
+	# versions, composed in a temp index from `diff-tree`'s exact blobs (no
+	# patch application, so binary files and mode changes come along natively)
+	local TMPIDX=$(mktemp -t git-edit-split-idx.XXXXXX)
+	rm -f "$TMPIDX"
+	GIT_INDEX_FILE=$TMPIDX git read-tree "$X^" || { rm -f "$TMPIDX"; exit 1; }
+	local META PATHNAME DSTMODE DSTSHA
+	while IFS=$'\t' read -r META PATHNAME; do
+		DSTMODE=$(echo "$META" | awk '{print $2}')
+		DSTSHA=$(echo "$META" | awk '{print $4}')
+		if [ "$DSTMODE" = "000000" ]; then
+			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+		else
+			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+		fi
+	done < <(git diff-tree -r "$X^" "$X" -- "${PATHSPECS[@]}")
+	local TREE1=$(GIT_INDEX_FILE=$TMPIDX git write-tree)
+	rm -f "$TMPIDX"
+	[ -z "$TREE1" ] && { PRINT_ERR "Failed to compose the extracted tree"; exit 1; }
+
+	# Both halves keep the original author + date
+	local AN=$(git log -1 --format='%an' "$X")
+	local AE=$(git log -1 --format='%ae' "$X")
+	local AD=$(git log -1 --format='%aI' "$X")
+	local X_MSG=$(git log -1 --format='%B' "$X")
+
+	local C1=$(
+		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
+		git commit-tree "$TREE1" -p "$X^" -m "$TEXT_VALUE"
+	) || ABORT
+	local C2=$(
+		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
+		git commit-tree "$X^{tree}" -p "$C1" -m "$X_MSG"
+	) || ABORT
+	PRINT_CMD "git commit-tree ... -> ${C1:0:7} + ${C2:0:7}  # split ${X:0:7}"
+
+	# Rebuild descendants on top of the remainder commit
+	PREV_OLD=$X
+	PREV_NEW=$C2
+	_REBUILD_DESCENDANTS "$X"
+
+	# Atomic CAS ref update
+	local CMD="git update-ref -m 'git edit: split ${X:0:7}' $REF $PREV_NEW $ORIG_HEAD"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' moved during split – refusing to overwrite"
+		PRINT_TEXT "Split history is at %s (not applied)." 33 "$PREV_NEW"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "split ${X:0:7}"
+
+	# The remainder keeps the commit's full tree and descendants keep theirs,
+	# so the tip tree is identical by construction – stated so callers don't
+	# re-verify with a diff
+	PRINT_TEXT "%s – split into:" 32 "Tip tree unchanged by construction ✓"
+	git show --stat --format='  %h %s' "$C1" | head -8 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$C2" | head -8 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+
+	SPLIT_NEW_HEAD=$PREV_NEW
+	SPLIT_REF=$REF
 }
 
 # Reorders a contiguous span of commits. The positional args give the desired
@@ -2168,6 +2281,25 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the reason" 'pushed commit'
 	git reset -q && git checkout -q -- b.txt
 
+	# --- 18. split by pathspec ---
+	echo -e "\e[1;96m[18] split\e[0m"
+	echo "s1" > s1.txt && echo "s2" > s2.txt
+	git add s1.txt s2.txt && git commit -qm "S mixed commit"
+	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
+	_ST_RUN --split="$(git rev-parse HEAD)" --text="S extracted" -- s1.txt
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
+	_ST_EQ "tip keeps original message" "$(git log --format=%s -1)" "S mixed commit"
+	_ST_EQ "extracted commit below it" "$(git log --format=%s -2 | tail -1)" "S extracted"
+	_ST_CHECK "extracted has s1" git cat-file -e 'HEAD~1:s1.txt'
+	_ST_CHECK "extracted lacks s2" sh -c "! git cat-file -e 'HEAD~1:s2.txt'"
+	_ST_RUN --split="$(git rev-parse HEAD)" --text="x" -- nomatch.txt
+	_ST_CHECK "refuses non-matching pathspec" test "$RC" != "0"
+	_ST_RUN --split="$(git rev-parse HEAD~1)" --text="x" -- s1.txt
+	_ST_CHECK "refuses whole-commit pathspec" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'covers every change'
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -2198,7 +2330,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -reorder=OPT_REORDER -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -2358,17 +2490,17 @@ if [ ${#OPT_RESQUASH} -gt 0 ] && [ ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o
 	PRINT_ERR "Option -S/--resquash cannot be combined with -d/-s/-C (resquash uses plumbing only; for non-contiguous squashes use -s with -C)"
 	exit 1
 fi
-if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 ]; then
+if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --exec cannot be combined with other modes (--exec is its own mode and manages its own isolated worktree)"
 	exit 1
 fi
-if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 ]; then
+if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_SPLIT} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
 	exit 1
 fi
-if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 ]; then
+if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --reorder cannot be combined with other modes (it manages its own isolated worktree)"
 	exit 1
@@ -2456,6 +2588,44 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 	PRINT_ACTION "Amending staged changes into %s..." "$AMEND_INTO_TARGET"
 	GIT_AMEND_INTO
 	PRINT_COMPLETED "$AMEND_NEW_HEAD" "$AMEND_REF" true
+	exit 0
+fi
+
+# --split dispatches early as well: positional args are pathspecs, not commits
+if [ ${#OPT_SPLIT} -gt 0 ]; then
+	if [[ ${#OPT_SPLIT} -gt 1 && -n "${OPT_SPLIT[2]}" ]]; then
+		SPLIT_TARGET="${OPT_SPLIT[2]#=}"
+	fi
+	if [ -z "$SPLIT_TARGET" ]; then
+		USAGE
+		PRINT_ERR "--split requires a <sha> value (e.g., --split=abc123)"
+		exit 1
+	fi
+	if [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_REORDER} -gt 0 ]; then
+		USAGE
+		PRINT_ERR "Option --split cannot be combined with other modes"
+		exit 1
+	fi
+	if [ "$1" = "--" ]; then
+		shift
+	fi
+	if [ $# -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--split requires a pathspec (use -- to separate it from flags)"
+		exit 1
+	fi
+	if [ -z "$TEXT_VALUE" ]; then
+		PRINT_ERR "--split requires --text for the extracted commit's message"
+		exit 1
+	fi
+	if ! git rev-parse --quiet --verify "$SPLIT_TARGET^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <sha>: $SPLIT_TARGET"
+		exit 1
+	fi
+	SPLIT_TARGET=$(git rev-parse "$SPLIT_TARGET^{commit}")
+	PRINT_ACTION "Splitting %s..." "$SPLIT_TARGET"
+	GIT_SPLIT "$@"
+	PRINT_COMPLETED "$SPLIT_NEW_HEAD" "$SPLIT_REF" true
 	exit 0
 fi
 
