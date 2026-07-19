@@ -48,19 +48,84 @@
 # (required for `$?` to work in conjunction with `tee` below)
 set -o pipefail
 
-echo -e "\e[1;94mgit edit – Easily edit commits via interactive rebase\e[0m"
+echo -e "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
+
+# Global cleanup hook (any sub-operation that needs cleanup on exit can set
+# this to a shell command). Runs once on script exit, before the error
+# trailer. Used by GIT_EXEC for temp-worktree cleanup, and by auto-isolation
+# for the per-invocation tmp worktree.
+_CLEANUP_HOOK=""
+
+# Tracks whether a status trailer was emitted (success, abort, conflict) so
+# the global trap doesn't double-emit an `error …` line on top of an
+# explicit `ok …` or `conflict …` trailer.
+_STATUS_EMITTED=false
+
+# Captures the last message passed to PRINT_ERR, so the global exit trap can
+# include the actual error reason in the trailer line — saving agents from
+# having to scrape stderr for context when the operation failed.
+_LAST_ERROR=""
+
+# Global EXIT trap. Runs the cleanup hook (if any), then emits a stable
+# machine-readable error trailer (matching the format of the success trailer
+# `git-edit: ok …`) so agents can grep `^git-edit:` for either outcome with
+# a single parse rule.
+_GLOBAL_EXIT_TRAP () {
+	local CODE=$?
+	if [ -n "$_CLEANUP_HOOK" ]; then
+		eval "$_CLEANUP_HOOK" 2>/dev/null
+		_CLEANUP_HOOK=""
+	fi
+	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
+		if [ -n "$_LAST_ERROR" ]; then
+			echo "git-edit: error — $_LAST_ERROR"
+		else
+			echo "git-edit: error — exit code $CODE"
+		fi
+	fi
+}
+trap '_GLOBAL_EXIT_TRAP' EXIT
 
 
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	echo -e "\e[0;94musage: git edit [-m | --message | -s | --squash] <commit> [<target>]\e[0m"
-	echo -e "\e[0;94m       git edit [-d | --drop] <commit>...\e[0m"
+	echo -e "\e[0;94musage: git edit <commit>                                    # edit a commit (default)\e[0m"
+	echo -e "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
+	echo -e "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
+	echo -e "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
+	echo -e "\e[0;94m       git edit [-M | --reword] [--text <msg>] <commit>\e[0m"
+	echo -e "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
+	echo -e "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
+	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
+	echo -e "\e[0;94m       git edit --amend-into=<sha>                          # fold staged changes into <sha>\e[0m"
+	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	echo -e ""
-	echo -e "\e[0;94m       -m, --message                   Alter <commit> message after editing\e[0m"
+	echo -e "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
+	echo -e "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
 	echo -e "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges\e[0m"
-	echo -e "\e[0;94m       -s, --squash                    Merge (fixup/squash) <commit> into the previous one\e[0m"
-	echo -e "\e[0;94m       -s <target>, --squash <target>  Merge (fixup/squash) <commit> into <target>\e[0m"
+	echo -e "\e[0;94m       -s, --squash                    Merge <commit>s into the oldest (auto-routes to plumbing when eligible)\e[0m"
+	echo -e "\e[0;94m       -s=<target>, --squash=<target>  Merge <commit>s into <target> (explicit target)\e[0m"
+	echo -e "\e[0;94m       -S, --resquash                  Strict squash: plumbing only; errors instead of falling back to rebase\e[0m"
+	echo -e "\e[0;94m       -C, --dir                       Run in a separate worktree (default: <repo>.git-edit)\e[0m"
+	echo -e "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
+	echo -e "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
+	echo -e "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
+	echo -e "\e[0;94m       --amend-into=<sha>              Fold currently-staged changes (in main) into <sha>\e[0m"
+	echo -e "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS)\e[0m"
+	echo -e "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
+	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
+	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
+	echo -e "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S (skip editor); '-' reads stdin\e[0m"
+	echo -e "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
+	echo -e ""
+	echo -e "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
+	echo -e "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
+	echo -e "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict>'):\e[0m"
+	echo -e "\e[0;94m         git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>\e[0m"
+	echo -e "\e[0;94m         git-edit: ok — refs/heads/main unchanged\e[0m"
+	echo -e "\e[0;94m         git-edit: error — exit code <N>\e[0m"
+	echo -e "\e[0;94m         git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
 }
 
 PRINT_TEXT () {
@@ -126,17 +191,22 @@ PRINT_ACTION () {
 }
 
 PRINT_CMD () {
-	# First arg is the full command string to be printed
+	# First arg is the full command string to be printed.
+	# Optional second arg overrides the color (default 90 = gray, matching
+	# the trailing color used for the executed command's own output).
 	local CMD="$1"
+	local COLOR="${2:-90}"
 
 	# Filter `--no-autostash` arg when printing commands
 	local CMD_FILTERED=$(echo "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
 
-	echo -e "\n\e[0;97m$CMD_FILTERED\e[0;90m"
+	echo -e "\n\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
 }
 
 PRINT_ERR () {
 	local MSG="$1"
+	# Remember the message for the status trailer in _GLOBAL_EXIT_TRAP
+	_LAST_ERROR="$MSG"
 
 	if [[ "$MSG" == *:* ]]; then
 		local PREFIX="${MSG%%:*}"
@@ -144,6 +214,128 @@ PRINT_ERR () {
 		echo -e "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
 	else
 		echo -e "\n\e[1;91m${MSG}\e[0m" >&2
+	fi
+}
+
+# Emit a single trailing line in a stable, ANSI-free, key=value format for
+# machine consumption (e.g., agents grep'ing `^git-edit:`). Always the very
+# last line of output on success.
+# Single-line status trailer in natural-language form (still anchored by
+# `git-edit: <outcome>` for programmatic dispatch). Three forms:
+#   git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
+#   git-edit: ok — refs/heads/main unchanged
+#   git-edit: error — exit code <N>
+#   git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
+# Agents grep `^git-edit: (ok|error|conflict)` to dispatch, and the rest is
+# self-explanatory prose.
+EMIT_STATUS () {
+	# args: <new_head_sha> <ref> <changed:true|false>
+	if [ "$3" = "true" ]; then
+		echo "git-edit: ok — $2 moved $SCRIPT_INITIAL_HEAD → $1"
+	else
+		echo "git-edit: ok — $2 unchanged"
+	fi
+	_STATUS_EMITTED=true
+}
+
+EMIT_CONFLICT () {
+	# Args: <worktree-path> [<unmerged-files-comma-separated>]
+	local FILES_PART=""
+	if [ -n "$2" ]; then
+		# Replace commas with ", " for readability
+		FILES_PART=" ($(echo "$2" | sed 's/,/, /g'))"
+	fi
+	echo "git-edit: conflict — resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
+	_STATUS_EMITTED=true
+}
+
+# Print human-readable conflict context: which files are unmerged, which
+# rebase step we paused on, and what steps remain. Helps the agent decide
+# whether one resolution will suffice or cascade is likely. Echoes a
+# comma-separated unmerged-files list to stdout for the caller to forward
+# into the trailer; all other output goes to stderr.
+_PRINT_CONFLICT_DETAIL () {
+	local WT=$1
+	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
+
+	# Unmerged paths (files with conflict markers)
+	local UNMERGED
+	UNMERGED=$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)
+	if [ -n "$UNMERGED" ]; then
+		PRINT_TEXT "Conflicted files:" 33 >&2
+		local FILE
+		while IFS= read -r FILE; do
+			echo -e "\e[0;33m  - $FILE\e[0m" >&2
+		done <<< "$UNMERGED"
+	fi
+
+	# Currently-failing rebase step (last line of the done log)
+	if [ -f "$GITDIR/rebase-merge/done" ]; then
+		local LAST_STEP
+		LAST_STEP=$(tail -1 "$GITDIR/rebase-merge/done" 2>/dev/null)
+		if [ -n "$LAST_STEP" ]; then
+			PRINT_TEXT "Currently failing on:" 33 >&2
+			echo -e "\e[0;33m  $LAST_STEP\e[0m" >&2
+		fi
+	fi
+
+	# Remaining rebase steps (after the conflict resolves)
+	if [ -f "$GITDIR/rebase-merge/git-rebase-todo" ]; then
+		local REMAINING
+		REMAINING=$(grep -vE '^(#|$)' "$GITDIR/rebase-merge/git-rebase-todo" 2>/dev/null)
+		if [ -n "$REMAINING" ]; then
+			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
+			local STEP
+			while IFS= read -r STEP; do
+				echo -e "\e[0;33m  $STEP\e[0m" >&2
+			done <<< "$REMAINING"
+		fi
+	fi
+
+	# Emit comma-separated unmerged list on stdout for the trailer
+	echo "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
+}
+
+# Best-effort detection of the canonical ref name to report. Uses ORIG_BRANCH
+# if set (e.g., -C mode captures it before cd-ing into a detached worktree),
+# otherwise resolves the current symbolic ref. Falls back to "HEAD" for
+# truly-detached state.
+_CURRENT_REF () {
+	if [ -n "$ORIG_BRANCH" ]; then
+		echo "refs/heads/$ORIG_BRANCH"
+		return
+	fi
+	local B=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -n "$B" ]; then
+		echo "refs/heads/$B"
+	else
+		echo "HEAD"
+	fi
+}
+
+# Convenience helper to print the success banner + status trailer together.
+PRINT_COMPLETED () {
+	# args: <new_head_sha> <ref> <changed:true|false>
+	echo -e "\n\e[1;92mgit edit completed.\e[0m"
+	EMIT_STATUS "$1" "$2" "$3"
+}
+
+# After a worktree-isolated rewrite, the main checkout still reflects the
+# pre-rewrite tree. Print the right command(s) to bring it into sync — a
+# bare `git reset --hard` is safe when the checkout was clean at script
+# start, but would clobber uncommitted WIP otherwise, so we suggest a
+# stash/reset/pop dance. Depends on $SCRIPT_INITIAL_HAS_WIP, captured in
+# the argument-parsing section before any modification.
+_PRINT_REWRITE_APPLY_HINT () {
+	# args: <branch-name>
+	local BRANCH="$1"
+	if [ -z "$SCRIPT_INITIAL_HAS_WIP" ]; then
+		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
+	else
+		PRINT_TEXT "Branch %s rewritten – your main checkout has uncommitted changes, so apply with:" 32 "$BRANCH"
+		echo -e "\e[1;92m  git stash push -u -m 'wip before git-edit'\e[0m"
+		echo -e "\e[1;92m  git reset --hard\e[0m"
+		echo -e "\e[1;92m  git stash pop\e[0m"
 	fi
 }
 
@@ -207,14 +399,82 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
-			PRINT_TEXT "%s – Resolve them and press %s to continue, or %s to cancel editing." 33 "Merge conflicts" "Enter" "Escape"
-			CONTINUE_OR_ABORT
+			# In non-TTY contexts (Claude Code, CI, piped stdin) there's no
+			# one to resolve the conflict, and CONTINUE_OR_ABORT's empty read
+			# would silently auto-proceed – staging files with conflict markers
+			# still in them and committing a broken state. Abort cleanly instead.
+			if _IS_NON_INTERACTIVE; then
+				PRINT_ERR "Merge conflict during non-interactive run – cannot resolve from non-TTY"
+				echo -e "\e[0;31m  Re-run interactively to resolve, or use --exec for full control over the rebase.\e[0m" >&2
+				ABORT
+			fi
+			# Identify two commits to name in the prompt:
+			#  - the "anchor": the user's mental subject (TARGET for squash,
+			#    COMMIT for edit) — what they're modifying;
+			#  - the "failing": REBASE_HEAD, the commit currently being applied
+			#    that conflicted (the squashed-in commit on fixup, or a later
+			#    commit being replayed after the user's edit).
+			# Name both when distinct: "in <anchor> while applying <failing>".
+			# Fall back to whichever is available (drop mode has no single
+			# anchor; an old git might not expose REBASE_HEAD); empty if
+			# neither, preserving the original prompt wording.
+			local _ANCHOR_FULL="" _FAILING_FULL=""
+			case "$ACTION" in
+				squash) _ANCHOR_FULL=$(git rev-parse "$TARGET" 2>/dev/null) ;;
+				edit)   _ANCHOR_FULL=$(git rev-parse "$COMMIT" 2>/dev/null) ;;
+			esac
+			_FAILING_FULL=$(git rev-parse REBASE_HEAD 2>/dev/null)
+
+			local _ANCHOR_LABEL="" _FAILING_LABEL=""
+			local _SHA _SUB
+			if [ -n "$_ANCHOR_FULL" ]; then
+				_SHA=$(git rev-parse --short "$_ANCHOR_FULL" 2>/dev/null)
+				_SUB=$(git log -1 --pretty=format:'%s' "$_ANCHOR_FULL" 2>/dev/null)
+				if [ -n "$_SUB" ]; then _ANCHOR_LABEL="$_SHA ($_SUB)"; else _ANCHOR_LABEL="$_SHA"; fi
+			fi
+			if [ -n "$_FAILING_FULL" ]; then
+				_SHA=$(git rev-parse --short "$_FAILING_FULL" 2>/dev/null)
+				_SUB=$(git log -1 --pretty=format:'%s' "$_FAILING_FULL" 2>/dev/null)
+				if [ -n "$_SUB" ]; then _FAILING_LABEL="$_SHA ($_SUB)"; else _FAILING_LABEL="$_SHA"; fi
+			fi
+
+			# Phrase the description so the failing commit is the active
+			# subject and the anchor is the destination/context — saying
+			# "in <anchor>" misleads the reader into thinking the target
+			# itself raised the conflict, when in fact the target applied
+			# cleanly and it's the fold-in / replay that couldn't.
+			local CONFLICTING_DESC=""
+			if [ -n "$_ANCHOR_FULL" ] && [ -n "$_FAILING_FULL" ] && [ "$_ANCHOR_FULL" != "$_FAILING_FULL" ]; then
+				case "$ACTION" in
+					squash) CONFLICTING_DESC=" applying $_FAILING_LABEL into $_ANCHOR_LABEL" ;;
+					edit)   CONFLICTING_DESC=" applying $_FAILING_LABEL, after editing $_ANCHOR_LABEL" ;;
+					*)      CONFLICTING_DESC=" applying $_FAILING_LABEL" ;;
+				esac
+			elif [ -n "$_FAILING_LABEL" ]; then
+				CONFLICTING_DESC=" applying $_FAILING_LABEL"
+			elif [ -n "$_ANCHOR_LABEL" ]; then
+				CONFLICTING_DESC=" with $_ANCHOR_LABEL"
+			fi
+
+			if [ -n "$WORKTREE_DIR" ]; then
+				if [ "$AUTO_OPEN_EDITOR" = "true" ]; then
+					_OPEN_WORKTREE_IN_EDITOR
+					PRINT_TEXT "%s%s – resolve in %s (opened in %s), then press %s to continue, %s to re-open, or %s to cancel." 33 "Merge conflicts" "$CONFLICTING_DESC" "$WORKTREE_DIR" "$OPEN_EDITOR_NAME" "Enter" "Space" "Escape"
+				elif [ -n "$OPEN_EDITOR_CMD" ]; then
+					PRINT_TEXT "%s%s – press %s to open %s in %s, %s to continue after resolving, or %s to cancel." 33 "Merge conflicts" "$CONFLICTING_DESC" "Space" "$WORKTREE_DIR" "$OPEN_EDITOR_NAME" "Enter" "Escape"
+				else
+					PRINT_TEXT "%s%s – resolve in %s, then press %s to continue, or %s to cancel editing." 33 "Merge conflicts" "$CONFLICTING_DESC" "$WORKTREE_DIR" "Enter" "Escape"
+				fi
+			else
+				PRINT_TEXT "%s%s – Resolve them and press %s to continue, or %s to cancel editing." 33 "Merge conflicts" "$CONFLICTING_DESC" "Enter" "Escape"
+			fi
+			CONTINUE_OR_ABORT ${OPEN_EDITOR_CMD:+open}
 
 			GIT_ADD_ALL
 			GIT_REBASE_CONTINUE
 		elif [[ "$OUTPUT" == *"--allow-empty"* ]] || [[ "$OUTPUT" == *"No changes - did you forget to use"* ]]; then
 			PRINT_TEXT "%s – Press %s to skip (drop) it, or %s to cancel editing." 33 "A later commit is now empty" "Enter" "Escape"
-			CONTINUE_OR_ABORT
+			CONTINUE_OR_ABORT "" skip
 
 			GIT_ADD_ALL
 			GIT_REBASE_CONTINUE "--skip"
@@ -244,7 +504,15 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
-	local OP; if [[ -n $OPT_MESSAGE ]]; then OP=squash; else OP=fixup; fi
+	# `squash` opens `GIT_EDITOR` on the combined message where `fixup` does not, so it is
+	# used when the caller wants to edit the message (`-m`) or supplied one (`--text`)
+	local OP; if [[ -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ]]; then OP=squash; else OP=fixup; fi
+
+	# A `squash` without a pre-supplied `--text` opens an editor partway through, so bail
+	# loudly rather than hang waiting for input
+	if [[ "$OP" == "squash" && -z "$TEXT_VALUE" ]]; then
+		_REQUIRE_TTY_FOR_EDITOR
+	fi
 
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
@@ -268,9 +536,25 @@ GIT_REBASE_SQUASH () {
 		APPEND_BLOCK+=$'\\\\\n'"$OP ${C:0:7}"
 	done
 
+	# If --text was supplied, write the message to a temp file and override
+	# GIT_EDITOR with `cp <file>` so git "edits" the combined-message file by
+	# overwriting it with our content.
+	local TEXT_MSG_FILE=""
+	if [[ -n "$TEXT_VALUE" ]]; then
+		TEXT_MSG_FILE=$(mktemp -t git-edit-squash-msg.XXXXXX)
+		printf '%s\n' "$TEXT_VALUE" > "$TEXT_MSG_FILE"
+	fi
+
 	# Execute rebase
-	GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
-	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
+	if [[ -n "$TEXT_MSG_FILE" ]]; then
+		GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_EDITOR="cp '$TEXT_MSG_FILE'" \
+		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
+		rm -f "$TEXT_MSG_FILE"
+	else
+		GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
+	fi
 }
 
 GIT_REBASE_BEGIN_EDIT () {
@@ -291,6 +575,700 @@ GIT_ADD_ALL () {
 	PRINT_CMD "$CMD"
 
 	eval "$CMD" || ABORT
+}
+
+# Answers whether the current squash could take the plumbing-only path, so `-s` can auto-route
+# to `-S` safely:
+# • The selected commits form a contiguous range
+# • Target, where given, equals the oldest commit, so nothing reorders
+# • No commit in the range is a merge
+# Operates implicitly on the global `$COMMITS` array and optional `$TARGET`
+_RESQUASH_ELIGIBLE () {
+	local OLDEST=${COMMITS[1]}
+	local NEWEST=${COMMITS[-1]}
+
+	# Target must equal oldest – any other target requires reordering, which
+	# the plumbing path can't do
+	[ -n "$TARGET" ] && [ "$TARGET" != "$OLDEST" ] && return 1
+
+	# Contiguity check: the inclusive range `OLDEST..NEWEST` must equal the
+	# selected commits exactly, in the same order
+	local EXPECTED
+	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
+		EXPECTED=($(git rev-list --reverse "$OLDEST^..$NEWEST" 2>/dev/null))
+	else
+		EXPECTED=($(git rev-list --reverse "$NEWEST" 2>/dev/null))
+	fi
+
+	[ ${#EXPECTED[@]} -ne ${#COMMITS[@]} ] && return 1
+
+	local i
+	for (( i=1; i<=${#COMMITS[@]}; i++ )); do
+		[ "${COMMITS[$i]}" != "${EXPECTED[$i]}" ] && return 1
+	done
+
+	# No merge commits in the range
+	local C P_LIST
+	for C in "${COMMITS[@]}"; do
+		P_LIST=$(git log -1 --format='%P' "$C")
+		[[ "$P_LIST" == *" "* ]] && return 1
+	done
+
+	return 0
+}
+
+# Run an arbitrary command (passed via $@) inside a fresh, per-invocation
+# temporary worktree (detached HEAD at the current branch tip). If the
+# command rewrites HEAD, atomically update the original branch ref via CAS;
+# refuse if the branch moved meanwhile (concurrent commit elsewhere).
+# The worktree is removed on exit regardless of outcome.
+#
+# This lets raw git history-rewriting commands (rebase, commit --amend,
+# reset --hard, etc.) run without ever touching the main checkout — safe to
+# use even when other Claude Code sessions are editing files in parallel.
+GIT_EXEC () {
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local REF
+	if [ -n "$BRANCH" ]; then
+		REF="refs/heads/$BRANCH"
+	else
+		REF="HEAD"
+	fi
+	# Defaults for the status trailer, updated below if `HEAD` changes
+	EXEC_NEW_HEAD=$ORIG_HEAD
+	EXEC_REF=$REF
+	EXEC_CHANGED=false
+
+	# Unique per-invocation worktree so concurrent --exec calls never collide
+	local WT=$(mktemp -d -t git-edit-exec.XXXXXX)
+	rmdir "$WT"  # `git worktree add` wants to create the dir itself
+	local CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	PRINT_CMD "$CMD"
+	eval "$CMD" || { rm -rf "$WT"; exit 1; }
+
+	# Register cleanup via the global hook so the EXIT trap removes the
+	# worktree on any exit path (success, failure, signal).
+	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+
+	cd "$WT" || exit 1
+
+	# Run the user's command. Don't `eval` – pass the array straight through
+	# so quoting and special characters in args are preserved.
+	PRINT_CMD "$* # (in $WT)"
+	"$@"
+	local STATUS=$?
+
+	if [ $STATUS -ne 0 ]; then
+		PRINT_ERR "Command exited with status $STATUS — leaving original branch unchanged"
+		exit $STATUS
+	fi
+
+	# Did the command move HEAD? If so, apply the new tip to the original ref.
+	local NEW_HEAD=$(git rev-parse HEAD)
+	if [ "$NEW_HEAD" = "$ORIG_HEAD" ]; then
+		PRINT_TEXT "HEAD unchanged – nothing to apply." 33
+		return 0
+	fi
+
+	# Atomic compare-and-swap. If the branch moved during command execution
+	# (e.g., a concurrent commit from another session), refuse.
+	local UPDATE="git update-ref $REF $NEW_HEAD $ORIG_HEAD"
+	PRINT_CMD "$UPDATE"
+	if ! eval "$UPDATE" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
+		PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
+		exit 1
+	fi
+
+	if [ -n "$BRANCH" ]; then
+		_PRINT_REWRITE_APPLY_HINT "$BRANCH"
+	else
+		PRINT_TEXT "Detached HEAD updated to %s." 32 "$NEW_HEAD"
+	fi
+
+	# Update status trailer outputs (head moved, CAS succeeded)
+	EXEC_NEW_HEAD=$NEW_HEAD
+	EXEC_CHANGED=true
+}
+
+# Fold currently-staged changes (from the main working tree's index) into a
+# specified target commit, without touching files the user hasn't staged.
+# Implements the standard "fixup + autosquash" pattern as a single operation:
+#   1. Create `fixup!` commit on main's HEAD using the staged index
+#   2. Run autosquash inside a fresh isolated worktree (parallel-safe)
+#   3. Atomic CAS-update of the branch ref
+#   4. On any failure, roll back the fixup commit in main
+GIT_AMEND_INTO () {
+	local TARGET=$AMEND_INTO_TARGET
+
+	# Pre-flight: must not be a stale in-flight operation
+	if _STATE_EXISTS; then
+		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		exit 1
+	fi
+
+	# Pre-flight: must have staged changes
+	if git diff --cached --quiet 2>/dev/null; then
+		PRINT_ERR "No staged changes to amend"
+		echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		exit 1
+	fi
+
+	# Pre-flight: target must be reachable from HEAD
+	if ! git merge-base --is-ancestor "$TARGET" HEAD 2>/dev/null; then
+		PRINT_ERR "Commit ${TARGET:0:7} is not reachable from HEAD"
+		exit 1
+	fi
+
+	# Pre-flight: must be on a branch
+	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -z "$ORIG_BRANCH" ]; then
+		PRINT_ERR "--amend-into requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+
+	local TARGET_FULL=$(git rev-parse "$TARGET")
+	local REF="refs/heads/$ORIG_BRANCH"
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local MAIN_DIR=$(pwd)
+
+	# Step 1: create the fixup commit in main. This is a forward-only append
+	# (uses git's index lock; safe against parallel commits — git serializes them).
+	local FIXUP_CMD="git -c commit.gpgsign=false commit --fixup=$TARGET_FULL"
+	PRINT_CMD "$FIXUP_CMD"
+	eval "$FIXUP_CMD" || exit 1
+
+	local HEAD_WITH_FIXUP=$(git rev-parse HEAD)
+
+	# Rollback closure used on any later failure: restore main's HEAD to its
+	# pre-fixup state via `update-ref` (preserving the staged changes in the
+	# index, so the agent can retry without re-staging).
+	local ROLLBACK="git -C '$MAIN_DIR' update-ref $REF $ORIG_HEAD $HEAD_WITH_FIXUP 2>/dev/null; git -C '$MAIN_DIR' read-tree --reset $ORIG_HEAD 2>/dev/null"
+
+	# Step 2: isolated worktree at HEAD (which includes the fixup)
+	local WT=$(mktemp -d -t git-edit-amend-into.XXXXXX)
+	rmdir "$WT"
+	local WT_CMD="git worktree add --detach '$WT' $HEAD_WITH_FIXUP"
+	PRINT_CMD "$WT_CMD" 90
+	if ! eval "$WT_CMD" >/dev/null 2>&1; then
+		PRINT_ERR "Failed to create temp worktree"
+		eval "$ROLLBACK"
+		exit 1
+	fi
+	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+
+	cd "$WT" || { eval "$ROLLBACK"; exit 1; }
+
+	# Determine rebase base (parent of target, or --root if target is initial commit)
+	local REBASE_BASE
+	if git rev-parse --verify "$TARGET_FULL^" >/dev/null 2>&1; then
+		REBASE_BASE="$TARGET_FULL^"
+	else
+		REBASE_BASE="--root"
+	fi
+
+	# Step 3: autosquash. GIT_SEQUENCE_EDITOR=true accepts the auto-arranged
+	# TODO without prompting. GIT_EDITOR=true ensures no message editor opens
+	# (we use fixup semantics, so this is just defensive).
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --autosquash --no-autostash --interactive $REBASE_BASE"
+	PRINT_CMD "$REBASE_CMD" 90
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+		# Conflict during autosquash. Save state, leave the worktree alive,
+		# and let the user/agent resolve via `git edit --continue` (or
+		# `git edit --abort` to cancel + rollback the fixup commit in main).
+		_SAVE_STATE \
+			"operation=amend-into" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$TARGET_FULL" \
+			"head_with_fixup=$HEAD_WITH_FIXUP"
+		# Don't auto-cleanup the worktree – it holds the in-progress rebase
+		_CLEANUP_HOOK=""
+
+		PRINT_ERR "Conflict during autosquash – resolve in worktree, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$WT"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
+		exit 2
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+
+	# Step 4: atomic CAS-update of branch ref. If the branch moved during
+	# autosquash (parallel commit), refuse to overwrite and leave the fixup
+	# commit in main as-is (caller can decide what to do).
+	local UPDATE_CMD="git update-ref $REF $NEW_HEAD $HEAD_WITH_FIXUP"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
+		PRINT_TEXT "The fixup commit is still at HEAD in %s; reset --soft HEAD~1 to undo if needed." 33 "$MAIN_DIR"
+		exit 1
+	fi
+
+	# Export new HEAD + ref for the success trailer in the dispatch block
+	AMEND_NEW_HEAD=$NEW_HEAD
+	AMEND_REF=$REF
+}
+
+# State-file helpers for in-flight operations (currently used by --amend-into
+# when an autosquash hits a conflict the user/agent must resolve). The file
+# lives in the repo's common git dir so it's shared across worktrees.
+_STATE_FILE_PATH () {
+	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+	[ -z "$DIR" ] && return 1
+	case "$DIR" in
+		/*) ;;
+		*) DIR="$(pwd)/$DIR" ;;
+	esac
+	echo "$DIR/git-edit-state"
+}
+
+_SAVE_STATE () {
+	# args: key=value pairs to persist (one per arg)
+	local SF=$(_STATE_FILE_PATH) || { PRINT_ERR "Not in a git repo"; return 1; }
+	local KV
+	{
+		for KV in "$@"; do echo "$KV"; done
+	} > "$SF"
+}
+
+_LOAD_STATE () {
+	local SF=$(_STATE_FILE_PATH)
+	if [ -z "$SF" ] || [ ! -f "$SF" ]; then
+		PRINT_ERR "No in-flight git-edit operation to continue or abort"
+		exit 1
+	fi
+	STATE_OPERATION=""
+	STATE_WORKTREE=""
+	STATE_BRANCH=""
+	STATE_ORIG_HEAD=""
+	STATE_TARGET=""
+	STATE_HEAD_WITH_FIXUP=""
+	local KEY VAL
+	while IFS='=' read -r KEY VAL; do
+		case "$KEY" in
+			operation)       STATE_OPERATION=$VAL ;;
+			worktree)        STATE_WORKTREE=$VAL ;;
+			branch)          STATE_BRANCH=$VAL ;;
+			orig_head)       STATE_ORIG_HEAD=$VAL ;;
+			target)          STATE_TARGET=$VAL ;;
+			head_with_fixup) STATE_HEAD_WITH_FIXUP=$VAL ;;
+		esac
+	done < "$SF"
+}
+
+_CLEAR_STATE () {
+	local SF=$(_STATE_FILE_PATH)
+	[ -n "$SF" ] && rm -f "$SF"
+}
+
+_STATE_EXISTS () {
+	local SF=$(_STATE_FILE_PATH)
+	[ -n "$SF" ] && [ -f "$SF" ]
+}
+
+# Resume an in-flight --amend-into after the user/agent has resolved the
+# conflicts. The agent should have edited the files in $STATE_WORKTREE and
+# staged them (e.g. `git -C <worktree> add <files>`) before calling this.
+_CONTINUE_AMEND_INTO () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	cd "$STATE_WORKTREE" || exit 1
+
+	# Verify rebase is still in progress
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+		PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	# Once we successfully complete, the worktree should be cleaned up
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	PRINT_ACTION "Continuing amend-into of %s..." "${STATE_TARGET:0:7}"
+
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" >/dev/null 2>&1; then
+		# Another conflict downstream – keep state, keep worktree, exit
+		_CLEANUP_HOOK=""
+		PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+		exit 2
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+
+	# Atomic CAS-update of the branch ref
+	local UPDATE_CMD="git update-ref $STATE_BRANCH $NEW_HEAD $STATE_HEAD_WITH_FIXUP"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
+		exit 1
+	fi
+
+	_CLEAR_STATE
+	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
+}
+
+# Abort an in-flight --amend-into: abort the paused rebase, remove the
+# worktree, and roll back the fixup commit in main so the agent's staged
+# changes are restored in the index (ready to retry differently).
+_ABORT_AMEND_INTO () {
+	PRINT_ACTION "Aborting amend-into of %s..." "${STATE_TARGET:0:7}"
+
+	# Cleanup the worktree (which is in a paused rebase state)
+	if [ -d "$STATE_WORKTREE" ]; then
+		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	# Rollback the fixup commit in main only if the branch ref is still where
+	# we left it (HEAD_WITH_FIXUP). If another session committed since, leave
+	# their commits alone.
+	local CURRENT=$(git rev-parse "$STATE_BRANCH" 2>/dev/null)
+	if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
+		local UPDATE_CMD="git update-ref $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
+		PRINT_CMD "$UPDATE_CMD" 90
+		eval "$UPDATE_CMD" 2>/dev/null
+		# Restore the staged state: set the index to HEAD_WITH_FIXUP's tree so
+		# the agent's previously-staged changes show up as "Changes to be
+		# committed" against the now-rolled-back HEAD (= ORIG_HEAD). This lets
+		# them retry differently without re-running git add.
+		git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
+	else
+		PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "%s" 32 "Amend-into aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+}
+
+# Detects non-interactive execution – an agent, CI or a scripted run – to gate the safety
+# behaviors: auto-isolation, edit-mode bail, conflict bail and the editor-needs-TTY guard
+# The signal is `! -t 0`, with `$CLAUDECODE` and `$CI` as backstops for a PTY-allocating agent
+_IS_NON_INTERACTIVE () {
+	if [ ! -t 0 ]; then return 0; fi
+	if [ -n "$CLAUDECODE" ]; then return 0; fi
+	if [ -n "$CI" ]; then return 0; fi
+	return 1
+}
+
+# Resolves a usable editor command, matching git's own cascade – `GIT_EDITOR`, `core.editor`,
+# `VISUAL`, `EDITOR`, then vi – skipping the `true` no-op that automation commonly sets,
+# since the plumbing-mode operations that need typing would not work with it
+_RESOLVE_EDITOR () {
+	local CAND
+	for CAND in "$GIT_EDITOR" "$(git config core.editor 2>/dev/null)" "$VISUAL" "$EDITOR"; do
+		[ -z "$CAND" ] && continue
+		[ "$CAND" = "true" ] && continue
+		echo "$CAND"
+		return
+	done
+	echo "vi"
+}
+
+# Bails out before opening an editor in a non-TTY context, where it would either no-op
+# silently, hang waiting for input as vi or nano do, or open a GUI editor with `-w` and
+# never return – call this right before any path that would open `$EDITOR`
+_REQUIRE_TTY_FOR_EDITOR () {
+	if ! _IS_NON_INTERACTIVE; then
+		return 0
+	fi
+	# If the resolved editor is `true` (GIT_EDITOR=true), opening it is a
+	# harmless no-op – let it through
+	if [ "$(_RESOLVE_EDITOR)" = "true" ]; then
+		return 0
+	fi
+	PRINT_ERR "Cannot open editor in non-interactive context (no TTY / agent run)"
+	echo -e "\e[0;31m  Pass --text \"<msg>\" for an inline message, or --text - to read from stdin.\e[0m" >&2
+	exit 1
+}
+
+# Opens the resolved editor on the given temp file and returns the cleaned-up contents,
+# comments stripped and blank lines trimmed – stdout is the result, with user-facing
+# output on stderr so it cannot leak into the captured value
+_READ_MESSAGE_FROM_EDITOR () {
+	local MSG_FILE=$1
+	local EDIT_CMD=$(_RESOLVE_EDITOR)
+
+	PRINT_CMD "$EDIT_CMD $MSG_FILE" >&2
+	eval "$EDIT_CMD \"\$MSG_FILE\"" >&2 || return 1
+
+	git stripspace --strip-comments < "$MSG_FILE"
+}
+
+# Rebuild each commit in `git rev-list --reverse $1..HEAD` with its parent
+# substituted from PREV_OLD to PREV_NEW. Both globals are updated as we walk;
+# the final PREV_NEW is the new tip the caller can apply via update-ref.
+_REBUILD_DESCENDANTS () {
+	local FROM=$1
+	local DESC P D_TREE D_MSG D_AN D_AE D_AD D_NEW
+	local D_PARENTS_ARGS
+	for DESC in $(git rev-list --reverse "$FROM..HEAD"); do
+		D_TREE=$(git rev-parse "$DESC^{tree}")
+		D_MSG=$(git log -1 --format='%B' "$DESC")
+		D_AN=$(git log -1 --format='%an' "$DESC")
+		D_AE=$(git log -1 --format='%ae' "$DESC")
+		D_AD=$(git log -1 --format='%aI' "$DESC")
+
+		D_PARENTS_ARGS=()
+		for P in $(git log -1 --format='%P' "$DESC"); do
+			if [ "$P" = "$PREV_OLD" ]; then
+				D_PARENTS_ARGS+=(-p "$PREV_NEW")
+			else
+				D_PARENTS_ARGS+=(-p "$P")
+			fi
+		done
+
+		D_NEW=$(
+			GIT_AUTHOR_NAME="$D_AN" GIT_AUTHOR_EMAIL="$D_AE" GIT_AUTHOR_DATE="$D_AD" \
+			git commit-tree "$D_TREE" "${D_PARENTS_ARGS[@]}" -m "$D_MSG"
+		) || ABORT
+
+		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
+
+		PREV_OLD=$DESC
+		PREV_NEW=$D_NEW
+	done
+}
+
+# Rewrite just $COMMIT's message and rebuild any descendants on top, using
+# plumbing only (commit-tree + update-ref). No checkout, no stash, no rebase –
+# the working tree is never touched. Atomic from the user's perspective: a
+# single ref update at the end, only if the branch hasn't moved meanwhile.
+GIT_REWORD () {
+	local TARGET=$COMMIT
+
+	# Capture the ref to update (branch if attached, HEAD if detached)
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local REF
+	if [ -n "$BRANCH" ]; then
+		REF="refs/heads/$BRANCH"
+	else
+		REF="HEAD"
+	fi
+
+	# Refuse if the target isn't reachable from `HEAD`
+	if ! git merge-base --is-ancestor "$TARGET" HEAD 2>/dev/null; then
+		PRINT_ERR "Commit ${TARGET:0:7} is not reachable from HEAD"
+		exit 1
+	fi
+
+	local NEW_MSG
+	if [ -n "$TEXT_VALUE" ]; then
+		# --text supplied: use directly, no editor
+		NEW_MSG="$TEXT_VALUE"
+	else
+		_REQUIRE_TTY_FOR_EDITOR
+		# Open the user's editor on a temp file seeded with the current message.
+		# The file is named COMMIT_EDITMSG (git's convention) inside a temp dir,
+		# so editors like Sublime Text / VS Code apply commit-message syntax
+		# highlighting based on the recognized filename.
+		local TMP_DIR=$(mktemp -d -t git-edit-reword.XXXXXX)
+		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
+		git log -1 --format='%B' "$TARGET" > "$MSG_FILE"
+		{
+			echo ""
+			echo "# Please enter the new commit message for ${TARGET:0:7}."
+			echo "# Lines starting with '#' will be ignored."
+			echo "# An empty message aborts the operation."
+		} >> "$MSG_FILE"
+
+		NEW_MSG=$(_READ_MESSAGE_FROM_EDITOR "$MSG_FILE")
+		rm -rf "$TMP_DIR"
+
+		if [ -z "$NEW_MSG" ]; then
+			PRINT_ERR "Empty message – aborting"
+			exit 1
+		fi
+	fi
+
+	local ORIG_MSG=$(git log -1 --format='%B' "$TARGET" | git stripspace)
+	if [ "$NEW_MSG" = "$ORIG_MSG" ]; then
+		echo -e "\n\e[0;33mMessage unchanged – nothing to do.\e[0m"
+		EMIT_STATUS "$ORIG_HEAD" "$REF" false
+		exit 0
+	fi
+
+	# Build the new target commit: same tree + parents + author, new message
+	local TREE=$(git rev-parse "$TARGET^{tree}")
+	local PARENTS_ARGS=()
+	local P
+	for P in $(git log -1 --format='%P' "$TARGET"); do
+		PARENTS_ARGS+=(-p "$P")
+	done
+
+	local AN=$(git log -1 --format='%an' "$TARGET")
+	local AE=$(git log -1 --format='%ae' "$TARGET")
+	local AD=$(git log -1 --format='%aI' "$TARGET")
+
+	local NEW_TARGET=$(
+		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
+		git commit-tree "$TREE" "${PARENTS_ARGS[@]}" -m "$NEW_MSG"
+	) || ABORT
+
+	PRINT_CMD "git commit-tree ${TREE:0:7} ... -> ${NEW_TARGET:0:7}"
+
+	# Walk every descendant of $TARGET up to HEAD, rebuild with new parent
+	PREV_OLD=$TARGET
+	PREV_NEW=$NEW_TARGET
+	_REBUILD_DESCENDANTS "$TARGET"
+
+	# Atomic compare-and-swap on the ref. If the branch moved (e.g., a
+	# concurrent commit from Claude Code or another tool), refuse.
+	local CMD="git update-ref $REF $PREV_NEW $ORIG_HEAD"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' moved during reword – refusing to overwrite"
+		PRINT_TEXT "Reworded history is at %s (not applied)." 33 "$PREV_NEW"
+		exit 1
+	fi
+}
+
+# Squash a contiguous range of commits into one via plumbing only. Like
+# GIT_REWORD: no checkout, no stash, no rebase, single atomic ref update.
+# Refuses non-contiguous selections and ranges containing merge commits
+# (those need real 3-way merges, which can conflict — use -s with -C).
+GIT_RESQUASH () {
+	local OLDEST=${COMMITS[1]}
+	local NEWEST=${COMMITS[-1]}
+
+	# Capture the ref to update
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local REF
+	if [ -n "$BRANCH" ]; then
+		REF="refs/heads/$BRANCH"
+	else
+		REF="HEAD"
+	fi
+
+	# Refuse if either endpoint isn't reachable from `HEAD`
+	if ! git merge-base --is-ancestor "$NEWEST" HEAD 2>/dev/null; then
+		PRINT_ERR "Commit ${NEWEST:0:7} is not reachable from HEAD"
+		exit 1
+	fi
+
+	# Verify contiguity: rev-list of the inclusive OLDEST..NEWEST range must
+	# match the selected commits exactly (same count, same order)
+	local EXPECTED
+	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
+		EXPECTED=($(git rev-list --reverse "$OLDEST^..$NEWEST"))
+	else
+		# OLDEST is the root commit – range is just everything up to NEWEST
+		EXPECTED=($(git rev-list --reverse "$NEWEST"))
+	fi
+
+	if [ ${#EXPECTED[@]} -ne ${#COMMITS[@]} ]; then
+		PRINT_ERR "-S/--resquash requires contiguous commits"
+		echo -e "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
+		echo -e "\e[0;31m  For non-contiguous squashes, use -s (combine with -C for safety).\e[0m" >&2
+		exit 1
+	fi
+	local i
+	for (( i=1; i<=${#COMMITS[@]}; i++ )); do
+		if [ "${COMMITS[$i]}" != "${EXPECTED[$i]}" ]; then
+			PRINT_ERR "-S/--resquash requires contiguous commits in order"
+			exit 1
+		fi
+	done
+
+	# Refuse merge commits in the range (they'd need a real 3-way merge)
+	local C P_LIST
+	for C in "${COMMITS[@]}"; do
+		P_LIST=$(git log -1 --format='%P' "$C")
+		if [[ "$P_LIST" == *" "* ]]; then
+			PRINT_ERR "-S/--resquash cannot handle merge commit ${C:0:7}"
+			echo -e "\e[0;31m  Use -s (combine with -C for safety) instead.\e[0m" >&2
+			exit 1
+		fi
+	done
+
+	# Determine new parent (parent of `OLDEST`, or none for root)
+	local NEW_PARENT_ARGS=()
+	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
+		NEW_PARENT_ARGS=(-p "$(git rev-parse "$OLDEST^")")
+	fi
+
+	# Build the squashed commit's message
+	local NEW_MSG
+	if [ -n "$TEXT_VALUE" ]; then
+		# --text supplied: use directly (auto-implies -m semantics)
+		NEW_MSG="$TEXT_VALUE"
+	elif [ ${#OPT_MESSAGE} -gt 0 ]; then
+		_REQUIRE_TTY_FOR_EDITOR
+		# With -m: combine all messages and open editor for review.
+		# File is named COMMIT_EDITMSG so editors apply commit-message syntax.
+		local TMP_DIR=$(mktemp -d -t git-edit-resquash.XXXXXX)
+		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
+		{
+			echo "# Combined message from ${#COMMITS[@]} squashed commits."
+			echo "# Edit as desired. Lines starting with '#' will be ignored."
+			echo "# An empty message aborts the operation."
+			echo ""
+			local FIRST=1
+			for C in "${COMMITS[@]}"; do
+				if [ $FIRST -eq 0 ]; then echo ""; fi
+				FIRST=0
+				git log -1 --format='%B' "$C"
+			done
+		} > "$MSG_FILE"
+
+		NEW_MSG=$(_READ_MESSAGE_FROM_EDITOR "$MSG_FILE")
+		rm -rf "$TMP_DIR"
+
+		if [ -z "$NEW_MSG" ]; then
+			PRINT_ERR "Empty message – aborting"
+			exit 1
+		fi
+	else
+		# Fixup style: keep `OLDEST`'s message, drop the rest
+		NEW_MSG=$(git log -1 --format='%B' "$OLDEST" | git stripspace)
+	fi
+
+	# Build the new squashed commit (newest tree + `OLDEST`'s author + new parent + message)
+	local NEW_TREE=$(git rev-parse "$NEWEST^{tree}")
+	local AN=$(git log -1 --format='%an' "$OLDEST")
+	local AE=$(git log -1 --format='%ae' "$OLDEST")
+	local AD=$(git log -1 --format='%aI' "$OLDEST")
+
+	local NEW_SQUASHED=$(
+		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
+		git commit-tree "$NEW_TREE" "${NEW_PARENT_ARGS[@]}" -m "$NEW_MSG"
+	) || ABORT
+
+	PRINT_CMD "git commit-tree ${NEW_TREE:0:7} ${NEW_PARENT_ARGS[*]} -> ${NEW_SQUASHED:0:7}  # squashed ${#COMMITS[@]} commits"
+
+	# Rebuild any descendants of NEWEST up to HEAD with the new squashed commit as their parent
+	PREV_OLD=$NEWEST
+	PREV_NEW=$NEW_SQUASHED
+	_REBUILD_DESCENDANTS "$NEWEST"
+
+	# Atomic ref update
+	local CMD="git update-ref $REF $PREV_NEW $ORIG_HEAD"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' moved during resquash – refusing to overwrite"
+		PRINT_TEXT "Resquashed history is at %s (not applied)." 33 "$PREV_NEW"
+		exit 1
+	fi
 }
 
 GIT_COMMIT_AMEND () {
@@ -330,7 +1308,27 @@ GIT_REBASE_ABORT () {
 	fi
 }
 
+# Launches the detected GUI editor on `$WORKTREE_DIR` in the background, so the script keeps
+# waiting at the prompt, and no-ops where none was detected – used for auto-open at
+# interactive pauses and for the Space re-open key
+_OPEN_WORKTREE_IN_EDITOR () {
+	[ -z "$OPEN_EDITOR_CMD" ] && return 0
+	eval "$OPEN_EDITOR_CMD \"\$WORKTREE_DIR\" >/dev/null 2>&1 &"
+	disown 2>/dev/null
+}
+
 CONTINUE_OR_ABORT () {
+	# Optional first arg "open" lets Space launch the configured GUI editor on `$WORKTREE_DIR`
+	# Optional second arg "skip" honors `-y`, safe only at "press Enter to confirm" prompts
+	# where Enter means proceed as planned, never at one needing real intervention
+	local ALLOW_OPEN=$1
+	local SKIPPABLE=$2
+
+	if [[ "$SKIPPABLE" == "skip" && ${#OPT_YES} -gt 0 ]]; then
+		echo -e "\e[0;90m(-y / --yes: auto-confirmed)\e[0m"
+		return 0
+	fi
+
 	# Temporarily trap termination signals while awaiting user input
 	trap "ABORT" INT TERM QUIT HUP
 
@@ -339,6 +1337,13 @@ CONTINUE_OR_ABORT () {
 		case $KEY in
 			''|$'\r'|$'\n')         break ;;
 			$'\e'|$'\003'|$'\004')  ABORT ;; # Escape, Ctrl+C, or Ctrl+D
+			' ')
+				if [[ -n "$ALLOW_OPEN" && -n "$OPEN_EDITOR_CMD" ]]; then
+					_OPEN_WORKTREE_IN_EDITOR
+				else
+					echo "Unknown key, try again."
+				fi
+				;;
 			*)                      echo "Unknown key, try again." ;;
 		esac
 	done
@@ -355,7 +1360,10 @@ ABORT () {
 
 	GIT_UNSTASH
 
-	PRINT_ERR "Aborted."
+	# Print "Aborted." directly (not via PRINT_ERR) so we don't overwrite
+	# _LAST_ERROR — the trailer should show the actual error reason that
+	# triggered the abort, not the generic "Aborted." follow-up.
+	echo -e "\n\e[1;91mAborted.\e[0m" >&2
 	exit 1
 }
 
@@ -373,7 +1381,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {d,-drop}=OPT_DROP {s,-squash}:=OPT_SQUASH {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -continue=OPT_CONTINUE -abort=OPT_ABORT -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -383,6 +1391,102 @@ fi
 if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
 	USAGE
 	exit 0
+fi
+
+# Capture HEAD before any modification, for the status trailer's old_head
+# field. Stays empty outside a git repo / in an empty repo; the script will
+# fail later on commit resolution in that case, so we never reach the trailer.
+SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
+
+# Capture WIP state of the main checkout *before* we modify anything. Used by
+# the apply-hint helper after a worktree-isolated rewrite — after the rewrite,
+# `git status` in main would also report the rewrite itself as "uncommitted",
+# so we can't probe it post-hoc to distinguish real WIP from the pending sync.
+SCRIPT_INITIAL_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
+SCRIPT_INITIAL_HAS_WIP=""
+if [ -n "$SCRIPT_INITIAL_TOPLEVEL" ]; then
+	SCRIPT_INITIAL_HAS_WIP=$(git -C "$SCRIPT_INITIAL_TOPLEVEL" status --porcelain 2>/dev/null | head -1)
+fi
+
+# --continue / --abort dispatch – resume or cancel an in-flight operation.
+# These mirror `git rebase --continue` / `--abort`. They short-circuit before
+# any of the normal argument validation runs.
+if [ ${#OPT_CONTINUE} -gt 0 ] && [ ${#OPT_ABORT} -gt 0 ]; then
+	PRINT_ERR "--continue and --abort cannot be combined"
+	exit 1
+fi
+if [ ${#OPT_CONTINUE} -gt 0 ]; then
+	_LOAD_STATE
+	case "$STATE_OPERATION" in
+		amend-into) _CONTINUE_AMEND_INTO ;;
+		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
+	esac
+	exit 0
+fi
+if [ ${#OPT_ABORT} -gt 0 ]; then
+	_LOAD_STATE
+	case "$STATE_OPERATION" in
+		amend-into) _ABORT_AMEND_INTO ;;
+		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
+	esac
+	exit 0
+fi
+
+# Extract -C/--dir value. zparseopts with `::` greedily consumes the next word
+# unless it starts with `-`, so `git edit -C HEAD~1` would treat HEAD~1 as the
+# path. We disambiguate: if no `=` was used and the value parses as a git
+# ref/range, the user likely meant it as a commit – re-inject it as positional.
+if [ ${#OPT_DIR} -gt 0 ]; then
+	DIR_HAS_EQUALS=false
+	if [[ "${OPT_DIR[1]}" == *"="* ]]; then
+		DIR_HAS_EQUALS=true
+		WORKTREE_DIR=${OPT_DIR[1]#*=}
+	elif [[ "${OPT_DIR[1]}" == "-C"?* ]]; then
+		WORKTREE_DIR=${OPT_DIR[1]#-C}
+	elif [[ "${OPT_DIR[1]}" == "--dir"?* ]]; then
+		WORKTREE_DIR=${OPT_DIR[1]#--dir}
+	fi
+
+	if [ "$DIR_HAS_EQUALS" = false ] && [ -n "$WORKTREE_DIR" ]; then
+		IS_REF=false
+		if [[ "$WORKTREE_DIR" == *".."* && "$WORKTREE_DIR" != *"..."* ]]; then
+			git rev-list "$WORKTREE_DIR" >/dev/null 2>&1 && IS_REF=true
+		elif git rev-parse --quiet --verify "$WORKTREE_DIR" >/dev/null 2>&1; then
+			IS_REF=true
+		fi
+		if [ "$IS_REF" = true ]; then
+			set -- "$WORKTREE_DIR" "$@"
+			WORKTREE_DIR=""
+		fi
+	fi
+fi
+
+# Extract the `-s`/`--squash` value, applying the same re-injection heuristic as `-C` – its
+# argument was once required and greedily consumed the next word, so `-s HEAD~2..HEAD`
+# read as a target and errored, where now `-s=<target>` is the only explicit form
+if [ ${#OPT_SQUASH} -gt 0 ]; then
+	SQUASH_HAS_EQUALS=false
+	if [[ "${OPT_SQUASH[1]}" == *"="* ]]; then
+		SQUASH_HAS_EQUALS=true
+		TARGET=${OPT_SQUASH[1]#*=}
+	elif [[ "${OPT_SQUASH[1]}" == "-s"?* ]]; then
+		TARGET=${OPT_SQUASH[1]#-s}
+	elif [[ "${OPT_SQUASH[1]}" == "--squash"?* ]]; then
+		TARGET=${OPT_SQUASH[1]#--squash}
+	fi
+
+	if [ "$SQUASH_HAS_EQUALS" = false ] && [ -n "$TARGET" ]; then
+		IS_REF=false
+		if [[ "$TARGET" == *".."* && "$TARGET" != *"..."* ]]; then
+			git rev-list "$TARGET" >/dev/null 2>&1 && IS_REF=true
+		elif git rev-parse --quiet --verify "$TARGET" >/dev/null 2>&1; then
+			IS_REF=true
+		fi
+		if [ "$IS_REF" = true ]; then
+			set -- "$TARGET" "$@"
+			TARGET=""
+		fi
+	fi
 fi
 
 # Conflict checks
@@ -396,12 +1500,114 @@ if [ ${#OPT_DROP} -gt 0 -a ${#OPT_SQUASH} -gt 0 ]; then
 	PRINT_ERR "Options -d/--drop and -s/--squash cannot be combined"
 	exit 1
 fi
+if [ ${#OPT_REWORD} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_RESQUASH} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option -M/--reword cannot be combined with -m/-d/-s/-S/-C (reword is message-only and works without touching the working tree)"
+	exit 1
+fi
+if [ ${#OPT_RESQUASH} -gt 0 ] && [ ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option -S/--resquash cannot be combined with -d/-s/-C (resquash uses plumbing only; for non-contiguous squashes use -s with -C)"
+	exit 1
+fi
+if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option --exec cannot be combined with other modes (--exec is its own mode and manages its own isolated worktree)"
+	exit 1
+fi
+if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
+	exit 1
+fi
+# --text is incompatible with -d and --exec; the full check (against the
+# resolved action, including implicit squash) happens after action
+# determination so we can also catch `--text` with edit mode etc.
+if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_DROP} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option --text doesn't apply to -d/--drop"
+	exit 1
+fi
+if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_EXEC} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option --text doesn't apply to --exec"
+	exit 1
+fi
+
+# Resolve --text value into TEXT_VALUE. Supports `--text "msg"` (separate arg
+# or after `=`), and `--text -` to read from stdin (multi-line OK).
+# zparseopts splits both forms into [--text, value]; the `=value` form keeps
+# its leading `=` in the value slot, so strip it.
+if [ ${#OPT_TEXT} -gt 0 ]; then
+	if [[ ${#OPT_TEXT} -gt 1 ]]; then
+		TEXT_VALUE=${OPT_TEXT[2]#=}
+	fi
+	if [ "$TEXT_VALUE" = "-" ]; then
+		TEXT_VALUE=$(cat)
+	fi
+	# Pass through `git stripspace` so it matches what the editor flow produces
+	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace --strip-comments)
+	if [ -z "$TEXT_VALUE" ]; then
+		PRINT_ERR "--text produced an empty message after stripping"
+		exit 1
+	fi
+fi
+
+# --exec short-circuits everything below: positional args are the wrapped
+# command (not commits to parse). Set up an isolated temp worktree, run the
+# command there, and update the original branch ref atomically if HEAD changed.
+# This is the "raw-git escape hatch" — any command (rebase, amend, etc.) can
+# run safely without touching the main checkout that other sessions are using.
+if [ ${#OPT_EXEC} -gt 0 ]; then
+	# zparseopts doesn't consume the `--` separator, just stops parsing at it.
+	# Strip it so $@ contains only the wrapped command.
+	if [ "$1" = "--" ]; then
+		shift
+	fi
+	if [ $# -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--exec requires a command (use -- to separate it from flags)"
+		exit 1
+	fi
+	GIT_EXEC "$@"
+	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
+	exit 0
+fi
+
+# `--amend-into` dispatches immediately too – the target SHA came from the flag's value
+# rather than positional args, which this mode leaves unused since the content comes
+# from the staged index in main
+if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
+	if [[ ${#OPT_AMEND_INTO} -gt 1 && -n "${OPT_AMEND_INTO[2]}" ]]; then
+		AMEND_INTO_TARGET="${OPT_AMEND_INTO[2]#=}"
+	fi
+	if [ -z "$AMEND_INTO_TARGET" ]; then
+		USAGE
+		PRINT_ERR "--amend-into requires a <sha> value (e.g., --amend-into=abc123)"
+		exit 1
+	fi
+	if [ $# -gt 0 ]; then
+		USAGE
+		PRINT_ERR "--amend-into takes no positional arguments (target is the flag's value)"
+		exit 1
+	fi
+	# Verify target is a valid commit ref
+	if ! git rev-parse --quiet --verify "$AMEND_INTO_TARGET^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <sha>: $AMEND_INTO_TARGET"
+		exit 1
+	fi
+	PRINT_ACTION "Amending staged changes into %s..." "$AMEND_INTO_TARGET"
+	GIT_AMEND_INTO
+	PRINT_COMPLETED "$AMEND_NEW_HEAD" "$AMEND_REF" true
+	exit 0
+fi
 
 COMMITS=()
 
 if [ $# -eq 0 ]; then
+	# No args – just show help. The required `<commit>` is obvious from the
+	# usage block; a separate error message would be redundant.
 	USAGE
-	PRINT_ERR "Missing <commit> argument(s)"
 	exit 1
 fi
 
@@ -445,21 +1651,42 @@ fi
 COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
 
 # Determine Action
-if [ ${#OPT_DROP} -gt 0 ]; then
+if [ ${#OPT_REWORD} -gt 0 ]; then
+	# Reword (`-M` / `--reword`) — message-only edit via plumbing, no working-tree touch
+	ACTION="reword"
+	if [ ${#COMMITS[@]} -gt 1 ]; then
+		PRINT_ERR "-M/--reword takes exactly one <commit>"
+		exit 1
+	fi
+	COMMIT=${COMMITS[1]}
+
+elif [ ${#OPT_RESQUASH} -gt 0 ]; then
+	# Resquash (`-S` / `--resquash`) — plumbing-only contiguous squash, no working-tree touch
+	ACTION="resquash"
+	# Single commit: squash into its parent (mirrors -s semantics)
+	if [ ${#COMMITS[@]} -eq 1 ]; then
+		if git cat-file -e "${COMMITS[1]}^" 2>/dev/null; then
+			local PARENT=$(git rev-parse "${COMMITS[1]}^")
+			COMMITS=($PARENT ${COMMITS[1]})
+		else
+			PRINT_ERR "Cannot squash <commit> as it has no parent"
+			exit 1
+		fi
+	fi
+	COMMIT=${COMMITS[-1]}
+
+elif [ ${#OPT_DROP} -gt 0 ]; then
 	# Drop/Delete (`-d` / `--drop`)
 	ACTION="drop"
 	COMMIT=${COMMITS[1]}
 
 elif [ ${#OPT_SQUASH} -gt 0 ]; then
-	# Explicit Squash (`-s=HASH` or `-s HASH`)
+	# Explicit Squash (-s)
 	ACTION="squash"
 
-	# Determine target
-	if [[ "${OPT_SQUASH[1]}" == "-s="* || "${OPT_SQUASH[1]}" == "--squash="* ]]; then
-		TARGET=${OPT_SQUASH[1]#*=}
-	elif [[ ${#OPT_SQUASH} -gt 1 && -n "${OPT_SQUASH[2]}" ]]; then
-		TARGET=${OPT_SQUASH[2]}
-	fi
+	# `TARGET` was extracted in the pre-processing block – set if the user
+	# used `-s=<target>`, or if `-sX`/`-s X` was used and the value wasn't
+	# re-injected by the heuristic (i.e., it's not a recognizable ref/range)
 
 	# If an explicit target was found, verify it and add to `COMMITS` array
 	if [ -n "$TARGET" ]; then
@@ -504,8 +1731,212 @@ else
 	COMMIT=${COMMITS[1]}
 fi
 
+# Edit mode is fundamentally interactive — it pauses on the "Now make your
+# changes" prompt waiting for the user to modify files in the worktree, then
+# resume. In a non-TTY context (Claude Code, CI, piped stdin) that pause
+# silently auto-resumes with no changes made, producing a useless no-op
+# amend that just moves the branch ref to a new SHA with identical content.
+# Bail out with a clear pointer to the alternatives instead.
+if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
+	PRINT_ERR "Edit mode requires interactive input (no TTY / agent run)"
+	echo -e "\e[0;31m  For message-only edits:        use -M (optionally with --text \"…\")\e[0m" >&2
+	echo -e "\e[0;31m  For non-interactive content:   use --exec -- <command>\e[0m" >&2
+	echo -e "\e[0;31m  To drop the commit instead:    use -d\e[0m" >&2
+	exit 1
+fi
+
+# Auto-route plain squash (`-s` or implicit) to the plumbing path (`-S` /
+# resquash) when eligible — contiguous range, target = oldest, no merge
+# commits. Same observable outcome, but no working-tree touch and no stash
+# dance. `-S` (explicit) and `-C` are unaffected; this only optimizes the
+# default `-s` path. Non-contiguous or merge-containing selections fall
+# through to the existing rebase-based squash unchanged.
+if [[ "$ACTION" == "squash" ]] && [ ${#OPT_DIR} -eq 0 ] && _RESQUASH_ELIGIBLE; then
+	ACTION="resquash"
+fi
+
+# Final --text validation: only valid for message-producing modes. We deferred
+# this until after action determination so implicit squash (multi-commit args
+# without -s) and auto-routing are both accounted for.
+if [ -n "$TEXT_VALUE" ] && [[ "$ACTION" != "reword" && "$ACTION" != "resquash" && "$ACTION" != "squash" ]]; then
+	PRINT_ERR "Option --text only applies to message-producing modes (-M, -s, -S, or implicit squash); got action: $ACTION"
+	exit 1
+fi
+
+# Auto-isolate in non-interactive contexts (stdin not a TTY): when run by
+# Claude Code, CI, or any script, default to `-C` for the modes that would
+# otherwise touch the main working tree (drop / edit / non-eligible squash).
+# Protects parallel sessions from accidentally clobbering each other.
+# Plumbing modes (-M, -S, --exec) already skip the working tree, so they're
+# left alone here. Override with GIT_EDIT_NO_AUTO_ISOLATE=1.
+#
+# Uses a unique per-invocation temp worktree (cleaned up via _CLEANUP_HOOK
+# on exit) so concurrent agent sessions never collide on the same worktree
+# – mirroring `--exec`'s isolation guarantee.
+if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -eq 0 ] && \
+   [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
+	echo -e "\n\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
+	OPT_DIR=(--dir)
+	WORKTREE_DIR=$(mktemp -d -t git-edit-auto-iso.XXXXXX)
+	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
+	_CLEANUP_HOOK="git worktree remove --force '$WORKTREE_DIR' 2>/dev/null; rm -rf '$WORKTREE_DIR'"
+fi
+
 
 # ------------------------------------------- CORE LOGIC -------------------------------------------
+
+# Reword and resquash take a plumbing-only path that never touches the working tree, the
+# index or any other worktree state – the affected commits and their descendants are
+# rebuilt via `git commit-tree` and applied with a single atomic `git update-ref`
+if [[ "$ACTION" == "reword" ]]; then
+	PRINT_ACTION "Rewording %s..." "$COMMIT"
+	GIT_REWORD
+	PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
+	exit 0
+fi
+if [[ "$ACTION" == "resquash" ]]; then
+	# Re-sort COMMITS by commit time (oldest first). The earlier `git rev-list
+	# --no-walk --reverse` falls back to input-reversed order when commits
+	# share a timestamp (e.g., rapid-fire commits in scripts/tests).
+	local C
+	COMMITS=("${(@f)$(for C in "${COMMITS[@]}"; do git log -1 --format='%ct %H' "$C"; done | sort -n | awk '{print $2}')}")
+
+	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "${COMMITS[1]}")
+	PRINT_ACTION "Resquashing %s into ${COMMITS[1]:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#${COMMITS[1]}}"
+	GIT_RESQUASH
+	PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
+	exit 0
+fi
+
+# Optionally rebase in a separate worktree (-C/--dir), so the rebase doesn't touch
+# the main working tree (useful when an editor or AI agent is editing it concurrently)
+if [ ${#OPT_DIR} -gt 0 ]; then
+	# Default path: <repo-root>.git-edit (a sibling directory of the repo)
+	if [ -z "$WORKTREE_DIR" ]; then
+		TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
+		if [ -z "$TOPLEVEL" ]; then
+			PRINT_ERR "Not in a git repository"
+			exit 1
+		fi
+		WORKTREE_DIR="${TOPLEVEL}.git-edit"
+	fi
+
+	# Detect a known GUI editor so we can auto-open the worktree at interactive
+	# pauses. Runs for both the auto-managed default path and an explicit
+	# -C=<path>. Terminal editors like vim/nano simply don't match the list
+	# below (opening a directory in them makes no sense), so they're ignored.
+	# We iterate over all of git's editor sources (GIT_EDITOR / core.editor /
+	# VISUAL / EDITOR — the same cascade as `_RESOLVE_EDITOR`) rather than stop
+	# at the first, because git tooling (including Claude Code) often sets
+	# GIT_EDITOR=true as a no-op which would otherwise mask a usable editor
+	# lower in the chain. Notably this includes `git config core.editor`, which
+	# is where many users (e.g. `subl -n -w`) actually configure their editor.
+	for EDITOR_CMD in "$GIT_EDITOR" "$(git config core.editor 2>/dev/null)" "$VISUAL" "$EDITOR"; do
+		[ -z "$EDITOR_CMD" ] && continue
+		EDITOR_FIRST="${EDITOR_CMD%% *}"
+		EDITOR_BASE="${EDITOR_FIRST##*/}"
+		case "$EDITOR_BASE" in
+			subl|sublime_text|sublime) OPEN_EDITOR_NAME="Sublime Text" ;;
+			code)                      OPEN_EDITOR_NAME="VS Code" ;;
+			code-insiders)             OPEN_EDITOR_NAME="VS Code Insiders" ;;
+			cursor)                    OPEN_EDITOR_NAME="Cursor" ;;
+			zed)                       OPEN_EDITOR_NAME="Zed" ;;
+			mate)                      OPEN_EDITOR_NAME="TextMate" ;;
+			atom)                      OPEN_EDITOR_NAME="Atom" ;;
+			nova)                      OPEN_EDITOR_NAME="Nova" ;;
+			bbedit)                    OPEN_EDITOR_NAME="BBEdit" ;;
+			idea*)                     OPEN_EDITOR_NAME="IntelliJ IDEA" ;;
+			pycharm*)                  OPEN_EDITOR_NAME="PyCharm" ;;
+			webstorm*)                 OPEN_EDITOR_NAME="WebStorm" ;;
+			phpstorm*)                 OPEN_EDITOR_NAME="PhpStorm" ;;
+			rubymine*)                 OPEN_EDITOR_NAME="RubyMine" ;;
+			goland*)                   OPEN_EDITOR_NAME="GoLand" ;;
+			clion*)                    OPEN_EDITOR_NAME="CLion" ;;
+			rider*)                    OPEN_EDITOR_NAME="Rider" ;;
+			datagrip*)                 OPEN_EDITOR_NAME="DataGrip" ;;
+			fleet)                     OPEN_EDITOR_NAME="Fleet" ;;
+			xed)                       OPEN_EDITOR_NAME="Xed" ;;
+		esac
+		if [ -n "$OPEN_EDITOR_NAME" ]; then
+			OPEN_EDITOR_CMD="$EDITOR_CMD"
+			break
+		fi
+	done
+
+	# Auto-open the worktree in the detected GUI editor at interactive pauses, so the caller
+	# does not have to press a key first – opt out with `GIT_EDIT_NO_AUTO_OPEN=1`, mirroring
+	# the `GIT_EDIT_NO_AUTO_ISOLATE` convention, to keep the press-Space-to-open flow
+	if [ -n "$OPEN_EDITOR_CMD" ] && [ -z "$GIT_EDIT_NO_AUTO_OPEN" ]; then
+		AUTO_OPEN_EDITOR=true
+	fi
+
+	# Capture original branch and `HEAD` for ref-update at the end
+	ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	ORIG_HEAD=$(git rev-parse HEAD)
+
+	# Canonicalize paths (resolve symlinks) so comparisons are consistent
+	OUR_TOPLEVEL=$(cd "$(git rev-parse --show-toplevel)" && pwd -P)
+
+	if [ -d "$WORKTREE_DIR" ]; then
+		# Verify the existing path is a git working tree
+		THEIR_TOPLEVEL=$(git -C "$WORKTREE_DIR" rev-parse --show-toplevel 2>/dev/null)
+		if [ -z "$THEIR_TOPLEVEL" ]; then
+			PRINT_ERR "Path '$WORKTREE_DIR' exists but is not a git working tree"
+			exit 1
+		fi
+		THEIR_TOPLEVEL=$(cd "$THEIR_TOPLEVEL" && pwd -P)
+		WORKTREE_ABS=$(cd "$WORKTREE_DIR" && pwd -P)
+
+		# Must be the root of its own worktree, not a subdirectory of one
+		if [ "$THEIR_TOPLEVEL" != "$WORKTREE_ABS" ]; then
+			PRINT_ERR "Path '$WORKTREE_DIR' is inside a working tree but is not its root"
+			exit 1
+		fi
+		# Must not be the worktree we're currently running from
+		if [ "$THEIR_TOPLEVEL" = "$OUR_TOPLEVEL" ]; then
+			PRINT_ERR "-C/--dir cannot point to the current working tree"
+			exit 1
+		fi
+
+		# Clean up any leftover rebase state from a previous killed run
+		# (rm -rf as fallback in case `git rebase --abort` chokes on malformed state)
+		git -C "$WORKTREE_DIR" rebase --abort 2>/dev/null
+		WT_GITDIR=$(git -C "$WORKTREE_DIR" rev-parse --absolute-git-dir 2>/dev/null)
+		if [ -n "$WT_GITDIR" ]; then
+			rm -rf "$WT_GITDIR/rebase-merge" "$WT_GITDIR/rebase-apply"
+		fi
+
+		# Sync existing worktree to current HEAD
+		CMD="git -C '$WORKTREE_DIR' reset --hard $ORIG_HEAD"
+		PRINT_CMD "$CMD"
+		eval "$CMD" >/dev/null || ABORT
+	else
+		# Create new detached worktree. Auto-recover from a stale
+		# registration — git refuses if the path is listed by
+		# `git worktree list` but missing on disk, which happens when
+		# a previous worktree was removed with `rm -rf` instead of
+		# `git worktree remove`.
+		CMD="git worktree add --detach '$WORKTREE_DIR' $ORIG_HEAD"
+		PRINT_CMD "$CMD"
+		WT_OUT=$(eval "$CMD" 2>&1)
+		WT_STATUS=$?
+		if [ $WT_STATUS -ne 0 ]; then
+			if [[ "$WT_OUT" == *"missing but already registered"* ]]; then
+				echo -e "\e[0;90m(stale worktree registration — pruning and retrying)\e[0m"
+				git worktree prune 2>/dev/null
+				eval "$CMD" || ABORT
+			else
+				echo "$WT_OUT" >&2
+				ABORT
+			fi
+		else
+			[ -n "$WT_OUT" ] && echo "$WT_OUT"
+		fi
+	fi
+
+	cd "$WORKTREE_DIR" || ABORT
+fi
+
 
 GIT_STASH
 
@@ -513,7 +1944,7 @@ if [[ "$ACTION" == "drop" ]]; then
 	PRINT_ACTION "Dropping %s" "${COMMITS[@]}"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
-	CONTINUE_OR_ABORT
+	CONTINUE_OR_ABORT "" skip
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
@@ -521,7 +1952,7 @@ elif [[ "$ACTION" == "squash" ]]; then
 	PRINT_ACTION "Merging %s -> ${TARGET:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#$TARGET}"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
-	CONTINUE_OR_ABORT
+	CONTINUE_OR_ABORT "" skip
 
 	GIT_REBASE_SQUASH
 else
@@ -529,8 +1960,19 @@ else
 
 	GIT_REBASE_BEGIN_EDIT
 
-	PRINT_TEXT "%s – then press %s to continue, or cancel with %s." 35 "Now make your changes" "Enter" "Escape"
-	CONTINUE_OR_ABORT
+	if [ -n "$WORKTREE_DIR" ]; then
+		if [ "$AUTO_OPEN_EDITOR" = "true" ]; then
+			_OPEN_WORKTREE_IN_EDITOR
+			PRINT_TEXT "%s in %s (opened in %s) – then press %s to continue, %s to re-open, or %s to cancel." 35 "Now make your changes" "$WORKTREE_DIR" "$OPEN_EDITOR_NAME" "Enter" "Space" "Escape"
+		elif [ -n "$OPEN_EDITOR_CMD" ]; then
+			PRINT_TEXT "%s in %s – press %s to open in %s, %s to continue, or %s to cancel." 35 "Now make your changes" "$WORKTREE_DIR" "Space" "$OPEN_EDITOR_NAME" "Enter" "Escape"
+		else
+			PRINT_TEXT "%s in %s – then press %s to continue, or cancel with %s." 35 "Now make your changes" "$WORKTREE_DIR" "Enter" "Escape"
+		fi
+	else
+		PRINT_TEXT "%s – then press %s to continue, or cancel with %s." 35 "Now make your changes" "Enter" "Escape"
+	fi
+	CONTINUE_OR_ABORT ${OPEN_EDITOR_CMD:+open}
 
 	GIT_ADD_ALL
 	GIT_COMMIT_AMEND
@@ -540,4 +1982,24 @@ fi
 
 GIT_UNSTASH
 
-echo -e "\n\e[1;92mgit edit completed.\e[0m"
+# Apply the rewritten history back to the original branch (if -C was used)
+if [ -n "$WORKTREE_DIR" ]; then
+	NEW_HEAD=$(git rev-parse HEAD)
+	if [ -n "$ORIG_BRANCH" ]; then
+		# Atomic compare-and-swap: only update if the ref still matches ORIG_HEAD,
+		# so any concurrent commit (e.g., from an editor working in the main checkout)
+		# is not silently overwritten.
+		CMD="git update-ref refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" 2>/dev/null; then
+			PRINT_ERR "Branch '$ORIG_BRANCH' moved during rebase – refusing to overwrite"
+			PRINT_TEXT "Rebased history is at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
+			exit 1
+		fi
+		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH"
+	else
+		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
+	fi
+fi
+
+PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true

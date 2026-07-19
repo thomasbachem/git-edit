@@ -10,13 +10,31 @@ git-edit [-d | --drop | -s | --squash] <commit>...
 
 MODES:
 -e, --edit                      Edit <commit> (default mode)
+-M, --reword                    Alter only <commit>'s message — no working-tree touch
 -d, --drop                      Delete (drop) one or more <commit>s or ranges
 -s, --squash                    Merge (fixup/squash) one or more <commit>s into the oldest one
 -s <target>, --squash <target>  Merge (fixup/squash) <commit>s into <target>
                                 – also assumed when multiple commits are supplied
+-S, --resquash                  Merge contiguous <commit>s — no working-tree touch
+--exec -- <cmd>...              Run <cmd> in an isolated temp worktree (parallel-safe)
 FLAGS:
 -m, --message                   Alter <commit> message after applying changes
+-C, --dir                       Run in a separate worktree (default: <repo>.git-edit)
+-C=<path>, --dir=<path>         Run in the specified worktree path
+--text <msg>                    Inline message for -M / -S (skip editor); use - for stdin
+-y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)
 ```
+
+Every run ends with a single status line written as natural prose, anchored by `git-edit: <outcome>` for programmatic dispatch:
+
+```
+git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
+git-edit: ok — refs/heads/main unchanged
+git-edit: error — exit code <N>
+git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
+```
+
+Agents `grep '^git-edit: (ok|error|conflict)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
 *Tip:* Mode and flags can be given in any order.
 
 ## Usage Examples
@@ -48,6 +66,146 @@ This will:
 3. **Merge the newer commits into it**
 4. Continue the rebase (pausing if merge conflicts occur so you can resolve them)
 5. Restore your stashed changes
+
+### Rewording a Commit Message Without Touching the Working Tree
+
+If all you want to do is fix a commit message, use `-M` / `--reword`:
+
+```
+git edit -M 0123456789abcdef0123456789abcdef01234567
+```
+
+This opens your `$EDITOR` on the current message, then rebuilds just the affected commit (and any descendants) using `git commit-tree` + `git update-ref` — no checkout, no stash, no rebase, no temporary worktree. The working tree is physically untouched (file inodes and mtimes preserved); the operation is atomic from your perspective: a single ref update at the end. Safe to run while another tool (e.g., an AI coding assistant) is editing files in your checkout.
+
+### Squashing Commits
+
+Plain `-s` (and implicit squash via multi-commit args) **auto-routes** to the plumbing path whenever the operation is eligible — contiguous range, no merge commits, target = oldest commit. So:
+
+```
+git edit HEAD~2..HEAD                       # implicit squash → plumbing
+git edit -s HEAD~2..HEAD                    # explicit -s with a range → plumbing
+git edit -s HEAD~2 HEAD~1 HEAD              # explicit -s on contiguous list → plumbing
+git edit --text="Combined" HEAD~2..HEAD     # plumbing + inline message, no editor
+git edit -s --text="Combined" HEAD~2..HEAD  # the same, explicit -s
+```
+
+Both contiguous and non-contiguous selections accept `--text="<msg>"` to skip the message editor. Non-contiguous selections fall back to the rebase-based path automatically (still working-tree-safe under auto-isolation in non-TTY contexts).
+
+For explicit squash target (squash *into* a specific commit, not just the oldest in the set), use the **`=` form**:
+
+```
+git edit -s=<target> <commits>...           # squash <commits> into <target>
+```
+
+The `=` is required to disambiguate from "use this as a commit-to-squash" — plain `-s <target> <commits>` treats the first arg as another commit because `-s` doesn't greedily consume its next argument anymore.
+
+Use `-S` / `--resquash` explicitly when you want a hard *guarantee* that the plumbing path will be used — it errors out loudly if the operation isn't plumbing-eligible, instead of silently falling back to the rebase path. Useful for scripts that want to detect "my assumption was wrong" rather than silently get a heavier operation:
+
+```
+git edit -S HEAD~2..HEAD                    # fixup style: keep the oldest's message
+git edit -S --text="Combined" HEAD~2..HEAD  # inline message, plumbing only
+```
+
+Plumbing-only restrictions (since this path has no conflict resolution):
+- The selected commits must be contiguous in history (no gaps).
+- The range must not contain merge commits.
+
+### Folding Local Changes Into a Past Commit (`--amend-into`)
+
+The typical agent flow — "edit this file and amend it to commit X" — is supported via `--amend-into`. After staging the files you want folded:
+
+```
+# After editing files (e.g., via Claude Code's Edit tool)
+git add <files>
+git edit --amend-into=<sha>
+```
+
+What happens internally:
+1. A `fixup!` commit is created on `HEAD` from the staged index (forward-only append in main; safe under parallel sessions).
+2. A unique temp worktree is created at that new HEAD and `git rebase --autosquash` runs there, folding the fixup into `<sha>`.
+3. The branch ref is atomically CAS-updated to the rebased tip.
+
+Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits.
+
+#### Conflict resolution (`--continue` / `--abort`)
+
+If the autosquash hits a merge conflict (the agent's change overlaps with a later commit that also modifies the same lines), the script doesn't auto-rollback. Instead it pauses, mirroring `git rebase`'s own pause-on-conflict pattern, and prints actionable detail:
+
+```
+$ git edit --amend-into=<sha>
+…
+Conflict during autosquash – resolve in worktree, then 'git edit --continue'
+
+Worktree: /var/folders/…/git-edit-amend-into.XXXXXX
+
+Conflicted files:
+  - x.txt
+
+Currently failing on:
+  fixup 234e7a5 # fixup! add x
+
+Remaining steps (after resolution):
+  pick ec00775 # add y
+  pick 8b068f4 # modify x
+
+Or abort the operation: git edit --abort
+git-edit: conflict — resolve in /var/folders/…/git-edit-amend-into.XXXXXX (x.txt); then 'git edit --continue' or 'git edit --abort'
+```
+
+The "Remaining steps" list lets the agent predict cascade likelihood: if any of the remaining picks touch the same files as the agent's amendment, another conflict is likely. The trailer line gives the worktree path and conflicted files inline, so an agent can dispatch on `git-edit: conflict` and act on it without parsing the full output.
+
+The worktree is preserved with the conflict markers in the files. The agent (or human) resolves the conflicts there:
+
+```
+# Edit conflicted files in the worktree, then stage them:
+git -C <worktree> add <resolved-files>
+
+# Continue (or abort + roll back):
+git edit --continue
+git edit --abort
+```
+
+Conflicts can cascade — resolving one may surface another when the rebase continues. Each `git edit --continue` either succeeds (and emits the `ok` trailer) or stops at the next conflict (and emits a fresh `conflict` trailer). The agent loops until either successful or an `--abort` resets everything.
+
+State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
+
+### Running Any Raw Git Command Safely (`--exec`)
+
+For the cases that don't fit `-M`/`-S`/`-d`/`-e` — e.g. an AI agent reaching for raw `git rebase -i`, `git commit --amend`, `git reset --hard` — wrap it in `--exec` so it runs in an isolated, per-invocation temporary worktree:
+
+```
+git edit --exec -- git rebase -i HEAD~3
+git edit --exec -- git commit --amend
+git edit --exec -- git reset --hard HEAD~1
+```
+
+The temp worktree is created fresh, the command runs there, and the original branch ref is updated atomically (compare-and-swap) iff the command moved HEAD. The temp worktree is removed on exit. Parallel-safe across sessions — two concurrent `--exec` calls each get their own worktree, and at most one wins the CAS on the shared branch ref.
+
+Useful as a CLAUDE.md instruction: *"For any history-rewriting git command, run it via `git edit --exec -- …` so it can't disturb other sessions' working trees."*
+
+### Auto-Isolation in Non-Interactive Contexts
+
+When stdin isn't a TTY (i.e. when run by Claude Code, CI, or any script), `-C` is **enabled automatically** for the modes that would otherwise touch the main working tree (drop, edit, non-eligible squash). This protects parallel sessions from clobbering each other when an agent forgets to add `-C`.
+
+Modes that already don't touch the working tree (`-M`, `-S`, `--exec`, auto-routed `-s` → plumbing) are left alone — they don't need it. A short gray notice prints when auto-isolation kicks in.
+
+To opt out (e.g., CI scripts that genuinely want to modify the main checkout), set `GIT_EDIT_NO_AUTO_ISOLATE=1` in the environment.
+
+### Coexisting with Concurrent Editors (e.g. AI Agents)
+
+If something is actively modifying your working tree (e.g., an AI coding assistant), running `git edit` directly can clobber its work — the script stashes/unstashes and rewrites HEAD. Pass `-C` to run the rebase in a separate worktree instead:
+
+```
+git edit -C 0123456789abcdef0123456789abcdef01234567
+```
+
+Without a path, `<repo>.git-edit` is used as a sibling directory and is created on first use (auto-managed worktree). Your main working tree stays untouched; the branch ref is rewritten in the shared `.git`. When the agent is done, run `git reset --hard` in the main checkout to apply the changes.
+
+To use a specific path: `git edit -C=/tmp/my-worktree <commit>` (use the `=` form to disambiguate from a commit ref).
+
+Whenever a worktree is in use (both the auto-managed default and an explicit `-C=<path>`) and your git editor points to a known GUI editor (Sublime Text, VS Code, Cursor, Zed, JetBrains IDEs, etc.), the worktree is **opened automatically** in that editor at each interactive pause ("Now make your changes" / "Merge conflicts"), so you can start editing right away. Press `Space` at the prompt to re-open it (e.g. if you closed the window), `Enter` to continue, or `Escape` to cancel. To disable auto-open and revert to the press-`Space`-to-open behavior, set `GIT_EDIT_NO_AUTO_OPEN=1` in the environment.
+
+The editor is resolved from git's full cascade — `$GIT_EDITOR`, `git config core.editor`, `$VISUAL`, then `$EDITOR` — so a Sublime setup like `git config --global core.editor "subl -n -w"` is detected even when `$VISUAL`/`$EDITOR` are unset. Terminal editors (vim, nano, etc.) are intentionally ignored, since "open a directory" doesn't apply to them.
 
 ## Screenshot
 
