@@ -300,6 +300,15 @@ _PRINT_CONFLICT_DETAIL () {
 		fi
 	fi
 
+	# No conflicted files + a paused rebase = the current step produced an
+	# empty commit (its changes are already upstream). Nothing to resolve –
+	# the escape is skipping that step
+	if [ -z "$UNMERGED" ] && [ -d "$GITDIR/rebase-merge" ]; then
+		PRINT_TEXT "No conflicted files – the current step became empty (its changes are already upstream). Skip it, then continue:" 33 >&2
+		echo -e "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
+		echo -e "\e[0;33m  git edit --continue\e[0m" >&2
+	fi
+
 	# Emit comma-separated unmerged list on stdout for the trailer
 	echo "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
 }
@@ -1355,10 +1364,11 @@ _CONTINUE_REORDER () {
 	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
 		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
-			_CLEANUP_HOOK=""
-			PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
+			# Finished with nothing to apply (skipped-empty + fast-forwards)
 			_CLEAR_STATE
-			exit 1
+			PRINT_TEXT "%s – branch unchanged." 33 "Rebase finished with nothing to apply"
+			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+			exit 0
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
@@ -1492,10 +1502,12 @@ _CONTINUE_AMEND_INTO () {
 	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
 		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
-			_CLEANUP_HOOK=""
-			PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
+			# Finished with nothing to apply – e.g. the fixup went empty, got
+			# skipped, and every remaining pick fast-forwarded
 			_CLEAR_STATE
-			exit 1
+			PRINT_TEXT "%s – branch unchanged." 33 "Rebase finished with nothing to apply"
+			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+			exit 0
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
@@ -2299,6 +2311,38 @@ GIT_SELFTEST () {
 	_ST_RUN --split="$(git rev-parse HEAD~1)" --text="x" -- s1.txt
 	_ST_CHECK "refuses whole-commit pathspec" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'covers every change'
+
+	# --- 19. empty-step pause: guidance + skip, plus graceful no-op continue ---
+	echo -e "\e[1;96m[19] empty-step guidance\e[0m"
+	echo "f1" > f1.txt && echo "v1" > f2.txt && git add f1.txt f2.txt && git commit -qm "R0 base"
+	echo "f1x" > f1.txt && echo "v2" > f2.txt && git add f1.txt f2.txt && git commit -qm "R1 commit"
+	echo "v1" > f2.txt && git add f2.txt && git commit -qm "R2 revert"
+	PRE_HEAD=$(git rev-parse HEAD)
+	# Moving the revert before the commit it reverts makes it empty
+	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
+	_ST_EQ "pauses with exit 2" "$RC" "2"
+	_ST_OUT_HAS "explains the empty step" 'became empty'
+	_ST_OUT_HAS "names the skip escape" 'rebase --skip'
+	local EMPTY_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	git -C "$EMPTY_WT" rebase --skip >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "continue applies the result" "$RC" "0"
+	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
+	_ST_EQ "revert dropped, R1 content kept" "$(git show 'HEAD:f2.txt')" "v2"
+	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
+	# Graceful no-op: a manually-aborted worktree rebase reports unchanged
+	echo "v2b" > f2.txt && git add f2.txt && git commit -qm "R3 commit"
+	echo "v1" > f2.txt && git add f2.txt && git commit -qm "R4 revert"
+	PRE_HEAD=$(git rev-parse HEAD)
+	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
+	_ST_EQ "pauses with exit 2" "$RC" "2"
+	EMPTY_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	git -C "$EMPTY_WT" rebase --abort >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "no-op continue exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports unchanged" '^git-edit: ok — .* unchanged'
+	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$PRE_HEAD"
+	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
