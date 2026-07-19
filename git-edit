@@ -368,11 +368,34 @@ _JOURNAL_FILE_PATH () {
 # Records a completed CAS ref move: appends a journal entry and prints the
 # one-line inverse command, so recovery never requires understanding this
 # script — the undo is plain git, also reachable via `git edit --undo`.
+# Also warns about tags left pointing into the rewritten span — they'd
+# silently stay on pre-rewrite history and surface only at release time.
 _RECORD_REF_MOVE () {
 	# args: <ref> <old> <new> <label>
 	local JF=$(_JOURNAL_FILE_PATH)
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
 	echo -e "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+
+	# A tag is orphaned if it was reachable from the old tip but isn't from
+	# the new one. Suggest the counterpart commit when its subject matches
+	# exactly one commit in the rewritten span; tags on shared (pushed) base
+	# history are ancestors of both tips and never flagged.
+	local TAG TAGSHA TSUBJ CAND
+	for TAG in $(git for-each-ref refs/tags --format='%(refname:short)'); do
+		TAGSHA=$(git rev-parse "$TAG^{commit}" 2>/dev/null)
+		[ -z "$TAGSHA" ] && continue
+		if git merge-base --is-ancestor "$TAGSHA" "$2" 2>/dev/null && \
+		   ! git merge-base --is-ancestor "$TAGSHA" "$3" 2>/dev/null; then
+			TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
+			CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
+			PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
+			if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
+				echo -e "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
+			else
+				echo -e "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
+			fi
+		fi
+	done
 }
 
 # Reverts the last journaled ref move, CAS-guarded: refuses if the branch has
@@ -2054,6 +2077,16 @@ GIT_SELFTEST () {
 			echo "$OUT" | tail -5 | sed 's/^/       | /'
 		fi
 	}
+	_ST_OUT_LACKS () {
+		local DESC=$1
+		local PATTERN=$2
+		if echo "$OUT" | grep -q "$PATTERN"; then
+			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			echo "$OUT" | grep "$PATTERN" | head -3 | sed 's/^/       | /'
+		else
+			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+		fi
+	}
 	_ST_EQ () {
 		local DESC=$1
 		if [ "$2" = "$3" ]; then
@@ -2343,6 +2376,24 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "reports unchanged" '^git-edit: ok — .* unchanged'
 	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$PRE_HEAD"
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
+
+	# --- 20. tag-orphan warning on rewrites beneath a tag ---
+	echo -e "\e[1;96m[20] tag-orphan warning\e[0m"
+	echo "t1" > t1.txt && git add t1.txt && git commit -qm "T1 commit"
+	echo "t2" > t2.txt && git add t2.txt && git commit -qm "T2 commit"
+	git tag marker
+	# Rewriting BELOW the tag orphans it – expect the warning + exact re-point
+	_ST_RUN -M --text="T1 reworded" "$(git rev-parse HEAD~1)"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "warns about the tag" 'points into the rewritten span'
+	_ST_OUT_HAS "suggests exact counterpart" 'git tag -f marker .*same subject'
+	git tag -f marker >/dev/null 2>&1   # re-point to current HEAD for the next check
+	# Rewriting ABOVE the tag leaves it reachable – expect no warning
+	git tag -f marker "$(git rev-parse HEAD~1)" >/dev/null 2>&1
+	_ST_RUN -M --text="T2 reworded" "$(git rev-parse HEAD)"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_LACKS "no warning for safe tag" 'points into the rewritten span'
+	git tag -d marker >/dev/null 2>&1
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
