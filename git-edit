@@ -99,7 +99,9 @@ USAGE () {
 	echo -e "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
 	echo -e "\e[0;94m       git edit --amend-into=<sha>                          # fold staged changes into <sha>\e[0m"
+	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
+	echo -e "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
 	echo -e ""
 	echo -e "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
 	echo -e "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
@@ -116,6 +118,11 @@ USAGE () {
 	echo -e "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
 	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
 	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
+	echo -e "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
+	echo -e "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
+	echo -e "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
+	echo -e "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
+	echo -e "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	echo -e "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S (skip editor); '-' reads stdin\e[0m"
 	echo -e "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
 	echo -e ""
@@ -318,6 +325,108 @@ PRINT_COMPLETED () {
 	# args: <new_head_sha> <ref> <changed:true|false>
 	echo -e "\n\e[1;92mgit edit completed.\e[0m"
 	EMIT_STATUS "$1" "$2" "$3"
+}
+
+# Refuses to rewrite a commit that already exists on a remote — rewriting
+# pushed history disrupts collaborators and (in public repos) should never
+# happen by accident. Guarding the oldest commit an operation touches covers
+# the whole rewritten span, since every descendant of an unpushed commit is
+# itself unpushed. Override with --allow-pushed.
+_GUARD_UNPUSHED () {
+	[ ${#OPT_ALLOW_PUSHED} -gt 0 ] && return 0
+	local C=$1
+	local CONTAINING=$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ' | sed 's/^[* ]*//' | head -3 | tr '\n' ' ' | sed 's/ $//')
+	if [ -n "$CONTAINING" ]; then
+		PRINT_ERR "Commit ${C:0:7} is already pushed (on: $CONTAINING)"
+		echo -e "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
+		exit 1
+	fi
+}
+
+# Names the journal of completed ref moves, one line each ("<epoch> <ref> <old> <new>"), in the
+# common git dir so worktrees share it – powers `--undo` and `--status`'s last-operation report
+_JOURNAL_FILE_PATH () {
+	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+	[ -z "$DIR" ] && return 1
+	case "$DIR" in
+		/*) ;;
+		*) DIR="$(pwd)/$DIR" ;;
+	esac
+	echo "$DIR/git-edit-journal"
+}
+
+# Records a completed CAS ref move: appends a journal entry and prints the
+# one-line inverse command, so recovery never requires understanding this
+# script — the undo is plain git, also reachable via `git edit --undo`.
+_RECORD_REF_MOVE () {
+	# args: <ref> <old> <new> <label>
+	local JF=$(_JOURNAL_FILE_PATH)
+	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
+	echo -e "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+}
+
+# Reverts the last journaled ref move, CAS-guarded: refuses if the branch has
+# moved since (a later commit or rewrite would be silently discarded).
+GIT_UNDO () {
+	local JF=$(_JOURNAL_FILE_PATH)
+	if [ -z "$JF" ] || [ ! -s "$JF" ]; then
+		PRINT_ERR "Nothing to undo (no completed git-edit operation on record)"
+		exit 1
+	fi
+	local LAST=$(tail -1 "$JF")
+	local REF=$(echo "$LAST" | awk '{print $2}')
+	local OLD=$(echo "$LAST" | awk '{print $3}')
+	local NEW=$(echo "$LAST" | awk '{print $4}')
+	local LABEL=$(echo "$LAST" | cut -d' ' -f5-)
+
+	PRINT_ACTION "Undoing last operation (%s)..." "${NEW}"
+
+	local CMD="git update-ref -m 'git edit: undo $LABEL' $REF $OLD $NEW"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' has moved since that operation – refusing to rewind over newer work"
+		echo -e "\e[0;31m  Expected $REF at ${NEW:0:7}, found $(git rev-parse --short "$REF" 2>/dev/null).\e[0m" >&2
+		exit 1
+	fi
+	# Pop the undone entry off the journal
+	sed -i '' -e '$d' "$JF" 2>/dev/null
+
+	if ! git diff --quiet "$OLD" "$NEW" 2>/dev/null; then
+		PRINT_TEXT "Trees differ between the two tips – re-sync the index with %s if this is your checkout's branch." 33 "git reset"
+	fi
+	PRINT_TEXT "%s" 32 "Undid: $LABEL"
+	echo "git-edit: ok — $REF moved $NEW → $OLD"
+	_STATUS_EMITTED=true
+}
+
+# Reports the in-flight operation (if any) in the same format as the original
+# conflict pause, so an agent landing mid-operation — after a context reset or
+# from another session — can re-enter without reading any state files. Falls
+# back to the last completed operation from the journal.
+GIT_STATUS_REPORT () {
+	if _STATE_EXISTS; then
+		_LOAD_STATE
+		PRINT_TEXT "In-flight operation: %s (target %s, branch %s)" 33 "$STATE_OPERATION" "${STATE_TARGET:0:7}" "$STATE_BRANCH"
+		if [ -d "$STATE_WORKTREE" ]; then
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			PRINT_TEXT "Resolve there, then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+		else
+			PRINT_ERR "State exists but its worktree is gone – run 'git edit --abort' to clear"
+			exit 1
+		fi
+	else
+		local JF=$(_JOURNAL_FILE_PATH)
+		if [ -n "$JF" ] && [ -s "$JF" ]; then
+			local LAST=$(tail -1 "$JF")
+			PRINT_TEXT "No operation in flight. Last completed: %s (%s → %s)" 32 "$(echo "$LAST" | cut -d' ' -f5-)" "$(echo "$LAST" | awk '{print substr($3,1,7)}')" "$(echo "$LAST" | awk '{print substr($4,1,7)}')"
+		else
+			PRINT_TEXT "%s" 32 "No operation in flight."
+		fi
+		echo "git-edit: ok — no operation in flight"
+		_STATUS_EMITTED=true
+	fi
 }
 
 # After a worktree-isolated rewrite, the main checkout still reflects the
@@ -671,15 +780,32 @@ GIT_EXEC () {
 		return 0
 	fi
 
+	# Pushed guard: refuse if the rewrite would orphan a commit that exists on
+	# a remote (any remote ref that was an ancestor of the old tip must still
+	# be one of the new tip). --exec can't know its targets up front, so this
+	# is checked on the result, before anything is applied.
+	if [ ${#OPT_ALLOW_PUSHED} -eq 0 ]; then
+		local R
+		for R in $(git for-each-ref refs/remotes --format='%(refname)'); do
+			if git merge-base --is-ancestor "$R" "$ORIG_HEAD" 2>/dev/null && \
+			   ! git merge-base --is-ancestor "$R" "$NEW_HEAD" 2>/dev/null; then
+				PRINT_ERR "Command rewrote pushed history ($R would be orphaned) – not applied"
+				echo -e "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
+				exit 1
+			fi
+		done
+	fi
+
 	# Atomic compare-and-swap. If the branch moved during command execution
 	# (e.g., a concurrent commit from another session), refuse.
-	local UPDATE="git update-ref $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE="git update-ref -m 'git edit: exec' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE"
 	if ! eval "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
 		PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
 	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "exec"
 
 	if [ -n "$BRANCH" ]; then
 		_PRINT_REWRITE_APPLY_HINT "$BRANCH"
@@ -695,10 +821,13 @@ GIT_EXEC () {
 # Fold currently-staged changes (from the main working tree's index) into a
 # specified target commit, without touching files the user hasn't staged.
 # Implements the standard "fixup + autosquash" pattern as a single operation:
-#   1. Create `fixup!` commit on main's HEAD using the staged index
+#   1. Snapshot the staged index as a fixup commit OBJECT (`write-tree` +
+#      `commit-tree`) – no ref moves, so the branch stays visually untouched
+#      and parallel sessions never see an intermediate `fixup!` commit
 #   2. Run autosquash inside a fresh isolated worktree (parallel-safe)
-#   3. Atomic CAS-update of the branch ref
-#   4. On any failure, roll back the fixup commit in main
+#   3. Atomic CAS-update of the branch ref (guard = the pre-op tip)
+# Nothing is consumed until the CAS lands, so failure/abort needs no rollback:
+# the staged changes are simply still staged.
 GIT_AMEND_INTO () {
 	local TARGET=$AMEND_INTO_TARGET
 
@@ -730,36 +859,46 @@ GIT_AMEND_INTO () {
 	fi
 
 	local TARGET_FULL=$(git rev-parse "$TARGET")
+	_GUARD_UNPUSHED "$TARGET_FULL"
+
 	local REF="refs/heads/$ORIG_BRANCH"
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local MAIN_DIR=$(pwd)
+	# Repo root, not `pwd` – pathspecs in the success sync below must resolve
+	# from the root even when the script was invoked from a subdirectory
+	local MAIN_DIR=$(git rev-parse --show-toplevel)
+	# Commits above the target pre-op – locates the amended commit in the
+	# rebased chain afterwards (`NEW_HEAD~DEPTH`), for the completion summary
+	local DEPTH=$(git rev-list --count "$TARGET_FULL..HEAD")
+	# The folded paths (root-relative): shown in the completion summary, and
+	# scoping the success sync to exactly these entries
+	local -a STAGED_PATHS
+	STAGED_PATHS=("${(@f)$(git diff --cached --name-only)}")
+	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
 
-	# Step 1: create the fixup commit in main. This is a forward-only append
-	# (uses git's index lock; safe against parallel commits — git serializes them).
-	local FIXUP_CMD="git -c commit.gpgsign=false commit --fixup=$TARGET_FULL"
-	PRINT_CMD "$FIXUP_CMD"
-	eval "$FIXUP_CMD" || exit 1
+	# Step 1: snapshot the staged index as a commit object. `write-tree` +
+	# `commit-tree` build it without moving any ref or touching the index –
+	# the staged changes stay staged until the CAS lands.
+	local TARGET_SUBJECT=$(git log -1 --format='%s' "$TARGET_FULL")
+	local STAGED_TREE=$(git write-tree 2>/dev/null)
+	if [ -z "$STAGED_TREE" ]; then
+		PRINT_ERR "Cannot snapshot index (unmerged entries?) – resolve conflicts first"
+		exit 1
+	fi
+	local FIXUP_COMMIT=$(git commit-tree "$STAGED_TREE" -p "$ORIG_HEAD" -m "fixup! $TARGET_SUBJECT") || exit 1
+	PRINT_CMD "git write-tree + commit-tree -> ${FIXUP_COMMIT:0:7}  # fixup! object, branch untouched"
 
-	local HEAD_WITH_FIXUP=$(git rev-parse HEAD)
-
-	# Rollback closure used on any later failure: restore main's HEAD to its
-	# pre-fixup state via `update-ref` (preserving the staged changes in the
-	# index, so the agent can retry without re-staging).
-	local ROLLBACK="git -C '$MAIN_DIR' update-ref $REF $ORIG_HEAD $HEAD_WITH_FIXUP 2>/dev/null; git -C '$MAIN_DIR' read-tree --reset $ORIG_HEAD 2>/dev/null"
-
-	# Step 2: isolated worktree at HEAD (which includes the fixup)
+	# Step 2: isolated worktree at the fixup commit object
 	local WT=$(mktemp -d -t git-edit-amend-into.XXXXXX)
 	rmdir "$WT"
-	local WT_CMD="git worktree add --detach '$WT' $HEAD_WITH_FIXUP"
+	local WT_CMD="git worktree add --detach '$WT' $FIXUP_COMMIT"
 	PRINT_CMD "$WT_CMD" 90
 	if ! eval "$WT_CMD" >/dev/null 2>&1; then
 		PRINT_ERR "Failed to create temp worktree"
-		eval "$ROLLBACK"
 		exit 1
 	fi
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
 
-	cd "$WT" || { eval "$ROLLBACK"; exit 1; }
+	cd "$WT" || exit 1
 
 	# Determine rebase base (parent of target, or --root if target is initial commit)
 	local REBASE_BASE
@@ -777,14 +916,17 @@ GIT_AMEND_INTO () {
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
 		# Conflict during autosquash. Save state, leave the worktree alive,
 		# and let the user/agent resolve via `git edit --continue` (or
-		# `git edit --abort` to cancel + rollback the fixup commit in main).
+		# `git edit --abort` to cancel – the branch was never moved, and the
+		# staged changes are still staged in main).
 		_SAVE_STATE \
 			"operation=amend-into" \
 			"worktree=$WT" \
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
 			"target=$TARGET_FULL" \
-			"head_with_fixup=$HEAD_WITH_FIXUP"
+			"depth=$DEPTH" \
+			"maindir=$MAIN_DIR" \
+			"files=${(pj:\t:)STAGED_PATHS}"
 		# Don't auto-cleanup the worktree – it holds the in-progress rebase
 		_CLEANUP_HOOK=""
 
@@ -798,25 +940,306 @@ GIT_AMEND_INTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	# Step 4: atomic CAS-update of branch ref. If the branch moved during
-	# autosquash (parallel commit), refuse to overwrite and leave the fixup
-	# commit in main as-is (caller can decide what to do).
-	local UPDATE_CMD="git update-ref $REF $NEW_HEAD $HEAD_WITH_FIXUP"
+	# Step 4: atomic CAS-update of branch ref, guarded on the pre-op tip. If
+	# the branch moved during autosquash (parallel commit), refuse – nothing
+	# was consumed, so the staged changes are still intact for a retry.
+	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
-		PRINT_TEXT "The fixup commit is still at HEAD in %s; reset --soft HEAD~1 to undo if needed." 33 "$MAIN_DIR"
+		PRINT_TEXT "Nothing was applied; your staged changes are untouched – retry when ready." 33
 		exit 1
 	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "amend-into ${TARGET_FULL:0:7}"
+
+	# Re-sync exactly the folded paths' index entries to the new HEAD: those
+	# staged changes are now part of history, so they should report clean.
+	# Path-scoped so anything a parallel session staged meanwhile keeps its
+	# staged state (a whole-index reset would silently wipe it).
+	git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
+
+	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES"
 
 	# Export new HEAD + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
 	AMEND_REF=$REF
 }
 
-# State-file helpers for in-flight operations (currently used by --amend-into
-# when an autosquash hits a conflict the user/agent must resolve). The file
-# lives in the repo's common git dir so it's shared across worktrees.
+# Prints the amended commit's stat after a completed --amend-into, so the
+# caller doesn't need a follow-up `git show` to verify where the fold landed.
+_PRINT_AMENDED_SUMMARY () {
+	# args: <new_head> <depth> <folded-files-comma-separated>
+	local AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
+	[ -z "$AMENDED" ] && return 0
+	if [ -n "$3" ]; then
+		PRINT_TEXT "Folded %s into:" 32 "$(echo "$3" | sed 's/,/, /g')"
+	else
+		PRINT_TEXT "%s" 32 "Amended commit:"
+	fi
+	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+}
+
+# Reorders a contiguous span of commits. The positional args give the desired
+# new order (oldest-first). Runs the rebase in an isolated temp worktree with
+# a scripted `GIT_SEQUENCE_EDITOR`, CAS-applies the result, and reuses the
+# conflict pause machinery (`--continue`/`--abort`) when replaying commits
+# over their new predecessors conflicts. The branch ref only moves at the end.
+GIT_REORDER () {
+	# Pre-flight: must not be a stale in-flight operation
+	if _STATE_EXISTS; then
+		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		exit 1
+	fi
+
+	# Pre-flight: must be on a branch
+	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -z "$ORIG_BRANCH" ]; then
+		PRINT_ERR "--reorder requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+	local REF="refs/heads/$ORIG_BRANCH"
+	local ORIG_HEAD=$(git rev-parse HEAD)
+
+	if [ ${#COMMITS_DESIRED[@]} -lt 2 ]; then
+		PRINT_ERR "--reorder needs at least two commits (in the desired new order)"
+		exit 1
+	fi
+
+	# All commits must be distinct
+	local UNIQUE_COUNT=$(printf '%s\n' "${COMMITS[@]}" | sort -u | wc -l | tr -d ' ')
+	if [ "$UNIQUE_COUNT" -ne ${#COMMITS[@]} ]; then
+		PRINT_ERR "--reorder arguments must be distinct commits"
+		exit 1
+	fi
+
+	# No-op if the desired order matches the current order
+	local SAME=true
+	local i
+	for (( i=1; i<=${#COMMITS[@]}; i++ )); do
+		[ "${COMMITS[$i]}" != "${COMMITS_DESIRED[$i]}" ] && SAME=false
+	done
+	if [ "$SAME" = "true" ]; then
+		PRINT_TEXT "%s" 33 "Desired order matches the current order – nothing to do."
+		EMIT_STATUS "$ORIG_HEAD" "$REF" false
+		exit 0
+	fi
+
+	# Contiguity: the span oldest..newest must equal the selection exactly
+	local OLDEST=${COMMITS[1]}
+	local NEWEST=${COMMITS[-1]}
+	if ! git merge-base --is-ancestor "$NEWEST" HEAD 2>/dev/null; then
+		PRINT_ERR "Commit ${NEWEST:0:7} is not reachable from HEAD"
+		exit 1
+	fi
+	local EXPECTED
+	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
+		EXPECTED=($(git rev-list --reverse "$OLDEST^..$NEWEST"))
+	else
+		EXPECTED=($(git rev-list --reverse "$NEWEST"))
+	fi
+	if [ ${#EXPECTED[@]} -ne ${#COMMITS[@]} ]; then
+		PRINT_ERR "--reorder requires a contiguous span of commits"
+		echo -e "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
+		exit 1
+	fi
+	for (( i=1; i<=${#COMMITS[@]}; i++ )); do
+		if [ "${COMMITS[$i]}" != "${EXPECTED[$i]}" ]; then
+			PRINT_ERR "--reorder requires a contiguous span of commits"
+			exit 1
+		fi
+	done
+
+	# No merge commits in the span
+	local C P_LIST
+	for C in "${COMMITS[@]}"; do
+		P_LIST=$(git log -1 --format='%P' "$C")
+		if [[ "$P_LIST" == *" "* ]]; then
+			PRINT_ERR "--reorder cannot handle merge commit ${C:0:7}"
+			exit 1
+		fi
+	done
+
+	_GUARD_UNPUSHED "$OLDEST"
+
+	# Rebase base (parent of the oldest, or --root for the initial commit)
+	local REBASE_BASE
+	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
+		REBASE_BASE="$OLDEST^"
+	else
+		REBASE_BASE="--root"
+	fi
+	# Total todo length, for the completion summary's log span
+	local TOTAL
+	if [ "$REBASE_BASE" = "--root" ]; then
+		TOTAL=$(git rev-list --count HEAD)
+	else
+		TOTAL=$(git rev-list --count "$REBASE_BASE..HEAD")
+	fi
+
+	# Isolated worktree at the current tip
+	local WT=$(mktemp -d -t git-edit-reorder.XXXXXX)
+	rmdir "$WT"
+	local WT_CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	PRINT_CMD "$WT_CMD" 90
+	if ! eval "$WT_CMD" >/dev/null 2>&1; then
+		PRINT_ERR "Failed to create temp worktree"
+		exit 1
+	fi
+	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	cd "$WT" || exit 1
+
+	# Scripted sequence editor: drop the span's `pick` lines and re-emit them
+	# at the first one's position in the desired order. The todo's abbreviated
+	# SHAs are matched as prefixes of our full ones (unambiguous repo-wide);
+	# the order travels via env so the script file needs no interpolation.
+	local SEQ=$(mktemp -t git-edit-reorder-seq.XXXXXX)
+	cat > "$SEQ" <<'SEQEOF'
+#!/bin/zsh
+awk -v order="$GIT_EDIT_REORDER_ORDER" '
+	BEGIN { n = split(order, O, " ") }
+	/^pick / {
+		member = 0
+		for (i = 1; i <= n; i++) {
+			if (index(O[i], $2) == 1) { member = 1; break }
+		}
+		if (member) {
+			if (!done) {
+				for (i = 1; i <= n; i++) print "pick", O[i]
+				done = 1
+			}
+			next
+		}
+	}
+	{ print }
+' "$1" > "$1.new" && mv "$1.new" "$1"
+SEQEOF
+	chmod +x "$SEQ"
+
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git rebase --no-autostash --interactive $REBASE_BASE"
+	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+		rm -f "$SEQ"
+		# Conflict while replaying – persist state for --continue/--abort.
+		# The branch was never moved, so --abort has nothing to roll back.
+		_SAVE_STATE \
+			"operation=reorder" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$OLDEST"
+		_CLEANUP_HOOK=""
+
+		PRINT_ERR "Conflict while reordering – resolve in worktree, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$WT"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
+		exit 2
+	fi
+	rm -f "$SEQ"
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+
+	# Atomic CAS-update, guarded on the pre-op tip
+	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
+		PRINT_TEXT "Reordered history is at %s (not applied)." 33 "$NEW_HEAD"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reorder ${OLDEST:0:7}..${NEWEST:0:7}"
+
+	# Completion summary: tree identity (clean reorders preserve the tip tree;
+	# conflict resolutions may not) + the rewritten span in its new order
+	if git diff --quiet "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null; then
+		PRINT_TEXT "%s – new order:" 32 "Tip tree identical ✓"
+	else
+		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order:"
+	fi
+	git log --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+
+	REORDER_NEW_HEAD=$NEW_HEAD
+	REORDER_REF=$REF
+}
+
+# Resume an in-flight --reorder after conflict resolution. Mirrors
+# _CONTINUE_AMEND_INTO: continue the rebase in the preserved worktree, then
+# CAS the branch from its (untouched) pre-op tip.
+_CONTINUE_REORDER () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	cd "$STATE_WORKTREE" || exit 1
+
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	PRINT_ACTION "Continuing reorder around %s..." "${STATE_TARGET:0:7}"
+
+	# If no rebase is in progress but `HEAD` has moved on, the resolution was
+	# completed manually in the worktree – apply the result instead of
+	# stranding it
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
+			_CLEAR_STATE
+			exit 1
+		fi
+		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
+	else
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" >/dev/null 2>&1; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			exit 2
+		fi
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+
+	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "reorder around ${STATE_TARGET:0:7}"
+
+	_CLEAR_STATE
+	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
+}
+
+# Abort an in-flight --reorder: abort the paused rebase and remove the
+# worktree. The branch was never moved, so there's nothing to roll back.
+_ABORT_REORDER () {
+	PRINT_ACTION "Aborting reorder around %s..." "${STATE_TARGET:0:7}"
+
+	if [ -d "$STATE_WORKTREE" ]; then
+		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	PRINT_TEXT "%s" 32 "Reorder aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+}
+
+# Names the state file for in-flight operations, currently `--amend-into` when an autosquash
+# hits a conflict the caller must resolve – the file lives in the common git dir, shared
 _STATE_FILE_PATH () {
 	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
 	[ -z "$DIR" ] && return 1
@@ -848,6 +1271,9 @@ _LOAD_STATE () {
 	STATE_ORIG_HEAD=""
 	STATE_TARGET=""
 	STATE_HEAD_WITH_FIXUP=""
+	STATE_DEPTH=""
+	STATE_MAINDIR=""
+	STATE_FILES=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -857,6 +1283,9 @@ _LOAD_STATE () {
 			orig_head)       STATE_ORIG_HEAD=$VAL ;;
 			target)          STATE_TARGET=$VAL ;;
 			head_with_fixup) STATE_HEAD_WITH_FIXUP=$VAL ;;
+			depth)           STATE_DEPTH=$VAL ;;
+			maindir)         STATE_MAINDIR=$VAL ;;
+			files)           STATE_FILES=$VAL ;;
 		esac
 	done < "$SF"
 }
@@ -883,49 +1312,74 @@ _CONTINUE_AMEND_INTO () {
 
 	cd "$STATE_WORKTREE" || exit 1
 
-	# Verify rebase is still in progress
-	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
-	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
-		PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
-		_CLEAR_STATE
-		exit 1
-	fi
-
 	# Once we successfully complete, the worktree should be cleaned up
 	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
 
 	PRINT_ACTION "Continuing amend-into of %s..." "${STATE_TARGET:0:7}"
 
-	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
-	PRINT_CMD "$CMD"
-	if ! eval "$CMD" >/dev/null 2>&1; then
-		# Another conflict downstream – keep state, keep worktree, exit
-		_CLEANUP_HOOK=""
-		PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
-		PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
-		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
-		EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
-		exit 2
+	# If no rebase is in progress but `HEAD` has moved on, the resolution was
+	# completed manually (e.g. `git rebase --continue` run in the worktree
+	# directly) – skip straight to applying the result instead of stranding it
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "No rebase in progress in worktree $STATE_WORKTREE"
+			_CLEAR_STATE
+			exit 1
+		fi
+		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
+	else
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" >/dev/null 2>&1; then
+			# Another conflict downstream – keep state, keep worktree, exit
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			exit 2
+		fi
 	fi
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	# Atomic CAS-update of the branch ref
-	local UPDATE_CMD="git update-ref $STATE_BRANCH $NEW_HEAD $STATE_HEAD_WITH_FIXUP"
+	# Atomic CAS-update of the branch ref. New-format states guard on the
+	# pre-op tip (branch never moved); legacy states guard on the fixup tip.
+	local GUARD=$STATE_ORIG_HEAD
+	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
+	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $GUARD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
 		exit 1
 	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
+
+	# Re-sync the folded paths' index entries to the new `HEAD`, those staged changes being
+	# history now – path-scoped so a parallel session's staged work survives, and legacy
+	# states without a file list fall back to a full reset
+	if [ -n "$STATE_MAINDIR" ]; then
+		if [ -n "$STATE_FILES" ]; then
+			local -a SYNC_PATHS
+			SYNC_PATHS=("${(@ps:\t:)STATE_FILES}")
+			git -C "$STATE_MAINDIR" reset -q -- "${SYNC_PATHS[@]}" 2>/dev/null
+		else
+			git -C "$STATE_MAINDIR" read-tree --reset "$NEW_HEAD" 2>/dev/null
+		fi
+	fi
+
+	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" ""
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
 }
 
-# Abort an in-flight --amend-into: abort the paused rebase, remove the
-# worktree, and roll back the fixup commit in main so the agent's staged
-# changes are restored in the index (ready to retry differently).
+# Aborts an in-flight `--amend-into` – abort the paused rebase and remove the worktree, with
+# nothing to roll back since the branch never moved and the staging was never consumed
+# Legacy pre-invisible-fixup states carry a `head_with_fixup` tip and get the old rollback
 _ABORT_AMEND_INTO () {
 	PRINT_ACTION "Aborting amend-into of %s..." "${STATE_TARGET:0:7}"
 
@@ -937,21 +1391,20 @@ _ABORT_AMEND_INTO () {
 		eval "$CMD"
 	fi
 
-	# Rollback the fixup commit in main only if the branch ref is still where
-	# we left it (HEAD_WITH_FIXUP). If another session committed since, leave
-	# their commits alone.
-	local CURRENT=$(git rev-parse "$STATE_BRANCH" 2>/dev/null)
-	if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
-		local UPDATE_CMD="git update-ref $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
-		PRINT_CMD "$UPDATE_CMD" 90
-		eval "$UPDATE_CMD" 2>/dev/null
-		# Restore the staged state: set the index to HEAD_WITH_FIXUP's tree so
-		# the agent's previously-staged changes show up as "Changes to be
-		# committed" against the now-rolled-back HEAD (= ORIG_HEAD). This lets
-		# them retry differently without re-running git add.
-		git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
+	# Legacy-format state only: roll back the fixup commit on the branch, if
+	# the ref is still where that old flow left it
+	if [ -n "$STATE_HEAD_WITH_FIXUP" ]; then
+		local CURRENT=$(git rev-parse "$STATE_BRANCH" 2>/dev/null)
+		if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
+			local UPDATE_CMD="git update-ref -m 'git edit: abort amend-into' $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
+			PRINT_CMD "$UPDATE_CMD" 90
+			eval "$UPDATE_CMD" 2>/dev/null
+			git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
+		else
+			PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
+		fi
 	else
-		PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
+		PRINT_TEXT "Branch was never touched – your staged changes are still staged, ready to retry." 32
 	fi
 
 	_CLEAR_STATE
@@ -1071,6 +1524,8 @@ GIT_REWORD () {
 		exit 1
 	fi
 
+	_GUARD_UNPUSHED "$TARGET"
+
 	local NEW_MSG
 	if [ -n "$TEXT_VALUE" ]; then
 		# --text supplied: use directly, no editor
@@ -1133,13 +1588,17 @@ GIT_REWORD () {
 
 	# Atomic compare-and-swap on the ref. If the branch moved (e.g., a
 	# concurrent commit from Claude Code or another tool), refuse.
-	local CMD="git update-ref $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during reword – refusing to overwrite"
 		PRINT_TEXT "Reworded history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
 	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "reword ${TARGET:0:7}"
+	# Plumbing rebuilds reuse every commit's tree object verbatim, so this
+	# holds by construction – stated so callers don't re-verify with a diff
+	PRINT_TEXT "%s – only messages were rewritten." 32 "Trees unchanged by construction ✓"
 }
 
 # Squash a contiguous range of commits into one via plumbing only. Like
@@ -1166,13 +1625,15 @@ GIT_RESQUASH () {
 		exit 1
 	fi
 
-	# Verify contiguity: rev-list of the inclusive OLDEST..NEWEST range must
+	_GUARD_UNPUSHED "$OLDEST"
+
+	# Verify contiguity: rev-list of the inclusive `OLDEST..NEWEST` range must
 	# match the selected commits exactly (same count, same order)
 	local EXPECTED
 	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
 		EXPECTED=($(git rev-list --reverse "$OLDEST^..$NEWEST"))
 	else
-		# OLDEST is the root commit – range is just everything up to NEWEST
+		# `OLDEST` is the root commit – range is just everything up to `NEWEST`
 		EXPECTED=($(git rev-list --reverse "$NEWEST"))
 	fi
 
@@ -1262,13 +1723,19 @@ GIT_RESQUASH () {
 	_REBUILD_DESCENDANTS "$NEWEST"
 
 	# Atomic ref update
-	local CMD="git update-ref $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during resquash – refusing to overwrite"
 		PRINT_TEXT "Resquashed history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
 	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "squash ${#COMMITS[@]} into ${OLDEST:0:7}"
+	# The squashed commit takes the newest member's tree and descendants keep
+	# theirs, so the tip tree is identical by construction – stated so callers
+	# don't re-verify with a diff
+	PRINT_TEXT "%s – squashed commit:" 32 "Tip tree unchanged by construction ✓"
+	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
 }
 
 GIT_COMMIT_AMEND () {
@@ -1368,6 +1835,271 @@ ABORT () {
 }
 
 
+# Built-in end-to-end test suite: builds a scratch repo (with a fake pushed
+# remote) in a temp dir and exercises every mode through real sub-invocations
+# of this same script – reword, fold, conflict/abort/continue, drop, squash,
+# reorder, exec, the pushed guard, undo, and status. Asserts outcomes and
+# prints PASS/FAIL per scenario. Run after any change to this script.
+GIT_SELFTEST () {
+	local SELF=$1
+	local TMP=$(mktemp -d -t git-edit-selftest.XXXXXX)
+	_CLEANUP_HOOK="rm -rf '$TMP'"
+	local PASS=0
+	local FAIL=0
+	local OUT RC
+
+	# Sub-invocations run non-TTY (stdin </dev/null) for deterministic agent
+	# behavior even when the selftest itself runs from a terminal
+	_ST_RUN () {
+		OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$@" </dev/null 2>&1)
+		RC=$?
+	}
+	_ST_CHECK () {
+		local DESC=$1; shift
+		if "$@" >/dev/null 2>&1; then
+			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+		else
+			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			echo "$OUT" | tail -5 | sed 's/^/       | /'
+		fi
+	}
+	_ST_OUT_HAS () {
+		local DESC=$1
+		local PATTERN=$2
+		if echo "$OUT" | grep -q "$PATTERN"; then
+			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+		else
+			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			echo "$OUT" | tail -5 | sed 's/^/       | /'
+		fi
+	}
+	_ST_EQ () {
+		local DESC=$1
+		if [ "$2" = "$3" ]; then
+			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+		else
+			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC ('$2' != '$3')"
+		fi
+	}
+
+	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
+	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
+	# --- Scratch repo: A, B pushed to a bare origin; C, D, E unpushed ---
+	git init -q -b main "$TMP/repo" || { PRINT_ERR "Cannot init scratch repo"; exit 1; }
+	cd "$TMP/repo" || exit 1
+	git config user.email "selftest@git-edit"
+	git config user.name "git-edit selftest"
+	git config commit.gpgsign false
+	echo "alpha" > a.txt && git add a.txt && git commit -qm "A commit"
+	echo "beta"  > b.txt && git add b.txt && git commit -qm "B commit"
+	git init -q --bare "$TMP/origin.git"
+	git remote add origin "$TMP/origin.git"
+	git push -q -u origin main 2>/dev/null
+	echo "line1" > c.txt && git add c.txt && git commit -qm "C commit"
+	echo "line2" > c.txt && git add c.txt && git commit -qm "D commit"
+	echo "epsilon" > e.txt && git add e.txt && git commit -qm "E commit"
+	local SHA_A=$(git rev-parse HEAD~4)
+	local SHA_B=$(git rev-parse HEAD~3)
+	local SHA_C=$(git rev-parse HEAD~2)
+
+	# --- 1. Reword (-M --text): plumbing, tree-identical, trailer ---
+	echo -e "\e[1;96m[1] reword (-M --text)\e[0m"
+	local PRE_HEAD=$(git rev-parse HEAD)
+	local PRE_TREE=$(git rev-parse 'HEAD^{tree}')
+	_ST_RUN -M --text="C reworded" "$SHA_C"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
+	_ST_OUT_HAS "states tree identity" 'Trees unchanged by construction'
+	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
+	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
+	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
+
+	# --- 2. Undo: reverts the reword, CAS-guarded ---
+	echo -e "\e[1;96m[2] undo\e[0m"
+	_ST_RUN --undo
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_EQ "HEAD restored" "$(git rev-parse HEAD)" "$PRE_HEAD"
+
+	# --- 3. Pushed guard: refuse B, allow with --allow-pushed ---
+	echo -e "\e[1;96m[3] pushed guard\e[0m"
+	_ST_RUN -M --text="B reworded" "$SHA_B"
+	_ST_CHECK "refuses pushed commit" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'already pushed'
+	_ST_RUN --allow-pushed -M --text="B reworded" "$SHA_B"
+	_ST_EQ "--allow-pushed overrides" "$RC" "0"
+	_ST_RUN --undo
+	_ST_EQ "undo restores" "$(git rev-parse HEAD)" "$PRE_HEAD"
+
+	# --- 4. Fold (--amend-into) clean: a.txt change into C ---
+	echo -e "\e[1;96m[4] amend-into (clean)\e[0m"
+	echo "alpha folded" > a.txt
+	git add a.txt
+	_ST_RUN --amend-into="$SHA_C"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
+	_ST_OUT_HAS "prints folded summary" 'Folded'
+	_ST_EQ "change landed in C" "$(git show 'HEAD~2:a.txt')" "alpha folded"
+	_ST_CHECK "index clean afterwards" git diff --cached --quiet
+	_ST_CHECK "no fixup commit on branch" test -z "$(git log --format=%s | grep '^fixup!')"
+
+	# --- 5. Fold conflict -> status -> abort: branch + staged intact ---
+	echo -e "\e[1;96m[5] amend-into conflict + abort\e[0m"
+	PRE_HEAD=$(git rev-parse HEAD)
+	local SHA_C2=$(git rev-parse HEAD~2)
+	echo "line1-conflict" > c.txt
+	git add c.txt
+	_ST_RUN --amend-into="$SHA_C2"
+	_ST_EQ "pauses with exit 2" "$RC" "2"
+	_ST_OUT_HAS "emits conflict trailer" '^git-edit: conflict — resolve in'
+	_ST_EQ "branch untouched during pause" "$(git rev-parse HEAD)" "$PRE_HEAD"
+	_ST_RUN --status
+	_ST_OUT_HAS "status reports the conflict" '^git-edit: conflict — resolve in'
+	_ST_RUN --abort
+	_ST_EQ "abort exits 0" "$RC" "0"
+	_ST_EQ "branch still untouched" "$(git rev-parse HEAD)" "$PRE_HEAD"
+	_ST_CHECK "staged change preserved" sh -c "git diff --cached --name-only | grep -q c.txt"
+
+	# --- 6. Fold conflict -> resolve -> continue (with cascade) ---
+	echo -e "\e[1;96m[6] amend-into conflict + continue\e[0m"
+	_ST_RUN --amend-into="$SHA_C2"
+	_ST_EQ "pauses with exit 2" "$RC" "2"
+	local ROUNDS=0
+	while [ "$RC" = "2" ] && [ $ROUNDS -lt 4 ]; do
+		ROUNDS=$((ROUNDS+1))
+		local CONFLICT_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+		if [ -z "$CONFLICT_WT" ] || [ ! -d "$CONFLICT_WT" ]; then
+			break
+		fi
+		if [ $ROUNDS -eq 1 ]; then
+			echo "line1-resolved" > "$CONFLICT_WT/c.txt"
+		else
+			echo "line2" > "$CONFLICT_WT/c.txt"
+		fi
+		git -C "$CONFLICT_WT" add c.txt
+		_ST_RUN --continue
+	done
+	_ST_EQ "continue completes" "$RC" "0"
+	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
+	_ST_EQ "resolution in C" "$(git show 'HEAD~2:c.txt')" "line1-resolved"
+	_ST_EQ "tip keeps D's content" "$(git show 'HEAD:c.txt')" "line2"
+	_ST_CHECK "index clean afterwards" git diff --cached --quiet
+	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
+
+	# --- 6b. Conflict resolved manually in the worktree, staged WIP survives ---
+	echo -e "\e[1;96m[6b] manual worktree completion + parallel staged WIP\e[0m"
+	PRE_HEAD=$(git rev-parse HEAD)
+	local SHA_C3=$(git rev-parse HEAD~2)
+	echo "line1-again" > c.txt
+	git add c.txt
+	_ST_RUN --amend-into="$SHA_C3"
+	_ST_EQ "pauses with exit 2" "$RC" "2"
+	# A parallel session stages an unrelated file mid-pause
+	echo "parallel" > w.txt
+	git add w.txt
+	# The agent resolves and drives the rebase manually inside the worktree
+	local MANUAL_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	echo "line1-again" > "$MANUAL_WT/c.txt"
+	git -C "$MANUAL_WT" add c.txt
+	local MROUNDS=0
+	while [ $MROUNDS -lt 4 ]; do
+		MROUNDS=$((MROUNDS+1))
+		GIT_EDIT_NO_AUTO_OPEN=1 git -C "$MANUAL_WT" -c core.editor=true rebase --continue >/dev/null 2>&1 && break
+		echo "line2" > "$MANUAL_WT/c.txt"
+		git -C "$MANUAL_WT" add c.txt
+	done
+	_ST_RUN --continue
+	_ST_EQ "continue applies the manual result" "$RC" "0"
+	_ST_OUT_HAS "notes manual completion" 'already completed'
+	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
+	_ST_CHECK "parallel staged WIP survived" sh -c "git diff --cached --name-only | grep -q w.txt"
+	_ST_CHECK "folded path reports clean" sh -c "! git diff --cached --name-only | grep -q c.txt"
+	git reset -q -- w.txt && rm -f w.txt
+
+	# --- 6c. Standalone commands refuse stray arguments ---
+	echo -e "\e[1;96m[6c] stray-argument refusal\e[0m"
+	_ST_RUN --undo "$(git rev-parse HEAD)"
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'take no arguments'
+
+	# --- 7. Drop (auto-isolated, non-TTY) ---
+	echo -e "\e[1;96m[7] drop\e[0m"
+	_ST_RUN -d "$(git rev-parse HEAD)"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_CHECK "dropped commit's file gone" sh -c "! git cat-file -e 'HEAD:e.txt'"
+
+	# --- 8. Squash (implicit, plumbing route) ---
+	echo -e "\e[1;96m[8] squash (plumbing)\e[0m"
+	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
+	local PRE_COUNT=$(git rev-list --count HEAD)
+	_ST_RUN --text="C and D combined" "$(git rev-parse HEAD~1)" "$(git rev-parse HEAD)"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_EQ "one commit fewer" "$(git rev-list --count HEAD)" "$((PRE_COUNT-1))"
+	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
+	_ST_EQ "combined message" "$(git log --format=%s -1)" "C and D combined"
+
+	# --- 9. Reorder: swap two independent tip commits ---
+	echo -e "\e[1;96m[9] reorder\e[0m"
+	echo "ex" > x.txt && git add x.txt && git commit -qm "X commit"
+	echo "why" > y.txt && git add y.txt && git commit -qm "Y commit"
+	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
+	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "states tree identity" 'Tip tree identical'
+	_ST_EQ "order swapped" "$(git log --format=%s -2 | tr '\n' ' ')" "X commit Y commit "
+	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
+
+	# --- 10. Edit mode refuses non-TTY ---
+	echo -e "\e[1;96m[10] edit-mode non-TTY refusal\e[0m"
+	_ST_RUN "$(git rev-parse HEAD)"
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "instructive error" 'Edit mode requires interactive input'
+
+	# --- 11. Exec: amend via isolated worktree ---
+	echo -e "\e[1;96m[11] exec\e[0m"
+	_ST_RUN --exec -- git commit --amend -m "amended via exec"
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_EQ "amend applied" "$(git log --format=%s -1)" "amended via exec"
+
+	# --- 12. Exec pushed-orphan guard ---
+	echo -e "\e[1;96m[12] exec pushed-orphan guard\e[0m"
+	PRE_HEAD=$(git rev-parse HEAD)
+	_ST_RUN --exec -- git reset --hard "$SHA_A"
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'pushed history'
+	_ST_EQ "branch unchanged" "$(git rev-parse HEAD)" "$PRE_HEAD"
+
+	# --- 13. Undo refuses after the branch moved on ---
+	echo -e "\e[1;96m[13] undo CAS guard\e[0m"
+	echo "zeta" > z.txt && git add z.txt && git commit -qm "Z commit"
+	_ST_RUN --undo
+	_ST_CHECK "refuses" test "$RC" != "0"
+	_ST_OUT_HAS "names the reason" 'has moved since'
+
+	# --- 14. Status: idle report ---
+	echo -e "\e[1;96m[14] status (idle)\e[0m"
+	_ST_RUN --status
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports idle" '^git-edit: ok — no operation in flight'
+
+	# --- Summary ---
+	local TOTAL=$((PASS+FAIL))
+	echo ""
+	if [ $FAIL -eq 0 ]; then
+		PRINT_TEXT "%s" 32 "Selftest: all $TOTAL checks passed."
+		echo "git-edit: ok — selftest $PASS/$TOTAL passed"
+		_STATUS_EMITTED=true
+		return 0
+	else
+		PRINT_TEXT "%s" 31 "Selftest: $FAIL of $TOTAL checks FAILED."
+		echo "git-edit: error — selftest $FAIL/$TOTAL failed"
+		_STATUS_EMITTED=true
+		return 1
+	fi
+}
+
+
 # ---------------------------------------- ARGUMENT PARSING ----------------------------------------
 
 # Remember full original command line
@@ -1381,7 +2113,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -continue=OPT_CONTINUE -abort=OPT_ABORT -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -reorder=OPT_REORDER -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -1419,6 +2151,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	_LOAD_STATE
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
+		reorder)    _CONTINUE_REORDER ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
@@ -1427,9 +2160,39 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 	_LOAD_STATE
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
+		reorder)    _ABORT_REORDER ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
+fi
+
+# `--undo`, `--status` and `--selftest` are standalone commands – no positionals, no mode
+# flags, dispatched before any commit parsing, and stray arguments are refused rather than
+# ignored, since `--undo <sha>` would otherwise undo whatever happens to be last
+if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_SELFTEST} -gt 0 ]; then
+	if [ $# -gt 0 ]; then
+		USAGE
+		PRINT_ERR "--undo/--status/--selftest take no arguments (got: $*)"
+		exit 1
+	fi
+fi
+if [ ${#OPT_UNDO} -gt 0 ]; then
+	if _STATE_EXISTS; then
+		PRINT_ERR "An operation is in flight – finish it with --continue or --abort before undoing"
+		exit 1
+	fi
+	GIT_UNDO
+	exit 0
+fi
+if [ ${#OPT_STATUS} -gt 0 ]; then
+	GIT_STATUS_REPORT
+	exit 0
+fi
+if [ ${#OPT_SELFTEST} -gt 0 ]; then
+	# ${0:A} resolves the running script's absolute path at top level (inside
+	# functions zsh rebinds $0 to the function name)
+	GIT_SELFTEST "${0:A}"
+	exit $?
 fi
 
 # Extract -C/--dir value. zparseopts with `::` greedily consumes the next word
@@ -1518,6 +2281,11 @@ fi
 if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
+	exit 1
+fi
+if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option --reorder cannot be combined with other modes (it manages its own isolated worktree)"
 	exit 1
 fi
 # --text is incompatible with -d and --exec; the full check (against the
@@ -1647,11 +2415,26 @@ if [ ${#COMMITS[@]} -eq 0 ]; then
 	exit 1
 fi
 
+# --reorder: the positional order IS the payload – capture it before the
+# topological sort below normalizes it away
+if [ ${#OPT_REORDER} -gt 0 ]; then
+	COMMITS_DESIRED=("${COMMITS[@]}")
+fi
+
 # Sort selected commits topologically (oldest first)
 COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
 
 # Determine Action
-if [ ${#OPT_REWORD} -gt 0 ]; then
+if [ ${#OPT_REORDER} -gt 0 ]; then
+	# Reorder (`--reorder`) — contiguous span, args give the new order
+	ACTION="reorder"
+	if [[ "$COMMANDLINE" == *".."* ]]; then
+		PRINT_ERR "--reorder takes single commits in the desired order (no ranges)"
+		exit 1
+	fi
+	COMMIT=${COMMITS[-1]}
+
+elif [ ${#OPT_REWORD} -gt 0 ]; then
 	# Reword (`-M` / `--reword`) — message-only edit via plumbing, no working-tree touch
 	ACTION="reword"
 	if [ ${#COMMITS[@]} -gt 1 ]; then
@@ -1745,6 +2528,14 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 	exit 1
 fi
 
+# Pushed guard for the rebase-based modes (drop / squash / edit) – the
+# plumbing and isolated modes (-M, -S, --amend-into, --reorder, --exec)
+# guard inside their own functions. The oldest selected commit covers the
+# whole rewritten span.
+if [[ "$ACTION" == "drop" || "$ACTION" == "squash" || "$ACTION" == "edit" ]]; then
+	_GUARD_UNPUSHED "${COMMITS[1]}"
+fi
+
 # Auto-route plain squash (`-s` or implicit) to the plumbing path (`-S` /
 # resquash) when eligible — contiguous range, target = oldest, no merge
 # commits. Same observable outcome, but no working-tree touch and no stash
@@ -1805,6 +2596,12 @@ if [[ "$ACTION" == "resquash" ]]; then
 	PRINT_ACTION "Resquashing %s into ${COMMITS[1]:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#${COMMITS[1]}}"
 	GIT_RESQUASH
 	PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
+	exit 0
+fi
+if [[ "$ACTION" == "reorder" ]]; then
+	PRINT_ACTION "Reordering to %s" "${COMMITS_DESIRED[@]}"
+	GIT_REORDER
+	PRINT_COMPLETED "$REORDER_NEW_HEAD" "$REORDER_REF" true
 	exit 0
 fi
 
@@ -1989,13 +2786,14 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# Atomic compare-and-swap: only update if the ref still matches ORIG_HEAD,
 		# so any concurrent commit (e.g., from an editor working in the main checkout)
 		# is not silently overwritten.
-		CMD="git update-ref refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
+		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" 2>/dev/null; then
 			PRINT_ERR "Branch '$ORIG_BRANCH' moved during rebase – refusing to overwrite"
 			PRINT_TEXT "Rebased history is at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
 			exit 1
 		fi
+		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
 		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH"
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"

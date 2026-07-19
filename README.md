@@ -16,11 +16,16 @@ MODES:
 -s <target>, --squash <target>  Merge (fixup/squash) <commit>s into <target>
                                 – also assumed when multiple commits are supplied
 -S, --resquash                  Merge contiguous <commit>s — no working-tree touch
+--reorder <commit>...           Reorder a contiguous span (args give the new order, oldest-first)
 --exec -- <cmd>...              Run <cmd> in an isolated temp worktree (parallel-safe)
+--undo                          Revert the last completed ref move (refuses if the branch moved since)
+--status                        Report the in-flight operation, or the last completed one
+--selftest                      Run the built-in end-to-end test suite in a scratch repo
 FLAGS:
 -m, --message                   Alter <commit> message after applying changes
 -C, --dir                       Run in a separate worktree (default: <repo>.git-edit)
 -C=<path>, --dir=<path>         Run in the specified worktree path
+--allow-pushed                  Override the refusal to rewrite commits that exist on a remote
 --text <msg>                    Inline message for -M / -S (skip editor); use - for stdin
 -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)
 ```
@@ -121,11 +126,11 @@ git edit --amend-into=<sha>
 ```
 
 What happens internally:
-1. A `fixup!` commit is created on `HEAD` from the staged index (forward-only append in main; safe under parallel sessions).
-2. A unique temp worktree is created at that new HEAD and `git rebase --autosquash` runs there, folding the fixup into `<sha>`.
-3. The branch ref is atomically CAS-updated to the rebased tip.
+1. The staged index is snapshotted into a `fixup!` commit **object** (`git write-tree` + `git commit-tree`) — no ref moves, so the branch stays visually untouched and parallel sessions never see an intermediate `fixup!` commit.
+2. A unique temp worktree is created at that object and `git rebase --autosquash` runs there, folding the fixup into `<sha>`.
+3. The branch ref is atomically CAS-updated from its pre-operation tip to the rebased tip.
 
-Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits.
+Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits. Nothing is consumed until the final CAS lands: on any failure or `--abort`, your staged changes are simply still staged, ready for a retry — there is nothing to roll back. On success, the amended commit's `--stat` is printed so no follow-up `git show` is needed.
 
 #### Conflict resolution (`--continue` / `--abort`)
 
@@ -168,6 +173,46 @@ git edit --abort
 Conflicts can cascade — resolving one may surface another when the rebase continues. Each `git edit --continue` either succeeds (and emits the `ok` trailer) or stops at the next conflict (and emits a fresh `conflict` trailer). The agent loops until either successful or an `--abort` resets everything.
 
 State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
+
+### Reordering Commits (`--reorder`)
+
+Pass a contiguous span of commits in the **desired new order** (oldest-first):
+
+```
+git edit --reorder <sha-that-should-be-first> <sha-that-should-be-second> ...
+```
+
+The rebase runs in an isolated temp worktree with a scripted sequence editor; the branch ref only moves at the end (CAS-guarded on the pre-operation tip). Conflicts pause into the same `--continue` / `--abort` flow as `--amend-into` — and since the branch was never touched, `--abort` has nothing to roll back. On success the tool reports whether the tip tree is byte-identical to before (a clean reorder always is; conflict resolutions may change it) and prints the span in its new order.
+
+### Pushed-Commit Guard
+
+Every rewriting mode refuses to touch a commit that already exists on a remote-tracking ref — rewriting pushed history disrupts collaborators, and in shared or public repos it should never happen by accident:
+
+```
+$ git edit -M --text="better subject" <pushed-sha>
+Commit abc1234 is already pushed (on: origin/main)
+  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.
+```
+
+Guarding the oldest commit an operation touches covers the whole rewritten span, since every descendant of an unpushed commit is itself unpushed. `--exec` can't know its targets up front, so it checks the *result* instead: if any remote ref that was an ancestor of the old tip would no longer be one of the new tip, the CAS is refused. Deliberate force-push workflows pass `--allow-pushed`.
+
+### Undo, Status, and the Journal
+
+Every completed operation is attributed in the ref's own reflog (`git reflog` shows `git edit: reword abc1234` entries) and appended to a journal, and every success prints its one-line inverse — so recovery never requires understanding this script:
+
+```
+Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
+```
+
+`git edit --undo` reverts the last completed operation, CAS-guarded: it refuses if the branch has moved since, so it can never rewind over newer work. `git edit --status` reports an in-flight (conflict-paused) operation in the same format as the original pause — worktree path, conflicted files, remaining steps — or the last completed operation when idle. Useful for an agent (or a second session) landing mid-operation without the original context.
+
+### Self-Testing (`--selftest`)
+
+```
+git edit --selftest
+```
+
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, undo semantics, and status reporting — ~60 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
