@@ -114,8 +114,11 @@ USAGE () {
 	echo -e "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
 	echo -e "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
 	echo -e "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
-	echo -e "\e[0;94m       --amend-into=<sha>              Fold currently-staged changes (in main) into <sha>\e[0m"
-	echo -e "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS)\e[0m"
+	echo -e "\e[0;94m       --amend-into=<sha>|auto         Fold currently-staged changes (in main) into <sha>\e[0m"
+	echo -e "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
+	echo -e "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
+	echo -e "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
+	echo -e "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
 	echo -e "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
 	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
 	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
@@ -1012,12 +1015,15 @@ _RESOLVE_AMEND_TARGET () {
 		exit 1
 	fi
 
+	# Staged paths are root-relative, so anchor the per-path lookups at the repo root and they
+	# resolve from a subdirectory too
+	local TOPLEVEL=$(git rev-parse --show-toplevel)
 	local P C
 	local -a CAND_LINES
 	local CANDIDATE=""
 	local MULTIPLE=false
 	for P in "${PATHS[@]}"; do
-		C=$(git log -1 --format=%H HEAD -- "$P" 2>/dev/null)
+		C=$(git -C "$TOPLEVEL" log -1 --format=%H HEAD -- "$P" 2>/dev/null)
 		if [ -z "$C" ]; then
 			# New file – follows the consensus of the paths with history
 			continue
@@ -2394,6 +2400,18 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_LACKS "no warning for safe tag" 'points into the rewritten span'
 	git tag -d marker >/dev/null 2>&1
+
+	# --- 21. auto-target resolves from a subdirectory ---
+	echo -e "\e[1;96m[21] auto-target from subdirectory\e[0m"
+	mkdir -p subd
+	echo "sd" > subd/sd.txt && git add subd/sd.txt && git commit -qm "SD commit"
+	cd subd
+	echo "sd2" > sd.txt && git add sd.txt
+	_ST_RUN --amend-into=auto
+	_ST_EQ "exits 0" "$RC" "0"
+	_ST_OUT_HAS "names auto-target" 'auto-target'
+	cd "$TMP/repo"
+	_ST_EQ "fold landed in SD" "$(git show 'HEAD:subd/sd.txt')" "sd2"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
