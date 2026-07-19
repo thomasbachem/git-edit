@@ -2421,8 +2421,18 @@ if [ ${#OPT_REORDER} -gt 0 ]; then
 	COMMITS_DESIRED=("${COMMITS[@]}")
 fi
 
-# Sort selected commits topologically (oldest first)
-COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
+# Sort selected commits topologically (oldest first). `rev-list --no-walk`
+# only sorts by timestamp, which ties – and comes back input-reversed – on
+# rapid-fire same-second commits (scripts, agents), silently inverting the
+# selection. So derive the order from HEAD's own history; selections not
+# fully reachable from HEAD keep the timestamp sort and get caught by each
+# mode's reachability check.
+COMMITS_TOPO=("${(@f)$(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null)}")
+if [ ${#COMMITS_TOPO[@]} -eq ${#COMMITS[@]} ]; then
+	COMMITS=("${COMMITS_TOPO[@]}")
+else
+	COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
+fi
 
 # Determine Action
 if [ ${#OPT_REORDER} -gt 0 ]; then
@@ -2586,12 +2596,6 @@ if [[ "$ACTION" == "reword" ]]; then
 	exit 0
 fi
 if [[ "$ACTION" == "resquash" ]]; then
-	# Re-sort COMMITS by commit time (oldest first). The earlier `git rev-list
-	# --no-walk --reverse` falls back to input-reversed order when commits
-	# share a timestamp (e.g., rapid-fire commits in scripts/tests).
-	local C
-	COMMITS=("${(@f)$(for C in "${COMMITS[@]}"; do git log -1 --format='%ct %H' "$C"; done | sort -n | awk '{print $2}')}")
-
 	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "${COMMITS[1]}")
 	PRINT_ACTION "Resquashing %s into ${COMMITS[1]:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#${COMMITS[1]}}"
 	GIT_RESQUASH
