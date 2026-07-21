@@ -2413,6 +2413,23 @@ GIT_SELFTEST () {
 	cd "$TMP/repo"
 	_ST_EQ "fold landed in SD" "$(git show 'HEAD:subd/sd.txt')" "sd2"
 
+	# --- 22. man page exists and documents every mode (drift guard vs. USAGE) ---
+	echo -e "\e[1;96m[22] man page coverage\e[0m"
+	local MANPAGE="$(dirname "$SELF")/man/man1/git-edit.1"
+	_ST_CHECK "man page present" test -f "$MANPAGE"
+	if [ -f "$MANPAGE" ]; then
+		# Strip roff backslash escapes so flag spellings match; no man/mandoc dep
+		local mflag missing=""
+		for mflag in --amend-into --split --reorder --exec --undo --status --allow-pushed --continue --abort --reword --resquash --selftest; do
+			sed 's/\\//g' "$MANPAGE" | grep -q -- "$mflag" || missing="$missing $mflag"
+		done
+		if [ -z "$missing" ]; then
+			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m man page documents every mode"
+		else
+			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m man page missing:$missing"
+		fi
+	fi
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""

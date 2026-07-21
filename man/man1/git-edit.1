@@ -1,0 +1,222 @@
+.\" Man page for git-edit. Kept in sync with the script's USAGE() and README.
+.\" Auto-found via man's PATH derivation (<repo>/man/man1) once the repo is on
+.\" PATH, so `git edit --help` / `man git-edit` work with no install step.
+.TH GIT-EDIT 1 "2026-07-21" "git-edit" "Git Extensions"
+.SH NAME
+git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
+.SH SYNOPSIS
+.nf
+\fBgit edit\fR \fIcommit\fR                          # edit a commit (default)
+\fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR] \fIcommit\fR
+\fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
+\fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
+\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}
+\fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR \fB\-\-\fR \fIpathspec\fR...
+\fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
+\fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
+\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR
+.fi
+.SH DESCRIPTION
+.B git edit
+is a convenience wrapper around
+.BR git\-rebase (1)
+for editing, reordering, dropping, merging, splitting, and folding earlier
+commits. It is hardened for use by AI coding agents and parallel sessions:
+.IP \(bu 3
+Every ref move is an atomic compare\-and\-swap (3\-arg
+.BR "git update\-ref" ),
+so a concurrent commit from another worktree or session is refused, never
+overwritten.
+.IP \(bu 3
+The plumbing modes
+.RB ( \-M ,
+.BR \-S ,
+.BR \-\-amend\-into ,
+.BR \-\-split )
+and the isolated modes
+.RB ( \-\-reorder ,
+.BR \-\-exec )
+never touch the main working tree, and folds do not consume staged changes
+until the final CAS lands \(em so a failure or
+.B \-\-abort
+leaves your staged changes exactly as they were, with nothing to roll back.
+.IP \(bu 3
+In non\-interactive contexts (stdin is not a TTY, e.g. an agent or CI) the
+modes that would otherwise touch the working tree auto\-isolate into a unique
+temporary worktree.
+.PP
+Every run ends with a machine\-readable status trailer (see
+.BR "OUTCOME TRAILER" ),
+refuses to rewrite commits that already exist on a remote unless
+.B \-\-allow\-pushed
+is given, records its ref move in the branch reflog and a journal, and warns
+about tags left pointing into the rewritten span.
+.SH MODES
+.TP
+.B \-e, \-\-edit
+Edit \fIcommit\fR (default). Pauses to let you change files, then amends.
+Interactive only \(em refused without a TTY (use
+.BR \-\-amend\-into ,
+.BR \-M ,
+or
+.B \-\-exec
+instead).
+.TP
+.B \-M, \-\-reword
+Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
+or worktree; the working tree is untouched and the tip tree is unchanged.
+.TP
+.B \-d, \-\-drop
+Delete one or more \fIcommit\fRs or ranges.
+.TP
+.B \-s, \-\-squash
+Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
+.BR \-s= \fItarget\fR). Auto\-routes to the plumbing path when the selection is a
+contiguous, merge\-free range whose target is the oldest commit.
+.TP
+.B \-S, \-\-resquash
+Strict squash: plumbing only; errors instead of falling back to a rebase.
+.TP
+.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR}
+Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
+isolated worktree.
+.B auto
+targets the newest unpushed commit that last touched the staged paths
+(refuses if they disagree, or point at a pushed commit). Only staged changes
+are folded; unstaged edits are left untouched.
+.TP
+.B \-\-split=\fIsha\fR \fB\-\-\fR \fIpathspec\fR...
+Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
+extracted into their own commit (message from
+.BR \-\-text ),
+the rest keep the original message. Plumbing only \(em no conflicts possible;
+same\-file mixed concerns cannot be split this way.
+.TP
+.B \-\-reorder \fIcommit\fR...
+Reorder a contiguous span; the positional arguments give the desired new
+order, oldest\-first. Runs in an isolated worktree; the branch ref moves only
+at the end.
+.TP
+.B \-\-exec \fB\-\-\fR \fIcommand\fR...
+Run any \fIcommand\fR (e.g. a raw
+.BR "git rebase" )
+inside a fresh temporary worktree; the branch ref is CAS\-updated only if
+\fIcommand\fR moved HEAD. The escape hatch for cases the other modes do not
+cover.
+.SH OPTIONS
+.TP
+.B \-m, \-\-message
+Also edit the commit message after applying changes.
+.TP
+.B \-\-text \fImsg\fR
+Inline message for
+.BR \-M ,
+.BR \-s / \-S ,
+or
+.BR \-\-split
+(skips the editor).
+.B \-\-text \-
+reads the message from standard input.
+.TP
+.B \-C, \-\-dir\fR[=\fIpath\fR]
+Run the rebase in a separate worktree (default:
+.IR <repo> .git\-edit)
+so it does not touch the main checkout. Enabled automatically in
+non\-interactive contexts.
+.TP
+.B \-\-allow\-pushed
+Permit rewriting a commit that exists on a remote\-tracking ref. Refused by
+default.
+.TP
+.B \-y, \-\-yes
+Auto\-confirm the drop/squash confirmation prompt.
+.SH "STANDALONE COMMANDS"
+.TP
+.B \-\-continue
+Resume the operation paused by a conflict, after staging the resolution in
+the printed worktree.
+.TP
+.B \-\-abort
+Cancel a paused operation and roll back. The branch was never moved and
+staged changes were never consumed, so there is nothing to undo.
+.TP
+.B \-\-undo
+Revert the last completed operation's ref move, compare\-and\-swap guarded
+(refused if the branch has moved on since).
+.TP
+.B \-\-status
+Report the in\-flight operation (or the last completed one) in the trailer
+grammar \(em for an agent or session re\-entering mid\-operation.
+.TP
+.B \-\-selftest
+Run the built\-in end\-to\-end test suite in a scratch repository.
+.SH "OUTCOME TRAILER"
+Every run ends with a single line, anchored by
+.BR "git\-edit:" ,
+that a caller can dispatch on with
+.BR "grep '^git\-edit: (ok|error|conflict)'" :
+.PP
+.nf
+.RS
+git\-edit: ok \(em refs/heads/main moved <old-sha> \(-> <new-sha>
+git\-edit: ok \(em refs/heads/main unchanged
+git\-edit: error \(em <reason>
+git\-edit: conflict \(em resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
+.RE
+.fi
+.SH "CONFLICT RESOLUTION"
+When a rebase\- or autosquash\-based mode hits a conflict it pauses (exit
+status 2), prints the temporary worktree, the conflicted files, the failing
+step, and the steps that remain, and emits a
+.B conflict
+trailer. Resolve the files in that worktree, stage them, and run
+.B git edit \-\-continue
+(repeat if the conflict cascades), or
+.B git edit \-\-abort
+to cancel. A pause with no conflicted files means the current step became
+empty (its changes are already upstream); skip it with
+.B "git -C <worktree> rebase --skip"
+then
+.BR "git edit \-\-continue" .
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success (including a no\-op that left the ref unchanged).
+.TP
+.B 1
+Error \(em nothing was applied.
+.TP
+.B 2
+Paused on a conflict awaiting
+.B \-\-continue
+or
+.BR \-\-abort .
+.SH ENVIRONMENT
+.TP
+.B GIT_EDIT_NO_AUTO_ISOLATE
+If set, disables the non\-interactive auto\-isolation into a temp worktree.
+.TP
+.B GIT_EDIT_NO_AUTO_OPEN
+If set, does not auto\-open the worktree in a detected GUI editor at
+interactive pauses.
+.SH EXAMPLES
+.TP
+Fold staged changes into the commit that introduced the code:
+.B git add src/foo.js && git edit \-\-amend\-into=auto
+.TP
+Reword an earlier commit without touching the working tree:
+.B git edit \-M \-\-text="Better subject" abc1234
+.TP
+Split an icons change out of a mixed commit:
+.B git edit \-\-split=abc1234 \-\-text="Add icons" \-\- src/svg/
+.TP
+Undo the last operation:
+.B git edit \-\-undo
+.SH "SEE ALSO"
+.BR git\-rebase (1),
+.BR git\-commit (1),
+.BR git\-update\-ref (1)
+.SH AUTHOR
+Thomas Bachem <mail@thomasbachem.com>
+.SH "REPORTING BUGS"
+https://github.com/thomasbachem/git\-edit

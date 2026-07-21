@@ -288,6 +288,8 @@ Make the script available as a Git command by adding its folder to your `PATH`, 
 export PATH="$PATH:/your/path/to/git-edit"
 ```
 
+That single step also enables the manual: `man` derives `<dir>/man` from each `PATH` entry, so the bundled `man/man1/git-edit.1` is found automatically — `git edit --help` and `man git-edit` work with no further setup. (Note that `git edit --help` routes through git's man system; `git edit -h` prints the script's own usage without it.)
+
 ## ⚠ Warning: History Rewriting
 
 This script rewrites Git history from the chosen commit onward — changing the SHA-1 of that commit and all later commits.
