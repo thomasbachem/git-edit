@@ -228,6 +228,21 @@ PRINT_ERR () {
 	fi
 }
 
+# Create a temp dir/file via a full $TMPDIR path template. BSD/macOS mktemp's
+# `-t <arg>` treats <arg> as a literal prefix and appends its own random suffix,
+# so a template's inner `XXXXXX` survives verbatim (leaving an unusable path like
+# `git-edit-amend-into.XXXXXX.k2QEeVwNEN`); a full template has its trailing `X`s
+# replaced on both GNU and BSD.
+MKTEMP_DIR () {
+	local BASE="${TMPDIR:-/tmp}"
+	mktemp -d "${BASE%/}/$1.XXXXXX"
+}
+
+MKTEMP_FILE () {
+	local BASE="${TMPDIR:-/tmp}"
+	mktemp "${BASE%/}/$1.XXXXXX"
+}
+
 # Emit a single trailing line in a stable, ANSI-free, key=value format for
 # machine consumption (e.g., agents grep'ing `^git-edit:`). Always the very
 # last line of output on success.
@@ -681,12 +696,11 @@ GIT_REBASE_SQUASH () {
 		APPEND_BLOCK+=$'\\\\\n'"$OP ${C:0:7}"
 	done
 
-	# If --text was supplied, write the message to a temp file and override
-	# GIT_EDITOR with `cp <file>` so git "edits" the combined-message file by
-	# overwriting it with our content.
+	# Where `--text` was supplied, write it to a temp file and override `GIT_EDITOR` with
+	# `cp <file>`, so git "edits" the combined-message file by overwriting it
 	local TEXT_MSG_FILE=""
 	if [[ -n "$TEXT_VALUE" ]]; then
-		TEXT_MSG_FILE=$(mktemp -t git-edit-squash-msg.XXXXXX)
+		TEXT_MSG_FILE=$(MKTEMP_FILE git-edit-squash-msg)
 		printf '%s\n' "$TEXT_VALUE" > "$TEXT_MSG_FILE"
 	fi
 
@@ -786,7 +800,7 @@ GIT_EXEC () {
 	EXEC_CHANGED=false
 
 	# Unique per-invocation worktree so concurrent --exec calls never collide
-	local WT=$(mktemp -d -t git-edit-exec.XXXXXX)
+	local WT=$(MKTEMP_DIR git-edit-exec)
 	rmdir "$WT"  # `git worktree add` wants to create the dir itself
 	local CMD="git worktree add --detach '$WT' $ORIG_HEAD"
 	PRINT_CMD "$CMD"
@@ -924,7 +938,7 @@ GIT_AMEND_INTO () {
 	PRINT_CMD "git write-tree + commit-tree -> ${FIXUP_COMMIT:0:7}  # fixup! object, branch untouched"
 
 	# Step 2: isolated worktree at the fixup commit object
-	local WT=$(mktemp -d -t git-edit-amend-into.XXXXXX)
+	local WT=$(MKTEMP_DIR git-edit-amend-into)
 	rmdir "$WT"
 	local WT_CMD="git worktree add --detach '$WT' $FIXUP_COMMIT"
 	PRINT_CMD "$WT_CMD" 90
@@ -1127,7 +1141,7 @@ GIT_SPLIT () {
 	# Extracted tree: the parent's tree with the matched paths at the commit's
 	# versions, composed in a temp index from `diff-tree`'s exact blobs (no
 	# patch application, so binary files and mode changes come along natively)
-	local TMPIDX=$(mktemp -t git-edit-split-idx.XXXXXX)
+	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
 	rm -f "$TMPIDX"
 	GIT_INDEX_FILE=$TMPIDX git read-tree "$X^" || { rm -f "$TMPIDX"; exit 1; }
 	local META PATHNAME DSTMODE DSTSHA
@@ -1285,7 +1299,7 @@ GIT_REORDER () {
 	fi
 
 	# Isolated worktree at the current tip
-	local WT=$(mktemp -d -t git-edit-reorder.XXXXXX)
+	local WT=$(MKTEMP_DIR git-edit-reorder)
 	rmdir "$WT"
 	local WT_CMD="git worktree add --detach '$WT' $ORIG_HEAD"
 	PRINT_CMD "$WT_CMD" 90
@@ -1300,7 +1314,7 @@ GIT_REORDER () {
 	# at the first one's position in the desired order. The todo's abbreviated
 	# SHAs are matched as prefixes of our full ones (unambiguous repo-wide);
 	# the order travels via env so the script file needs no interpolation.
-	local SEQ=$(mktemp -t git-edit-reorder-seq.XXXXXX)
+	local SEQ=$(MKTEMP_FILE git-edit-reorder-seq)
 	cat > "$SEQ" <<'SEQEOF'
 #!/bin/zsh
 awk -v order="$GIT_EDIT_REORDER_ORDER" '
@@ -1742,11 +1756,10 @@ GIT_REWORD () {
 		NEW_MSG="$TEXT_VALUE"
 	else
 		_REQUIRE_TTY_FOR_EDITOR
-		# Open the user's editor on a temp file seeded with the current message.
-		# The file is named COMMIT_EDITMSG (git's convention) inside a temp dir,
-		# so editors like Sublime Text / VS Code apply commit-message syntax
-		# highlighting based on the recognized filename.
-		local TMP_DIR=$(mktemp -d -t git-edit-reword.XXXXXX)
+		# Open the caller's editor on a temp file seeded with the current message – named
+		# `COMMIT_EDITMSG`, git's convention, inside a temp dir, so editors apply commit-message
+		# syntax highlighting from the recognized filename
+		local TMP_DIR=$(MKTEMP_DIR git-edit-reword)
 		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
 		git log -1 --format='%B' "$TARGET" > "$MSG_FILE"
 		{
@@ -1885,9 +1898,9 @@ GIT_RESQUASH () {
 		NEW_MSG="$TEXT_VALUE"
 	elif [ ${#OPT_MESSAGE} -gt 0 ]; then
 		_REQUIRE_TTY_FOR_EDITOR
-		# With -m: combine all messages and open editor for review.
-		# File is named COMMIT_EDITMSG so editors apply commit-message syntax.
-		local TMP_DIR=$(mktemp -d -t git-edit-resquash.XXXXXX)
+		# With -m: combine all messages and open editor for review
+		# File is named `COMMIT_EDITMSG` so editors apply commit-message syntax
+		local TMP_DIR=$(MKTEMP_DIR git-edit-resquash)
 		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
 		{
 			echo "# Combined message from ${#COMMITS[@]} squashed commits."
@@ -2052,7 +2065,7 @@ ABORT () {
 # prints PASS/FAIL per scenario. Run after any change to this script.
 GIT_SELFTEST () {
 	local SELF=$1
-	local TMP=$(mktemp -d -t git-edit-selftest.XXXXXX)
+	local TMP=$(MKTEMP_DIR git-edit-selftest)
 	_CLEANUP_HOOK="rm -rf '$TMP'"
 	local PASS=0
 	local FAIL=0
@@ -2967,7 +2980,7 @@ if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -e
    [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
 	echo -e "\n\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
 	OPT_DIR=(--dir)
-	WORKTREE_DIR=$(mktemp -d -t git-edit-auto-iso.XXXXXX)
+	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso)
 	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
 	_CLEANUP_HOOK="git worktree remove --force '$WORKTREE_DIR' 2>/dev/null; rm -rf '$WORKTREE_DIR'"
 fi
