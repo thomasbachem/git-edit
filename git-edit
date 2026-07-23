@@ -2829,7 +2829,7 @@ fi
 # selection. So derive the order from HEAD's own history; selections not
 # fully reachable from HEAD keep the timestamp sort and get caught by each
 # mode's reachability check.
-COMMITS_TOPO=("${(@f)$(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null)}")
+COMMITS_TOPO=($(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null))
 if [ ${#COMMITS_TOPO[@]} -eq ${#COMMITS[@]} ]; then
 	COMMITS=("${COMMITS_TOPO[@]}")
 else
