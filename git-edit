@@ -448,7 +448,13 @@ _RESOLVE_STALE () {
 _GUARD_REACHABLE () {
 	local C=$1
 	_RESOLVED_SHA=$C
-	git merge-base --is-ancestor "$C" HEAD 2>/dev/null && return 0
+	if git merge-base --is-ancestor "$C" HEAD 2>/dev/null; then
+		# Normalize short SHAs/refs to the full SHA – downstream exact-match
+		# steps (topo sort's `grep -Fx`, rebuild maps) silently miss otherwise,
+		# falling back to the tie-prone timestamp sort
+		_RESOLVED_SHA=$(git rev-parse "$C^{commit}" 2>/dev/null)
+		return 0
+	fi
 
 	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
 	if [ -z "$SUBJECT" ]; then
