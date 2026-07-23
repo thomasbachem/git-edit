@@ -2708,6 +2708,23 @@ GIT_SELFTEST () {
 	_ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~2)" --before="$(git rev-parse HEAD~3)"
 	_ST_EQ "both anchors refused" "$RC" "1"
 
+	# --- 26. explicit-target squash: same-second span, short SHAs ---
+	# The rebuilt-commit case: descendants of one rewrite all share a committer
+	# second, so timestamp sorts tie – the span must sort from HEAD's history,
+	# and short SHAs must normalize for that sort's exact match to hit
+	echo -e "\e[1;96m[26] explicit-target squash ordering\e[0m"
+	local QN
+	for QN in q1 q2 q3 q4; do
+		echo "$QN" > q.txt && git add q.txt
+		GIT_COMMITTER_DATE="2026-01-02T03:04:05+00:00" git commit -qm "Q $QN"
+	done
+	local QT=$(git rev-parse --short HEAD~3)
+	_ST_RUN -s="$QT" -y --text="Q combined" "$(git rev-parse --short HEAD)" "$(git rev-parse --short HEAD~1)" "$(git rev-parse --short HEAD~2)"
+	_ST_EQ "same-second short-SHA squash exits 0" "$RC" "0"
+	_ST_OUT_HAS "routed to plumbing" 'commit-tree'
+	_ST_EQ "one combined commit" "$(git log -1 --format=%s)" "Q combined"
+	_ST_EQ "content is the newest version" "$(git show HEAD:q.txt)" "q4"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3271,9 +3288,16 @@ elif [ ${#OPT_SQUASH} -gt 0 ]; then
 			exit 1
 		fi
 		TARGET=$(git rev-parse "$TARGET")
-		# Add explicit target to list and re-sort to ensure correct topological order
+		# Add explicit target to list, re-sorted from `HEAD`'s own history –
+		# `--no-walk --reverse` timestamp-sorts, which ties (and inverts the
+		# input) on same-second commits, scrambling the span
 		COMMITS+=("$TARGET")
-		COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
+		COMMITS_TOPO=($(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null))
+		if [ ${#COMMITS_TOPO[@]} -eq ${#COMMITS[@]} ]; then
+			COMMITS=("${COMMITS_TOPO[@]}")
+		else
+			COMMITS=($(git rev-list --no-walk --reverse "${COMMITS[@]}"))
+		fi
 	fi
 
 	# Default target to oldest if not set
