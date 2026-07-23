@@ -483,9 +483,22 @@ _GUARD_REACHABLE () {
 	exit 1
 }
 
-# Journal of completed ref moves, one per line ("<epoch> <ref> <old> <new> <label>"),
-# in the common git dir so it's shared across worktrees. Powers `--undo` and the
-# last-operation report in `--status`.
+# Refuses a merge in the span, since rebase-based modes replay every commit up to `HEAD` and
+# drops merge commits without a word – so refuse, since the plumbing modes rebuild them whole
+_GUARD_NO_MERGE_SPAN () {
+	local BASE=$1
+	local SPAN="HEAD"
+	git rev-parse --verify -q "$BASE^" >/dev/null 2>&1 && SPAN="$BASE^..HEAD"
+	local MERGES=$(git rev-list --merges --count "$SPAN" 2>/dev/null)
+	if [ "${MERGES:-0}" -gt 0 ]; then
+		PRINT_ERR "Span ${BASE:0:7}..HEAD contains a merge commit – this rebase-based mode would silently flatten it"
+		echo -e "\e[0;31m  Merge-preserving alternatives: -M / -S / --split (plumbing), or --exec with 'git rebase --rebase-merges ...' deliberately.\e[0m" >&2
+		exit 1
+	fi
+}
+
+# Names the journal of completed ref moves, one line each ("<epoch> <ref> <old> <new>"), in the
+# common git dir so worktrees share it – powers `--undo` and `--status`'s last-operation report
 _JOURNAL_FILE_PATH () {
 	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
 	[ -z "$DIR" ] && return 1
@@ -1021,6 +1034,7 @@ GIT_AMEND_INTO () {
 
 	local TARGET_FULL=$(git rev-parse "$TARGET")
 	_GUARD_UNPUSHED "$TARGET_FULL"
+	_GUARD_NO_MERGE_SPAN "$TARGET_FULL"
 
 	local REF="refs/heads/$ORIG_BRANCH"
 	local ORIG_HEAD=$(git rev-parse HEAD)
@@ -1391,6 +1405,7 @@ GIT_REORDER () {
 	done
 
 	_GUARD_UNPUSHED "$OLDEST"
+	_GUARD_NO_MERGE_SPAN "$OLDEST"
 
 	# Rebase base (parent of the oldest, or --root for the initial commit)
 	local REBASE_BASE
@@ -1799,28 +1814,39 @@ _READ_MESSAGE_FROM_EDITOR () {
 	git stripspace --strip-comments < "$MSG_FILE"
 }
 
-# Rebuild each commit in `git rev-list --reverse $1..HEAD` with its parent
-# substituted from PREV_OLD to PREV_NEW. Both globals are updated as we walk;
-# the final PREV_NEW is the new tip the caller can apply via update-ref.
+# Rebuild each commit in `$1..HEAD` with every rewritten parent substituted,
+# carrying an old->new map across the walk – a single PREV_OLD/PREV_NEW chain
+# silently breaks on merge topologies, where the second leg's parent no longer
+# matches by the time the walk reaches it. Commits with no rewritten parent
+# (side legs that merge in without descending from the rewrite) are kept as-is
+# rather than rebuilt. The final PREV_NEW is the new tip for update-ref;
+# `--topo-order` guards the parents-before-children walk against clock skew.
 _REBUILD_DESCENDANTS () {
 	local FROM=$1
-	local DESC P D_TREE D_MSG D_AN D_AE D_AD D_NEW
+	local DESC P D_TREE D_MSG D_AN D_AE D_AD D_NEW D_TOUCHED
 	local D_PARENTS_ARGS
-	for DESC in $(git rev-list --reverse "$FROM..HEAD"); do
+	local -A REWRITTEN
+	REWRITTEN[$(git rev-parse "$PREV_OLD")]=$PREV_NEW
+	for DESC in $(git rev-list --reverse --topo-order "$FROM..HEAD"); do
+		D_PARENTS_ARGS=()
+		D_TOUCHED=false
+		for P in $(git log -1 --format='%P' "$DESC"); do
+			if [ -n "${REWRITTEN[$P]}" ]; then
+				D_PARENTS_ARGS+=(-p "${REWRITTEN[$P]}")
+				D_TOUCHED=true
+			else
+				D_PARENTS_ARGS+=(-p "$P")
+			fi
+		done
+		if [ "$D_TOUCHED" = "false" ]; then
+			continue
+		fi
+
 		D_TREE=$(git rev-parse "$DESC^{tree}")
 		D_MSG=$(git log -1 --format='%B' "$DESC")
 		D_AN=$(git log -1 --format='%an' "$DESC")
 		D_AE=$(git log -1 --format='%ae' "$DESC")
 		D_AD=$(git log -1 --format='%aI' "$DESC")
-
-		D_PARENTS_ARGS=()
-		for P in $(git log -1 --format='%P' "$DESC"); do
-			if [ "$P" = "$PREV_OLD" ]; then
-				D_PARENTS_ARGS+=(-p "$PREV_NEW")
-			else
-				D_PARENTS_ARGS+=(-p "$P")
-			fi
-		done
 
 		D_NEW=$(
 			GIT_AUTHOR_NAME="$D_AN" GIT_AUTHOR_EMAIL="$D_AE" GIT_AUTHOR_DATE="$D_AD" \
@@ -1829,6 +1855,7 @@ _REBUILD_DESCENDANTS () {
 
 		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
 
+		REWRITTEN[$DESC]=$D_NEW
 		PREV_OLD=$DESC
 		PREV_NEW=$D_NEW
 	done
@@ -2614,6 +2641,41 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the pushed match" 'already pushed'
 	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$TWIN_HEAD"
 
+	# --- 24. merge topology: plumbing rebuilds preserve it, rebase modes refuse ---
+	echo -e "\e[1;96m[24] merge topology\e[0m"
+	echo "l1" > l1.txt && git add l1.txt && git commit -qm "Low one"
+	local LOW1=$(git rev-parse HEAD)
+	echo "l2" > l2.txt && git add l2.txt && git commit -qm "Low two"
+	local LOW2=$(git rev-parse HEAD)
+	echo "db" > db.txt && git add db.txt && git commit -qm "Diamond base"
+	local DBASE=$(git rev-parse HEAD)
+	git checkout -q -b d-side
+	echo "ds" > ds.txt && git add ds.txt && git commit -qm "Diamond side"
+	local DSIDE=$(git rev-parse HEAD)
+	git checkout -q main
+	echo "dm" > dm.txt && git add dm.txt && git commit -qm "Diamond main"
+	local DMAIN=$(git rev-parse HEAD)
+	git merge -q --no-ff -m "Diamond merge" d-side >/dev/null 2>&1
+	echo "dt" > dt.txt && git add dt.txt && git commit -qm "Diamond tip"
+	# Mid-leg reword: the side leg does not descend from it, so it must
+	# survive byte-identical while the merge is rebuilt with the new parent
+	_ST_RUN -M --text="Diamond main reworded" "$DMAIN"
+	_ST_EQ "reword below a merge exits 0" "$RC" "0"
+	_ST_EQ "merge topology preserved" "$(git rev-list --merges --count HEAD)" "1"
+	_ST_CHECK "untouched side leg kept as-is" git merge-base --is-ancestor "$DSIDE" HEAD
+	echo "dbx" >> db.txt && git add db.txt
+	_ST_RUN --amend-into="$DBASE"
+	_ST_EQ "--amend-into refuses across a merge" "$RC" "1"
+	_ST_OUT_HAS "names the flatten hazard" 'flatten'
+	git reset -q && git checkout -q -- db.txt
+	_ST_RUN -d -y "$DBASE"
+	_ST_EQ "drop refuses across a merge" "$RC" "1"
+	# A merge-free range below the merge routes to plumbing and stays legal
+	_ST_RUN -s -y --text="Lows combined" "$LOW1" "$LOW2"
+	_ST_EQ "squash below the merge auto-routes to plumbing" "$RC" "0"
+	_ST_EQ "merge survived the squash" "$(git rev-list --merges --count HEAD)" "1"
+	git branch -q -D d-side
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3134,6 +3196,13 @@ fi
 # through to the existing rebase-based squash unchanged.
 if [[ "$ACTION" == "squash" ]] && [ ${#OPT_DIR} -eq 0 ] && _RESQUASH_ELIGIBLE; then
 	ACTION="resquash"
+fi
+
+# Merge-span guard for the modes still rebase-based after auto-routing – a
+# squash re-routed to plumbing rebuilds merges above it faithfully and needs
+# no refusal, so this must come after the route decision
+if [[ "$ACTION" == "drop" || "$ACTION" == "squash" || "$ACTION" == "edit" ]]; then
+	_GUARD_NO_MERGE_SPAN "${COMMITS[1]}"
 fi
 
 # Final --text validation: only valid for message-producing modes. We deferred

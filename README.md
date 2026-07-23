@@ -237,7 +237,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, undo semantics, and status reporting — ~120 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~125 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
@@ -281,6 +281,17 @@ Commit 282effe (Add b) is not in HEAD's history – it was likely rewritten
 ```
 
 Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
+
+### Merge Commits
+
+History containing merges is handled by class of operation. The plumbing modes (`-M`, `-S`, `--split`, auto-routed `-s`) rebuild descendants with an old→new map, so a merge above the rewrite is reassembled with its parents faithfully substituted — side legs that don't descend from the rewrite are kept byte-identical rather than rebuilt. The rebase-based modes (`--amend-into`, `--reorder`, `-d`, rebase-path `-s`, `-e`) replay their span with plain `git rebase`, which silently drops merge commits — so a span containing a merge is **refused** instead:
+
+```
+Span cdab8f6..HEAD contains a merge commit – this rebase-based mode would silently flatten it
+  Merge-preserving alternatives: -M / -S / --split (plumbing), or --exec with 'git rebase --rebase-merges ...' deliberately.
+```
+
+The guard is span-scoped, not repo-scoped: operating above the merge, or squashing a merge-free range below it (which auto-routes to plumbing), stays legal.
 
 A resolved match that turns out to be **pushed** is named but never acted on — not even under `--allow-pushed`, which consents to rewriting the commit you named rather than one resolved on your behalf. Substituting is only ever a convenience, so where it would compound an inference with a shared-history rewrite, it stands aside and lets you ask for that commit deliberately:
 

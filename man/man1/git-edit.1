@@ -48,6 +48,10 @@ temporary worktree.
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
 its likely counterpart named \(em so a stale SHA never silently no\-ops.
+.IP \(bu 3
+Merge topology is preserved: the plumbing modes rebuild merge commits with
+their parents faithfully substituted, and the rebase\-based modes refuse a
+span containing a merge rather than silently flattening it.
 .PP
 Every run ends with a machine\-readable status trailer (see
 .BR "OUTCOME TRAILER" ),
