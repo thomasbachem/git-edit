@@ -256,7 +256,11 @@ MKTEMP_FILE () {
 # self-explanatory prose.
 EMIT_STATUS () {
 	# args: <new_head_sha> <ref> <changed:true|false>
-	if [ "$3" = "true" ]; then
+	# The SHAs are the authority, not the flag: some callers pass a hardcoded
+	# `true` for paths that normally rewrite, but a no-op rebase (e.g. dropping
+	# a commit that isn't in HEAD's history) leaves HEAD where it was. Reporting
+	# a move there would be a false success for anything dispatching on `ok`.
+	if [ "$3" = "true" ] && [ "$1" != "$SCRIPT_INITIAL_HEAD" ]; then
 		echo "git-edit: ok — $2 moved $SCRIPT_INITIAL_HEAD → $1"
 	else
 		echo "git-edit: ok — $2 unchanged"
@@ -371,8 +375,33 @@ _GUARD_UNPUSHED () {
 	fi
 }
 
-# Names the journal of completed ref moves, one line each ("<epoch> <ref> <old> <new>"), in the
-# common git dir so worktrees share it – powers `--undo` and `--status`'s last-operation report
+# Refuses a commit that isn't in HEAD's history. The usual cause is a stale SHA
+# noted before an earlier rewrite orphaned it, so name the counterpart when
+# exactly one commit on HEAD carries the same subject. Without this the rebase
+# modes quietly no-op on a commit they cannot reach.
+_GUARD_REACHABLE () {
+	local C=$1
+	git merge-base --is-ancestor "$C" HEAD 2>/dev/null && return 0
+
+	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
+	if [ -z "$SUBJECT" ]; then
+		PRINT_ERR "Commit ${C:0:7} does not exist in this repository"
+		exit 1
+	fi
+
+	PRINT_ERR "Commit ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
+	local CAND=$(git log --format='%H|%s' HEAD 2>/dev/null | awk -F'|' -v s="$SUBJECT" '$2==s{print $1}')
+	if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
+		echo -e "\e[0;31m  Its counterpart on HEAD is ${CAND:0:12} (same subject) – retry with that.\e[0m" >&2
+	else
+		echo -e "\e[0;31m  Re-read the current SHAs with 'git log' before retrying.\e[0m" >&2
+	fi
+	exit 1
+}
+
+# Journal of completed ref moves, one per line ("<epoch> <ref> <old> <new> <label>"),
+# in the common git dir so it's shared across worktrees. Powers `--undo` and the
+# last-operation report in `--status`.
 _JOURNAL_FILE_PATH () {
 	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
 	[ -z "$DIR" ] && return 1
@@ -2443,6 +2472,25 @@ GIT_SELFTEST () {
 		fi
 	fi
 
+	# --- 23. stale (rewritten) SHAs are refused, never silently no-op'd ---
+	echo -e "\e[1;96m[23] stale SHA handling\e[0m"
+	echo "stale" > stale.txt && git add stale.txt && git commit -qm "Stale target"
+	local STALE_SHA=$(git rev-parse HEAD)
+	# Fold into it: the SHA changes, the subject survives for the counterpart hint
+	echo "stale2" > stale.txt && git add stale.txt
+	_ST_RUN --amend-into="$STALE_SHA"
+	local STALE_HEAD=$(git rev-parse HEAD)
+	local STALE_COUNT=$(git rev-list --count HEAD)
+	_ST_RUN -d -y "$STALE_SHA"
+	_ST_EQ "drop refuses a stale SHA" "$RC" "1"
+	_ST_OUT_HAS "explains it was rewritten" 'likely rewritten'
+	_ST_OUT_HAS "names the counterpart" 'counterpart on HEAD'
+	_ST_EQ "HEAD untouched" "$(git rev-parse HEAD)" "$STALE_HEAD"
+	_ST_EQ "nothing dropped" "$(git rev-list --count HEAD)" "$STALE_COUNT"
+	_ST_RUN -d -y deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+	_ST_EQ "nonexistent SHA refused" "$RC" "1"
+	_ST_OUT_HAS "reports it does not exist" 'does not exist'
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -2823,12 +2871,16 @@ if [ ${#OPT_REORDER} -gt 0 ]; then
 	COMMITS_DESIRED=("${COMMITS[@]}")
 fi
 
+# Validate before sorting, while the SHAs are still as the user gave them –
+# the sort's fallback below drops anything git can't resolve.
+for COMMIT in "${COMMITS[@]}"; do
+	_GUARD_REACHABLE "$COMMIT"
+done
+
 # Sort selected commits topologically (oldest first). `rev-list --no-walk`
 # only sorts by timestamp, which ties – and comes back input-reversed – on
 # rapid-fire same-second commits (scripts, agents), silently inverting the
-# selection. So derive the order from HEAD's own history; selections not
-# fully reachable from HEAD keep the timestamp sort and get caught by each
-# mode's reachability check.
+# selection. So derive the order from HEAD's own history.
 COMMITS_TOPO=($(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null))
 if [ ${#COMMITS_TOPO[@]} -eq ${#COMMITS[@]} ]; then
 	COMMITS=("${COMMITS_TOPO[@]}")
