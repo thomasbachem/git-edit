@@ -237,7 +237,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA refusal, undo semantics, and status reporting — ~110 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, undo semantics, and status reporting — ~115 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
@@ -260,6 +260,27 @@ When stdin isn't a TTY (i.e. when run by Claude Code, CI, or any script), `-C` i
 Modes that already don't touch the working tree (`-M`, `-S`, `--exec`, auto-routed `-s` → plumbing) are left alone — they don't need it. A short gray notice prints when auto-isolation kicks in.
 
 To opt out (e.g., CI scripts that genuinely want to modify the main checkout), set `GIT_EDIT_NO_AUTO_ISOLATE=1` in the environment.
+
+### Stale (Rewritten) SHAs
+
+A SHA noted before an earlier rewrite no longer exists on the branch — a constant hazard for agents, which routinely record a SHA and come back to it a rewrite later. Rather than let a rebase quietly no-op on a commit it can't reach, every commit argument is checked against HEAD's history first.
+
+When exactly one unpushed commit carries the **identical diff** (same `git patch-id`), that's proof of the same change rather than a guess, so it's substituted outright and the run proceeds — no retry:
+
+```
+Commit ec4fa40 was rewritten – using its current identity 8937ad57e60d (identical diff)
+```
+
+This covers the common cases by construction: a commit rebuilt as a descendant of some earlier edit keeps its diff, as do rewords and reorders. Because the test is the diff and not the journal, it also resolves rewrites made by plain `git rebase` outside this tool.
+
+Where the content itself changed — folding into a commit, for instance — the diff no longer matches, and a same-subject commit is only a hint. Those are named but **not** acted on:
+
+```
+Commit 282effe (Add b) is not in HEAD's history – it was likely rewritten
+  Its counterpart on HEAD is 038fa1ea384a (same subject, changed content) – retry with that.
+```
+
+Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
 
 ### Coexisting with Concurrent Editors (e.g. AI Agents)
 

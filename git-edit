@@ -132,6 +132,8 @@ USAGE () {
 	echo -e ""
 	echo -e "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
 	echo -e "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
+	echo -e "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
+	echo -e "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
 	echo -e "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict>'):\e[0m"
 	echo -e "\e[0;94m         git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>\e[0m"
 	echo -e "\e[0;94m         git-edit: ok — refs/heads/main unchanged\e[0m"
@@ -375,12 +377,68 @@ _GUARD_UNPUSHED () {
 	fi
 }
 
-# Refuses a commit that isn't in HEAD's history. The usual cause is a stale SHA
-# noted before an earlier rewrite orphaned it, so name the counterpart when
-# exactly one commit on HEAD carries the same subject. Without this the rebase
-# modes quietly no-op on a commit they cannot reach.
+# Stable patch id of a commit's own diff – the same change keeps it across a
+# rewrite even though the SHA (and the tree) change. `--root` so the initial
+# commit gets one too instead of an empty diff.
+_PATCH_ID () {
+	git diff-tree -p --root "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | awk '{print $1}'
+}
+
+# Commits a rewritten SHA could have become. git-edit only ever rewrites
+# unpushed history, so that is the whole search space; the cap keeps the scan
+# bounded on a repo with no remote, where every commit counts as unpushed.
+_RESOLVE_CANDIDATES () {
+	local R=$(git rev-list HEAD --not --remotes 2>/dev/null | head -100)
+	[ -z "$R" ] && R=$(git rev-list -n 100 HEAD 2>/dev/null)
+	echo "$R"
+}
+
+# Finds the current identity of a rewritten commit, echoing "<sha> <how>".
+# An identical patch id proves it is the same change – rebuilt descendants,
+# rewords and reorders all keep their diff – so that match is trustworthy
+# enough to act on. A fold changes the diff but keeps the subject, which only
+# hints at identity, so the caller merely suggests those. Both require a
+# unique match.
+_RESOLVE_STALE () {
+	local C=$1
+	local CANDIDATES=$(_RESOLVE_CANDIDATES)
+	[ -z "$CANDIDATES" ] && return 1
+
+	local HIT
+	local -a MATCHES
+
+	local WANT=$(_PATCH_ID "$C")
+	if [ -n "$WANT" ]; then
+		MATCHES=()
+		for HIT in ${=CANDIDATES}; do
+			[ "$(_PATCH_ID "$HIT")" = "$WANT" ] && MATCHES+=("$HIT")
+		done
+		if [ ${#MATCHES[@]} -eq 1 ]; then
+			echo "${MATCHES[1]} patch-id"
+			return 0
+		fi
+	fi
+
+	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
+	if [ -n "$SUBJECT" ]; then
+		MATCHES=()
+		for HIT in ${=CANDIDATES}; do
+			[ "$(git log -1 --format='%s' "$HIT" 2>/dev/null)" = "$SUBJECT" ] && MATCHES+=("$HIT")
+		done
+		if [ ${#MATCHES[@]} -eq 1 ]; then
+			echo "${MATCHES[1]} subject"
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# Resolves a commit to its current identity in `_RESOLVED_SHA`, or refuses – a miss is usually
+# a stale SHA an earlier rewrite orphaned, so a proven match is substituted outright and a
+# merely likely one only named, and the global lets `exit` abort with the trailer intact
 _GUARD_REACHABLE () {
 	local C=$1
+	_RESOLVED_SHA=$C
 	git merge-base --is-ancestor "$C" HEAD 2>/dev/null && return 0
 
 	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
@@ -389,10 +447,19 @@ _GUARD_REACHABLE () {
 		exit 1
 	fi
 
+	local -a RESOLVED
+	[ ${#GIT_EDIT_NO_RESOLVE} -eq 0 ] && RESOLVED=($(_RESOLVE_STALE "$C"))
+
+	if [ "${RESOLVED[2]}" = "patch-id" ]; then
+		PRINT_TEXT "Commit %s was rewritten – using its current identity %s (identical diff)" 33 \
+			"${C:0:7}" "${RESOLVED[1]:0:12}"
+		_RESOLVED_SHA=${RESOLVED[1]}
+		return 0
+	fi
+
 	PRINT_ERR "Commit ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
-	local CAND=$(git log --format='%H|%s' HEAD 2>/dev/null | awk -F'|' -v s="$SUBJECT" '$2==s{print $1}')
-	if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
-		echo -e "\e[0;31m  Its counterpart on HEAD is ${CAND:0:12} (same subject) – retry with that.\e[0m" >&2
+	if [ "${RESOLVED[2]}" = "subject" ]; then
+		echo -e "\e[0;31m  Its counterpart on HEAD is ${RESOLVED[1]:0:12} (same subject, changed content) – retry with that.\e[0m" >&2
 	else
 		echo -e "\e[0;31m  Re-read the current SHAs with 'git log' before retrying.\e[0m" >&2
 	fi
@@ -2490,6 +2557,19 @@ GIT_SELFTEST () {
 	_ST_RUN -d -y deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
 	_ST_EQ "nonexistent SHA refused" "$RC" "1"
 	_ST_OUT_HAS "reports it does not exist" 'does not exist'
+	# A commit only rebuilt as a descendant keeps its diff, so it resolves outright
+	echo "tip" > tip.txt && git add tip.txt && git commit -qm "Tip commit"
+	local SHIFTED=$(git rev-parse HEAD)
+	echo "stale3" > stale.txt && git add stale.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD~1)"
+	_ST_RUN -M --text="Tip reworded" "$SHIFTED"
+	_ST_EQ "stale descendant auto-resolves" "$RC" "0"
+	_ST_OUT_HAS "reports the substitution" 'current identity'
+	_ST_EQ "reword hit the right commit" "$(git log -1 --format=%s)" "Tip reworded"
+	export GIT_EDIT_NO_RESOLVE=1
+	_ST_RUN -M --text="Opted out" "$SHIFTED"
+	unset GIT_EDIT_NO_RESOLVE
+	_ST_EQ "GIT_EDIT_NO_RESOLVE opts out" "$RC" "1"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
@@ -2871,16 +2951,19 @@ if [ ${#OPT_REORDER} -gt 0 ]; then
 	COMMITS_DESIRED=("${COMMITS[@]}")
 fi
 
-# Validate before sorting, while the SHAs are still as the user gave them –
-# the sort's fallback below drops anything git can't resolve.
+# Validate before sorting, while the SHAs are still as the caller gave them – the sort's
+# fallback below drops anything git cannot resolve, and each commit comes back as its
+# current identity, so a SHA staled by an earlier rewrite is carried forward
+COMMITS_RESOLVED=()
 for COMMIT in "${COMMITS[@]}"; do
 	_GUARD_REACHABLE "$COMMIT"
+	COMMITS_RESOLVED+=("$_RESOLVED_SHA")
 done
+COMMITS=("${COMMITS_RESOLVED[@]}")
 
-# Sort selected commits topologically (oldest first). `rev-list --no-walk`
-# only sorts by timestamp, which ties – and comes back input-reversed – on
-# rapid-fire same-second commits (scripts, agents), silently inverting the
-# selection. So derive the order from HEAD's own history.
+# Sort selected commits topologically, oldest first – `rev-list --no-walk` only sorts by
+# timestamp, which ties and comes back input-reversed on rapid-fire same-second commits,
+# silently inverting the selection, so derive the order from `HEAD`'s own history
 COMMITS_TOPO=($(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${COMMITS[@]}") 2>/dev/null))
 if [ ${#COMMITS_TOPO[@]} -eq ${#COMMITS[@]} ]; then
 	COMMITS=("${COMMITS_TOPO[@]}")

@@ -44,6 +44,10 @@ leaves your staged changes exactly as they were, with nothing to roll back.
 In non\-interactive contexts (stdin is not a TTY, e.g. an agent or CI) the
 modes that would otherwise touch the working tree auto\-isolate into a unique
 temporary worktree.
+.IP \(bu 3
+A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
+identity when one commit carries the identical diff, and otherwise refused with
+its likely counterpart named \(em so a stale SHA never silently no\-ops.
 .PP
 Every run ends with a machine\-readable status trailer (see
 .BR "OUTCOME TRAILER" ),
@@ -192,6 +196,10 @@ Paused on a conflict awaiting
 or
 .BR \-\-abort .
 .SH ENVIRONMENT
+.TP
+.B GIT_EDIT_NO_RESOLVE
+If set, disables resolving a stale \fIcommit\fR to its post\-rewrite identity;
+every unreachable commit is then simply refused.
 .TP
 .B GIT_EDIT_NO_AUTO_ISOLATE
 If set, disables the non\-interactive auto\-isolation into a temp worktree.
