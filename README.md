@@ -149,7 +149,7 @@ Resolution is conservative: every staged path with history must agree on a singl
 
 #### Conflict resolution (`--continue` / `--abort`)
 
-If the autosquash hits a merge conflict (the agent's change overlaps with a later commit that also modifies the same lines), the script doesn't auto-rollback. Instead it pauses, mirroring `git rebase`'s own pause-on-conflict pattern, and prints actionable detail:
+If the autosquash hits a merge conflict (the agent's change overlaps with a later commit that also modifies the same lines), the script doesn't auto-rollback. Instead it pauses, mirroring `git rebase`'s own pause-on-conflict pattern, and prints actionable detail. Every conflict-capable rebase runs with `rerere` enabled, so when a cascade re-conflicts the same hunk — or a retry of the whole operation hits it again — the first resolution replays automatically (learned resolutions live in the repo-wide `rr-cache`):
 
 ```
 $ git edit --amend-into=<sha>

@@ -1086,7 +1086,10 @@ GIT_AMEND_INTO () {
 	# Step 3: autosquash. GIT_SEQUENCE_EDITOR=true accepts the auto-arranged
 	# TODO without prompting. GIT_EDITOR=true ensures no message editor opens
 	# (we use fixup semantics, so this is just defensive).
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --autosquash --no-autostash --interactive $REBASE_BASE"
+	# `rerere` here (and on every conflict-capable rebase below): a cascade
+	# re-conflict of an already-resolved hunk replays the recorded resolution,
+	# and the shared `rr-cache` carries it across retries of the whole operation
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
 		# Conflict during autosquash. Save state, leave the worktree alive,
@@ -1461,7 +1464,7 @@ awk -v order="$GIT_EDIT_REORDER_ORDER" '
 SEQEOF
 	chmod +x "$SEQ"
 
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git rebase --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
 		rm -f "$SEQ"
@@ -1539,7 +1542,7 @@ _CONTINUE_REORDER () {
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
 			_CLEANUP_HOOK=""
@@ -1678,7 +1681,7 @@ _CONTINUE_AMEND_INTO () {
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
 			# Another conflict downstream – keep state, keep worktree, exit
@@ -2112,7 +2115,7 @@ GIT_REBASE_CONTINUE () {
 	# First arg is the rebase sub-command, defaulting to "--continue"
 	local SUBCMD="${1:---continue}"
 
-	local CMD="git rebase $SUBCMD"
+	local CMD="git -c rerere.enabled=true rebase $SUBCMD"
 	PRINT_CMD "$CMD"
 
 	# Only use the interactive editor if we are in "squash" mode AND `-m` was passed
