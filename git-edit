@@ -622,8 +622,16 @@ GIT_STATUS_REPORT () {
 # stash/reset/pop dance. Depends on $SCRIPT_INITIAL_HAS_WIP, captured in
 # the argument-parsing section before any modification.
 _PRINT_REWRITE_APPLY_HINT () {
-	# args: <branch-name>
+	# args: <branch-name> [<old-head> <new-head>]
 	local BRANCH="$1"
+	# A pure history rewrite leaves the tip tree byte-identical – the checkout
+	# already matches it, so there is nothing to apply (and following the
+	# stash/reset dance would pointlessly cycle any unrelated WIP)
+	if [ -n "$2" ] && [ -n "$3" ] && \
+	   [ "$(git rev-parse "$2^{tree}" 2>/dev/null)" = "$(git rev-parse "$3^{tree}" 2>/dev/null)" ]; then
+		PRINT_TEXT "Branch %s rewritten – tip tree unchanged, your checkout is already current." 32 "$BRANCH"
+		return
+	fi
 	if [ -z "$SCRIPT_INITIAL_HAS_WIP" ]; then
 		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	else
@@ -992,8 +1000,8 @@ GIT_EXEC () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "exec"
 
-	if [ -n "$BRANCH" ]; then
-		_PRINT_REWRITE_APPLY_HINT "$BRANCH"
+	if [ -n "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD" ]; then
+		_PRINT_REWRITE_APPLY_HINT "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
 	else
 		PRINT_TEXT "Detached HEAD updated to %s." 32 "$NEW_HEAD"
 	fi
@@ -2724,6 +2732,16 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "routed to plumbing" 'commit-tree'
 	_ST_EQ "one combined commit" "$(git log -1 --format=%s)" "Q combined"
 	_ST_EQ "content is the newest version" "$(git show HEAD:q.txt)" "q4"
+	# A tree-identical rewrite (non-adjacent squash of separate-file commits,
+	# forced onto the rebase path) needs no checkout reconcile – the hint must
+	# say so instead of prescribing the stash/reset dance
+	echo "r1" > r1.txt && git add r1.txt && git commit -qm "R gap1"
+	echo "r2" > r2.txt && git add r2.txt && git commit -qm "R gap2"
+	echo "r3" > r3.txt && git add r3.txt && git commit -qm "R gap3"
+	_ST_RUN -s="$(git rev-parse HEAD~2)" -y --text="R gap1+3" "$(git rev-parse HEAD)"
+	_ST_EQ "non-adjacent pure squash exits 0" "$RC" "0"
+	_ST_OUT_HAS "reconcile hint suppressed" 'checkout is already current'
+	_ST_OUT_LACKS "no stash dance prescribed" "stash push -u -m 'wip before git-edit'"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
@@ -3612,7 +3630,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 			exit 1
 		fi
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
-		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH"
+		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
 	fi
