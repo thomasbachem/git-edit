@@ -280,7 +280,14 @@ Commit 282effe (Add b) is not in HEAD's history – it was likely rewritten
   Its counterpart on HEAD is 038fa1ea384a (same subject, changed content) – retry with that.
 ```
 
-Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. If the resolved commit turns out to be pushed, the usual pushed guard still refuses it — substitution happens first, so every later guard sees the resolved SHA. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
+Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
+
+A resolved match that turns out to be **pushed** is named but never acted on — not even under `--allow-pushed`, which consents to rewriting the commit you named rather than one resolved on your behalf. Substituting is only ever a convenience, so where it would compound an inference with a shared-history rewrite, it stands aside and lets you ask for that commit deliberately:
+
+```
+Commit 556d220 (Add x) is not in HEAD's history – it was likely rewritten
+  Its only match d2943df93dfe is already pushed – name it explicitly to rewrite it.
+```
 
 The search covers all of history, not a recent window: every rewrite preserves a commit's **author date**, so filtering on it first cuts the candidates to a handful before any patch id is computed. On a 3000-commit repo that is typically two commits and ~0.04s. The filter can only narrow the field, never widen it — a candidate it drops could only ever have been a false match. Should a single second hold more commits than `RESOLVE_SCAN_MAX` (100) — imported or scripted history — uniqueness can no longer be established from a partial view, and resolution degrades to a suggestion rather than acting on one.
 

@@ -372,6 +372,13 @@ PRINT_COMPLETED () {
 # happen by accident. Guarding the oldest commit an operation touches covers
 # the whole rewritten span, since every descendant of an unpushed commit is
 # itself unpushed. Override with --allow-pushed.
+# Whether a commit already exists on a remote. Unlike _GUARD_UNPUSHED this only
+# reports – and deliberately ignores --allow-pushed, so callers can still tell
+# shared history apart after the caller has consented to rewriting it.
+_IS_PUSHED () {
+	[ -n "$(git branch -r --contains "$1" 2>/dev/null | grep -v ' -> ' | head -1)" ]
+}
+
 _GUARD_UNPUSHED () {
 	[ ${#OPT_ALLOW_PUSHED} -gt 0 ] && return 0
 	local C=$1
@@ -448,6 +455,17 @@ _GUARD_REACHABLE () {
 
 	local -a RESOLVED
 	[ ${#GIT_EDIT_NO_RESOLVE} -eq 0 ] && RESOLVED=($(_RESOLVE_STALE "$C"))
+
+	# An inferred target never reaches pushed history, even under
+	# --allow-pushed: that flag consents to rewriting the commit the caller
+	# named, not to one this resolved on its behalf. Substituting is only ever
+	# a convenience, so where it would compound a guess with a shared-history
+	# rewrite, name the match and let the caller ask for it deliberately.
+	if [ "${RESOLVED[2]}" = "patch-id" ] && _IS_PUSHED "${RESOLVED[1]}"; then
+		PRINT_ERR "Commit ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
+		echo -e "\e[0;31m  Its only match ${RESOLVED[1]:0:12} is already pushed – name it explicitly to rewrite it.\e[0m" >&2
+		exit 1
+	fi
 
 	if [ "${RESOLVED[2]}" = "patch-id" ]; then
 		PRINT_TEXT "Commit %s was rewritten – using its current identity %s (identical diff)" 33 \
@@ -2581,6 +2599,20 @@ GIT_SELFTEST () {
 	_ST_EQ "--amend-into resolves a stale target" "$RC" "0"
 	_ST_OUT_HAS "--amend-into reports the substitution" 'current identity'
 	_ST_EQ "fold landed on the resolved commit" "$(git show 'HEAD~1:folded.txt' 2>/dev/null)" "folded"
+	# A resolved match on pushed history is named, never acted on – not even
+	# under --allow-pushed, which consents to the named commit and not this one.
+	# A cherry-pick keeps both author date and diff, so it is the twin to beat.
+	git rm -q b.txt && git commit -qm "Remove beta"
+	git cherry-pick "$(git rev-parse origin/main)" >/dev/null 2>&1
+	local TWIN=$(git rev-parse HEAD)
+	# Dropping the twin leaves the pushed original as the sole commit with that
+	# diff, so the stale SHA resolves uniquely onto shared history
+	_ST_RUN -d -y "$TWIN"
+	local TWIN_HEAD=$(git rev-parse HEAD)
+	_ST_RUN -M --text="Should not land" --allow-pushed "$TWIN"
+	_ST_EQ "pushed match refused under --allow-pushed" "$RC" "1"
+	_ST_OUT_HAS "names the pushed match" 'already pushed'
+	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$TWIN_HEAD"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
