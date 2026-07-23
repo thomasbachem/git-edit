@@ -107,6 +107,7 @@ USAGE () {
 	echo -e "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
 	echo -e "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
 	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
+	echo -e "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
 	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	echo -e "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
 	echo -e ""
@@ -129,6 +130,8 @@ USAGE () {
 	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
 	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
 	echo -e "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
+	echo -e "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
+	echo -e "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
 	echo -e "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
 	echo -e "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	echo -e "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
@@ -2572,7 +2575,7 @@ GIT_SELFTEST () {
 	if [ -f "$MANPAGE" ]; then
 		# Strip roff backslash escapes so flag spellings match; no man/mandoc dep
 		local mflag missing=""
-		for mflag in --amend-into --split --reorder --exec --undo --status --allow-pushed --continue --abort --reword --resquash --selftest; do
+		for mflag in --amend-into --split --reorder --move --exec --undo --status --allow-pushed --continue --abort --reword --resquash --selftest; do
 			sed 's/\\//g' "$MANPAGE" | grep -q -- "$mflag" || missing="$missing $mflag"
 		done
 		if [ -z "$missing" ]; then
@@ -2679,6 +2682,26 @@ GIT_SELFTEST () {
 	_ST_EQ "merge survived the squash" "$(git rev-list --merges --count HEAD)" "1"
 	git branch -q -D d-side
 
+	# --- 25. move mode: reposition one commit via derived span reorder ---
+	echo -e "\e[1;96m[25] move mode\e[0m"
+	for MC in m1 m2 m3 m4; do
+		echo "$MC" > "$MC.txt" && git add "$MC.txt" && git commit -qm "Move $MC"
+	done
+	local MV_FIRST=$(git rev-parse HEAD~3)
+	local MV_TIP=$(git rev-parse HEAD)
+	_ST_RUN --move="$MV_TIP" --after="$MV_FIRST"
+	_ST_EQ "backward move exits 0" "$RC" "0"
+	_ST_EQ "span reordered as asked" "$(git log --format=%s -4 | tr '\n' ' ')" "Move m3 Move m2 Move m4 Move m1 "
+	local MV_M4=$(git log --format='%H %s' -4 | awk '$3=="m4"{print $1}')
+	_ST_RUN --move="$MV_M4" --after="$(git rev-parse HEAD)"
+	_ST_EQ "forward move exits 0" "$RC" "0"
+	_ST_EQ "restored original order" "$(git log --format=%s -4 | tr '\n' ' ')" "Move m4 Move m3 Move m2 Move m1 "
+	_ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~1)"
+	_ST_EQ "in-position move is a no-op" "$RC" "0"
+	_ST_OUT_HAS "no-op reports unchanged" 'unchanged'
+	_ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~2)" --before="$(git rev-parse HEAD~3)"
+	_ST_EQ "both anchors refused" "$RC" "1"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -2709,7 +2732,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -2869,24 +2892,29 @@ if [ ${#OPT_RESQUASH} -gt 0 ] && [ ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o
 	PRINT_ERR "Option -S/--resquash cannot be combined with -d/-s/-C (resquash uses plumbing only; for non-contiguous squashes use -s with -C)"
 	exit 1
 fi
-if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 ]; then
+if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --exec cannot be combined with other modes (--exec is its own mode and manages its own isolated worktree)"
 	exit 1
 fi
-if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_SPLIT} -gt 0 ]; then
+if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
 	exit 1
 fi
-if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 ]; then
+if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --reorder cannot be combined with other modes (it manages its own isolated worktree)"
 	exit 1
 fi
-# --text is incompatible with -d and --exec; the full check (against the
-# resolved action, including implicit squash) happens after action
-# determination so we can also catch `--text` with edit mode etc.
+if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "--after/--before only apply to --move"
+	exit 1
+fi
+# `--text` is incompatible with `-d` and `--exec` – the full check against the resolved
+# action, implicit squash included, happens after action determination, so it also
+# catches `--text` with edit mode
 if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_DROP} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --text doesn't apply to -d/--drop"
@@ -2935,6 +2963,110 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 	fi
 	GIT_EXEC "$@"
 	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
+	exit 0
+fi
+
+# `--move` dispatches early – repositions one commit directly after or before an anchor by
+# computing the minimal span and desired order, then delegating to the reorder machinery,
+# so span derivation, the error-prone part of hand-rolled calls, is owned here
+if [ ${#OPT_MOVE} -gt 0 ]; then
+	MOVE_SHA=""
+	if [[ ${#OPT_MOVE} -gt 1 && -n "${OPT_MOVE[2]}" ]]; then
+		MOVE_SHA="${OPT_MOVE[2]#=}"
+	fi
+	if [ -z "$MOVE_SHA" ]; then
+		USAGE
+		PRINT_ERR "--move requires a <sha> value (e.g., --move=abc123)"
+		exit 1
+	fi
+	if [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o -n "$TEXT_VALUE" ]; then
+		USAGE
+		PRINT_ERR "Option --move cannot be combined with other modes"
+		exit 1
+	fi
+	if [ ${#OPT_AFTER} -gt 0 ] && [ ${#OPT_BEFORE} -gt 0 ]; then
+		PRINT_ERR "--move takes exactly one of --after=<sha> or --before=<sha>, not both"
+		exit 1
+	fi
+	MOVE_ANCHOR=""
+	MOVE_KIND=""
+	if [ ${#OPT_AFTER} -gt 0 ]; then
+		MOVE_ANCHOR="${OPT_AFTER[2]#=}"
+		MOVE_KIND="after"
+	elif [ ${#OPT_BEFORE} -gt 0 ]; then
+		MOVE_ANCHOR="${OPT_BEFORE[2]#=}"
+		MOVE_KIND="before"
+	fi
+	if [ -z "$MOVE_ANCHOR" ]; then
+		USAGE
+		PRINT_ERR "--move requires a destination: --after=<sha> or --before=<sha>"
+		exit 1
+	fi
+	if [ $# -gt 0 ]; then
+		USAGE
+		PRINT_ERR "--move takes no positional arguments (commit and destination are flag values)"
+		exit 1
+	fi
+	if ! git rev-parse --quiet --verify "$MOVE_SHA^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <sha>: $MOVE_SHA"
+		exit 1
+	fi
+	if ! git rev-parse --quiet --verify "$MOVE_ANCHOR^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <sha>: $MOVE_ANCHOR"
+		exit 1
+	fi
+	# Both routes resolve stale SHAs like any other target
+	_GUARD_REACHABLE "$MOVE_SHA"
+	MOVE_SHA=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+	_GUARD_REACHABLE "$MOVE_ANCHOR"
+	MOVE_ANCHOR=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+	if [ "$MOVE_SHA" = "$MOVE_ANCHOR" ]; then
+		PRINT_ERR "--move commit and its --$MOVE_KIND anchor are the same commit"
+		exit 1
+	fi
+	# Already in position – an honest no-op instead of an empty rebase
+	if { [ "$MOVE_KIND" = "after" ] && [ "$(git rev-parse "$MOVE_SHA^" 2>/dev/null)" = "$MOVE_ANCHOR" ]; } || \
+	   { [ "$MOVE_KIND" = "before" ] && [ "$(git rev-parse "$MOVE_ANCHOR^" 2>/dev/null)" = "$MOVE_SHA" ]; } then
+		PRINT_TEXT "Commit %s already sits directly $MOVE_KIND %s – nothing to move" 36 "${MOVE_SHA:0:7}" "${MOVE_ANCHOR:0:7}"
+		PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" false
+		exit 0
+	fi
+	# Minimal span: both endpoints inclusive, oldest-first – contiguous by
+	# construction, so the reorder pre-flight checks pass or refuse cleanly
+	# (merge in span, pushed base)
+	if git merge-base --is-ancestor "$MOVE_SHA" "$MOVE_ANCHOR" 2>/dev/null; then
+		MOVE_SPAN_OLD=$MOVE_SHA
+		MOVE_SPAN_NEW=$MOVE_ANCHOR
+	elif git merge-base --is-ancestor "$MOVE_ANCHOR" "$MOVE_SHA" 2>/dev/null; then
+		MOVE_SPAN_OLD=$MOVE_ANCHOR
+		MOVE_SPAN_NEW=$MOVE_SHA
+	else
+		PRINT_ERR "Commits ${MOVE_SHA:0:7} and ${MOVE_ANCHOR:0:7} are not on one line of history"
+		exit 1
+	fi
+	if git rev-parse --verify -q "$MOVE_SPAN_OLD^" >/dev/null 2>&1; then
+		MOVE_SPAN=($(git rev-list --reverse "$MOVE_SPAN_OLD^..$MOVE_SPAN_NEW"))
+	else
+		MOVE_SPAN=($(git rev-list --reverse "$MOVE_SPAN_NEW"))
+	fi
+	# Desired order: span minus the moved commit, re-inserted at the anchor
+	COMMITS_DESIRED=()
+	for MOVE_STEP in "${MOVE_SPAN[@]}"; do
+		if [ "$MOVE_STEP" = "$MOVE_SHA" ]; then
+			continue
+		fi
+		if [ "$MOVE_STEP" = "$MOVE_ANCHOR" ] && [ "$MOVE_KIND" = "before" ]; then
+			COMMITS_DESIRED+=("$MOVE_SHA")
+		fi
+		COMMITS_DESIRED+=("$MOVE_STEP")
+		if [ "$MOVE_STEP" = "$MOVE_ANCHOR" ] && [ "$MOVE_KIND" = "after" ]; then
+			COMMITS_DESIRED+=("$MOVE_SHA")
+		fi
+	done
+	COMMITS=("${MOVE_SPAN[@]}")
+	PRINT_ACTION "Moving %s $MOVE_KIND %s..." "$MOVE_SHA" "$MOVE_ANCHOR"
+	GIT_REORDER
+	PRINT_COMPLETED "$REORDER_NEW_HEAD" "$REORDER_REF" true
 	exit 0
 fi
 

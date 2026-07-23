@@ -17,6 +17,7 @@ MODES:
                                 – also assumed when multiple commits are supplied
 -S, --resquash                  Merge contiguous <commit>s — no working-tree touch
 --reorder <commit>...           Reorder a contiguous span (args give the new order, oldest-first)
+--move=<sha> --after|--before=<sha>  Reposition one commit relative to an anchor (span derived automatically)
 --exec -- <cmd>...              Run <cmd> in an isolated temp worktree (parallel-safe)
 --undo                          Revert the last completed ref move (refuses if the branch moved since)
 --status                        Report the in-flight operation, or the last completed one
@@ -209,6 +210,16 @@ git edit --reorder <sha-that-should-be-first> <sha-that-should-be-second> ...
 
 The rebase runs in an isolated temp worktree with a scripted sequence editor; the branch ref only moves at the end (CAS-guarded on the pre-operation tip). Conflicts pause into the same `--continue` / `--abort` flow as `--amend-into` — and since the branch was never touched, `--abort` has nothing to roll back. On success the tool reports whether the tip tree is byte-identical to before (a clean reorder always is; conflict resolutions may change it) and prints the span in its new order.
 
+### Moving One Commit (`--move`)
+
+The common special case of a reorder — "this commit belongs right after that one" — takes just the two endpoints:
+
+```
+git edit --move=<sha> --after=<anchor>     # or --before=<anchor>
+```
+
+The minimal contiguous span and its new ordering are derived automatically and executed through `--reorder`'s machinery — the shorthand for what would otherwise be a hand-built full-span `--reorder` call or a `git rebase --onto` chain. Works in both directions (moving a commit earlier or later), both SHAs go through stale-SHA resolution, and a commit already in position is a clean no-op. Typical agent flow: commit at `HEAD`, then slot the commit where it belongs with `--move=HEAD --after=<sha>`.
+
 ### Pushed-Commit Guard
 
 Every rewriting mode refuses to touch a commit that already exists on a remote-tracking ref — rewriting pushed history disrupts collaborators, and in shared or public repos it should never happen by accident:
@@ -237,7 +248,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~125 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~135 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

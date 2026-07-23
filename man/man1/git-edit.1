@@ -13,6 +13,7 @@ git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR \fB\-\-\fR \fIpathspec\fR...
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
+\fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR
 .fi
@@ -104,6 +105,15 @@ same\-file mixed concerns cannot be split this way.
 Reorder a contiguous span; the positional arguments give the desired new
 order, oldest\-first. Runs in an isolated worktree; the branch ref moves only
 at the end.
+.TP
+.B \-\-move=\fIsha\fR {\fB\-\-after=\fR\fIanchor\fR | \fB\-\-before=\fR\fIanchor\fR}
+Reposition one commit directly after (or before) \fIanchor\fR. The minimal
+contiguous span and its new ordering are derived automatically and executed
+through \fB\-\-reorder\fR's machinery \(em the shorthand for what would
+otherwise be a hand\-built span reorder or a
+.B "git rebase \-\-onto"
+chain. Moving in either direction works; a commit already in position is a
+clean no\-op.
 .TP
 .B \-\-exec \fB\-\-\fR \fIcommand\fR...
 Run any \fIcommand\fR (e.g. a raw
