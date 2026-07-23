@@ -237,7 +237,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, undo semantics, and status reporting — ~115 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, exec, the pushed guards, stale-SHA resolution and refusal, undo semantics, and status reporting — ~120 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
@@ -265,7 +265,7 @@ To opt out (e.g., CI scripts that genuinely want to modify the main checkout), s
 
 A SHA noted before an earlier rewrite no longer exists on the branch — a constant hazard for agents, which routinely record a SHA and come back to it a rewrite later. Rather than let a rebase quietly no-op on a commit it can't reach, every commit argument is checked against HEAD's history first.
 
-When exactly one unpushed commit carries the **identical diff** (same `git patch-id`), that's proof of the same change rather than a guess, so it's substituted outright and the run proceeds — no retry:
+When exactly one commit carries the **identical diff** (same `git patch-id`), that's proof of the same change rather than a guess, so it's substituted outright and the run proceeds — no retry:
 
 ```
 Commit ec4fa40 was rewritten – using its current identity 8937ad57e60d (identical diff)
@@ -280,7 +280,9 @@ Commit 282effe (Add b) is not in HEAD's history – it was likely rewritten
   Its counterpart on HEAD is 038fa1ea384a (same subject, changed content) – retry with that.
 ```
 
-Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
+Both matches must be unique; an ambiguous one is never guessed at. A squashed or dropped commit has no successor and is simply refused. If the resolved commit turns out to be pushed, the usual pushed guard still refuses it — substitution happens first, so every later guard sees the resolved SHA. Set `GIT_EDIT_NO_RESOLVE=1` to disable resolution entirely and have every unreachable commit refused.
+
+The search covers all of history, not a recent window: every rewrite preserves a commit's **author date**, so filtering on it first cuts the candidates to a handful before any patch id is computed. On a 3000-commit repo that is typically two commits and ~0.04s. The filter can only narrow the field, never widen it — a candidate it drops could only ever have been a false match. Should a single second hold more commits than `RESOLVE_SCAN_MAX` (100) — imported or scripted history — uniqueness can no longer be established from a partial view, and resolution degrades to a suggestion rather than acting on one.
 
 ### Coexisting with Concurrent Editors (e.g. AI Agents)
 

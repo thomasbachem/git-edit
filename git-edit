@@ -48,6 +48,12 @@
 # (required for `$?` to work in conjunction with `tee` below)
 set -o pipefail
 
+# Most commits a stale SHA's resolution will compute a patch id for. The author
+# date filter ahead of it normally leaves a handful, so this only bites where a
+# batch shares one second – imported or scripted history. Past it a match can no
+# longer be called unique, and resolution degrades to a suggestion.
+RESOLVE_SCAN_MAX=100
+
 echo -e "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
 
 # Global cleanup hook (any sub-operation that needs cleanup on exit can set
@@ -377,54 +383,47 @@ _GUARD_UNPUSHED () {
 	fi
 }
 
-# Stable patch id of a commit's own diff – the same change keeps it across a
-# rewrite even though the SHA (and the tree) change. `--root` so the initial
-# commit gets one too instead of an empty diff.
+# Computes the stable patch id of a commit's own diff – the same change keeps it across a rewrite,
+# the SHA and tree move, and `--root` gets the initial commit one instead of an empty diff
 _PATCH_ID () {
 	git diff-tree -p --root "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | awk '{print $1}'
 }
 
-# Commits a rewritten SHA could have become. git-edit only ever rewrites
-# unpushed history, so that is the whole search space; the cap keeps the scan
-# bounded on a repo with no remote, where every commit counts as unpushed.
-_RESOLVE_CANDIDATES () {
-	local R=$(git rev-list HEAD --not --remotes 2>/dev/null | head -100)
-	[ -z "$R" ] && R=$(git rev-list -n 100 HEAD 2>/dev/null)
-	echo "$R"
-}
-
-# Finds the current identity of a rewritten commit, echoing "<sha> <how>".
-# An identical patch id proves it is the same change – rebuilt descendants,
-# rewords and reorders all keep their diff – so that match is trustworthy
-# enough to act on. A fold changes the diff but keeps the subject, which only
-# hints at identity, so the caller merely suggests those. Both require a
-# unique match.
+# Finds the current identity of a rewritten commit, echoing "<sha> <how>" – an identical patch
+# id proves the same change and is acted on, while a fold keeps only the subject and is merely
+# suggested, both needing a unique match, with a pushed hit left to the pushed guard
 _RESOLVE_STALE () {
 	local C=$1
-	local CANDIDATES=$(_RESOLVE_CANDIDATES)
-	[ -z "$CANDIDATES" ] && return 1
-
-	local HIT
 	local -a MATCHES
+	local HIT
 
+	# Every rewrite preserves the author date, so it prunes the patch-id scan to a handful and
+	# can only narrow the field – a candidate dropped here could only have been a false match
+	# One past the ceiling notices a view too large to call unique, so it falls back to suggesting
+	local WHEN=$(git log -1 --format='%aI' "$C" 2>/dev/null)
 	local WANT=$(_PATCH_ID "$C")
-	if [ -n "$WANT" ]; then
-		MATCHES=()
-		for HIT in ${=CANDIDATES}; do
-			[ "$(_PATCH_ID "$HIT")" = "$WANT" ] && MATCHES+=("$HIT")
-		done
-		if [ ${#MATCHES[@]} -eq 1 ]; then
-			echo "${MATCHES[1]} patch-id"
-			return 0
+	if [ -n "$WHEN" ] && [ -n "$WANT" ]; then
+		local -a POOL
+		POOL=($(git log --format='%H %aI' HEAD 2>/dev/null \
+			| awk -v w="$WHEN" '$2 == w { print $1 }' | head -$((RESOLVE_SCAN_MAX + 1))))
+		if [ ${#POOL[@]} -gt 0 ] && [ ${#POOL[@]} -le $RESOLVE_SCAN_MAX ]; then
+			MATCHES=()
+			for HIT in "${POOL[@]}"; do
+				[ "$(_PATCH_ID "$HIT")" = "$WANT" ] && MATCHES+=("$HIT")
+			done
+			if [ ${#MATCHES[@]} -eq 1 ]; then
+				echo "${MATCHES[1]} patch-id"
+				return 0
+			fi
 		fi
 	fi
 
+	# One `git log` pass, so no ceiling is needed here – the SHA is stripped by field rather
+	# than by splitting on tabs, so a subject containing one still compares whole
 	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
 	if [ -n "$SUBJECT" ]; then
-		MATCHES=()
-		for HIT in ${=CANDIDATES}; do
-			[ "$(git log -1 --format='%s' "$HIT" 2>/dev/null)" = "$SUBJECT" ] && MATCHES+=("$HIT")
-		done
+		MATCHES=($(git log --format='%H%x09%s' HEAD 2>/dev/null \
+			| awk -v s="$SUBJECT" '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == s) print sha }'))
 		if [ ${#MATCHES[@]} -eq 1 ]; then
 			echo "${MATCHES[1]} subject"
 			return 0
@@ -991,11 +990,9 @@ GIT_AMEND_INTO () {
 		exit 1
 	fi
 
-	# Pre-flight: target must be reachable from HEAD
-	if ! git merge-base --is-ancestor "$TARGET" HEAD 2>/dev/null; then
-		PRINT_ERR "Commit ${TARGET:0:7} is not reachable from HEAD"
-		exit 1
-	fi
+	# Pre-flight: target must be reachable from `HEAD` (or resolvable to it)
+	_GUARD_REACHABLE "$TARGET"
+	TARGET=$_RESOLVED_SHA
 
 	# Pre-flight: must be on a branch
 	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
@@ -1205,10 +1202,8 @@ GIT_SPLIT () {
 		REF="HEAD"
 	fi
 
-	if ! git merge-base --is-ancestor "$X" HEAD 2>/dev/null; then
-		PRINT_ERR "Commit ${X:0:7} is not reachable from HEAD"
-		exit 1
-	fi
+	_GUARD_REACHABLE "$X"
+	X=$_RESOLVED_SHA
 	if ! git rev-parse --verify "$X^" >/dev/null 2>&1; then
 		PRINT_ERR "Cannot split the initial commit"
 		exit 1
@@ -2570,6 +2565,22 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="Opted out" "$SHIFTED"
 	unset GIT_EDIT_NO_RESOLVE
 	_ST_EQ "GIT_EDIT_NO_RESOLVE opts out" "$RC" "1"
+	# --amend-into and --split take their target as an option value, not a
+	# positional, so they need the guard wired in separately
+	echo "anchor" > anchor.txt && git add anchor.txt && git commit -qm "Anchor commit"
+	local ANCHOR=$(git rev-parse HEAD)
+	echo "opt" > opt.txt && git add opt.txt && git commit -qm "Option-value target"
+	local OPTVAL=$(git rev-parse HEAD)
+	echo "shift" > shift.txt && git add shift.txt && git commit -qm "Shifter"
+	# Fold below the target so it is only rebuilt – its own diff, and so its
+	# patch id, must survive for the resolution to be provable
+	echo "anchor2" > anchor.txt && git add anchor.txt
+	_ST_RUN --amend-into="$ANCHOR"
+	echo "folded" > folded.txt && git add folded.txt
+	_ST_RUN --amend-into="$OPTVAL"
+	_ST_EQ "--amend-into resolves a stale target" "$RC" "0"
+	_ST_OUT_HAS "--amend-into reports the substitution" 'current identity'
+	_ST_EQ "fold landed on the resolved commit" "$(git show 'HEAD~1:folded.txt' 2>/dev/null)" "folded"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
