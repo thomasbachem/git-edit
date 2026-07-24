@@ -333,16 +333,21 @@ _PRINT_CONFLICT_DETAIL () {
 		fi
 	fi
 
-	# Reordering preserves the tree, so on its final step the result is fully
-	# determined: the pre-op content. Earlier steps have no such answer – they
-	# rebuild an intermediate that never existed, so their content is authored,
-	# not derived.
-	if [ -n "$PREOP" ] && [ -n "$UNMERGED" ] && \
-	   [ "$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)" = "$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)" ] && \
-	   [ -s "$GITDIR/rebase-merge/end" ]; then
-		PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
-		echo -e "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
-		echo -e "\e[0;33m  git edit --continue\e[0m" >&2
+	# Reordering preserves the tree, so its final step has one determined result – the pre-op
+	# content – while earlier steps rebuild an intermediate that never existed, so their
+	# content is authored rather than derived
+	if [ -n "$PREOP" ] && [ -n "$UNMERGED" ] && [ -s "$GITDIR/rebase-merge/end" ]; then
+		local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
+		local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
+		if [ "$STEP_NOW" = "$STEP_END" ]; then
+			PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
+			echo -e "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
+			echo -e "\e[0;33m  git edit --continue\e[0m" >&2
+		else
+			PRINT_TEXT "Step %s rebuilds a state that never existed – author its content rather than deriving it:" 33 "$STEP_NOW/$STEP_END" >&2
+			echo -e "\e[0;33m  'git apply --3way' cannot work here at all (mid-rebase the paths sit at conflicted stages, not stage 0),\e[0m" >&2
+			echo -e "\e[0;33m  and reverse-applying the other commit's diff tends to fail once its context has shifted.\e[0m" >&2
+		fi
 	fi
 
 	# No conflicted files + a paused rebase = the current step produced an
@@ -2748,6 +2753,8 @@ GIT_SELFTEST () {
 	_ST_RUN --move="$MV_A" --after="$MV_B"
 	_ST_EQ "abutting swap conflicts" "$RC" "2"
 	_ST_OUT_LACKS "no final-step hint on an intermediate step" 'Final step'
+	_ST_OUT_HAS "intermediate step says author it" 'rebuilds a state that never existed'
+	_ST_OUT_HAS "intermediate step rules out --3way" 'cannot work here'
 	local MV_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
 	printf 'mv-base\nmv-B\n' > "$MV_WT/mv.txt" && git -C "$MV_WT" add mv.txt
 	_ST_RUN --continue

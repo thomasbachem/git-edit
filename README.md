@@ -210,7 +210,15 @@ git edit --reorder <sha-that-should-be-first> <sha-that-should-be-second> ...
 
 The rebase runs in an isolated temp worktree with a scripted sequence editor; the branch ref only moves at the end (CAS-guarded on the pre-operation tip). Conflicts pause into the same `--continue` / `--abort` flow as `--amend-into` — and since the branch was never touched, `--abort` has nothing to roll back. On success the tool reports whether the tip tree is byte-identical to before (a clean reorder always is; conflict resolutions may change it) and prints the span in its new order.
 
-Reordering commits that touch abutting lines conflicts on more than one step, and the steps differ in kind. An intermediate step rebuilds a state that never existed in history (the later feature without the earlier one), so its content has to be authored — a reverse-apply of the other commit's diff won't do it (the hunks were written in a context that has since shifted, and `git apply --3way` can't run mid-rebase, where the paths sit at conflicted stages rather than stage 0). The **final** step is the opposite: a reorder preserves the tree, so its resolution is fully determined, and the pause prints the exact command for it:
+Reordering commits that touch abutting lines conflicts on more than one step, and the steps differ in kind — so each pause says which kind it is. An **intermediate** step rebuilds a state that never existed in history (the later feature without the earlier one), so its content has to be authored rather than derived:
+
+```
+Step 1/2 rebuilds a state that never existed – author its content rather than deriving it:
+  'git apply --3way' cannot work here at all (mid-rebase the paths sit at conflicted stages, not stage 0),
+  and reverse-applying the other commit's diff tends to fail once its context has shifted.
+```
+
+The **final** step is the opposite: a reorder preserves the tree, so its resolution is fully determined and the pause prints the exact command:
 
 ```
 Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:
@@ -256,7 +264,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~150 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~152 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
