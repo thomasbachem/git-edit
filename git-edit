@@ -290,13 +290,13 @@ EMIT_CONFLICT () {
 	_STATUS_EMITTED=true
 }
 
-# Print human-readable conflict context: which files are unmerged, which
-# rebase step we paused on, and what steps remain. Helps the agent decide
-# whether one resolution will suffice or cascade is likely. Echoes a
-# comma-separated unmerged-files list to stdout for the caller to forward
-# into the trailer; all other output goes to stderr.
+# Prints the conflict context – unmerged files, the step we paused on, and what remains, so
+# the resolver can tell a single resolution from a likely cascade
+# Echoes the unmerged files comma-separated to stdout for the trailer, the rest to stderr
 _PRINT_CONFLICT_DETAIL () {
 	local WT=$1
+	# Pre-op tip, passed by the reorder paths only – see the final-step hint below
+	local PREOP=$2
 	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
 
 	# Unmerged paths (files with conflict markers)
@@ -331,6 +331,18 @@ _PRINT_CONFLICT_DETAIL () {
 				echo -e "\e[0;33m  $STEP\e[0m" >&2
 			done <<< "$REMAINING"
 		fi
+	fi
+
+	# Reordering preserves the tree, so on its final step the result is fully
+	# determined: the pre-op content. Earlier steps have no such answer – they
+	# rebuild an intermediate that never existed, so their content is authored,
+	# not derived.
+	if [ -n "$PREOP" ] && [ -n "$UNMERGED" ] && \
+	   [ "$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)" = "$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)" ] && \
+	   [ -s "$GITDIR/rebase-merge/end" ]; then
+		PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
+		echo -e "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
+		echo -e "\e[0;33m  git edit --continue\e[0m" >&2
 	fi
 
 	# No conflicted files + a paused rebase = the current step produced an
@@ -1505,7 +1517,7 @@ SEQEOF
 
 		PRINT_ERR "Conflict while reordering – resolve in worktree, then 'git edit --continue'"
 		PRINT_TEXT "Worktree: %s" 33 "$WT"
-		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT" "$ORIG_HEAD")
 		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
 		exit 2
@@ -1573,7 +1585,7 @@ _CONTINUE_REORDER () {
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATE_ORIG_HEAD")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			exit 2
@@ -2724,6 +2736,29 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "no-op reports unchanged" 'unchanged'
 	_ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~2)" --before="$(git rev-parse HEAD~3)"
 	_ST_EQ "both anchors refused" "$RC" "1"
+	# Swapping two commits whose hunks abut conflicts on both steps. The first
+	# rebuilds an intermediate that never existed (authored), but the last is
+	# fully determined – the hint must name it there and only there
+	printf 'mv-base\n' > mv.txt && git add mv.txt && git commit -qm "MV base"
+	printf 'mv-base\nmv-A\n' > mv.txt && git add mv.txt && git commit -qm "MV A"
+	local MV_A=$(git rev-parse HEAD)
+	printf 'mv-base\nmv-B\nmv-A\n' > mv.txt && git add mv.txt && git commit -qm "MV B"
+	local MV_B=$(git rev-parse HEAD)
+	local MV_TREE=$(git rev-parse 'HEAD^{tree}')
+	_ST_RUN --move="$MV_A" --after="$MV_B"
+	_ST_EQ "abutting swap conflicts" "$RC" "2"
+	_ST_OUT_LACKS "no final-step hint on an intermediate step" 'Final step'
+	local MV_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	printf 'mv-base\nmv-B\n' > "$MV_WT/mv.txt" && git -C "$MV_WT" add mv.txt
+	_ST_RUN --continue
+	_ST_EQ "pauses on the final step" "$RC" "2"
+	_ST_OUT_HAS "final-step hint names the pre-op resolution" 'Final step'
+	_ST_OUT_HAS "hint gives a checkout command" 'checkout'
+	git -C "$MV_WT" checkout "$MV_B" -- mv.txt && git -C "$MV_WT" add mv.txt
+	_ST_RUN --continue
+	_ST_EQ "hint resolution completes the move" "$RC" "0"
+	_ST_EQ "tree preserved by the reorder" "$(git rev-parse 'HEAD^{tree}')" "$MV_TREE"
+	_ST_EQ "commits swapped" "$(git log --format=%s -2 | tr '\n' ' ')" "MV A MV B "
 
 	# --- 26. explicit-target squash: same-second span, short SHAs ---
 	# The rebuilt-commit case: descendants of one rewrite all share a committer
