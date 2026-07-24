@@ -135,17 +135,24 @@ Only **staged** changes are folded — unstaged edits in the main working tree a
 
 #### Automatic target discovery (`--amend-into=auto`)
 
-The typical fold targets the newest unpushed commit that last touched the staged files — `auto` resolves exactly that, so the caller skips the `git log` lookup:
+A fix belongs to whoever wrote the line being fixed, so `auto` resolves the target from the staged **lines** (via `git blame`), not merely the files:
 
 ```
 git add <files>
 git edit --amend-into=auto
 ```
 
-Resolution is conservative: every staged path with history must agree on a single unpushed target (new files follow that consensus). Anything else refuses with the per-path candidate list — which is the same lookup an explicit invocation would have needed, so even a refusal costs nothing:
+That distinction is the whole point. Take a file where commit A added one rule and commits B and C later added and refined a second one: editing A's rule makes C the newest commit touching the *file*, but A still owns the *line*. A file-level guess folds into C silently and wrongly; the line-level one names A.
 
-- Paths pointing at **different** commits → refusal listing `path -> sha (subject)` per path.
-- A path last touched by a **pushed** commit → refusal (its history lies beyond the rewrite horizon).
+Hunks that only add lines have no old lines to attribute, so they carry no evidence — where a staged change is purely additive (or the paths are new files), resolution falls back to the newest unpushed commit touching those paths.
+
+Resolution is conservative either way, and refuses rather than picking a winner:
+
+- Staged lines last touched by **different** commits → refusal listing `sha (subject)` per candidate.
+- Staged lines last touched by a **pushed** commit → refusal (its history lies beyond the rewrite horizon).
+- On the fallback path, staged paths pointing at **different** commits → refusal listing `path -> sha (subject)` per path.
+
+A refusal costs nothing: it is the same lookup an explicit invocation would have needed anyway.
 - Only new files staged → refusal (no history to infer from).
 
 #### Conflict resolution (`--continue` / `--abort`)
@@ -264,7 +271,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~162 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~168 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

@@ -90,9 +90,12 @@ Strict squash: plumbing only; errors instead of falling back to a rebase.
 Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
 isolated worktree.
 .B auto
-targets the newest unpushed commit that last touched the staged paths
-(refuses if they disagree, or point at a pushed commit). Only staged changes
-are folded; unstaged edits are left untouched.
+targets the unpushed commit that last touched the staged \fIlines\fR (per
+.BR git\-blame ),
+falling back to the newest commit touching the staged paths only where the
+change adds lines and so attributes to nothing. It refuses when the evidence
+points at several commits, or at a pushed one. Only staged changes are folded;
+unstaged edits are left untouched.
 .TP
 .B \-\-split=\fIsha\fR \fB\-\-\fR \fIpathspec\fR...
 Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are

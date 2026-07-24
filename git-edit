@@ -1202,6 +1202,31 @@ GIT_AMEND_INTO () {
 # one target; paths with no history (new files) follow that consensus. Each
 # refusal lists the per-path candidates – exactly the lookup an explicit
 # invocation would have needed anyway.
+# Commits that last touched the exact lines the staged diff rewrites. A fix
+# usually belongs to whoever wrote the line being fixed, which is not always the
+# newest commit to touch the file – whenever an unrelated later commit edited the
+# same file, a file-level guess silently folds into the wrong one. Hunks that only
+# add lines have no old lines to attribute and so carry no evidence.
+_BLAME_AMEND_TARGETS () {
+	local TOPLEVEL=$(git rev-parse --show-toplevel)
+	local P HUNK START COUNT
+	local -a LARGS
+	for P in "$@"; do
+		LARGS=()
+		while IFS= read -r HUNK; do
+			# "@@ -<start>[,<count>]" – an absent count means one line, 0 means
+			# a pure insertion
+			START=${${HUNK#@@ -}%%[, ]*}
+			COUNT=$(echo "$HUNK" | sed -nE 's/^@@ -[0-9]+,([0-9]+).*/\1/p')
+			[ -z "$COUNT" ] && COUNT=1
+			[ "$COUNT" = "0" ] && continue
+			LARGS+=(-L "$START,+$COUNT")
+		done < <(git -C "$TOPLEVEL" diff --cached -U0 --no-renames -- "$P" 2>/dev/null | grep -E '^@@')
+		[ ${#LARGS[@]} -eq 0 ] && continue
+		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | grep -oE '^[0-9a-f]{40}'
+	done | sort -u
+}
+
 _RESOLVE_AMEND_TARGET () {
 	local -a PATHS
 	PATHS=("${(@f)$(git diff --cached --name-only)}")
@@ -1215,6 +1240,33 @@ _RESOLVE_AMEND_TARGET () {
 	# resolve from a subdirectory too
 	local TOPLEVEL=$(git rev-parse --show-toplevel)
 	local P C
+
+	# Line-level evidence wins where it exists – it is the difference between
+	# folding into the commit that wrote the code and the commit that merely
+	# touched the file last
+	local -a BLAMED
+	BLAMED=(${${(@f)$(_BLAME_AMEND_TARGETS "${PATHS[@]}")}:#})
+	if [ ${#BLAMED[@]} -gt 1 ]; then
+		PRINT_ERR "Cannot auto-target: the staged lines were last touched by different commits"
+		for C in "${BLAMED[@]}"; do
+			echo -e "\e[0;31m  ${C:0:7} ($(git log -1 --format=%s "$C" 2>/dev/null))\e[0m" >&2
+		done
+		echo -e "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
+		exit 1
+	fi
+	if [ ${#BLAMED[@]} -eq 1 ]; then
+		C=${BLAMED[1]}
+		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
+			PRINT_ERR "Cannot auto-target: the staged lines were last touched by a pushed commit (${C:0:7})"
+			echo -e "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
+			exit 1
+		fi
+		echo -e "\e[0;90mauto-target: commit that last touched the staged lines\e[0m"
+		AMEND_INTO_TARGET=$C
+		return
+	fi
+	# No old lines anywhere – pure additions or new files, nothing to attribute, so fall back
+	# to the file-level guess below
 	local -a CAND_LINES
 	local CANDIDATE=""
 	local MULTIPLE=false
@@ -2914,6 +2966,33 @@ GIT_SELFTEST () {
 	_ST_EQ "abort exits 0" "$RC" "0"
 	_ST_OUT_HAS "abort reports nothing to roll back" 'never touched'
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$PZ_TIP2"
+
+	# --- 28. auto-target follows the edited lines, not the file ---
+	echo -e "\e[1;96m[28] blame-aware auto-target\e[0m"
+	printf 'bl1\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
+	git add bl.txt && git commit -qm "BL base"
+	printf 'bl1\nBL-A original\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
+	git add bl.txt && git commit -qm "BL add A"
+	printf 'bl1\nBL-A original\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\nBL-B original\n' > bl.txt
+	git add bl.txt && git commit -qm "BL add B"
+	printf 'bl1\nBL-A original\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\nBL-B refined\n' > bl.txt
+	git add bl.txt && git commit -qm "BL refine B"
+	# The newest commit touching bl.txt is "BL refine B", but the edited line
+	# belongs to "BL add A" – the file-level guess would fold into the wrong one
+	printf 'bl1\nBL-A EDITED\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\nBL-B refined\n' > bl.txt
+	git add bl.txt
+	_ST_RUN --amend-into=auto
+	_ST_EQ "line-level auto exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports the line-level basis" 'last touched the staged lines'
+	_ST_EQ "folded into the line's owner" "$(git log --format=%s -S 'BL-A EDITED' | head -1)" "BL add A"
+	_ST_EQ "later commit left alone" "$(git log --format=%s -1)" "BL refine B"
+	# Lines owned by two different commits – refuse rather than pick one
+	printf 'bl1\nBL-A TWICE\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\nBL-B TWICE\n' > bl.txt
+	git add bl.txt
+	_ST_RUN --amend-into=auto
+	_ST_EQ "split line ownership refused" "$RC" "1"
+	_ST_OUT_HAS "names the competing commits" 'different commits'
+	git reset -q --hard HEAD
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
