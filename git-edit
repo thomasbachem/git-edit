@@ -612,7 +612,13 @@ GIT_STATUS_REPORT () {
 		PRINT_TEXT "In-flight operation: %s (target %s, branch %s)" 33 "$STATE_OPERATION" "${STATE_TARGET:0:7}" "$STATE_BRANCH"
 		if [ -d "$STATE_WORKTREE" ]; then
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			# Hand the pre-op tip over for a reorder so the step-kind guidance
+			# matches the original pause – this report exists for the caller who
+			# no longer has it. The other operations change the tree by design,
+			# so no such resolution is determined for them.
+			local STATUS_PREOP=""
+			[ "$STATE_OPERATION" = "reorder" ] && STATUS_PREOP=$STATE_ORIG_HEAD
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
 			PRINT_TEXT "Resolve there, then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 		else
