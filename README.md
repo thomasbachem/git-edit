@@ -264,7 +264,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~152 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~162 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
@@ -285,6 +285,8 @@ Useful as a CLAUDE.md instruction: *"For any history-rewriting git command, run 
 When stdin isn't a TTY (i.e. when run by Claude Code, CI, or any script), `-C` is **enabled automatically** for the modes that would otherwise touch the main working tree (drop, edit, non-eligible squash). This protects parallel sessions from clobbering each other when an agent forgets to add `-C`.
 
 Modes that already don't touch the working tree (`-M`, `-S`, `--exec`, auto-routed `-s` → plumbing) are left alone — they don't need it. A short gray notice prints when auto-isolation kicks in.
+
+Because the rebase then lives in a worktree of its own, a conflict there **pauses** into the same `--continue` / `--abort` flow as `--amend-into` and `--reorder` rather than bailing out: the branch hasn't moved, so the caller can resolve in the printed worktree at its own pace, and `--abort` has nothing to roll back. Only an un-isolated non-TTY run (see the opt-out below) still aborts on conflict — there the rebase would sit in the main checkout, and leaving it paused would strand every other session.
 
 To opt out (e.g., CI scripts that genuinely want to modify the main checkout), set `GIT_EDIT_NO_AUTO_ISOLATE=1` in the environment.
 

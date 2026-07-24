@@ -719,11 +719,25 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
-			# In non-TTY contexts (Claude Code, CI, piped stdin) there's no
-			# one to resolve the conflict, and CONTINUE_OR_ABORT's empty read
-			# would silently auto-proceed – staging files with conflict markers
-			# still in them and committing a broken state. Abort cleanly instead.
+			# In non-TTY contexts (Claude Code, CI, piped stdin) there's no one
+			# to answer CONTINUE_OR_ABORT, whose empty read would auto-proceed –
+			# staging files with conflict markers still in them. When the rebase
+			# is isolated, pause into --continue/--abort like the other modes; the
+			# branch hasn't moved, so the caller resolves in the worktree at their
+			# own pace. Without a worktree the rebase sits in the main checkout,
+			# where a pause would strand every other session – abort there.
 			if _IS_NON_INTERACTIVE; then
+				if [ -n "$WORKTREE_DIR" ] && [ -n "$ORIG_BRANCH" ]; then
+					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
+						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
+					_CLEANUP_HOOK=""
+					PRINT_ERR "Conflict during $ACTION – resolve in worktree, then 'git edit --continue'"
+					PRINT_TEXT "Worktree: %s" 33 "$WORKTREE_DIR"
+					local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WORKTREE_DIR")
+					PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+					EMIT_CONFLICT "$WORKTREE_DIR" "$UNMERGED_LIST"
+					exit 2
+				fi
 				PRINT_ERR "Merge conflict during non-interactive run – cannot resolve from non-TTY"
 				echo -e "\e[0;31m  Re-run interactively to resolve, or use --exec for full control over the rebase.\e[0m" >&2
 				ABORT
@@ -1611,8 +1625,79 @@ _CONTINUE_REORDER () {
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
 }
 
-# Abort an in-flight --reorder: abort the paused rebase and remove the
-# worktree. The branch was never moved, so there's nothing to roll back.
+# Resumes a paused rebase-based mode, drop, squash or edit – same shape as
+# `_CONTINUE_REORDER`, the rebase living in an isolated worktree with the branch moving
+# only at the final CAS, so a pause costs nothing and can repeat
+_CONTINUE_REBASE () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	cd "$STATE_WORKTREE" || exit 1
+
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
+
+	# A resolution finished by hand in the worktree leaves no rebase in
+	# progress – apply its result rather than stranding it
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
+			_CLEAR_STATE
+			PRINT_TEXT "%s – branch unchanged." 33 "Rebase finished with nothing to apply"
+			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+			exit 0
+		fi
+		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
+	else
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" >/dev/null 2>&1; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			exit 2
+		fi
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+
+	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_ACTION ${STATE_TARGET:0:7}"
+
+	_CLEAR_STATE
+	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
+}
+
+_ABORT_REBASE () {
+	PRINT_ACTION "Aborting $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
+
+	if [ -d "$STATE_WORKTREE" ]; then
+		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	PRINT_TEXT "%s" 32 "Operation aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+}
+
+# Aborts an in-flight `--reorder` – abort the paused rebase and remove the worktree, with
+# nothing to roll back since the branch was never moved
 _ABORT_REORDER () {
 	PRINT_ACTION "Aborting reorder around %s..." "${STATE_TARGET:0:7}"
 
@@ -1657,6 +1742,7 @@ _LOAD_STATE () {
 		exit 1
 	fi
 	STATE_OPERATION=""
+	STATE_ACTION=""
 	STATE_WORKTREE=""
 	STATE_BRANCH=""
 	STATE_ORIG_HEAD=""
@@ -1669,6 +1755,7 @@ _LOAD_STATE () {
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
 			operation)       STATE_OPERATION=$VAL ;;
+			action)          STATE_ACTION=$VAL ;;
 			worktree)        STATE_WORKTREE=$VAL ;;
 			branch)          STATE_BRANCH=$VAL ;;
 			orig_head)       STATE_ORIG_HEAD=$VAL ;;
@@ -2794,6 +2881,34 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "reconcile hint suppressed" 'checkout is already current'
 	_ST_OUT_LACKS "no stash dance prescribed" "stash push -u -m 'wip before git-edit'"
 
+	# --- 27. rebase-path conflicts pause into --continue/--abort ---
+	# Dropping a commit whose successor edits the same line conflicts, and the
+	# isolated rebase must pause like the plumbing modes rather than bail
+	echo -e "\e[1;96m[27] rebase-path conflict pause\e[0m"
+	printf 'x\nb\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ base"
+	printf 'x\nMID\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ mid"
+	printf 'x\nTIP\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ tip"
+	local PZ_TIP=$(git rev-parse HEAD)
+	_ST_RUN -d -y HEAD~1
+	_ST_EQ "conflicting drop pauses (exit 2)" "$RC" "2"
+	_ST_OUT_HAS "names the action" 'Conflict during drop'
+	_ST_EQ "branch untouched while paused" "$(git rev-parse HEAD)" "$PZ_TIP"
+	local PZ_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	printf 'x\nTIP\nz\n' > "$PZ_WT/pz.txt" && git -C "$PZ_WT" add pz.txt
+	_ST_RUN --continue
+	_ST_EQ "continue completes the drop" "$RC" "0"
+	_ST_EQ "dropped commit is gone" "$(git log --format=%s -2 | tr '\n' ' ')" "PZ tip PZ base "
+	_ST_CHECK "state cleared after continue" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	printf 'x\nMID2\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ mid2"
+	printf 'x\nTIP2\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ tip2"
+	local PZ_TIP2=$(git rev-parse HEAD)
+	_ST_RUN -d -y HEAD~1
+	_ST_EQ "second conflicting drop pauses" "$RC" "2"
+	_ST_RUN --abort
+	_ST_EQ "abort exits 0" "$RC" "0"
+	_ST_OUT_HAS "abort reports nothing to roll back" 'never touched'
+	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$PZ_TIP2"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -2863,6 +2978,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		reorder)    _CONTINUE_REORDER ;;
+		rebase)     _CONTINUE_REBASE ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
@@ -2872,6 +2988,7 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
 		reorder)    _ABORT_REORDER ;;
+		rebase)     _ABORT_REBASE ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
