@@ -1278,6 +1278,14 @@ GIT_SPLIT () {
 	fi
 	if [ ${#MATCHED[@]} -eq ${#ALL_FILES[@]} ]; then
 		PRINT_ERR "Pathspec covers every change in ${X:0:7} – nothing to split off"
+		if [ ${#ALL_FILES[@]} -eq 1 ]; then
+			# Pathspec can't separate regions within one file – point at the
+			# edit-and-re-commit flow instead (the only clean way to hunk-split)
+			echo -e "\e[0;31m  It touches one file, so a pathspec can't separate it. If ${X:0:7} is HEAD, split by re-committing (deeper: rewrite it via a rebase first):\e[0m" >&2
+			echo -e "\e[0;31m    git reset --mixed HEAD^ && git restore ${ALL_FILES[1]}   # then edit + 'git add ${ALL_FILES[1]} && git commit' each region in turn\e[0m" >&2
+		else
+			echo -e "\e[0;31m  Narrow the pathspec to the subset you want extracted.\e[0m" >&2
+		fi
 		exit 1
 	fi
 
@@ -2519,6 +2527,7 @@ GIT_SELFTEST () {
 	_ST_RUN --split="$(git rev-parse HEAD~1)" --text="x" -- s1.txt
 	_ST_CHECK "refuses whole-commit pathspec" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'covers every change'
+	_ST_OUT_HAS "single-file split points at the re-commit recipe" 'reset --mixed HEAD'
 
 	# --- 19. empty-step pause: guidance + skip, plus graceful no-op continue ---
 	echo -e "\e[1;96m[19] empty-step guidance\e[0m"

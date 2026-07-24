@@ -98,8 +98,9 @@ are folded; unstaged edits are left untouched.
 Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
 extracted into their own commit (message from
 .BR \-\-text ),
-the rest keep the original message. Plumbing only \(em no conflicts possible;
-same\-file mixed concerns cannot be split this way.
+the rest keep the original message. Plumbing only \(em no conflicts possible.
+Pathspec\-based, so concerns mixed within a single file cannot be split this
+way; the error points at the manual reset\-and\-re\-commit flow for that.
 .TP
 .B \-\-reorder \fIcommit\fR...
 Reorder a contiguous span; the positional arguments give the desired new

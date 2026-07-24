@@ -198,7 +198,7 @@ When a commit mixed two concerns in **different files**, extract one of them int
 git edit --split=<sha> --text="Extracted: the icons" -- src/svg/
 ```
 
-The commit becomes two: first the extracted commit (pathspec-matched changes, message from `--text`), then a commit with the original message carrying the rest — both keeping the original author and date, with descendants rebuilt on top. Pure plumbing: no worktree, no rebase, **no conflicts possible** — the trees are composed directly from the original blobs (binary files and mode changes come along natively), and the tip tree is unchanged by construction. The pathspec must match a nonempty, proper subset of the commit's changes; same-file mixed concerns can't be split this way (that requires hunk-level interaction).
+The commit becomes two: first the extracted commit (pathspec-matched changes, message from `--text`), then a commit with the original message carrying the rest — both keeping the original author and date, with descendants rebuilt on top. Pure plumbing: no worktree, no rebase, **no conflicts possible** — the trees are composed directly from the original blobs (binary files and mode changes come along natively), and the tip tree is unchanged by construction. The pathspec must match a nonempty, proper subset of the commit's changes; concerns mixed within a single file can't be split this way (that requires hunk-level interaction). Attempting it on a one-file commit prints the manual alternative: `git reset --mixed HEAD^ && git restore <file>`, then edit and commit each region in turn (works cleanly when the commit is `HEAD`; for a deeper one, rewrite it via a rebase first).
 
 ### Reordering Commits (`--reorder`)
 
