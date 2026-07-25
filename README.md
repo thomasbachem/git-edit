@@ -37,10 +37,11 @@ Every run ends with a single status line written as natural prose, anchored by `
 git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
 git-edit: ok — refs/heads/main unchanged
 git-edit: error — exit code <N>
+git-edit: paused — edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
-Agents `grep '^git-edit: (ok|error|conflict)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
+Agents `grep '^git-edit: (ok|error|conflict|paused)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
 *Tip:* Mode and flags can be given in any order.
 
 ## Usage Examples
@@ -57,6 +58,15 @@ This will:
 3. **Pause so you can make changes**
 4. Amend the commit and continue the rebase (pausing if merge conflicts occur so you can resolve them)
 5. Restore your stashed changes
+
+Without a TTY (an agent, CI), the pause becomes a `paused` trailer naming an isolated worktree checked out **at the commit** — its content clean of any main-checkout WIP, which is exactly what makes in-place edits of an entangled commit tractable. Edit files there, then:
+
+```
+git edit --continue                      # amend + replay descendants + CAS-apply
+git edit --continue --text "New subject" # the same, also rewording
+```
+
+On completion the **net history change** is printed (`git diff --stat` old-tip → new-tip) — the at-a-glance proof that history differs by exactly your edit. The replay source is re-read at `--continue` time, so commits that landed on the branch during authoring are carried along rather than dropped; the branch itself never moves until the final CAS, so `--abort` has nothing to roll back.
 
 ### Merging
 
@@ -271,7 +281,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~168 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~185 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

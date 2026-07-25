@@ -63,13 +63,16 @@ about tags left pointing into the rewritten span.
 .SH MODES
 .TP
 .B \-e, \-\-edit
-Edit \fIcommit\fR (default). Pauses to let you change files, then amends.
-Interactive only \(em refused without a TTY (use
-.BR \-\-amend\-into ,
-.BR \-M ,
-or
-.B \-\-exec
-instead).
+Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
+replays the descendants. Without a TTY the pause becomes a
+.B paused
+trailer naming an isolated worktree checked out at the commit \(em edit files
+there (clean of any main\-checkout WIP), then
+.B git edit \-\-continue
+(optionally with
+.B \-\-text
+to also reword) amends, replays, prints the net history change, and
+CAS\-applies. The branch never moves before the final apply.
 .TP
 .B \-M, \-\-reword
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
@@ -155,8 +158,9 @@ Auto\-confirm the drop/squash confirmation prompt.
 .SH "STANDALONE COMMANDS"
 .TP
 .B \-\-continue
-Resume the operation paused by a conflict, after staging the resolution in
-the printed worktree.
+Resume the paused operation: after staging the resolution in the printed
+worktree for a conflict, or after authoring there for an edit or content
+split.
 .TP
 .B \-\-abort
 Cancel a paused operation and roll back. The branch was never moved and
@@ -176,7 +180,7 @@ Run the built\-in end\-to\-end test suite in a scratch repository.
 Every run ends with a single line, anchored by
 .BR "git\-edit:" ,
 that a caller can dispatch on with
-.BR "grep '^git\-edit: (ok|error|conflict)'" :
+.BR "grep '^git\-edit: (ok|error|conflict|paused)'" :
 .PP
 .nf
 .RS
@@ -184,6 +188,7 @@ git\-edit: ok \(em refs/heads/main moved <old-sha> \(-> <new-sha>
 git\-edit: ok \(em refs/heads/main unchanged
 git\-edit: error \(em <reason>
 git\-edit: conflict \(em resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
+git\-edit: paused \(em edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 .RE
 .fi
 .SH "CONFLICT RESOLUTION"

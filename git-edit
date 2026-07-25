@@ -97,6 +97,7 @@ trap '_GLOBAL_EXIT_TRAP' EXIT
 
 USAGE () {
 	echo -e "\e[0;94musage: git edit <commit>                                    # edit a commit (default)\e[0m"
+	echo -e "\e[0;94m       (non-TTY: pauses with a worktree at the commit – edit files there, then --continue [--text \"…\"])\e[0m"
 	echo -e "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
 	echo -e "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
 	echo -e "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
@@ -143,10 +144,11 @@ USAGE () {
 	echo -e "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
 	echo -e "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
 	echo -e "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
-	echo -e "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict>'):\e[0m"
+	echo -e "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	echo -e "\e[0;94m         git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>\e[0m"
 	echo -e "\e[0;94m         git-edit: ok — refs/heads/main unchanged\e[0m"
 	echo -e "\e[0;94m         git-edit: error — exit code <N>\e[0m"
+	echo -e "\e[0;94m         git-edit: paused — edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'\e[0m"
 	echo -e "\e[0;94m         git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
 }
 
@@ -258,13 +260,14 @@ MKTEMP_FILE () {
 # machine consumption (e.g., agents grep'ing `^git-edit:`). Always the very
 # last line of output on success.
 # Single-line status trailer in natural-language form (still anchored by
-# `git-edit: <outcome>` for programmatic dispatch). Three forms:
+# `git-edit: <outcome>` for programmatic dispatch). Four forms:
 #   git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
 #   git-edit: ok — refs/heads/main unchanged
 #   git-edit: error — exit code <N>
 #   git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
-# Agents grep `^git-edit: (ok|error|conflict)` to dispatch, and the rest is
-# self-explanatory prose.
+#   git-edit: paused — edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+# Agents grep `^git-edit: (ok|error|conflict|paused)` to dispatch, and the rest
+# is self-explanatory prose.
 EMIT_STATUS () {
 	# args: <new_head_sha> <ref> <changed:true|false>
 	# The SHAs are the authority, not the flag: some callers pass a hardcoded
@@ -619,6 +622,12 @@ GIT_STATUS_REPORT () {
 			local STATUS_PREOP=""
 			[ "$STATE_OPERATION" = "reorder" ] && STATUS_PREOP=$STATE_ORIG_HEAD
 			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
+			# A paused edit with no rebase running is in its authoring phase –
+			# there is nothing to resolve yet, just changes to make
+			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
+			if [ "$STATE_OPERATION" = "edit" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+				PRINT_TEXT "Authoring phase – edit files in the worktree (add %s to also reword)." 33 '--text "…"'
+			fi
 			PRINT_TEXT "Resolve there, then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 		else
@@ -1754,6 +1763,134 @@ _ABORT_REBASE () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
+# Replays the edited target's descendants onto the amended commit, from the
+# branch's CURRENT tip – re-read here so commits that landed after the pause
+# are carried rather than dropped. Exits 2 on conflict; returns on success
+# with the worktree HEAD at the replayed tip.
+_EDIT_START_REPLAY () {
+	local TIP=$(git rev-parse "$STATE_BRANCH")
+	_SAVE_STATE "operation=edit" "worktree=$STATE_WORKTREE" "branch=$STATE_BRANCH" \
+		"orig_head=$STATE_ORIG_HEAD" "target=$STATE_TARGET" "amended=$STATE_AMENDED" "replay_tip=$TIP"
+	STATE_REPLAY_TIP=$TIP
+	if [ "$TIP" = "$STATE_TARGET" ]; then
+		# Target is the tip itself – the amended commit is the whole result
+		git checkout -q "$STATE_AMENDED" 2>/dev/null
+		return 0
+	fi
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
+	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
+	if ! eval "$CMD" >/dev/null 2>&1; then
+		_CLEANUP_HOOK=""
+		PRINT_ERR "Conflict while replaying descendants – resolve in worktree, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+		exit 2
+	fi
+}
+
+# Resumes a paused non-interactive edit – the phase is re-derived from the worktree itself,
+# authoring with `HEAD` still at the target, replaying with a rebase in progress, or
+# applying with the replay done, so a crash or an extra `--continue` lands right
+_CONTINUE_EDIT () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	cd "$STATE_WORKTREE" || exit 1
+
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	PRINT_ACTION "Continuing edit of %s..." "${STATE_TARGET:0:7}"
+
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	local HEAD_NOW=$(git rev-parse HEAD)
+
+	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+		# Mid-replay conflict
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" >/dev/null 2>&1; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			exit 2
+		fi
+	elif [ "$HEAD_NOW" = "$STATE_TARGET" ]; then
+		# Authoring done – amend the target with whatever changed
+		if [ -z "$(git status --porcelain)" ] && [ -z "$TEXT_VALUE" ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Nothing to amend – no changes in the worktree and no --text"
+			echo -e "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
+			exit 1
+		fi
+		git add -A >/dev/null 2>&1
+		if [ -n "$TEXT_VALUE" ]; then
+			git commit --amend -m "$TEXT_VALUE" >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
+		else
+			git commit --amend --no-edit >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
+		fi
+		STATE_AMENDED=$(git rev-parse HEAD)
+		PRINT_CMD "git commit --amend -> ${STATE_AMENDED:0:7}" 90
+		_EDIT_START_REPLAY
+	elif [ -n "$STATE_AMENDED" ] && [ "$HEAD_NOW" = "$STATE_AMENDED" ]; then
+		# Amend landed but the replay never ran (crash between) – run it now
+		_EDIT_START_REPLAY
+	fi
+	# Otherwise `HEAD` is beyond the amended commit with no rebase in progress – the replay
+	# finished, possibly by hand, so fall through to apply
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+	local BASE=${STATE_REPLAY_TIP:-$STATE_ORIG_HEAD}
+	# A commit that landed on the branch during the replay would be dropped by
+	# a blind apply – redo the replay onto the fresh tip instead
+	if [ "$(git rev-parse "$STATE_BRANCH")" != "$BASE" ]; then
+		PRINT_TEXT "Branch moved during the edit – replaying onto its current tip." 33
+		_EDIT_START_REPLAY
+		NEW_HEAD=$(git rev-parse HEAD)
+		BASE=$STATE_REPLAY_TIP
+	fi
+
+	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $BASE"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		_CLEANUP_HOOK=""
+		PRINT_ERR "Branch '$STATE_BRANCH' moved during apply – run 'git edit --continue' to replay onto the new tip"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$BASE" "$NEW_HEAD" "edit ${STATE_TARGET:0:7}"
+
+	# Net history change – pre-answers the "does the result differ by exactly
+	# my edit?" verification the caller would otherwise run
+	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
+	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
+
+	_CLEAR_STATE
+	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
+}
+
+_ABORT_EDIT () {
+	PRINT_ACTION "Aborting edit of %s..." "${STATE_TARGET:0:7}"
+
+	if [ -d "$STATE_WORKTREE" ]; then
+		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	PRINT_TEXT "%s" 32 "Edit aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+}
+
 # Aborts an in-flight `--reorder` – abort the paused rebase and remove the worktree, with
 # nothing to roll back since the branch was never moved
 _ABORT_REORDER () {
@@ -1809,6 +1946,8 @@ _LOAD_STATE () {
 	STATE_DEPTH=""
 	STATE_MAINDIR=""
 	STATE_FILES=""
+	STATE_AMENDED=""
+	STATE_REPLAY_TIP=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -1822,6 +1961,8 @@ _LOAD_STATE () {
 			depth)           STATE_DEPTH=$VAL ;;
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
+			amended)         STATE_AMENDED=$VAL ;;
+			replay_tip)      STATE_REPLAY_TIP=$VAL ;;
 		esac
 	done < "$SF"
 }
@@ -2609,11 +2750,13 @@ GIT_SELFTEST () {
 	_ST_EQ "order swapped" "$(git log --format=%s -2 | tr '\n' ' ')" "X commit Y commit "
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 
-	# --- 10. Edit mode refuses non-TTY ---
-	echo -e "\e[1;96m[10] edit-mode non-TTY refusal\e[0m"
+	# --- 10. Edit mode pauses in non-TTY instead of prompting ---
+	echo -e "\e[1;96m[10] edit-mode non-TTY pause\e[0m"
 	_ST_RUN "$(git rev-parse HEAD)"
-	_ST_CHECK "refuses" test "$RC" != "0"
-	_ST_OUT_HAS "instructive error" 'Edit mode requires interactive input'
+	_ST_EQ "pauses (exit 2)" "$RC" "2"
+	_ST_OUT_HAS "paused trailer names the worktree" 'git-edit: paused'
+	_ST_RUN --abort
+	_ST_EQ "abort clears it" "$RC" "0"
 
 	# --- 11. Exec: amend via isolated worktree ---
 	echo -e "\e[1;96m[11] exec\e[0m"
@@ -2994,6 +3137,43 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the competing commits" 'different commits'
 	git reset -q --hard HEAD
 
+	# --- 29. non-interactive edit mode: pause, author, continue ---
+	echo -e "\e[1;96m[29] edit mode (agent flow)\e[0m"
+	git reset -q --hard   # reconcile the scratch checkout so later commits carry no phantom reverts
+	printf 'e1\nEDIT-ME\ne2\n' > ed.txt && git add ed.txt && git commit -qm "ED target"
+	local ED_TARGET=$(git rev-parse HEAD)
+	echo "ed-later" > ed2.txt && git add ed2.txt && git commit -qm "ED later"
+	local ED_TIP=$(git rev-parse HEAD)
+	_ST_RUN "$ED_TARGET"
+	_ST_EQ "edit pauses (exit 2)" "$RC" "2"
+	_ST_OUT_HAS "emits a paused trailer" 'git-edit: paused'
+	_ST_EQ "branch untouched while authoring" "$(git rev-parse HEAD)" "$ED_TIP"
+	local ED_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused — edit [0-9a-f]* in \(.*\); then.*/\1/p')
+	_ST_CHECK "worktree sits at the target" test "$(git -C "$ED_WT" rev-parse HEAD)" = "$ED_TARGET"
+	_ST_RUN --status
+	_ST_OUT_HAS "status names the authoring phase" 'Authoring phase'
+	_ST_RUN --continue
+	_ST_EQ "empty continue refused" "$RC" "1"
+	_ST_OUT_HAS "explains nothing to amend" 'Nothing to amend'
+	printf 'e1\nEDITED\ne2\n' > "$ED_WT/ed.txt"
+	# A commit landing on the branch during authoring must be absorbed
+	echo "mid" > ed-mid.txt && git add ed-mid.txt && git commit -qm "ED mid-pause"
+	_ST_RUN --continue --text "ED target, edited"
+	_ST_EQ "continue completes the edit" "$RC" "0"
+	_ST_OUT_HAS "prints the net history change" 'Net history change'
+	local ED_NEW=$(git log --format='%H %s' | grep 'ED target, edited' | cut -d' ' -f1)
+	_ST_CHECK "reword applied" test -n "$ED_NEW"
+	_ST_EQ "content edited at the target" "$(git show "${ED_NEW}:ed.txt" 2>/dev/null | sed -n 2p)" "EDITED"
+	_ST_CHECK "mid-pause commit absorbed" sh -c "git log --format=%s | grep -q 'ED mid-pause'"
+	_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	# Abort leaves everything untouched
+	git reset -q --hard
+	local ED_TIP2=$(git rev-parse HEAD)
+	_ST_RUN "$(git rev-parse HEAD~1)"
+	_ST_RUN --abort
+	_ST_EQ "abort exits 0" "$RC" "0"
+	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$ED_TIP2"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3051,6 +3231,25 @@ if [ -n "$SCRIPT_INITIAL_TOPLEVEL" ]; then
 	SCRIPT_INITIAL_HAS_WIP=$(git -C "$SCRIPT_INITIAL_TOPLEVEL" status --porcelain 2>/dev/null | head -1)
 fi
 
+# Resolve --text value into TEXT_VALUE. Supports `--text "msg"` (separate arg
+# or after `=`), and `--text -` to read from stdin (multi-line OK).
+# zparseopts splits both forms into [--text, value]; the `=value` form keeps
+# its leading `=` in the value slot, so strip it.
+if [ ${#OPT_TEXT} -gt 0 ]; then
+	if [[ ${#OPT_TEXT} -gt 1 ]]; then
+		TEXT_VALUE=${OPT_TEXT[2]#=}
+	fi
+	if [ "$TEXT_VALUE" = "-" ]; then
+		TEXT_VALUE=$(cat)
+	fi
+	# Pass through `git stripspace` so it matches what the editor flow produces
+	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace --strip-comments)
+	if [ -z "$TEXT_VALUE" ]; then
+		PRINT_ERR "--text produced an empty message after stripping"
+		exit 1
+	fi
+fi
+
 # --continue / --abort dispatch – resume or cancel an in-flight operation.
 # These mirror `git rebase --continue` / `--abort`. They short-circuit before
 # any of the normal argument validation runs.
@@ -3064,6 +3263,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		reorder)    _CONTINUE_REORDER ;;
 		rebase)     _CONTINUE_REBASE ;;
+		edit)       _CONTINUE_EDIT ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
@@ -3074,6 +3274,7 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 		amend-into) _ABORT_AMEND_INTO ;;
 		reorder)    _ABORT_REORDER ;;
 		rebase)     _ABORT_REBASE ;;
+		edit)       _ABORT_EDIT ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
@@ -3220,24 +3421,6 @@ if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_EXEC} -gt 0 ]; then
 	exit 1
 fi
 
-# Resolve --text value into TEXT_VALUE. Supports `--text "msg"` (separate arg
-# or after `=`), and `--text -` to read from stdin (multi-line OK).
-# zparseopts splits both forms into [--text, value]; the `=value` form keeps
-# its leading `=` in the value slot, so strip it.
-if [ ${#OPT_TEXT} -gt 0 ]; then
-	if [[ ${#OPT_TEXT} -gt 1 ]]; then
-		TEXT_VALUE=${OPT_TEXT[2]#=}
-	fi
-	if [ "$TEXT_VALUE" = "-" ]; then
-		TEXT_VALUE=$(cat)
-	fi
-	# Pass through `git stripspace` so it matches what the editor flow produces
-	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace --strip-comments)
-	if [ -z "$TEXT_VALUE" ]; then
-		PRINT_ERR "--text produced an empty message after stripping"
-		exit 1
-	fi
-fi
 
 # --exec short-circuits everything below: positional args are the wrapped
 # command (not commits to parse). Set up an isolated temp worktree, run the
@@ -3602,20 +3785,6 @@ else
 	COMMIT=${COMMITS[1]}
 fi
 
-# Edit mode is fundamentally interactive — it pauses on the "Now make your
-# changes" prompt waiting for the user to modify files in the worktree, then
-# resume. In a non-TTY context (Claude Code, CI, piped stdin) that pause
-# silently auto-resumes with no changes made, producing a useless no-op
-# amend that just moves the branch ref to a new SHA with identical content.
-# Bail out with a clear pointer to the alternatives instead.
-if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
-	PRINT_ERR "Edit mode requires interactive input (no TTY / agent run)"
-	echo -e "\e[0;31m  For message-only edits:        use -M (optionally with --text \"…\")\e[0m" >&2
-	echo -e "\e[0;31m  For non-interactive content:   use --exec -- <command>\e[0m" >&2
-	echo -e "\e[0;31m  To drop the commit instead:    use -d\e[0m" >&2
-	exit 1
-fi
-
 # Pushed guard for the rebase-based modes (drop / squash / edit) – the
 # plumbing and isolated modes (-M, -S, --amend-into, --reorder, --exec)
 # guard inside their own functions. The oldest selected commit covers the
@@ -3639,6 +3808,44 @@ fi
 # no refusal, so this must come after the route decision
 if [[ "$ACTION" == "drop" || "$ACTION" == "squash" || "$ACTION" == "edit" ]]; then
 	_GUARD_NO_MERGE_SPAN "${COMMITS[1]}"
+fi
+
+# Non-interactive edit: instead of a prompt no one can answer, prepare an
+# isolated worktree checked out at the target and hand control back. The
+# caller edits files there (the commit's own content, clean of any main-
+# checkout WIP), then `git edit --continue` amends, replays the descendants,
+# and CAS-applies. The branch stays untouched throughout, so the pause is
+# free and `--abort` has nothing to roll back.
+if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
+	if _STATE_EXISTS; then
+		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		exit 1
+	fi
+	if [ -n "$TEXT_VALUE" ]; then
+		PRINT_ERR "Pass --text with 'git edit --continue' – the message is applied at the amend"
+		exit 1
+	fi
+	EDIT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -z "$EDIT_BRANCH" ]; then
+		PRINT_ERR "Edit mode requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+	EDIT_TARGET=$(git rev-parse "$COMMIT^{commit}")
+	EDIT_WT=$(MKTEMP_DIR git-edit-edit)
+	rmdir "$EDIT_WT"  # `git worktree add` wants to create the dir itself
+	if ! git worktree add --detach "$EDIT_WT" "$EDIT_TARGET" >/dev/null 2>&1; then
+		PRINT_ERR "Cannot create edit worktree at ${EDIT_TARGET:0:7}"
+		exit 1
+	fi
+	_SAVE_STATE "operation=edit" "worktree=$EDIT_WT" "branch=refs/heads/$EDIT_BRANCH" \
+		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET"
+	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
+	PRINT_TEXT "Worktree at the commit: %s" 33 "$EDIT_WT"
+	PRINT_TEXT "Make your changes there, then %s (add %s to also reword) – or cancel via %s." 33 "git edit --continue" '--text "…"' "git edit --abort"
+	echo "git-edit: paused — edit ${EDIT_TARGET:0:7} in $EDIT_WT; then 'git edit --continue' or 'git edit --abort'"
+	_STATUS_EMITTED=true
+	exit 2
 fi
 
 # Final --text validation: only valid for message-producing modes. We deferred
