@@ -46,6 +46,11 @@ In non\-interactive contexts (stdin is not a TTY, e.g. an agent or CI) the
 modes that would otherwise touch the working tree auto\-isolate into a unique
 temporary worktree.
 .IP \(bu 3
+Output carries blank\-line padding only when stdout is a terminal. Piped or
+captured it comes out tight \(em same lines, no padding \(em so a
+.B "| tail -5"
+reaches the completion summary rather than blank space.
+.IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
 its likely counterpart named \(em so a stale SHA never silently no\-ops.
