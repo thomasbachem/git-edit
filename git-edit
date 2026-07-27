@@ -124,7 +124,9 @@ USAGE () {
 	echo -e "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
 	echo -e "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
 	echo -e "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
-	echo -e "\e[0;94m       --amend-into=<sha>|auto         Fold currently-staged changes (in main) into <sha>\e[0m"
+	echo -e "\e[0;94m       --amend-into=<sha>|auto [-- <pathspec>...]\e[0m"
+	echo -e "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
+	echo -e "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
 	echo -e "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
 	echo -e "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
 	echo -e "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
@@ -1081,16 +1083,31 @@ GIT_EXEC () {
 	EXEC_CHANGED=true
 }
 
-# Fold currently-staged changes (from the main working tree's index) into a
-# specified target commit, without touching files the user hasn't staged.
-# Implements the standard "fixup + autosquash" pattern as a single operation:
-#   1. Snapshot the staged index as a fixup commit OBJECT (`write-tree` +
-#      `commit-tree`) – no ref moves, so the branch stays visually untouched
-#      and parallel sessions never see an intermediate `fixup!` commit
-#   2. Run autosquash inside a fresh isolated worktree (parallel-safe)
-#   3. Atomic CAS-update of the branch ref (guard = the pre-op tip)
-# Nothing is consumed until the CAS lands, so failure/abort needs no rollback:
-# the staged changes are simply still staged.
+# Builds the tree a scoped fold carries – the base commit's tree with only the
+# pathspec-matched staged entries applied, composed from the index's exact blobs like
+# the split path, so binary files and mode changes come along and nothing else leaks in
+_STAGED_TREE_FOR () {
+	local BASE=$1
+	local TMPIDX=$(MKTEMP_FILE git-edit-amend-idx)
+	rm -f "$TMPIDX"
+	GIT_INDEX_FILE=$TMPIDX git read-tree "$BASE" || { rm -f "$TMPIDX"; return 1; }
+	local META PATHNAME DSTMODE DSTSHA
+	while IFS=$'\t' read -r META PATHNAME; do
+		DSTMODE=$(echo "$META" | awk '{print $2}')
+		DSTSHA=$(echo "$META" | awk '{print $4}')
+		if [ "$DSTMODE" = "000000" ]; then
+			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
+		else
+			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
+		fi
+	done < <(git diff-index --cached -r "$BASE" -- "${AMEND_PATHSPECS[@]}")
+	GIT_INDEX_FILE=$TMPIDX git write-tree
+	rm -f "$TMPIDX"
+}
+
+# Folds currently-staged changes from the main index into a target commit, leaving unstaged
+# files alone – fixup plus autosquash in one operation, snapshotting the index as a fixup
+# object, running the autosquash isolated, and CAS-updating the ref against the pre-op tip
 GIT_AMEND_INTO () {
 	local TARGET=$AMEND_INTO_TARGET
 
@@ -1101,10 +1118,16 @@ GIT_AMEND_INTO () {
 		exit 1
 	fi
 
-	# Pre-flight: must have staged changes
-	if git diff --cached --quiet 2>/dev/null; then
-		PRINT_ERR "No staged changes to amend"
-		echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+	# Pre-flight: must have staged changes – within the pathspec if one narrows
+	# the fold, since "something is staged" says nothing about the named paths
+	if git diff --cached --quiet -- "${AMEND_PATHSPECS[@]}" 2>/dev/null; then
+		if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+			PRINT_ERR "No staged changes under ${AMEND_PATHSPECS[*]}"
+			echo -e "\e[0;31m  Stage them with 'git add <files>', or drop the pathspec to fold everything staged.\e[0m" >&2
+		else
+			PRINT_ERR "No staged changes to amend"
+			echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		fi
 		exit 1
 	fi
 
@@ -1134,14 +1157,22 @@ GIT_AMEND_INTO () {
 	# The folded paths (root-relative): shown in the completion summary, and
 	# scoping the success sync to exactly these entries
 	local -a STAGED_PATHS
-	STAGED_PATHS=("${(@f)$(git diff --cached --name-only)}")
+	STAGED_PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
 
 	# Step 1: snapshot the staged index as a commit object. `write-tree` +
 	# `commit-tree` build it without moving any ref or touching the index –
 	# the staged changes stay staged until the CAS lands.
 	local TARGET_SUBJECT=$(git log -1 --format='%s' "$TARGET_FULL")
-	local STAGED_TREE=$(git write-tree 2>/dev/null)
+	local STAGED_TREE
+	if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+		# Scoped fold – compose `HEAD`'s tree plus only the named staged entries, so whatever else
+		# sits in the shared index cannot ride along into a past commit, a parallel session's
+		# staging included, which can land in the turn between `git add` and this call
+		STAGED_TREE=$(_STAGED_TREE_FOR "$ORIG_HEAD")
+	else
+		STAGED_TREE=$(git write-tree 2>/dev/null)
+	fi
 	if [ -z "$STAGED_TREE" ]; then
 		PRINT_ERR "Cannot snapshot index (unmerged entries?) – resolve conflicts first"
 		exit 1
@@ -1260,9 +1291,14 @@ _BLAME_AMEND_TARGETS () {
 	done | sort -u
 }
 
+# Resolves `--amend-into=auto` to the newest unpushed commit touching the staged paths –
+# conservative, since every staged path with history must agree on one target and paths
+# with none follow that consensus, and each refusal lists the per-path candidates
 _RESOLVE_AMEND_TARGET () {
 	local -a PATHS
-	PATHS=("${(@f)$(git diff --cached --name-only)}")
+	# Scoped to the same pathspec the fold will use – inferring a target from paths that will
+	# not be folded answers a question nobody asked
+	PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	if [ -z "${PATHS[1]}" ]; then
 		PRINT_ERR "No staged changes to amend"
 		echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
@@ -1372,9 +1408,12 @@ _PRINT_LEFTOVER_STATE () {
 	local PARTS=""
 	[ "$UNSTAGED" -gt 0 ]  && PARTS="$UNSTAGED modified"
 	[ "$UNTRACKED" -gt 0 ] && PARTS="${PARTS:+$PARTS, }$UNTRACKED untracked"
-	if [ "$STAGED" -gt 0 ]; then
-		# Anything still staged wasn't part of the fold – worth flagging, since
-		# the caller expects the index emptied
+	if [ "$STAGED" -gt 0 ] && [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+		# A scoped fold is meant to leave the rest staged – state it plainly
+		PRINT_TEXT "Left staged (outside the pathspec): %s file(s)." 32 "$STAGED"
+	elif [ "$STAGED" -gt 0 ]; then
+		# Nothing should survive an unscoped fold – the caller expects an empty
+		# index, so anything left is worth flagging
 		PRINT_TEXT "Left staged: %s file(s) – not folded." 33 "$STAGED"
 	else
 		PRINT_TEXT "Index now empty; working tree keeps %s." 32 "${PARTS:-no changes}"
@@ -3494,6 +3533,26 @@ GIT_SELFTEST () {
 	_ST_EQ "bare invocation still exits 1" "$RC" "1"
 	_ST_OUT_HAS "bare invocation still shows usage" 'usage: git edit'
 
+	# --- 32. scoped fold: a pathspec keeps the rest of the index out ---
+	echo -e "\e[1;96m[32] scoped --amend-into\e[0m"
+	git reset -q --hard
+	echo "sc1" > sc.txt && echo "other" > sc-other.txt && git add sc.txt sc-other.txt && git commit -qm "SC base"
+	local SC_TARGET=$(git rev-parse HEAD)
+	echo "sc-later" > sc-later.txt && git add sc-later.txt && git commit -qm "SC later"
+	echo "sc1-folded" > sc.txt && git add sc.txt
+	echo "sc-other-parallel" > sc-other.txt && git add sc-other.txt   # a parallel session's staging
+	_ST_RUN --amend-into="$SC_TARGET" -- sc.txt
+	_ST_EQ "scoped fold exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports what stayed staged" 'outside the pathspec'
+	local SC_NEW=$(git log --format='%H %s' | grep 'SC base' | cut -d' ' -f1)
+	_ST_EQ "pathspec change folded" "$(git show "${SC_NEW}:sc.txt")" "sc1-folded"
+	_ST_EQ "out-of-pathspec change NOT folded" "$(git show "${SC_NEW}:sc-other.txt")" "other"
+	_ST_CHECK "out-of-pathspec change still staged" sh -c "git diff --cached --name-only | grep -q sc-other.txt"
+	_ST_CHECK "history never saw it" sh -c "! git log -p --all | grep -q sc-other-parallel"
+	_ST_RUN --amend-into="$SC_NEW" -- nosuch.txt
+	_ST_EQ "empty pathspec match refused" "$RC" "1"
+	_ST_OUT_HAS "names the empty match" 'No staged changes under'
+	git reset -q --hard
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3886,11 +3945,12 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		PRINT_ERR "--amend-into requires a <sha> value (e.g., --amend-into=abc123)"
 		exit 1
 	fi
-	if [ $# -gt 0 ]; then
-		USAGE
-		PRINT_ERR "--amend-into takes no positional arguments (target is the flag's value)"
-		exit 1
+	# Positional args narrow which staged paths get folded, the rest staying staged – without
+	# them the whole index folds, as before
+	if [ "$1" = "--" ]; then
+		shift
 	fi
+	AMEND_PATHSPECS=("$@")
 	# `auto` resolves to the newest unpushed commit touching the staged paths
 	if [ "$AMEND_INTO_TARGET" = "auto" ]; then
 		_RESOLVE_AMEND_TARGET

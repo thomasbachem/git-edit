@@ -134,7 +134,12 @@ The typical agent flow — "edit this file and amend it to commit X" — is supp
 # After editing files (e.g., via Claude Code's Edit tool)
 git add <files>
 git edit --amend-into=<sha>
+
+# Or fold only some of what's staged, leaving the rest staged
+git edit --amend-into=<sha> -- src/js/foo.js
 ```
+
+The pathspec form is worth reaching for whenever the index might hold more than you mean to fold. `--amend-into` snapshots the **whole** index, and in a shared checkout a parallel session can stage into it during the gap between your `git add` and this call — a pathspec makes that impossible to sweep into a past commit, and removes the `git diff --cached` pre-check you'd otherwise run to be sure.
 
 What happens internally:
 1. The staged index is snapshotted into a `fixup!` commit **object** (`git write-tree` + `git commit-tree`) — no ref moves, so the branch stays visually untouched and parallel sessions never see an intermediate `fixup!` commit.
@@ -292,7 +297,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~220 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~228 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

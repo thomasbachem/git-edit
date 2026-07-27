@@ -10,7 +10,7 @@ git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 \fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR] \fIcommit\fR
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
-\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}
+\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
@@ -89,9 +89,13 @@ contiguous, merge\-free range whose target is the oldest commit.
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
-.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR}
+.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-\fR \fIpathspec\fR...]
 Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
-isolated worktree.
+isolated worktree. A \fIpathspec\fR narrows the fold to those staged paths and
+leaves the rest staged \(em worth using when the index may hold more than you
+mean to fold, since a parallel session can stage into it between your
+.BR git\-add (1)
+and this call.
 .B auto
 targets the unpushed commit that last touched the staged \fIlines\fR (per
 .BR git\-blame ),
