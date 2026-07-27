@@ -67,6 +67,13 @@ _CLEANUP_HOOK=""
 # explicit `ok …` or `conflict …` trailer.
 _STATUS_EMITTED=false
 
+# Blank-line padding between narrative lines reads well in a terminal, but a
+# caller piping through `| tail -N` – how most agent invocations consume this
+# – loses a line of summary to every one of them. Pad only for a real
+# terminal; a pipe or a captured run gets the same lines, tight.
+_PAD=""
+[ -t 1 ] && _PAD="\n"
+
 # Captures the last message passed to PRINT_ERR, so the global exit trap can
 # include the actual error reason in the trailer line — saving agents from
 # having to scrape stderr for context when the operation failed.
@@ -168,7 +175,7 @@ PRINT_TEXT () {
 	local BRIGHT=$(( COLOR <= 37 ? COLOR + 60 : COLOR ))
 
 	local TEXT="$MSG"
-	local OUTPUT="\n\e[0;${COLOR}m"
+	local OUTPUT="${_PAD}\e[0;${COLOR}m"
 	local ARG
 	for ARG in "${ARGS[@]}"; do
 		OUTPUT+="${TEXT%%%s*}"
@@ -231,7 +238,7 @@ PRINT_CMD () {
 	# Filter `--no-autostash` arg when printing commands
 	local CMD_FILTERED=$(echo "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
 
-	echo -e "\n\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
+	echo -e "${_PAD}\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
 }
 
 PRINT_ERR () {
@@ -401,7 +408,7 @@ _CURRENT_REF () {
 # Convenience helper to print the success banner + status trailer together.
 PRINT_COMPLETED () {
 	# args: <new_head_sha> <ref> <changed:true|false>
-	echo -e "\n\e[1;92mgit edit completed.\e[0m"
+	[ -n "$_PAD" ] && echo -e "${_PAD}\e[1;92mgit edit completed.\e[0m"
 	EMIT_STATUS "$1" "$2" "$3"
 }
 
@@ -1388,7 +1395,7 @@ _PRINT_AMENDED_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 32 "Amended commit:"
 	fi
-	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
 	_PRINT_LEFTOVER_STATE "$4"
 }
 
@@ -1484,8 +1491,8 @@ _SPLIT_APPLY () {
 	# so the tip tree is identical by construction – stated so callers don't
 	# re-verify with a diff
 	PRINT_TEXT "%s – split into:" 32 "Tip tree unchanged by construction ✓"
-	git show --stat --format='  %h %s' "$C1" | head -8 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
-	git show --stat --format='  %h %s' "$C2" | head -8 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$C1" | head -8 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$C2" | head -8 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
@@ -1596,7 +1603,7 @@ GIT_SPLIT_PAUSE () {
 	PRINT_ACTION "Splitting %s..." "$X"
 	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
 	PRINT_TEXT "Edit it back to what the %s commit should leave behind – undo there whatever belongs in the second:" 33 "first"
-	git show --stat --format='' "$X" | sed $'/./s/^/\e[0;90m  /;s/$/\e[0m/'
+	git show --stat --format='' "$X" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 	else
@@ -1885,7 +1892,7 @@ SEQEOF
 	else
 		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
 	fi
-	git log --reverse --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git log --reverse --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
 
 	REORDER_NEW_HEAD=$NEW_HEAD
 	REORDER_REF=$REF
@@ -2521,7 +2528,7 @@ GIT_REWORD () {
 
 	local ORIG_MSG=$(git log -1 --format='%B' "$TARGET" | git stripspace)
 	if [ "$NEW_MSG" = "$ORIG_MSG" ]; then
-		echo -e "\n\e[0;33mMessage unchanged – nothing to do.\e[0m"
+		echo -e "${_PAD}\e[0;33mMessage unchanged – nothing to do.\e[0m"
 		EMIT_STATUS "$ORIG_HEAD" "$REF" false
 		exit 0
 	fi
@@ -2567,7 +2574,7 @@ GIT_REWORD () {
 	# otherwise the caller reads it back with `git log` to be sure it took
 	local REWORDED=$(git rev-parse "$PREV_NEW~$(git rev-list --count "$TARGET..$ORIG_HEAD")" 2>/dev/null)
 	if [ -n "$REWORDED" ]; then
-		git log -1 --format='  %h %s' "$REWORDED" | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+		git log -1 --format='  %h %s' "$REWORDED" | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
 		local BODY_LINES=$(git log -1 --format='%b' "$REWORDED" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
 			git log -1 --format='%b' "$REWORDED" | grep . | sed $'s/^/\e[0;90m    /;s/$/\e[0m/'
@@ -2709,7 +2716,7 @@ GIT_RESQUASH () {
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
 	PRINT_TEXT "%s – squashed commit:" 32 "Tip tree unchanged by construction ✓"
-	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
 }
 
 GIT_COMMIT_AMEND () {
@@ -3544,6 +3551,10 @@ GIT_SELFTEST () {
 	_ST_RUN --amend-into="$SC_TARGET" -- sc.txt
 	_ST_EQ "scoped fold exits 0" "$RC" "0"
 	_ST_OUT_HAS "reports what stayed staged" 'outside the pathspec'
+	# Agents overwhelmingly read this through `| tail -N`, so the summary has
+	# to survive the truncation rather than be padded out of reach
+	_ST_EQ "non-TTY output carries no blank lines" "$(echo "$OUT" | grep -c '^$')" "0"
+	_ST_EQ "summary survives a tail -5" "$(echo "$OUT" | tail -5 | grep -c 'outside the pathspec')" "1"
 	local SC_NEW=$(git log --format='%H %s' | grep 'SC base' | cut -d' ' -f1)
 	_ST_EQ "pathspec change folded" "$(git show "${SC_NEW}:sc.txt")" "sc1-folded"
 	_ST_EQ "out-of-pathspec change NOT folded" "$(git show "${SC_NEW}:sc-other.txt")" "other"
@@ -4266,7 +4277,7 @@ fi
 # – mirroring `--exec`'s isolation guarantee.
 if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -eq 0 ] && \
    [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
-	echo -e "\n\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
+	echo -e "${_PAD}\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
 	OPT_DIR=(--dir)
 	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso)
 	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
