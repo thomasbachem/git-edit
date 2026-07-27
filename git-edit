@@ -1885,14 +1885,7 @@ SEQEOF
 
 	# Completion summary: tree identity (clean reorders preserve the tip tree;
 	# conflict resolutions may not) + the rewritten span in its new order
-	# Listed oldest-first, the same direction `--reorder` takes its arguments –
-	# reporting newest-first sent callers to `git log --reverse` to re-read it
-	if git diff --quiet "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null; then
-		PRINT_TEXT "%s – new order (oldest-first):" 32 "Tip tree identical ✓"
-	else
-		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
-	fi
-	git log --reverse --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	_PRINT_REORDER_SUMMARY "$ORIG_HEAD" "$NEW_HEAD"
 
 	REORDER_NEW_HEAD=$NEW_HEAD
 	REORDER_REF=$REF
@@ -1901,6 +1894,28 @@ SEQEOF
 # Resume an in-flight --reorder after conflict resolution. Mirrors
 # _CONTINUE_AMEND_INTO: continue the rebase in the preserved worktree, then
 # CAS the branch from its (untouched) pre-op tip.
+# Completion summary for both reorder paths: tree identity, the span in its new
+# order (oldest-first, matching how `--reorder` takes its arguments), and a
+# count check. That last one matters most after a hand-resolved conflict –
+# resolving a step to its predecessor's content leaves that commit empty, and
+# the rebase drops it, which "tip tree identical" would otherwise wave through.
+_PRINT_REORDER_SUMMARY () {
+	# args: <orig-head> <new-head>
+	local BASE=$(git merge-base "$1" "$2" 2>/dev/null)
+	local BEFORE=$(git rev-list --count "$BASE..$1" 2>/dev/null)
+	local AFTER=$(git rev-list --count "$BASE..$2" 2>/dev/null)
+	if git diff --quiet "$1" "$2" 2>/dev/null; then
+		PRINT_TEXT "%s – new order (oldest-first):" 32 "Tip tree identical ✓"
+	else
+		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
+	fi
+	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
+		PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
+			"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
+	fi
+}
+
 _CONTINUE_REORDER () {
 	if [ ! -d "$STATE_WORKTREE" ]; then
 		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
@@ -1950,6 +1965,8 @@ _CONTINUE_REORDER () {
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "reorder around ${STATE_TARGET:0:7}"
+
+	_PRINT_REORDER_SUMMARY "$STATE_ORIG_HEAD" "$NEW_HEAD"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -3564,6 +3581,28 @@ GIT_SELFTEST () {
 	_ST_EQ "empty pathspec match refused" "$RC" "1"
 	_ST_OUT_HAS "names the empty match" 'No staged changes under'
 	git reset -q --hard
+	# --- 33. a reorder step resolved to empty must not vanish under an `ok` ---
+	echo -e "\e[1;96m[33] dropped-commit reporting\e[0m"
+	git reset -q --hard
+	printf 'd1\nd2\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR base"
+	printf 'd1\nDX\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR one"
+	printf 'd1\nDY\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR two"
+	local DR_TIP=$(git rev-parse HEAD)
+	_ST_RUN --reorder "$DR_TIP" "$(git rev-parse HEAD~1)"
+	_ST_EQ "reordering abutting edits conflicts" "$RC" "2"
+	local DR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	printf 'd1\nDY\nd3\n' > "$DR_WT/dr.txt" && git -C "$DR_WT" add dr.txt
+	_ST_RUN --continue
+	# Final step: a reorder preserves the tree, so restore the pre-op blobs –
+	# which leaves the replayed commit empty and the rebase drops it
+	git -C "$DR_WT" checkout "$DR_TIP" -- dr.txt && git -C "$DR_WT" add dr.txt
+	_ST_RUN --continue
+	_ST_EQ "resolution completes" "$RC" "0"
+	_ST_OUT_HAS "continue path prints the new order too" 'new order (oldest-first)'
+	_ST_OUT_HAS "reports the dropped commit" 'resolved to empty and were dropped'
+	_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
