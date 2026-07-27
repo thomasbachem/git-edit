@@ -37,7 +37,7 @@ Every run ends with a single status line written as natural prose, anchored by `
 git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
 git-edit: ok — refs/heads/main unchanged
 git-edit: error — exit code <N>
-git-edit: paused — edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+git-edit: paused — edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
@@ -207,15 +207,26 @@ Conflicts can cascade — resolving one may surface another when the rebase cont
 
 State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
 
-### Splitting a Commit by Pathspec (`--split`)
+### Splitting a Commit (`--split`)
 
-When a commit mixed two concerns in **different files**, extract one of them into its own commit:
+When a commit mixed two concerns in **different files**, name one of them by pathspec:
 
 ```
 git edit --split=<sha> --text="Extracted: the icons" -- src/svg/
 ```
 
-The commit becomes two: first the extracted commit (pathspec-matched changes, message from `--text`), then a commit with the original message carrying the rest — both keeping the original author and date, with descendants rebuilt on top. Pure plumbing: no worktree, no rebase, **no conflicts possible** — the trees are composed directly from the original blobs (binary files and mode changes come along natively), and the tip tree is unchanged by construction. The pathspec must match a nonempty, proper subset of the commit's changes; concerns mixed within a single file can't be split this way (that requires hunk-level interaction). Attempting it on a one-file commit prints the manual alternative: `git reset --mixed HEAD^ && git restore <file>`, then edit and commit each region in turn (works cleanly when the commit is `HEAD`; for a deeper one, rewrite it via a rebase first).
+The commit becomes two: first the extracted commit (pathspec-matched changes, message from `--text`), then a commit with the original message carrying the rest — both keeping the original author and date, with descendants rebuilt on top. Pure plumbing: no worktree, no rebase, **no conflicts possible** — the trees are composed directly from the original blobs (binary files and mode changes come along natively), and the tip tree is unchanged by construction. The pathspec must match a nonempty, proper subset of the commit's changes.
+
+When both concerns live in the **same file**, no pathspec can name them apart. Drop it, and the split pauses instead:
+
+```
+git edit --split=<sha> --text="Refactor: Rename the compute helpers"
+git-edit: paused — split 6953784 in /tmp/git-edit-split.wMtUwy; then 'git edit --continue' or 'git edit --abort'
+```
+
+The worktree holds the commit's **own** content. Edit it back to what the first commit should leave behind — undo there whatever belongs in the second — then `git edit --continue` (with `--text` if you didn't pass it up front). Authoring that one intermediate state is the whole description of a hunk-level split, and it's a description a non-interactive caller can give without `git add -p`.
+
+From there it's the pathspec path's plumbing: the authored tree becomes the extracted commit, the target's own tree the remainder, descendants rebuilt on top, one CAS. The pair still ends at the target's tree, so this can't conflict either — and because it reads the branch at `--continue` time, a commit that landed during the pause is carried rather than dropped. `--continue` refuses rather than committing nonsense when either half would come out empty, when the worktree touches a path the target never did (the remainder would only revert it), or when the target itself was rewritten mid-pause. The remainder inherits the original message, written for the whole change — reword it afterwards with `git edit -M`.
 
 ### Reordering Commits (`--reorder`)
 
@@ -273,7 +284,7 @@ Every completed operation is attributed in the ref's own reflog (`git reflog` sh
 Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 ```
 
-`git edit --undo` reverts the last completed operation, CAS-guarded: it refuses if the branch has moved since, so it can never rewind over newer work. `git edit --status` reports an in-flight (conflict-paused) operation in the same format as the original pause — worktree path, conflicted files, remaining steps — or the last completed operation when idle. Useful for an agent (or a second session) landing mid-operation without the original context.
+`git edit --undo` reverts the last completed operation, CAS-guarded: it refuses if the branch has moved since, so it can never rewind over newer work. `git edit --status` reports an in-flight operation in the same format as the original pause — worktree path, conflicted files, remaining steps, and the `conflict` or `paused` trailer that pause emitted — or the last completed operation when idle. Useful for an agent (or a second session) landing mid-operation without the original context.
 
 ### Self-Testing (`--selftest`)
 
@@ -281,7 +292,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~185 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~210 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

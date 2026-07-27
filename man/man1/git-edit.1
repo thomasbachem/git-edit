@@ -1,7 +1,7 @@
 .\" Man page for git-edit. Kept in sync with the script's USAGE() and README.
 .\" Auto-found via man's PATH derivation (<repo>/man/man1) once the repo is on
 .\" PATH, so `git edit --help` / `man git-edit` work with no install step.
-.TH GIT-EDIT 1 "2026-07-21" "git-edit" "Git Extensions"
+.TH GIT-EDIT 1 "2026-07-27" "git-edit" "Git Extensions"
 .SH NAME
 git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 .SH SYNOPSIS
@@ -11,7 +11,7 @@ git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}
-\fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR \fB\-\-\fR \fIpathspec\fR...
+\fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
@@ -100,13 +100,23 @@ change adds lines and so attributes to nothing. It refuses when the evidence
 points at several commits, or at a pushed one. Only staged changes are folded;
 unstaged edits are left untouched.
 .TP
-.B \-\-split=\fIsha\fR \fB\-\-\fR \fIpathspec\fR...
+.B \-\-split=\fIsha\fR [\fB\-\-\fR \fIpathspec\fR...]
 Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
 extracted into their own commit (message from
 .BR \-\-text ),
 the rest keep the original message. Plumbing only \(em no conflicts possible.
-Pathspec\-based, so concerns mixed within a single file cannot be split this
-way; the error points at the manual reset\-and\-re\-commit flow for that.
+.IP
+With no \fIpathspec\fR \(em for halves that share a file, which no pathspec can
+name apart \(em the split pauses instead, with an isolated worktree holding the
+commit's own content. Edit it back to what the first commit should leave
+behind, then
+.B git edit \-\-continue
+(with
+.B \-\-text
+if it was not given up front) commits that tree, re\-commits \fIsha\fR's tree on
+top, and replays the descendants. It refuses rather than committing nonsense
+when either half would be empty, when the worktree touches a path \fIsha\fR
+never did, or when \fIsha\fR was rewritten mid\-pause.
 .TP
 .B \-\-reorder \fIcommit\fR...
 Reorder a contiguous span; the positional arguments give the desired new
@@ -188,7 +198,7 @@ git\-edit: ok \(em refs/heads/main moved <old-sha> \(-> <new-sha>
 git\-edit: ok \(em refs/heads/main unchanged
 git\-edit: error \(em <reason>
 git\-edit: conflict \(em resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
-git\-edit: paused \(em edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+git\-edit: paused \(em edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 .RE
 .fi
 .SH "CONFLICT RESOLUTION"
@@ -240,6 +250,9 @@ Reword an earlier commit without touching the working tree:
 .TP
 Split an icons change out of a mixed commit:
 .B git edit \-\-split=abc1234 \-\-text="Add icons" \-\- src/svg/
+.TP
+Split a refactor out of a commit that mixed it into one file:
+.B git edit \-\-split=abc1234 \-\-text="Refactor: Rename helpers"
 .TP
 Undo the last operation:
 .B git edit \-\-undo

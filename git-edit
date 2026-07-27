@@ -107,6 +107,8 @@ USAGE () {
 	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
 	echo -e "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
 	echo -e "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
+	echo -e "\e[0;94m       git edit --split=<sha>                              # split <sha> by content (same-file halves)\e[0m"
+	echo -e "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
 	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	echo -e "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
 	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
@@ -127,6 +129,9 @@ USAGE () {
 	echo -e "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
 	echo -e "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
 	echo -e "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
+	echo -e "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
+	echo -e "\e[0;94m                                       pauses with a worktree at the commit – edit it back to what the\e[0m"
+	echo -e "\e[0;94m                                       first commit should leave, then --continue [--text \"…\"]\e[0m"
 	echo -e "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
 	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
 	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
@@ -290,6 +295,14 @@ EMIT_CONFLICT () {
 		FILES_PART=" ($(echo "$2" | sed 's/,/, /g'))"
 	fi
 	echo "git-edit: conflict — resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
+	_STATUS_EMITTED=true
+}
+
+# The pause a mode takes by design (edit, content split) rather than on a
+# conflict – nothing is unmerged, there is just authoring left to do
+EMIT_PAUSED () {
+	# args: <operation> <sha> <worktree-path>
+	echo "git-edit: paused — $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -622,14 +635,25 @@ GIT_STATUS_REPORT () {
 			local STATUS_PREOP=""
 			[ "$STATE_OPERATION" = "reorder" ] && STATUS_PREOP=$STATE_ORIG_HEAD
 			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
-			# A paused edit with no rebase running is in its authoring phase –
-			# there is nothing to resolve yet, just changes to make
+			# A paused edit or split with no rebase running is in its authoring
+			# phase – there is nothing to resolve yet, just changes to make, so
+			# it reports as the pause it is rather than as a conflict
 			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
-			if [ "$STATE_OPERATION" = "edit" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+			local STATUS_AUTHORING=false
+			if [ "$STATE_OPERATION" = "split" ]; then
+				STATUS_AUTHORING=true
+				PRINT_TEXT "Authoring phase – edit the worktree back to what the %s commit should leave behind." 33 "first"
+			elif [ "$STATE_OPERATION" = "edit" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit files in the worktree (add %s to also reword)." 33 '--text "…"'
 			fi
-			PRINT_TEXT "Resolve there, then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
-			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			if [ "$STATUS_AUTHORING" = "true" ]; then
+				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
+				EMIT_PAUSED "$STATE_OPERATION" "$STATE_TARGET" "$STATE_WORKTREE"
+			else
+				PRINT_TEXT "Resolve there, then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
+				EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			fi
 		else
 			PRINT_ERR "State exists but its worktree is gone – run 'git edit --abort' to clear"
 			exit 1
@@ -1331,81 +1355,34 @@ _PRINT_AMENDED_SUMMARY () {
 	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
 }
 
-# Splits a commit by pathspec into two, via plumbing only: an extracted
-# commit carrying the pathspec-matched changes (message from --text), then a
-# commit with the original message carrying the rest. No worktree, no rebase,
-# no conflicts possible – trees are composed directly, descendants rebuilt,
-# and the ref updated in one CAS. Same-file mixed concerns can't be split
-# this way (that needs hunk-level interaction); different-file mixes can.
-GIT_SPLIT () {
-	local -a PATHSPECS
-	PATHSPECS=("$@")
-	local X=$SPLIT_TARGET
-
-	# Capture the ref to update
-	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
-	local REF
-	if [ -n "$BRANCH" ]; then
-		REF="refs/heads/$BRANCH"
-	else
-		REF="HEAD"
-	fi
-
+# Shared pre-flight for both split paths: resolves a <sha> an earlier rewrite
+# staled, then refuses what neither path can express – the initial commit (no
+# parent to rest the extracted half on), a merge, or pushed history. Leaves
+# the resolved SHA in `_RESOLVED_SHA` for the caller to adopt.
+_SPLIT_GUARDS () {
+	local X=$1
 	_GUARD_REACHABLE "$X"
 	X=$_RESOLVED_SHA
 	if ! git rev-parse --verify "$X^" >/dev/null 2>&1; then
 		PRINT_ERR "Cannot split the initial commit"
 		exit 1
 	fi
-	local P_LIST=$(git log -1 --format='%P' "$X")
-	if [[ "$P_LIST" == *" "* ]]; then
+	if [[ "$(git log -1 --format='%P' "$X")" == *" "* ]]; then
 		PRINT_ERR "Cannot split merge commit ${X:0:7}"
 		exit 1
 	fi
-
 	_GUARD_UNPUSHED "$X"
+}
 
-	# The pathspec must match a nonempty, proper subset of the commit's changes
-	local -a ALL_FILES MATCHED
-	ALL_FILES=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X")}")
-	MATCHED=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X" -- "${PATHSPECS[@]}")}")
-	if [ -z "${MATCHED[1]}" ]; then
-		PRINT_ERR "Pathspec matches no changes in ${X:0:7}"
-		exit 1
-	fi
-	if [ ${#MATCHED[@]} -eq ${#ALL_FILES[@]} ]; then
-		PRINT_ERR "Pathspec covers every change in ${X:0:7} – nothing to split off"
-		if [ ${#ALL_FILES[@]} -eq 1 ]; then
-			# Pathspec can't separate regions within one file – point at the
-			# edit-and-re-commit flow instead (the only clean way to hunk-split)
-			echo -e "\e[0;31m  It touches one file, so a pathspec can't separate it. If ${X:0:7} is HEAD, split by re-committing (deeper: rewrite it via a rebase first):\e[0m" >&2
-			echo -e "\e[0;31m    git reset --mixed HEAD^ && git restore ${ALL_FILES[1]}   # then edit + 'git add ${ALL_FILES[1]} && git commit' each region in turn\e[0m" >&2
-		else
-			echo -e "\e[0;31m  Narrow the pathspec to the subset you want extracted.\e[0m" >&2
-		fi
-		exit 1
-	fi
-
-	# Extracted tree: the parent's tree with the matched paths at the commit's
-	# versions, composed in a temp index from `diff-tree`'s exact blobs (no
-	# patch application, so binary files and mode changes come along natively)
-	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
-	rm -f "$TMPIDX"
-	GIT_INDEX_FILE=$TMPIDX git read-tree "$X^" || { rm -f "$TMPIDX"; exit 1; }
-	local META PATHNAME DSTMODE DSTSHA
-	while IFS=$'\t' read -r META PATHNAME; do
-		DSTMODE=$(echo "$META" | awk '{print $2}')
-		DSTSHA=$(echo "$META" | awk '{print $4}')
-		if [ "$DSTMODE" = "000000" ]; then
-			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
-		else
-			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
-		fi
-	done < <(git diff-tree -r "$X^" "$X" -- "${PATHSPECS[@]}")
-	local TREE1=$(GIT_INDEX_FILE=$TMPIDX git write-tree)
-	rm -f "$TMPIDX"
-	[ -z "$TREE1" ] && { PRINT_ERR "Failed to compose the extracted tree"; exit 1; }
+# Turns an extracted tree into the two commits and applies them – the extracted commit rests
+# on the target's parent, the remainder carries the target's own tree and message, and
+# the target's tree ends the pair either way, so neither split path can conflict
+_SPLIT_APPLY () {
+	local X=$1
+	local TREE1=$2
+	local REF=$3
+	local ORIG_HEAD=$4
+	local MSG=$5
 
 	# Both halves keep the original author + date
 	local AN=$(git log -1 --format='%an' "$X")
@@ -1415,7 +1392,7 @@ GIT_SPLIT () {
 
 	local C1=$(
 		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
-		git commit-tree "$TREE1" -p "$X^" -m "$TEXT_VALUE"
+		git commit-tree "$TREE1" -p "$X^" -m "$MSG"
 	) || ABORT
 	local C2=$(
 		GIT_AUTHOR_NAME="$AN" GIT_AUTHOR_EMAIL="$AE" GIT_AUTHOR_DATE="$AD" \
@@ -1447,6 +1424,218 @@ GIT_SPLIT () {
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
+}
+
+# Splits a commit by pathspec into two, plumbing only – an extracted commit carrying the
+# matched changes with its message from `--text`, then one with the original message
+# carrying the rest, trees composed directly so no conflict is possible
+GIT_SPLIT () {
+	local -a PATHSPECS
+	PATHSPECS=("$@")
+	local X=$SPLIT_TARGET
+
+	# Capture the ref to update
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local REF
+	if [ -n "$BRANCH" ]; then
+		REF="refs/heads/$BRANCH"
+	else
+		REF="HEAD"
+	fi
+
+	_SPLIT_GUARDS "$X"
+	X=$_RESOLVED_SHA
+
+	# The pathspec must match a nonempty, proper subset of the commit's changes
+	local -a ALL_FILES MATCHED
+	ALL_FILES=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X")}")
+	MATCHED=("${(@f)$(git diff-tree -r --name-only --no-commit-id "$X^" "$X" -- "${PATHSPECS[@]}")}")
+	if [ -z "${MATCHED[1]}" ]; then
+		PRINT_ERR "Pathspec matches no changes in ${X:0:7}"
+		exit 1
+	fi
+	if [ ${#MATCHED[@]} -eq ${#ALL_FILES[@]} ]; then
+		PRINT_ERR "Pathspec covers every change in ${X:0:7} – nothing to split off"
+		if [ ${#ALL_FILES[@]} -eq 1 ]; then
+			# One file means no pathspec can separate the halves – send them to
+			# the form that authors the split point instead
+			echo -e "\e[0;31m  It touches one file, so drop the pathspec and split by content:\e[0m" >&2
+			echo -e "\e[0;31m    git edit --split=${X:0:7} --text \"First subject\"\e[0m" >&2
+		else
+			echo -e "\e[0;31m  Narrow the pathspec to the subset you want extracted.\e[0m" >&2
+		fi
+		exit 1
+	fi
+
+	# Extracted tree: the parent's tree with the matched paths at the commit's
+	# versions, composed in a temp index from `diff-tree`'s exact blobs (no
+	# patch application, so binary files and mode changes come along natively)
+	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
+	rm -f "$TMPIDX"
+	GIT_INDEX_FILE=$TMPIDX git read-tree "$X^" || { rm -f "$TMPIDX"; exit 1; }
+	local META PATHNAME DSTMODE DSTSHA
+	while IFS=$'\t' read -r META PATHNAME; do
+		DSTMODE=$(echo "$META" | awk '{print $2}')
+		DSTSHA=$(echo "$META" | awk '{print $4}')
+		if [ "$DSTMODE" = "000000" ]; then
+			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+		else
+			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+		fi
+	done < <(git diff-tree -r "$X^" "$X" -- "${PATHSPECS[@]}")
+	local TREE1=$(GIT_INDEX_FILE=$TMPIDX git write-tree)
+	rm -f "$TMPIDX"
+	[ -z "$TREE1" ] && { PRINT_ERR "Failed to compose the extracted tree"; exit 1; }
+
+	_SPLIT_APPLY "$X" "$TREE1" "$REF" "$ORIG_HEAD" "$TEXT_VALUE"
+}
+
+# Splits a commit whose halves share a file, where no pathspec can name them
+# apart. Hands back an isolated worktree holding the commit's own content and
+# lets the caller edit it back to what the first commit should leave behind –
+# the one description of a hunk-level split a non-interactive caller can give
+# without `git add -p`. `git edit --continue` commits that tree, re-commits
+# the target's tree on top, and rebuilds the descendants.
+GIT_SPLIT_PAUSE () {
+	if _STATE_EXISTS; then
+		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		exit 1
+	fi
+
+	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -z "$BRANCH" ]; then
+		PRINT_ERR "Splitting by content requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+
+	_SPLIT_GUARDS "$SPLIT_TARGET"
+	local X=$_RESOLVED_SHA
+
+	local WT=$(MKTEMP_DIR git-edit-split)
+	rmdir "$WT"  # `git worktree add` wants to create the dir itself
+	if ! git worktree add --detach "$WT" "$X" >/dev/null 2>&1; then
+		PRINT_ERR "Cannot create split worktree at ${X:0:7}"
+		exit 1
+	fi
+
+	# A message given up front survives the pause in a sidecar – the state
+	# file's key=value lines can't carry a multi-line one
+	if [ -n "$TEXT_VALUE" ]; then
+		print -r -- "$TEXT_VALUE" > "$(_SPLIT_MSG_PATH)"
+	fi
+	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
+		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(git rev-parse --show-toplevel)"
+
+	PRINT_ACTION "Splitting %s..." "$X"
+	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
+	PRINT_TEXT "Edit it back to what the %s commit should leave behind – undo there whatever belongs in the second:" 33 "first"
+	git show --stat --format='' "$X" | sed $'/./s/^/\e[0;90m  /;s/$/\e[0m/'
+	if [ -n "$TEXT_VALUE" ]; then
+		PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
+	else
+		PRINT_TEXT "Then %s – or cancel via %s." 33 'git edit --continue --text "First subject"' "git edit --abort"
+	fi
+	# The remainder inherits a subject written for the whole change, so it
+	# usually wants a reword the caller would otherwise only notice later
+	PRINT_TEXT "The second commit keeps %s's message – reword it afterwards with %s." 33 "${X:0:7}" "git edit -M"
+	EMIT_PAUSED split "$X" "$WT"
+	exit 2
+}
+
+# Resumes a paused content split – snapshot the authored worktree as the extracted commit's
+# tree, then apply the pair, running from the main checkout so the descendant rebuild
+# reads the branch as it stands and carries a commit that landed during the pause
+_CONTINUE_SPLIT () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+	cd "${STATE_MAINDIR:-.}" || exit 1
+
+	local X=$STATE_TARGET
+	PRINT_ACTION "Continuing split of %s..." "$X"
+
+	# The authored tree rests on the target's parent, so a rewrite of the target
+	# mid-pause would silently re-seat it on content it was never derived from
+	if ! git merge-base --is-ancestor "$X" "$STATE_BRANCH" 2>/dev/null; then
+		PRINT_ERR "Commit ${X:0:7} left the branch during the pause – the authored tree no longer rests on its parent"
+		echo -e "\e[0;31m  Run 'git edit --abort' and redo the split against the current history.\e[0m" >&2
+		exit 1
+	fi
+
+	local MSG=$TEXT_VALUE
+	local MSGFILE=$(_SPLIT_MSG_PATH)
+	if [ -z "$MSG" ] && [ -f "$MSGFILE" ]; then
+		MSG=$(cat "$MSGFILE")
+	fi
+	if [ -z "$MSG" ]; then
+		PRINT_ERR "Pass --text with 'git edit --continue' – the extracted commit needs a message"
+		exit 1
+	fi
+
+	# Snapshot the authored working tree through a temp index seeded from the
+	# target – the worktree's own index stays as the caller left it, so a
+	# refused continue doesn't quietly stage their mistake for the next one
+	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
+	rm -f "$TMPIDX"
+	local TREE1=""
+	if GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" read-tree "$X" 2>/dev/null; then
+		GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" add -A >/dev/null 2>&1
+		TREE1=$(GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" write-tree)
+	fi
+	rm -f "$TMPIDX"
+	if [ -z "$TREE1" ]; then
+		PRINT_ERR "Failed to read the authored tree from $STATE_WORKTREE"
+		exit 1
+	fi
+
+	if [ "$TREE1" = "$(git rev-parse "$X^^{tree}")" ]; then
+		PRINT_ERR "Worktree matches ${X:0:7}'s parent – the extracted commit would be empty"
+		echo -e "\e[0;31m  Edit $STATE_WORKTREE to the state the first commit should leave, then retry.\e[0m" >&2
+		exit 1
+	fi
+	if [ "$TREE1" = "$(git rev-parse "$X^{tree}")" ]; then
+		PRINT_ERR "Worktree is unchanged from ${X:0:7} – the remainder commit would be empty"
+		echo -e "\e[0;31m  Undo the parts belonging to the second commit in $STATE_WORKTREE, then retry.\e[0m" >&2
+		exit 1
+	fi
+
+	# The pair always ends at the target's tree, so a path the target never
+	# touched can only be reverted again by the remainder – stray worktree
+	# debris rather than anything the caller means to commit
+	local STRAY=$(comm -23 \
+		<(git diff-tree -r --name-only "$X^^{tree}" "$TREE1" | sort) \
+		<(git diff-tree -r --name-only "$X^^{tree}" "$X^{tree}" | sort))
+	if [ -n "$STRAY" ]; then
+		PRINT_ERR "Worktree changes paths ${X:0:7} never touched – the remainder would just revert them"
+		echo "$STRAY" | sed $'s/^/\e[0;31m  /;s/$/\e[0m/' >&2
+		echo -e "\e[0;31m  Undo them in $STATE_WORKTREE (git checkout -- <path>, or rm for ones it added), then retry.\e[0m" >&2
+		exit 1
+	fi
+
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	_SPLIT_APPLY "$X" "$TREE1" "$STATE_BRANCH" "$(git rev-parse "$STATE_BRANCH")" "$MSG"
+	_CLEAR_STATE
+	PRINT_COMPLETED "$SPLIT_NEW_HEAD" "$SPLIT_REF" true
+}
+
+_ABORT_SPLIT () {
+	PRINT_ACTION "Aborting split of %s..." "${STATE_TARGET:0:7}"
+
+	if [ -d "$STATE_WORKTREE" ]; then
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	PRINT_TEXT "%s" 32 "Split aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
 # Reorders a contiguous span of commits. The positional args give the desired
@@ -1967,14 +2156,32 @@ _LOAD_STATE () {
 	done < "$SF"
 }
 
+# Sidecar holding a paused split's --text, alongside the state file
+_SPLIT_MSG_PATH () {
+	local SF
+	SF=$(_STATE_FILE_PATH) || return 1
+	echo "$SF-msg"
+}
+
 _CLEAR_STATE () {
 	local SF=$(_STATE_FILE_PATH)
-	[ -n "$SF" ] && rm -f "$SF"
+	[ -n "$SF" ] && rm -f "$SF" "$SF-msg"
 }
 
 _STATE_EXISTS () {
 	local SF=$(_STATE_FILE_PATH)
 	[ -n "$SF" ] && [ -f "$SF" ]
+}
+
+# `--continue`/`--abort` are often run from inside the operation's own
+# worktree, where HEAD is a detached commit rather than the branch – so the
+# trailer's "before" comes from the branch the operation will actually move,
+# not from wherever the script happened to start. A no-op from the main
+# checkout, where the two already agree.
+_REANCHOR_INITIAL_HEAD () {
+	local TIP
+	TIP=$(git rev-parse "${STATE_BRANCH:-HEAD}" 2>/dev/null)
+	[ -n "$TIP" ] && SCRIPT_INITIAL_HEAD=$TIP
 }
 
 # Resume an in-flight --amend-into after the user/agent has resolved the
@@ -2832,7 +3039,7 @@ GIT_SELFTEST () {
 	_ST_RUN --split="$(git rev-parse HEAD~1)" --text="x" -- s1.txt
 	_ST_CHECK "refuses whole-commit pathspec" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'covers every change'
-	_ST_OUT_HAS "single-file split points at the re-commit recipe" 'reset --mixed HEAD'
+	_ST_OUT_HAS "single-file split points at the content form" 'drop the pathspec and split by content'
 
 	# --- 19. empty-step pause: guidance + skip, plus graceful no-op continue ---
 	echo -e "\e[1;96m[19] empty-step guidance\e[0m"
@@ -3174,6 +3381,63 @@ GIT_SELFTEST () {
 	_ST_EQ "abort exits 0" "$RC" "0"
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$ED_TIP2"
 
+	# --- 30. content split: pause, author the split point, continue ---
+	echo -e "\e[1;96m[30] content split (same-file halves)\e[0m"
+	git reset -q --hard
+	printf 'first\nsecond\n' > cs.txt && git add cs.txt && git commit -qm "CS base"
+	printf 'FIRST\nsecond\nthird\n' > cs.txt && git add cs.txt && git commit -qm "CS mixed commit"
+	local CS_TARGET=$(git rev-parse HEAD)
+	echo "cs-later" > cs2.txt && git add cs2.txt && git commit -qm "CS later"
+	local CS_TIP=$(git rev-parse HEAD)
+	local CS_TIP_TREE=$(git rev-parse 'HEAD^{tree}')
+	_ST_RUN --split="$CS_TARGET"
+	_ST_EQ "pathspec-less split pauses (exit 2)" "$RC" "2"
+	_ST_OUT_HAS "emits a paused trailer" 'git-edit: paused — split'
+	_ST_EQ "branch untouched while authoring" "$(git rev-parse HEAD)" "$CS_TIP"
+	local CS_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused — split [0-9a-f]* in \(.*\); then.*/\1/p')
+	_ST_CHECK "worktree sits at the target" test "$(git -C "$CS_WT" rev-parse HEAD)" = "$CS_TARGET"
+	_ST_RUN --status
+	_ST_OUT_HAS "status names the authoring phase" 'Authoring phase'
+	_ST_OUT_HAS "status reports it as paused, not conflicted" 'git-edit: paused — split'
+	_ST_RUN --continue
+	_ST_EQ "continue without a message refused" "$RC" "1"
+	_ST_OUT_HAS "asks for --text" 'needs a message'
+	_ST_RUN --continue --text "CS extracted"
+	_ST_EQ "unedited worktree refused" "$RC" "1"
+	_ST_OUT_HAS "names the empty remainder" 'remainder commit would be empty'
+	echo "debris" > "$CS_WT/cs-stray.txt"
+	_ST_RUN --continue --text "CS extracted"
+	_ST_EQ "stray path refused" "$RC" "1"
+	_ST_OUT_HAS "names the stray path" 'cs-stray.txt'
+	rm -f "$CS_WT/cs-stray.txt"
+	printf 'first\nsecond\n' > "$CS_WT/cs.txt"
+	_ST_RUN --continue --text "CS extracted"
+	_ST_EQ "worktree back at the parent refused" "$RC" "1"
+	_ST_OUT_HAS "names the empty extraction" 'extracted commit would be empty'
+	# The real split point: the uppercase half only, third line left for the remainder
+	printf 'FIRST\nsecond\n' > "$CS_WT/cs.txt"
+	# A commit landing on the branch during authoring must be absorbed
+	echo "cs-mid" > cs-mid.txt && git add cs-mid.txt && git commit -qm "CS mid-pause"
+	# Run the final continue from inside the worktree – its detached HEAD must
+	# not stand in for the branch as the trailer's "before"
+	local CS_PRE=$(git rev-parse HEAD)
+	OUT=$(cd "$CS_WT" && GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue --text "CS extracted" </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "continue completes the split" "$RC" "0"
+	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_OUT_HAS "trailer anchors on the branch, not the worktree HEAD" "moved $CS_PRE"
+	_ST_CHECK "mid-pause commit absorbed" sh -c "git log --format=%s | grep -q 'CS mid-pause'"
+	local CS_KEPT=$(git log --format='%H %s' | grep 'CS mixed commit' | cut -d' ' -f1)
+	_ST_EQ "extracted commit sits below the remainder" "$(git log --format=%s -1 "$CS_KEPT^")" "CS extracted"
+	_ST_EQ "extracted carries only the first half" "$(git show "$CS_KEPT^:cs.txt")" "$(printf 'FIRST\nsecond')"
+	_ST_EQ "remainder carries the rest" "$(git show "${CS_KEPT}:cs.txt")" "$(printf 'FIRST\nsecond\nthird')"
+	_ST_CHECK "descendants rebuilt" git cat-file -e 'HEAD:cs2.txt'
+	_ST_CHECK "worktree cleaned up" test ! -d "$CS_WT"
+	_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	# The tip tree is only unchanged relative to the pre-split tip, so compare
+	# against the commit that was HEAD before the mid-pause commit landed
+	_ST_EQ "pre-split tip tree preserved" "$(git rev-parse 'HEAD~1^{tree}')" "$CS_TIP_TREE"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3259,22 +3523,26 @@ if [ ${#OPT_CONTINUE} -gt 0 ] && [ ${#OPT_ABORT} -gt 0 ]; then
 fi
 if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	_LOAD_STATE
+	_REANCHOR_INITIAL_HEAD
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		reorder)    _CONTINUE_REORDER ;;
 		rebase)     _CONTINUE_REBASE ;;
 		edit)       _CONTINUE_EDIT ;;
+		split)      _CONTINUE_SPLIT ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
 fi
 if [ ${#OPT_ABORT} -gt 0 ]; then
 	_LOAD_STATE
+	_REANCHOR_INITIAL_HEAD
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
 		reorder)    _ABORT_REORDER ;;
 		rebase)     _ABORT_REBASE ;;
 		edit)       _ABORT_EDIT ;;
+		split)      _ABORT_SPLIT ;;
 		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
 	esac
 	exit 0
@@ -3597,20 +3865,20 @@ if [ ${#OPT_SPLIT} -gt 0 ]; then
 	if [ "$1" = "--" ]; then
 		shift
 	fi
-	if [ $# -eq 0 ]; then
-		USAGE
-		PRINT_ERR "--split requires a pathspec (use -- to separate it from flags)"
-		exit 1
-	fi
-	if [ -z "$TEXT_VALUE" ]; then
-		PRINT_ERR "--split requires --text for the extracted commit's message"
-		exit 1
-	fi
 	if ! git rev-parse --quiet --verify "$SPLIT_TARGET^{commit}" >/dev/null 2>&1; then
 		PRINT_ERR "Unknown <sha>: $SPLIT_TARGET"
 		exit 1
 	fi
 	SPLIT_TARGET=$(git rev-parse "$SPLIT_TARGET^{commit}")
+	# No pathspec means the halves aren't separable by path – pause and let the
+	# caller author the split point instead of demanding one that can't exist
+	if [ $# -eq 0 ]; then
+		GIT_SPLIT_PAUSE
+	fi
+	if [ -z "$TEXT_VALUE" ]; then
+		PRINT_ERR "--split requires --text for the extracted commit's message"
+		exit 1
+	fi
 	PRINT_ACTION "Splitting %s..." "$SPLIT_TARGET"
 	GIT_SPLIT "$@"
 	PRINT_COMPLETED "$SPLIT_NEW_HEAD" "$SPLIT_REF" true
@@ -3843,8 +4111,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
 	PRINT_TEXT "Worktree at the commit: %s" 33 "$EDIT_WT"
 	PRINT_TEXT "Make your changes there, then %s (add %s to also reword) – or cancel via %s." 33 "git edit --continue" '--text "…"' "git edit --abort"
-	echo "git-edit: paused — edit ${EDIT_TARGET:0:7} in $EDIT_WT; then 'git edit --continue' or 'git edit --abort'"
-	_STATUS_EMITTED=true
+	EMIT_PAUSED edit "$EDIT_TARGET" "$EDIT_WT"
 	exit 2
 fi
 
