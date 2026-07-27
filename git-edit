@@ -3438,6 +3438,21 @@ GIT_SELFTEST () {
 	# against the commit that was HEAD before the mid-pause commit landed
 	_ST_EQ "pre-split tip tree preserved" "$(git rev-parse 'HEAD~1^{tree}')" "$CS_TIP_TREE"
 
+	# --- 31. argument mistakes name the right form instead of dead-ending ---
+	echo -e "\e[1;96m[31] argument-error guidance\e[0m"
+	_ST_RUN -M "Some prose that is a message, not a commit"
+	_ST_EQ "prose in the <commit> slot refused" "$RC" "1"
+	_ST_OUT_HAS "points at --text" 'pass it as --text'
+	_ST_RUN -M --text="Some subject"
+	_ST_EQ "missing commit refused" "$RC" "1"
+	_ST_OUT_HAS "names the missing argument" 'Missing <commit>'
+	_ST_RUN --amend-into=HEAD -M
+	_ST_EQ "--amend-into + -M refused" "$RC" "1"
+	_ST_OUT_HAS "points at the reword form" 'To reword instead'
+	_ST_RUN
+	_ST_EQ "bare invocation still exits 1" "$RC" "1"
+	_ST_OUT_HAS "bare invocation still shows usage" 'usage: git edit'
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -3663,6 +3678,9 @@ fi
 if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
+	if [ ${#OPT_REWORD} -gt 0 ]; then
+		echo -e "\e[0;31m  To reword instead: git edit -M --text=\"…\" <sha>\e[0m" >&2
+	fi
 	exit 1
 fi
 if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
@@ -3888,8 +3906,14 @@ fi
 COMMITS=()
 
 if [ $# -eq 0 ]; then
-	# No args – just show help. The required `<commit>` is obvious from the
-	# usage block; a separate error message would be redundant.
+	# A bare `git edit` is a request for help, and the usage block already makes
+	# the required `<commit>` obvious. But with a mode flag given, the caller
+	# meant to do something and only left the target off – name that, rather
+	# than making them find it in a screen of usage
+	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o -n "$TEXT_VALUE" ]; then
+		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" HEAD')"
+		exit 1
+	fi
 	USAGE
 	exit 1
 fi
@@ -3918,6 +3942,12 @@ for ARG in "$@"; do
 		# Handle single commits
 		if ! git rev-parse --quiet --verify "$ARG" >/dev/null 2>&1; then
 			PRINT_ERR "Unknown <commit>: $ARG"
+			# A message passed where the commit goes – the mistake every mode
+			# that takes both invites, and nothing about "unknown commit" hints
+			# at the real fix
+			if [[ "$ARG" == *" "* ]]; then
+				echo -e "\e[0;31m  That looks like a message – pass it as --text \"…\" and give the commit separately.\e[0m" >&2
+			fi
 			exit 1
 		fi
 		COMMITS+=($(git rev-parse "$ARG"))
