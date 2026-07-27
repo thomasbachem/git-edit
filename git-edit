@@ -1223,7 +1223,7 @@ GIT_AMEND_INTO () {
 	# staged state (a whole-index reset would silently wipe it).
 	git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
 
-	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES"
+	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR"
 
 	# Export new HEAD + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
@@ -1344,7 +1344,7 @@ _RESOLVE_AMEND_TARGET () {
 # Prints the amended commit's stat after a completed --amend-into, so the
 # caller doesn't need a follow-up `git show` to verify where the fold landed.
 _PRINT_AMENDED_SUMMARY () {
-	# args: <new_head> <depth> <folded-files-comma-separated>
+	# args: <new_head> <depth> <folded-files-comma-separated> [<main-checkout>]
 	local AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
 	[ -z "$AMENDED" ] && return 0
 	if [ -n "$3" ]; then
@@ -1353,6 +1353,32 @@ _PRINT_AMENDED_SUMMARY () {
 		PRINT_TEXT "%s" 32 "Amended commit:"
 	fi
 	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	_PRINT_LEFTOVER_STATE "$4"
+}
+
+# States what the fold left behind in the main checkout. A fold consumes the
+# staged changes and nothing else, but the caller can't see that from here –
+# and "did my WIP survive?" was the single most common follow-up probe, so
+# answer it rather than making them run `git status` for it. The fold itself
+# runs from an isolated worktree, so this must read the caller's checkout by
+# path – reporting the worktree's own state would be a confident wrong answer,
+# which is worse than printing nothing (hence the silent return).
+_PRINT_LEFTOVER_STATE () {
+	local D=$1
+	[ -z "$D" ] || [ ! -d "$D" ] && return 0
+	local STAGED=$(git -C "$D" diff --cached --name-only 2>/dev/null | grep -c .)
+	local UNSTAGED=$(git -C "$D" diff --name-only 2>/dev/null | grep -c .)
+	local UNTRACKED=$(git -C "$D" ls-files --others --exclude-standard 2>/dev/null | grep -c .)
+	local PARTS=""
+	[ "$UNSTAGED" -gt 0 ]  && PARTS="$UNSTAGED modified"
+	[ "$UNTRACKED" -gt 0 ] && PARTS="${PARTS:+$PARTS, }$UNTRACKED untracked"
+	if [ "$STAGED" -gt 0 ]; then
+		# Anything still staged wasn't part of the fold – worth flagging, since
+		# the caller expects the index emptied
+		PRINT_TEXT "Left staged: %s file(s) – not folded." 33 "$STAGED"
+	else
+		PRINT_TEXT "Index now empty; working tree keeps %s." 32 "${PARTS:-no changes}"
+	fi
 }
 
 # Shared pre-flight for both split paths: resolves a <sha> an earlier rewrite
@@ -1813,12 +1839,14 @@ SEQEOF
 
 	# Completion summary: tree identity (clean reorders preserve the tip tree;
 	# conflict resolutions may not) + the rewritten span in its new order
+	# Listed oldest-first, the same direction `--reorder` takes its arguments –
+	# reporting newest-first sent callers to `git log --reverse` to re-read it
 	if git diff --quiet "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null; then
-		PRINT_TEXT "%s – new order:" 32 "Tip tree identical ✓"
+		PRINT_TEXT "%s – new order (oldest-first):" 32 "Tip tree identical ✓"
 	else
-		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order:"
+		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
 	fi
-	git log --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+	git log --reverse --format='  %h %s' -"$TOTAL" HEAD | head -12 | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
 
 	REORDER_NEW_HEAD=$NEW_HEAD
 	REORDER_REF=$REF
@@ -2257,7 +2285,7 @@ _CONTINUE_AMEND_INTO () {
 		fi
 	fi
 
-	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" ""
+	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "" "$STATE_MAINDIR"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -2496,6 +2524,16 @@ GIT_REWORD () {
 	# Plumbing rebuilds reuse every commit's tree object verbatim, so this
 	# holds by construction – stated so callers don't re-verify with a diff
 	PRINT_TEXT "%s – only messages were rewritten." 32 "Trees unchanged by construction ✓"
+	# The message is the entire point of the mode, so show the one that landed –
+	# otherwise the caller reads it back with `git log` to be sure it took
+	local REWORDED=$(git rev-parse "$PREV_NEW~$(git rev-list --count "$TARGET..$ORIG_HEAD")" 2>/dev/null)
+	if [ -n "$REWORDED" ]; then
+		git log -1 --format='  %h %s' "$REWORDED" | sed $'s/^/\e[0;90m/;s/$/\e[0m/'
+		local BODY_LINES=$(git log -1 --format='%b' "$REWORDED" | grep -c .)
+		if [ "$BODY_LINES" -gt 0 ]; then
+			git log -1 --format='%b' "$REWORDED" | grep . | sed $'s/^/\e[0;90m    /;s/$/\e[0m/'
+		fi
+	fi
 }
 
 # Squash a contiguous range of commits into one via plumbing only. Like
@@ -2818,6 +2856,7 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
 	_ST_OUT_HAS "states tree identity" 'Trees unchanged by construction'
+	_ST_OUT_HAS "echoes the resulting subject" '[0-9a-f]\{7\} C reworded'
 	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
@@ -2846,6 +2885,7 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
 	_ST_OUT_HAS "prints folded summary" 'Folded'
+	_ST_OUT_HAS "reports the leftover checkout state" 'Index now empty'
 	_ST_EQ "change landed in C" "$(git show 'HEAD~2:a.txt')" "alpha folded"
 	_ST_CHECK "index clean afterwards" git diff --cached --quiet
 	_ST_CHECK "no fixup commit on branch" test -z "$(git log --format=%s | grep '^fixup!')"
@@ -2954,6 +2994,7 @@ GIT_SELFTEST () {
 	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "states tree identity" 'Tip tree identical'
+	_ST_OUT_HAS "lists the new order oldest-first" 'new order (oldest-first)'
 	_ST_EQ "order swapped" "$(git log --format=%s -2 | tr '\n' ' ')" "X commit Y commit "
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 
