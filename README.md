@@ -68,6 +68,8 @@ git edit --continue                      # amend + replay descendants + CAS-appl
 git edit --continue --text "New subject" # the same, also rewording
 ```
 
+Because the content was authored in the isolated worktree, a successful apply leaves your **main checkout holding the pre-edit file** — and its index holding that as a staged revert. `git edit` names the affected paths and the targeted `git restore --source=HEAD --staged --worktree -- <paths>` rather than a blanket reset, which would take unrelated WIP with it.
+
 On completion the **net history change** is printed (`git diff --stat` old-tip → new-tip) — the at-a-glance proof that history differs by exactly your edit. The replay source is re-read at `--continue` time, so commits that landed on the branch during authoring are carried along rather than dropped; the branch itself never moves until the final CAS, so `--abort` has nothing to roll back.
 
 ### Merging
@@ -301,7 +303,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~253 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~261 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

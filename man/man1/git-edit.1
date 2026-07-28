@@ -77,7 +77,11 @@ there (clean of any main\-checkout WIP), then
 (optionally with
 .B \-\-text
 to also reword) amends, replays, prints the net history change, and
-CAS\-applies. The branch never moves before the final apply.
+CAS\-applies. The branch never moves before the final apply. The edit was
+authored in that worktree, so the main checkout is left holding the pre\-edit
+content; the affected paths and a targeted
+.B git\-restore
+command are printed.
 .TP
 .B \-M, \-\-reword
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,

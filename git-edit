@@ -2088,6 +2088,33 @@ _ABORT_REBASE () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
+# Names what edit mode left stale – it authors in an isolated worktree, so an apply leaves
+# checkout on the pre-edit content, its index holding that as a staged revert a later
+# commit would carry – name the paths, since a blanket reset takes unrelated WIP
+_PRINT_EDIT_RECONCILE_HINT () {
+	# Args: <main checkout> <base> <new head>
+	local MAIN=$1
+	if [ -z "$MAIN" ] || [ ! -d "$MAIN" ]; then
+		return 0
+	fi
+	local -a STALE
+	local P
+	while IFS= read -r P; do
+		[ -z "$P" ] && continue
+		if ! git -C "$MAIN" diff --quiet HEAD -- "$P" 2>/dev/null || \
+		   ! git -C "$MAIN" diff --cached --quiet HEAD -- "$P" 2>/dev/null; then
+			STALE+=("$P")
+		fi
+	done < <(git diff --name-only "$2" "$3" 2>/dev/null)
+	if [ ${#STALE[@]} -eq 0 ]; then
+		return 0
+	fi
+	PRINT_TEXT "Your checkout still holds the pre-edit content of:" 33
+	printf '%s\n' "${STALE[@]}" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 33 \
+		"git restore --source=HEAD --staged --worktree -- ${STALE[*]}"
+}
+
 # Replays the edited target's descendants onto the amended commit, from the
 # branch's CURRENT tip – re-read here so commits that landed after the pause
 # are carried rather than dropped. Exits 2 on conflict; returns on success
@@ -2095,7 +2122,8 @@ _ABORT_REBASE () {
 _EDIT_START_REPLAY () {
 	local TIP=$(git rev-parse "$STATE_BRANCH")
 	_SAVE_STATE "operation=edit" "worktree=$STATE_WORKTREE" "branch=$STATE_BRANCH" \
-		"orig_head=$STATE_ORIG_HEAD" "target=$STATE_TARGET" "amended=$STATE_AMENDED" "replay_tip=$TIP"
+		"orig_head=$STATE_ORIG_HEAD" "target=$STATE_TARGET" "amended=$STATE_AMENDED" "replay_tip=$TIP" \
+		"maindir=$STATE_MAINDIR"
 	STATE_REPLAY_TIP=$TIP
 	if [ "$TIP" = "$STATE_TARGET" ]; then
 		# Target is the tip itself – the amended commit is the whole result
@@ -2196,6 +2224,7 @@ _CONTINUE_EDIT () {
 	# my edit?" verification the caller would otherwise run
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
 	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
+	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -3771,6 +3800,32 @@ GIT_SELFTEST () {
 	_ST_CHECK "out-of-scope file never folded" sh -c "test \"\$(git show \$(git log --format='%H %s' | grep 'SF target' | cut -d' ' -f1):sf-other.txt)\" = keep"
 	git reset -q --hard
 
+	# --- 37. edit mode must report the stale checkout it leaves behind ---
+	echo -e "\e[1;96m[37] edit-mode checkout staleness\e[0m"
+	git reset -q --hard
+	printf 'ed1\nSTALE-ME\ned3\n' > stale.js && git add stale.js && git commit -qm "STALE target"
+	local STALE_T=$(git rev-parse HEAD)
+	echo "stale-later" > stale-later.txt && git add stale-later.txt && git commit -qm "STALE later" >/dev/null 2>&1
+	_ST_EQ "target has a descendant to replay" "$(git rev-list --count ${STALE_T}..HEAD)" "1"
+	_ST_RUN "$STALE_T"
+	local STALE_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused — edit [0-9a-f]* in \(.*\); then.*/\1/p')
+	printf 'ed1\nEDITED\ned3\n' > "$STALE_WT/stale.js"
+	_ST_RUN --continue
+	_ST_EQ "edit applies" "$RC" "0"
+	# The trap: content was authored in the isolated worktree, so the main
+	# checkout still has the old file – and staged as a revert of the edit
+	_ST_CHECK "checkout really is stale" sh -c "test \"\$(sed -n 2p stale.js)\" = STALE-ME"
+	_ST_OUT_HAS "warns the checkout is stale" 'still holds the pre-edit content'
+	_ST_OUT_HAS "names the stale path" 'stale\.js'
+	git restore --source=HEAD --staged --worktree -- stale.js
+	_ST_CHECK "the printed reconcile fixes it" sh -c "test \"\$(sed -n 2p stale.js)\" = EDITED"
+	_ST_CHECK "and clears the staged revert" sh -c "git diff --cached --quiet -- stale.js"
+	# A message-only edit changes no content, so it must not cry wolf
+	_ST_RUN "$(git rev-parse HEAD)"
+	_ST_RUN --continue --text "STALE later, reworded"
+	_ST_OUT_LACKS "no stale hint when content is unchanged" 'still holds the pre-edit content'
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -4456,7 +4511,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		exit 1
 	fi
 	_SAVE_STATE "operation=edit" "worktree=$EDIT_WT" "branch=refs/heads/$EDIT_BRANCH" \
-		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET"
+		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)"
 	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
 	PRINT_TEXT "Worktree at the commit: %s" 33 "$EDIT_WT"
 	PRINT_TEXT "Make your changes there, then %s (add %s to also reword) – or cancel via %s." 33 "git edit --continue" '--text "…"' "git edit --abort"
