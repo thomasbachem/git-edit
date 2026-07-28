@@ -235,6 +235,8 @@ The worktree holds the commit's **own** content. Edit it back to what the first 
 
 From there it's the pathspec path's plumbing: the authored tree becomes the extracted commit, the target's own tree the remainder, descendants rebuilt on top, one CAS. The pair still ends at the target's tree, so this can't conflict either — and because it reads the branch at `--continue` time, a commit that landed during the pause is carried rather than dropped. `--continue` refuses rather than committing nonsense when either half would come out empty, when the worktree touches a path the target never did (the remainder would only revert it), or when the target itself was rewritten mid-pause. The remainder inherits the original message, written for the whole change — reword it afterwards with `git edit -M`.
 
+`--continue` refuses while a staged file still carries `<<<<<<<`/`=======`/`>>>>>>>`, naming the file. That catches the common agent failure: a resolver script dies quietly, a blanket `git add` in the same command stages the markers verbatim, and the rebase would otherwise accept them as the resolution and advance to the next step.
+
 ### Reordering Commits (`--reorder`)
 
 Pass a contiguous span of commits in the **desired new order** (oldest-first):
@@ -299,7 +301,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~235 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~242 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 

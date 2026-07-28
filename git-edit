@@ -1943,6 +1943,7 @@ _CONTINUE_REORDER () {
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
+		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
@@ -2000,6 +2001,7 @@ _CONTINUE_REBASE () {
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
+		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
@@ -2091,6 +2093,7 @@ _CONTINUE_EDIT () {
 
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
 		# Mid-replay conflict
+		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
@@ -2264,6 +2267,33 @@ _STATE_EXISTS () {
 	[ -n "$SF" ] && [ -f "$SF" ]
 }
 
+# Refuses to resume while a staged file still carries conflict markers. The
+# failure mode this catches: a resolver script dies silently (a shell variable
+# that never reached it, say), a blanket `git add` in the same command stages
+# the file markers and all, and `rebase --continue` accepts that as the
+# resolution – baking `<<<<<<<` into history and advancing to the next step.
+# Reads the staged blob rather than the working file, since that is what would
+# be committed.
+_GUARD_RESOLUTION_CLEAN () {
+	local WT=$1
+	local -a BAD
+	local FILE
+	while IFS= read -r FILE; do
+		[ -z "$FILE" ] && continue
+		if git -C "$WT" show ":$FILE" 2>/dev/null | grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)'; then
+			BAD+=("$FILE")
+		fi
+	done < <(git -C "$WT" diff --cached --name-only 2>/dev/null)
+	if [ ${#BAD[@]} -gt 0 ]; then
+		_CLEANUP_HOOK=""
+		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
+		printf '%s\n' "${BAD[@]}" | sed $'s/^/\e[0;31m  /;s/$/\e[0m/' >&2
+		echo -e "\e[0;31m  Strip them in $WT, re-stage, then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
+		EMIT_CONFLICT "$WT" "${(j:,:)BAD}"
+		exit 2
+	fi
+}
+
 # `--continue`/`--abort` are often run from inside the operation's own
 # worktree, where HEAD is a detached commit rather than the branch – so the
 # trailer's "before" comes from the branch the operation will actually move,
@@ -2307,6 +2337,7 @@ _CONTINUE_AMEND_INTO () {
 		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
+		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1; then
@@ -3601,6 +3632,32 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "continue path prints the new order too" 'new order (oldest-first)'
 	_ST_OUT_HAS "reports the dropped commit" 'resolved to empty and were dropped'
 	_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	git reset -q --hard
+
+	# --- 34. a staged resolution with conflict markers must not continue ---
+	echo -e "\e[1;96m[34] conflict-marker guard\e[0m"
+	git reset -q --hard
+	printf 'm1\nm2\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK base"
+	printf 'm1\nMT\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK target"
+	local MK_TARGET=$(git rev-parse HEAD)
+	printf 'm1\nML\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK later"
+	printf 'm1\nMS\nm3\n' > mk.txt && git add mk.txt
+	_ST_RUN --amend-into="$MK_TARGET"
+	_ST_EQ "fold conflicts as set up" "$RC" "2"
+	local MK_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	_ST_CHECK "worktree file carries markers" sh -c "grep -q '^<<<<<<<' '$MK_WT/mk.txt'"
+	# The mistake this guards: a failed resolver, then a blanket `git add`
+	git -C "$MK_WT" add mk.txt
+	_ST_RUN --continue
+	_ST_EQ "continue refused (exit 2)" "$RC" "2"
+	_ST_OUT_HAS "names the marker problem" 'still contains conflict markers'
+	_ST_CHECK "markers never reached history" sh -c "! git log -p --all | grep -q '^+<<<<<<< '"
+	# A marker-free resolution is not blocked
+	printf 'm1\nMS\nm3\n' > "$MK_WT/mk.txt" && git -C "$MK_WT" add mk.txt
+	_ST_RUN --continue
+	_ST_OUT_LACKS "clean resolution passes the guard" 'still contains conflict markers'
+	_ST_RUN --abort
+	_ST_CHECK "state cleared afterwards" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
 	git reset -q --hard
 
 	# --- Summary ---
