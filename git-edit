@@ -697,13 +697,21 @@ _PRINT_REWRITE_APPLY_HINT () {
 		PRINT_TEXT "Branch %s rewritten – tip tree unchanged, your checkout is already current." 32 "$BRANCH"
 		return
 	fi
-	if [ -z "$SCRIPT_INITIAL_HAS_WIP" ]; then
-		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
+	# Reconcile only what the rewrite touched. A blanket `reset --hard` discards
+	# unrelated WIP, and the stash dance this used to print cycles a checkout
+	# parallel sessions share – both risk work the rewrite itself took care not
+	# to touch. `--source=HEAD` also removes paths the rewrite dropped.
+	local -a CHANGED
+	if [ -n "$2" ] && [ -n "$3" ]; then
+		CHANGED=("${(@f)$(git diff --name-only "$2" "$3" 2>/dev/null)}")
+	fi
+	if [ -n "${CHANGED[1]}" ]; then
+		PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
+		printf '%s\n' "${CHANGED[@]}" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+		PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 32 \
+			"git restore --source=HEAD --staged --worktree -- ${CHANGED[*]}"
 	else
-		PRINT_TEXT "Branch %s rewritten – your main checkout has uncommitted changes, so apply with:" 32 "$BRANCH"
-		echo -e "\e[1;92m  git stash push -u -m 'wip before git-edit'\e[0m"
-		echo -e "\e[1;92m  git reset --hard\e[0m"
-		echo -e "\e[1;92m  git stash pop\e[0m"
+		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	fi
 }
 
@@ -717,6 +725,12 @@ GIT_STASH () {
 			eval "$CMD"
 		fi
 	done
+
+	# Nothing to stash – skip the attempt rather than print a `git stash push` that saved
+	# nothing, which in an isolated worktree is always so and reads as the caller's own stash
+	if [ -z "$(git status --porcelain)" ]; then
+		return 0
+	fi
 
 	# Capture current stash SHA (if any) to compare later
 	local OLD_STASH=$(git rev-parse -q --verify refs/stash)
@@ -3824,6 +3838,25 @@ GIT_SELFTEST () {
 	_ST_RUN "$(git rev-parse HEAD)"
 	_ST_RUN --continue --text "STALE later, reworded"
 	_ST_OUT_LACKS "no stale hint when content is unchanged" 'still holds the pre-edit content'
+	git reset -q --hard
+
+	# --- 38. a tree-changing rewrite reconciles per path, never by stashing ---
+	echo -e "\e[1;96m[38] targeted checkout reconcile\e[0m"
+	git reset -q --hard
+	echo "tc-keep" > tc-keep.txt && git add tc-keep.txt && git commit -qm "TC base"
+	echo "tc-drop" > tc-drop.txt && git add tc-drop.txt && git commit -qm "TC to drop"
+	local TC_DROP=$(git rev-parse HEAD)
+	echo "tc-later" > tc-later.txt && git add tc-later.txt && git commit -qm "TC later"
+	echo "local wip" > tc-keep.txt   # unrelated WIP the advice must not disturb
+	_ST_RUN -d -y "$TC_DROP"
+	_ST_EQ "drop exits 0" "$RC" "0"
+	_ST_OUT_HAS "names the stale path" 'tc-drop\.txt'
+	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
+	_ST_OUT_LACKS "never prescribes stashing a shared checkout" 'git stash push'
+	_ST_OUT_LACKS "never prescribes a blanket reset" 'run git reset --hard'
+	git restore --source=HEAD --staged --worktree -- tc-drop.txt
+	_ST_CHECK "the advice removes the dropped file" sh -c "! test -f tc-drop.txt"
+	_ST_EQ "unrelated WIP untouched" "$(cat tc-keep.txt)" "local wip"
 	git reset -q --hard
 
 	# --- Summary ---
