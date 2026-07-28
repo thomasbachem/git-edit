@@ -1850,7 +1850,8 @@ SEQEOF
 
 	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
-	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
+	   ! { _AUTO_RESOLVE_FINAL_REORDER "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$WT" }; then
 		rm -f "$SEQ"
 		# Conflict while replaying – persist state for --continue/--abort.
 		# The branch was never moved, so --abort has nothing to roll back.
@@ -1894,6 +1895,46 @@ SEQEOF
 # Resume an in-flight --reorder after conflict resolution. Mirrors
 # _CONTINUE_AMEND_INTO: continue the rebase in the preserved worktree, then
 # CAS the branch from its (untouched) pre-op tip.
+# A reorder's FINAL step has exactly one correct resolution – the reorder
+# preserves the tree, so the conflicted paths take the pre-op tip's blobs. The
+# tool already derives that and used to print it as homework, costing a
+# round-trip to run a command it had computed. Applying it here is safe because
+# on the last step it is provable before anything is committed: the staged tree
+# becomes the final commit's tree, so it must equal the pre-op tree. Any other
+# shape – earlier step, missing path, tree mismatch – falls through to the
+# manual pause untouched.
+_AUTO_RESOLVE_FINAL_REORDER () {
+	# args: <worktree> <pre-op head>
+	local WT=$1
+	local PREOP=$2
+	[ -z "$PREOP" ] && return 1
+	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
+	[ -z "$GITDIR" ] && return 1
+	local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
+	local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
+	if [ -z "$STEP_NOW" ] || [ "$STEP_NOW" != "$STEP_END" ]; then
+		return 1
+	fi
+	local -a UNMERGED
+	UNMERGED=("${(@f)$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)}")
+	[ -z "${UNMERGED[1]}" ] && return 1
+	local P
+	for P in "${UNMERGED[@]}"; do
+		git -C "$WT" checkout "$PREOP" -- "$P" >/dev/null 2>&1 || return 1
+		git -C "$WT" add -- "$P" >/dev/null 2>&1 || return 1
+	done
+	# The proof: on the last step the staged tree is the result
+	local STAGED_TREE=$(git -C "$WT" write-tree 2>/dev/null)
+	[ -n "$STAGED_TREE" ] && [ "$STAGED_TREE" = "$(git rev-parse "$PREOP^{tree}" 2>/dev/null)" ]
+}
+
+# Finishes a rebase whose final step `_AUTO_RESOLVE_FINAL_REORDER()` just staged
+_FINISH_AUTO_RESOLVED_REORDER () {
+	local WT=$1
+	PRINT_TEXT "%s – restored the pre-op blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)"
+	GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue >/dev/null 2>&1
+}
+
 # Completion summary for both reorder paths: tree identity, the span in its new
 # order (oldest-first, matching how `--reorder` takes its arguments), and a
 # count check. That last one matters most after a hand-resolved conflict –
@@ -1946,7 +1987,8 @@ _CONTINUE_REORDER () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1; then
+		if ! eval "$CMD" >/dev/null 2>&1 && \
+		   ! { _AUTO_RESOLVE_FINAL_REORDER "$STATE_WORKTREE" "$STATE_ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$STATE_WORKTREE" }; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3387,13 +3429,13 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "intermediate step rules out --3way" 'cannot work here'
 	local MV_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
 	printf 'mv-base\nmv-B\n' > "$MV_WT/mv.txt" && git -C "$MV_WT" add mv.txt
+	# The final step is fully determined, so it resolves itself rather than
+	# handing back a command the tool already derived
 	_ST_RUN --continue
-	_ST_EQ "pauses on the final step" "$RC" "2"
-	_ST_OUT_HAS "final-step hint names the pre-op resolution" 'Final step'
-	_ST_OUT_HAS "hint gives a checkout command" 'checkout'
-	git -C "$MV_WT" checkout "$MV_B" -- mv.txt && git -C "$MV_WT" add mv.txt
-	_ST_RUN --continue
-	_ST_EQ "hint resolution completes the move" "$RC" "0"
+	_ST_EQ "final step needs no second continue" "$RC" "0"
+	_ST_OUT_HAS "says it auto-resolved the final step" 'Final step auto-resolved'
+	_ST_OUT_LACKS "no homework left for the caller" 'Final step – a reorder preserves'
+
 	_ST_EQ "tree preserved by the reorder" "$(git rev-parse 'HEAD^{tree}')" "$MV_TREE"
 	_ST_EQ "commits swapped" "$(git log --format=%s -2 | tr '\n' ' ')" "MV A MV B "
 
@@ -3623,12 +3665,10 @@ GIT_SELFTEST () {
 	_ST_EQ "reordering abutting edits conflicts" "$RC" "2"
 	local DR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
 	printf 'd1\nDY\nd3\n' > "$DR_WT/dr.txt" && git -C "$DR_WT" add dr.txt
+	# The final step restores the pre-op blobs by itself, which leaves the
+	# replayed commit empty and the rebase drops it
 	_ST_RUN --continue
-	# Final step: a reorder preserves the tree, so restore the pre-op blobs –
-	# which leaves the replayed commit empty and the rebase drops it
-	git -C "$DR_WT" checkout "$DR_TIP" -- dr.txt && git -C "$DR_WT" add dr.txt
-	_ST_RUN --continue
-	_ST_EQ "resolution completes" "$RC" "0"
+	_ST_EQ "resolution completes in one continue" "$RC" "0"
 	_ST_OUT_HAS "continue path prints the new order too" 'new order (oldest-first)'
 	_ST_OUT_HAS "reports the dropped commit" 'resolved to empty and were dropped'
 	_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
@@ -3658,6 +3698,30 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "clean resolution passes the guard" 'still contains conflict markers'
 	_ST_RUN --abort
 	_ST_CHECK "state cleared afterwards" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+	git reset -q --hard
+
+	# --- 35. the final-step auto-resolve must refuse when it can't prove itself ---
+	echo -e "\e[1;96m[35] auto-resolve proof\e[0m"
+	git reset -q --hard
+	printf 'p1\n' > pa.txt && printf 'q1\n' > pb.txt && git add pa.txt pb.txt && git commit -qm "PR base"
+	printf 'p1\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR A"
+	local PR_A=$(git rev-parse HEAD)
+	printf 'p1\npB\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR B"
+	local PR_B=$(git rev-parse HEAD)
+	_ST_RUN --move="$PR_A" --after="$PR_B"
+	_ST_EQ "abutting swap conflicts" "$RC" "2"
+	local PR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	# Resolve step 1, but also touch a file neither commit changes – the final
+	# step's pre-op blobs then cannot reproduce the pre-op tree, so the proof
+	# fails and it must hand back rather than apply a resolution it can't verify
+	printf 'p1\npB\n' > "$PR_WT/pa.txt"
+	printf 'STRAY\n' > "$PR_WT/pb.txt"
+	git -C "$PR_WT" add pa.txt pb.txt
+	_ST_RUN --continue
+	_ST_EQ "unprovable final step still pauses" "$RC" "2"
+	_ST_OUT_LACKS "never claims an unproven auto-resolve" 'auto-resolved'
+	_ST_RUN --abort
+	_ST_CHECK "abort leaves no state" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
 	git reset -q --hard
 
 	# --- Summary ---

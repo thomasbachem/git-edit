@@ -130,7 +130,9 @@ never did, or when \fIsha\fR was rewritten mid\-pause.
 .B \-\-reorder \fIcommit\fR...
 Reorder a contiguous span; the positional arguments give the desired new
 order, oldest\-first. Runs in an isolated worktree; the branch ref moves only
-at the end.
+at the end. A conflict on the final step resolves itself \(em the reorder
+preserves the tree, so the pre\-op blobs are the answer and the staged tree
+proves it before anything is committed; an unprovable case pauses as usual.
 .TP
 .B \-\-move=\fIsha\fR {\fB\-\-after=\fR\fIanchor\fR | \fB\-\-before=\fR\fIanchor\fR}
 Reposition one commit directly after (or before) \fIanchor\fR. The minimal
