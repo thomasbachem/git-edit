@@ -681,11 +681,8 @@ GIT_STATUS_REPORT () {
 }
 
 # After a worktree-isolated rewrite, the main checkout still reflects the
-# pre-rewrite tree. Print the right command(s) to bring it into sync — a
-# bare `git reset --hard` is safe when the checkout was clean at script
-# start, but would clobber uncommitted WIP otherwise, so we suggest a
-# stash/reset/pop dance. Depends on $SCRIPT_INITIAL_HAS_WIP, captured in
-# the argument-parsing section before any modification.
+# pre-rewrite tree. Name the paths the rewrite actually changed and the
+# targeted restore that syncs exactly those.
 _PRINT_REWRITE_APPLY_HINT () {
 	# args: <branch-name> [<old-head> <new-head>]
 	local BRANCH="$1"
@@ -707,9 +704,12 @@ _PRINT_REWRITE_APPLY_HINT () {
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
 		PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
-		printf '%s\n' "${CHANGED[@]}" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+		printf '%s\n' "${CHANGED[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	if [ ${#CHANGED[@]} -gt 10 ]; then
+		PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
+	fi
 		PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 32 \
-			"git restore --source=HEAD --staged --worktree -- ${CHANGED[*]}"
+			"git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
 	else
 		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	fi
@@ -2124,15 +2124,17 @@ _PRINT_EDIT_RECONCILE_HINT () {
 		return 0
 	fi
 	PRINT_TEXT "Your checkout still holds the pre-edit content of:" 33
-	printf '%s\n' "${STALE[@]}" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	printf '%s\n' "${STALE[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	if [ ${#STALE[@]} -gt 10 ]; then
+		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} - 10 ))"
+	fi
 	PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 33 \
-		"git restore --source=HEAD --staged --worktree -- ${STALE[*]}"
+		"git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)STALE[@]}}"
 }
 
-# Replays the edited target's descendants onto the amended commit, from the
-# branch's CURRENT tip – re-read here so commits that landed after the pause
-# are carried rather than dropped. Exits 2 on conflict; returns on success
-# with the worktree HEAD at the replayed tip.
+# Replays the edited target's descendants onto the amended commit, from the branch's current
+# tip – re-read here so commits that landed after the pause are carried, not dropped
+# Exits 2 on conflict, returns on success with the worktree `HEAD` at the replayed tip
 _EDIT_START_REPLAY () {
 	local TIP=$(git rev-parse "$STATE_BRANCH")
 	_SAVE_STATE "operation=edit" "worktree=$STATE_WORKTREE" "branch=$STATE_BRANCH" \
@@ -3858,6 +3860,17 @@ GIT_SELFTEST () {
 	_ST_CHECK "the advice removes the dropped file" sh -c "! test -f tc-drop.txt"
 	_ST_EQ "unrelated WIP untouched" "$(cat tc-keep.txt)" "local wip"
 	git reset -q --hard
+	# A path with a space must come out shell-quoted, or the printed command
+	# parses as several pathspecs and matches none of them
+	echo "tc-b2" > tc-b2.txt && git add tc-b2.txt && git commit -qm "TC base2"
+	mkdir -p "tc dir" && echo "spaced" > "tc dir/tc file.txt"
+	git add "tc dir/tc file.txt" && git commit -qm "TC spaced drop"
+	local TC_SP=$(git rev-parse HEAD)
+	echo "tc-after" > tc-after.txt && git add tc-after.txt && git commit -qm "TC after"
+	_ST_RUN -d -y "$TC_SP"
+	_ST_EQ "drop with a spaced path exits 0" "$RC" "0"
+	_ST_OUT_HAS "shell-quotes the spaced path" "restore.*'tc dir/tc file.txt'"
+	git reset -q --hard
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
@@ -3901,25 +3914,14 @@ if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
 	exit 0
 fi
 
-# Capture HEAD before any modification, for the status trailer's old_head
-# field. Stays empty outside a git repo / in an empty repo; the script will
-# fail later on commit resolution in that case, so we never reach the trailer.
+# Capture `HEAD` before any modification, for the status trailer's `old_head` field – stays
+# empty outside a git repo or in an empty one, where the script fails later on commit
+# resolution, so the trailer is never reached
 SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
 
-# Capture WIP state of the main checkout *before* we modify anything. Used by
-# the apply-hint helper after a worktree-isolated rewrite — after the rewrite,
-# `git status` in main would also report the rewrite itself as "uncommitted",
-# so we can't probe it post-hoc to distinguish real WIP from the pending sync.
-SCRIPT_INITIAL_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null)
-SCRIPT_INITIAL_HAS_WIP=""
-if [ -n "$SCRIPT_INITIAL_TOPLEVEL" ]; then
-	SCRIPT_INITIAL_HAS_WIP=$(git -C "$SCRIPT_INITIAL_TOPLEVEL" status --porcelain 2>/dev/null | head -1)
-fi
-
-# Resolve --text value into TEXT_VALUE. Supports `--text "msg"` (separate arg
-# or after `=`), and `--text -` to read from stdin (multi-line OK).
-# zparseopts splits both forms into [--text, value]; the `=value` form keeps
-# its leading `=` in the value slot, so strip it.
+# Resolves the `--text` value into `TEXT_VALUE` – `--text "msg"` as a separate arg or after
+# an `=`, and `--text -` to read stdin, multi-line included
+# `zparseopts` splits both into [--text, value], the `=value` form keeping its leading `=`
 if [ ${#OPT_TEXT} -gt 0 ]; then
 	if [[ ${#OPT_TEXT} -gt 1 ]]; then
 		TEXT_VALUE=${OPT_TEXT[2]#=}
