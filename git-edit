@@ -743,15 +743,40 @@ _PRINT_UNTRACKED_ABSORB () {
 	fi
 }
 
-# A CAS refusal at apply time means a parallel session landed a commit while
-# this resolution was being worked out. The rewrite can't apply, but the
-# resolution itself is finished and the worktree holds the only copy – so keep
-# it, and keep the state with it, rather than letting the exit trap delete the
-# work and strand a state whose worktree is gone.
-# Every mutating mode refuses while another operation is paused – including the
-# plumbing ones, which touch no worktree and so once slipped through. Starting a
-# second rewrite moves the branch under the paused one, whose CAS then refuses
-# at apply time: safe, but it strands work that was resolvable a moment earlier.
+# Sweeps orphaned temp worktrees – ours go with the operation that made them, so debris
+# from a killed process or a deleted repo – sweep only the provable case, a `.git` pointer
+# whose gitdir is gone, since anything still registered may be a resolution someone wants
+_GC_ORPHANED_WORKTREES () {
+	setopt local_options null_glob
+	local BASE=${TMPDIR:-/tmp}
+	local -a REMOVED
+	local DIR GITDIR
+	for DIR in "${BASE%/}"/git-edit-*; do
+		if [ ! -d "$DIR" ] || [ ! -f "$DIR/.git" ]; then
+			continue
+		fi
+		GITDIR=$(sed -n 's/^gitdir: //p' "$DIR/.git" 2>/dev/null)
+		if [ -z "$GITDIR" ] || [ -e "$GITDIR" ]; then
+			continue
+		fi
+		# A dangling pointer can also mean the repo's volume is merely
+		# unmounted, so only sweep what has sat untouched for a day – `-mtime +1`
+		# truncates to whole days and would mean two, so `-mmin` carries the 24h
+		if [ -z "$(find "$DIR" -maxdepth 0 -mmin +1440 2>/dev/null)" ]; then
+			continue
+		fi
+		if rm -rf "$DIR" 2>/dev/null; then
+			REMOVED+=("${DIR:t}")
+		fi
+	done
+	if [ -n "${REMOVED[1]}" ]; then
+		PRINT_TEXT "Swept %s orphaned temp worktree(s) – their repo is gone" 90 "${#REMOVED[@]}"
+	fi
+}
+
+# Refuses every mutating mode while another operation is paused, the plumbing ones included –
+# starting a second rewrite moves the branch under the paused one, whose CAS then refuses at
+# apply time, which is safe but strands work that was resolvable a moment earlier
 _REQUIRE_NO_INFLIGHT () {
 	if _STATE_EXISTS; then
 		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
@@ -4043,16 +4068,56 @@ GIT_SELFTEST () {
 	_ST_EQ "reword works again afterwards" "$RC" "0"
 	git reset -q --hard
 
+	# --- 43. the orphan sweep takes debris and nothing else ---
+	echo -e "\e[1;96m[43] orphan worktree sweep\e[0m"
+	git reset -q --hard
+	local GCBASE=${TMPDIR:-/tmp}
+	GCBASE=${GCBASE%/}
+	# Provable debris: pointer dangles, and it has sat around for a day
+	local GC_DEAD="$GCBASE/git-edit-gctest-dead.$$"
+	mkdir -p "$GC_DEAD" && echo "gitdir: /nonexistent/repo/.git/worktrees/x" > "$GC_DEAD/.git"
+	touch -t 202601010000 "$GC_DEAD"
+	# Same dangling pointer but fresh – could be an operation starting right now
+	local GC_FRESH="$GCBASE/git-edit-gctest-fresh.$$"
+	mkdir -p "$GC_FRESH" && echo "gitdir: /nonexistent/repo/.git/worktrees/y" > "$GC_FRESH/.git"
+	# Old, but its repo is still there – a paused resolution must never be swept
+	local GC_LIVE="$GCBASE/git-edit-gctest-live.$$"
+	mkdir -p "$GC_LIVE" && echo "gitdir: $(git rev-parse --absolute-git-dir)" > "$GC_LIVE/.git"
+	touch -t 202601010000 "$GC_LIVE"
+	# Any mutating invocation runs the sweep
+	_ST_RUN -M --text="Sweep trigger" HEAD
+	_ST_EQ "the run itself succeeds" "$RC" "0"
+	_ST_CHECK "orphaned debris is swept" sh -c "[ ! -d '$GC_DEAD' ]"
+	_ST_OUT_HAS "and the sweep is reported, never silent" 'Swept.*orphaned temp worktree'
+	_ST_CHECK "a fresh one is left alone" sh -c "[ -d '$GC_FRESH' ]"
+	_ST_CHECK "a registered worktree is never swept" sh -c "[ -d '$GC_LIVE' ]"
+	rm -rf "$GC_FRESH" "$GC_LIVE"
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
 	if [ $FAIL -eq 0 ]; then
 		PRINT_TEXT "%s" 32 "Selftest: all $TOTAL checks passed."
+		# A passing run leaves nothing to inspect, so it takes the scratch repo
+		# and every temp worktree anchored to it along – otherwise each run
+		# seeds exactly the debris the sweep above exists to clean up
+		local WT
+		git -C "$TMP" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | \
+		while IFS= read -r WT; do
+			if [ "$WT" != "$TMP" ]; then
+				rm -rf "$WT" 2>/dev/null
+			fi
+		done
+		cd /
+		rm -rf "$TMP" 2>/dev/null
 		echo "git-edit: ok — selftest $PASS/$TOTAL passed"
 		_STATUS_EMITTED=true
 		return 0
 	else
 		PRINT_TEXT "%s" 31 "Selftest: $FAIL of $TOTAL checks FAILED."
+		# A failing run keeps both – that tree is the evidence
+		PRINT_TEXT "Scratch repo kept for inspection: %s" 33 "$TMP"
 		echo "git-edit: error — selftest $FAIL/$TOTAL failed"
 		_STATUS_EMITTED=true
 		return 1
@@ -4172,13 +4237,14 @@ if [ ${#OPT_SELFTEST} -gt 0 ]; then
 fi
 
 # Past this point every path mutates history, and the standalone commands that
-# resolve a pause (--continue/--abort/--undo/--status) have already exited
+# resolve a pause (--continue/--abort/--undo/--status) have already exited –
+# which also keeps the sweep off the read-only reporting paths
+_GC_ORPHANED_WORKTREES
 _REQUIRE_NO_INFLIGHT
 
-# Extract -C/--dir value. zparseopts with `::` greedily consumes the next word
-# unless it starts with `-`, so `git edit -C HEAD~1` would treat HEAD~1 as the
-# path. We disambiguate: if no `=` was used and the value parses as a git
-# ref/range, the user likely meant it as a commit – re-inject it as positional.
+# Extract the `-C`/`--dir` value – `zparseopts` with `::` greedily consumes the next word
+# unless it starts with `-`, so `git edit -C HEAD~1` would take `HEAD~1` as the path, and
+# without an `=` a value parsing as a git ref is re-injected as a positional instead
 if [ ${#OPT_DIR} -gt 0 ]; then
 	DIR_HAS_EQUALS=false
 	if [[ "${OPT_DIR[1]}" == *"="* ]]; then
