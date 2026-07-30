@@ -237,6 +237,12 @@ empty (its changes are already upstream); skip it with
 then
 .BR "git edit \-\-continue" .
 .PP
+If a parallel session moves the branch while you resolve, the final
+compare\-and\-swap refuses and the rewrite does not apply \(em but the worktree
+and its resolution are kept, not discarded, and named in the error. Redo the
+operation against the new tip after
+.BR "git edit \-\-abort" .
+.PP
 Every conflict\-capable rebase runs with
 .B rerere
 enabled, from the step that conflicts through the one that resolves it, so a

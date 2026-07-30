@@ -743,6 +743,20 @@ _PRINT_UNTRACKED_ABSORB () {
 	fi
 }
 
+# A CAS refusal at apply time means a parallel session landed a commit while
+# this resolution was being worked out. The rewrite can't apply, but the
+# resolution itself is finished and the worktree holds the only copy – so keep
+# it, and keep the state with it, rather than letting the exit trap delete the
+# work and strand a state whose worktree is gone.
+_REFUSE_MOVED_BRANCH () {
+	# args: <branch> <worktree>
+	_CLEANUP_HOOK=""
+	PRINT_ERR "Branch '$1' moved during resolution – refusing to overwrite"
+	PRINT_TEXT "Your resolution is intact in %s" 33 "$2"
+	PRINT_TEXT "It was built on the old tip, so it can't apply – %s, then redo it against the new tip." 33 "git edit --abort"
+	exit 1
+}
+
 GIT_STASH () {
 	# Scan all unmerged paths and auto-stage any that no longer contain conflict markers
 	for FILE in $(git diff --name-only --diff-filter=U); do
@@ -2049,8 +2063,7 @@ _CONTINUE_REORDER () {
 	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
-		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
-		exit 1
+		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "reorder around ${STATE_TARGET:0:7}"
 
@@ -2107,8 +2120,7 @@ _CONTINUE_REBASE () {
 	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
-		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
-		exit 1
+		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_ACTION ${STATE_TARGET:0:7}"
 
@@ -2482,8 +2494,7 @@ _CONTINUE_AMEND_INTO () {
 	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $GUARD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
-		PRINT_ERR "Branch '$STATE_BRANCH' moved during resolution – refusing to overwrite"
-		exit 1
+		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
 
@@ -3980,6 +3991,47 @@ GIT_SELFTEST () {
 	# resolution time records nothing and a re-conflict can't replay the answer
 	local RR_AFTER=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
 	_ST_CHECK "the resolution was recorded for replay" sh -c "[ $RR_AFTER -gt $RR_BEFORE ]"
+	git reset -q --hard
+
+	# --- 42. a CAS refusal keeps the resolution instead of deleting it ---
+	echo -e "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
+	git reset -q --hard
+	printf 'cas one\ncas two\n' > cas.txt && git add cas.txt && git commit -qm "CAS base"
+	local CAS_TARGET=$(git rev-parse HEAD)
+	printf 'cas one\ncas CHANGED\n' > cas.txt && git add cas.txt && git commit -qm "CAS later"
+	printf 'cas one\ncas FOLDED\n' > cas.txt && git add cas.txt
+	_ST_RUN --amend-into="$CAS_TARGET" -- cas.txt
+	_ST_EQ "the fold conflicts" "$RC" "2"
+	local CAS_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	# A parallel session lands a commit while the resolution is being worked out
+	printf 'other work\n' > other.txt && git add other.txt && git commit -qm "CAS parallel commit"
+	# The fold cascades onto the later commit, so resolve until it stops asking
+	local CAS_ROUNDS=0
+	while [ "$RC" = "2" ] && [ $CAS_ROUNDS -lt 4 ]; do
+		CAS_ROUNDS=$((CAS_ROUNDS+1))
+		local CAS_WT_NOW=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+		if [ -z "$CAS_WT_NOW" ] || [ ! -d "$CAS_WT_NOW" ]; then
+			break
+		fi
+		CAS_WT=$CAS_WT_NOW
+		printf 'cas one\ncas RESOLVED\n' > "$CAS_WT/cas.txt"
+		git -C "$CAS_WT" add cas.txt
+		_ST_RUN --continue
+	done
+	_ST_EQ "the CAS refuses the write" "$RC" "1"
+	_ST_OUT_HAS "says the branch moved" 'moved during resolution'
+	# The refusal used to fire the exit trap, deleting the one copy of the work
+	# and leaving a state whose worktree was gone
+	_ST_CHECK "the worktree survives the refusal" sh -c "[ -d '$CAS_WT' ]"
+	_ST_CHECK "and still holds the resolution" sh -c "grep -q 'cas RESOLVED' '$CAS_WT/cas.txt'"
+	_ST_OUT_HAS "points at the surviving worktree" 'resolution is intact'
+	_ST_RUN --status
+	_ST_OUT_LACKS "status is not orphaned" 'worktree is gone'
+	_ST_CHECK "the parallel commit was not clobbered" \
+		sh -c "git log --format=%s | grep -qx 'CAS parallel commit'"
+	_ST_RUN --abort
+	_ST_EQ "abort clears the operation" "$RC" "0"
+	_ST_CHECK "and removes the worktree" sh -c "[ ! -d '$CAS_WT' ]"
 	git reset -q --hard
 
 	# --- Summary ---
