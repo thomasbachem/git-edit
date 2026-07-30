@@ -680,36 +680,44 @@ GIT_STATUS_REPORT () {
 	fi
 }
 
-# After a worktree-isolated rewrite, the main checkout still reflects the
-# pre-rewrite tree. Name the paths the rewrite actually changed and the
-# targeted restore that syncs exactly those.
+# Names what a worktree-isolated rewrite left stale in the main checkout, which still holds
+# names the paths the rewrite changed and the targeted restore that syncs exactly those
 _PRINT_REWRITE_APPLY_HINT () {
-	# args: <branch-name> [<old-head> <new-head>]
+	# Args: <branch-name> [<old-head> <new-head>] [<action>]
 	local BRANCH="$1"
-	# A pure history rewrite leaves the tip tree byte-identical – the checkout
-	# already matches it, so there is nothing to apply (and following the
-	# stash/reset dance would pointlessly cycle any unrelated WIP)
+	local ACTION_NAME="$4"
+	# A pure history rewrite leaves the tip tree byte-identical, so the checkout already
+	# matches and a stash/reset dance would cycle unrelated WIP for nothing
 	if [ -n "$2" ] && [ -n "$3" ] && \
 	   [ "$(git rev-parse "$2^{tree}" 2>/dev/null)" = "$(git rev-parse "$3^{tree}" 2>/dev/null)" ]; then
 		PRINT_TEXT "Branch %s rewritten – tip tree unchanged, your checkout is already current." 32 "$BRANCH"
 		return
 	fi
-	# Reconcile only what the rewrite touched. A blanket `reset --hard` discards
-	# unrelated WIP, and the stash dance this used to print cycles a checkout
-	# parallel sessions share – both risk work the rewrite itself took care not
-	# to touch. `--source=HEAD` also removes paths the rewrite dropped.
+	# Reconcile only what the rewrite touched – a blanket `reset --hard` discards unrelated
+	# WIP and a stash dance cycles a checkout parallel sessions share, both risking work the
+	# rewrite took care not to touch, while `--source=HEAD` also removes paths it dropped
 	local -a CHANGED
 	if [ -n "$2" ] && [ -n "$3" ]; then
 		CHANGED=("${(@f)$(git diff --name-only "$2" "$3" 2>/dev/null)}")
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
-		PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
+		# A drop is the one rewrite whose leftover paths are the point rather than staleness –
+		# its content lands back as uncommitted work, so the restore is offered as an opt-in
+		if [ "$ACTION_NAME" = "drop" ]; then
+			PRINT_TEXT "Branch %s rewritten – the dropped content is now uncommitted in your checkout:" 32 "$BRANCH"
+		else
+			PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
+		fi
 		printf '%s\n' "${CHANGED[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
-	if [ ${#CHANGED[@]} -gt 10 ]; then
-		PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
-	fi
-		PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 32 \
-			"git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
+		if [ ${#CHANGED[@]} -gt 10 ]; then
+			PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
+		fi
+		local RESTORE="git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
+		if [ "$ACTION_NAME" = "drop" ]; then
+			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "$RESTORE"
+		else
+			PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 32 "$RESTORE"
+		fi
 	else
 		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	fi
@@ -3852,12 +3860,17 @@ GIT_SELFTEST () {
 	echo "local wip" > tc-keep.txt   # unrelated WIP the advice must not disturb
 	_ST_RUN -d -y "$TC_DROP"
 	_ST_EQ "drop exits 0" "$RC" "0"
-	_ST_OUT_HAS "names the stale path" 'tc-drop\.txt'
+	_ST_OUT_HAS "names the dropped path" 'tc-drop\.txt'
 	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
 	_ST_OUT_LACKS "never prescribes stashing a shared checkout" 'git stash push'
 	_ST_OUT_LACKS "never prescribes a blanket reset" 'run git reset --hard'
+	# A drop's leftover paths ARE the dropped work, so the restore has to read as
+	# an opt-in discard – calling it a reconcile invites destroying what was kept
+	_ST_OUT_HAS "frames the leftovers as uncommitted work" 'dropped content is now uncommitted'
+	_ST_OUT_HAS "offers the discard as a choice" 'Keep it, or discard those paths'
+	_ST_OUT_LACKS "never calls a drop a reconcile" 'Reconcile those paths'
 	git restore --source=HEAD --staged --worktree -- tc-drop.txt
-	_ST_CHECK "the advice removes the dropped file" sh -c "! test -f tc-drop.txt"
+	_ST_CHECK "and that discard does remove the file" sh -c "! test -f tc-drop.txt"
 	_ST_EQ "unrelated WIP untouched" "$(cat tc-keep.txt)" "local wip"
 	git reset -q --hard
 	# A path with a space must come out shell-quoted, or the printed command
@@ -4796,7 +4809,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 			exit 1
 		fi
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
-		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
+		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION"
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
 	fi

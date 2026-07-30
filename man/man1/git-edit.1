@@ -88,7 +88,11 @@ Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
 or worktree; the working tree is untouched and the tip tree is unchanged.
 .TP
 .B \-d, \-\-drop
-Delete one or more \fIcommit\fRs or ranges.
+Delete one or more \fIcommit\fRs or ranges. The checkout is not touched, so the
+dropped content stays there as uncommitted work \(em keep it, or discard it with
+the
+.B git\-restore
+command printed.
 .TP
 .B \-s, \-\-squash
 Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
