@@ -4077,6 +4077,43 @@ GIT_SELFTEST () {
 	_ST_CHECK "and its commit is still there" sh -c "git log --format=%s | grep -qx 'MD deletes it'"
 	git reset -q --hard
 
+	# --- 43. auto-continue inside the shared main checkout ---
+	echo -e "\e[1;96m[43] main-checkout auto-continue keeps WIP\e[0m"
+	git reset -q --hard
+	printf 'mc line A\n' > mc.txt && git add mc.txt && git commit -qm "MC base"
+	printf 'mc line B\n' > mc.txt && git add mc.txt && git commit -qm "MC middle"
+	local MC_MID=$(git rev-parse HEAD)
+	printf 'mc line C\n' > mc.txt && git add mc.txt && git commit -qm "MC top"
+	local MC_TOP=$(git rev-parse HEAD)
+	# Record the resolution once, the normal isolated way
+	_ST_RUN -d -y "$MC_MID"
+	local MC_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	if [ -n "$MC_WT" ] && [ -d "$MC_WT" ]; then
+		printf 'mc line C\n' > "$MC_WT/mc.txt"
+		git -C "$MC_WT" add mc.txt
+		_ST_RUN --continue
+	fi
+	git reset -q --hard "$MC_TOP"
+	# WIP of both kinds, which the run must hand back untouched
+	printf 'mc wip\n' > mc-untracked.txt
+	printf 'mc tracked\n' > mc-tracked.txt && git add mc-tracked.txt && git commit -qm "MC wip base"
+	printf 'mc tracked EDITED\n' > mc-tracked.txt
+	# `GIT_EDIT_NO_AUTO_ISOLATE` forces the rebase into the main checkout, the
+	# one path where auto-continue touches a tree other sessions share
+	OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 GIT_EDIT_NO_AUTO_ISOLATE=1 "$SELF" -d -y "$MC_MID" </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "main-checkout replay completes" "$RC" "0"
+	_ST_OUT_HAS "names the replay" 'Replayed a recorded resolution'
+	_ST_CHECK "the drop landed" sh -c "! git log --format=%s | grep -qx 'MC middle'"
+	_ST_CHECK "untracked WIP survived" sh -c "grep -qx 'mc wip' mc-untracked.txt"
+	_ST_CHECK "dirty tracked WIP survived" sh -c "grep -qx 'mc tracked EDITED' mc-tracked.txt"
+	_ST_CHECK "and stayed unstaged" sh -c "git diff --cached --quiet -- mc-tracked.txt"
+	_ST_CHECK "no rebase left in progress" \
+		sh -c "[ ! -d .git/rebase-merge ] && [ ! -d .git/rebase-apply ]"
+	_ST_CHECK "no stash left behind" sh -c "[ -z \"\$(git stash list)\" ]"
+	rm -f mc-untracked.txt
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
