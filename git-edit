@@ -3042,6 +3042,17 @@ GIT_SELFTEST () {
 	_ST_RUN () {
 		OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$@" </dev/null 2>&1)
 		RC=$?
+		# A prose line that lost its `#` is still a valid command invocation, so
+		# `zsh -n` accepts it and only the runtime complains. Checking here makes
+		# every scenario a detector for that whole class of slip, rather than
+		# relying on one test to happen to walk the affected line.
+		if [[ "$OUT" == *"command not found"* || "$OUT" == *"no matches found"* || \
+		      "$OUT" == *"bad substitution"* || "$OUT" == *"parse error"* ]]; then
+			FAIL=$((FAIL+1))
+			echo -e "  \e[1;31mFAIL\e[0m shell noise from 'git edit $*'"
+			echo "$OUT" | grep -E 'command not found|no matches found|bad substitution|parse error' \
+				| head -3 | sed 's/^/       | /'
+		fi
 	}
 	_ST_CHECK () {
 		local DESC=$1; shift
@@ -4015,6 +4026,34 @@ GIT_SELFTEST () {
 	local RR_AFTER=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
 	_ST_CHECK "the resolution was recorded for replay" sh -c "[ $RR_AFTER -gt $RR_BEFORE ]"
 	git reset -q --hard
+	# Edit mode records too – its conflict comes from replaying the descendants
+	local RR_BEFORE_E=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
+	printf 'ed line A\n' > ed.txt && git add ed.txt && git commit -qm "ED base"
+	local ED_TARGET=$(git rev-parse HEAD)
+	printf 'ed line B\n' > ed.txt && git add ed.txt && git commit -qm "ED later"
+	_ST_RUN "$ED_TARGET"
+	local ED_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused — edit [^ ]* in \([^;]*\);.*/\1/p' | head -1)
+	if [ -n "$ED_WT" ] && [ -d "$ED_WT" ]; then
+		printf 'ed line EDITED\n' > "$ED_WT/ed.txt"
+		_ST_RUN --continue
+		local ED_CWT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+		if [ -n "$ED_CWT" ] && [ -d "$ED_CWT" ]; then
+			printf 'ed line B\n' > "$ED_CWT/ed.txt"
+			git -C "$ED_CWT" add ed.txt
+			_ST_RUN --continue
+		fi
+	fi
+	_ST_CHECK "edit mode records its resolution too" \
+		sh -c "[ $(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ') -gt $RR_BEFORE_E ]"
+	git reset -q --hard
+	# Structural, so a start that loses the flag is caught even when no scenario
+	# happens to drive that mode into a conflict
+	# Anchored to the start of a line, or these patterns would count the very
+	# assertion lines that carry them
+	_ST_CHECK "every conflict-capable rebase start carries rerere" \
+		sh -c "[ \$(grep -cE '^[[:space:]]*local CMD=\\(-c rerere.enabled=true rebase' '$SELF') -eq 6 ]"
+	_ST_CHECK "and none was left without it" \
+		sh -c "! grep -qE '^[[:space:]]*local CMD=\\(rebase' '$SELF'"
 
 	# --- 42. a CAS refusal keeps the resolution instead of deleting it ---
 	echo -e "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
@@ -4092,6 +4131,36 @@ GIT_SELFTEST () {
 	_ST_CHECK "a fresh one is left alone" sh -c "[ -d '$GC_FRESH' ]"
 	_ST_CHECK "a registered worktree is never swept" sh -c "[ -d '$GC_LIVE' ]"
 	rm -rf "$GC_FRESH" "$GC_LIVE"
+	git reset -q --hard
+
+	# --- 44. marker-free conflicts must still pause, with history intact ---
+	echo -e "\e[1;96m[44] marker-free conflicts still pause\e[0m"
+	git reset -q --hard
+	# Neither of these carries conflict markers, so any attempt to decide a
+	# conflict by inspecting the file auto-resolves them the wrong way – which
+	# silently reverted a deletion and dropped the commit that made it
+	printf 'md one\n' > md2.txt && git add md2.txt && git commit -qm "MD2 base"
+	printf 'md two\n' > md2.txt && git add md2.txt && git commit -qm "MD2 middle"
+	local MD2_MID=$(git rev-parse HEAD)
+	git rm -q md2.txt && git commit -qm "MD2 deletes it"
+	_ST_RUN -d -y "$MD2_MID"
+	_ST_EQ "modify/delete pauses" "$RC" "2"
+	_ST_RUN --abort
+	_ST_CHECK "its deleting commit survives" sh -c "git log --format=%s | grep -qx 'MD2 deletes it'"
+	_ST_CHECK "and the file is still deleted at the tip" \
+		sh -c "! git cat-file -e HEAD:md2.txt 2>/dev/null"
+	git reset -q --hard
+	# Binary: three stages, no markers, and rerere cannot resolve it either
+	printf 'bin\000\001 v1\n' > bin.dat && git add bin.dat && git commit -qm "BIN base"
+	printf 'bin\000\002 v2\n' > bin.dat && git add bin.dat && git commit -qm "BIN middle"
+	local BIN_MID=$(git rev-parse HEAD)
+	printf 'bin\000\003 v3\n' > bin.dat && git add bin.dat && git commit -qm "BIN top"
+	_ST_CHECK "the fixture really is binary to git" \
+		sh -c "git diff --numstat HEAD~1 HEAD -- bin.dat | grep -q '^-'"
+	_ST_RUN -d -y "$BIN_MID"
+	_ST_EQ "binary conflict pauses" "$RC" "2"
+	_ST_RUN --abort
+	_ST_CHECK "no commit was dropped" sh -c "git log --format=%s | grep -qx 'BIN top'"
 	git reset -q --hard
 
 	# --- Summary ---
