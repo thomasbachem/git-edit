@@ -748,8 +748,23 @@ _PRINT_UNTRACKED_ABSORB () {
 # resolution itself is finished and the worktree holds the only copy – so keep
 # it, and keep the state with it, rather than letting the exit trap delete the
 # work and strand a state whose worktree is gone.
+# Every mutating mode refuses while another operation is paused – including the
+# plumbing ones, which touch no worktree and so once slipped through. Starting a
+# second rewrite moves the branch under the paused one, whose CAS then refuses
+# at apply time: safe, but it strands work that was resolvable a moment earlier.
+_REQUIRE_NO_INFLIGHT () {
+	if _STATE_EXISTS; then
+		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		exit 1
+	fi
+}
+
+# Refuses a branch that moved under a resolution – a parallel session landed a commit, so the
+# rewrite cannot apply, but the resolution is finished and the worktree holds the only copy,
+# so keep it and its state rather than letting the exit trap strand both
 _REFUSE_MOVED_BRANCH () {
-	# args: <branch> <worktree>
+	# Args: <branch> <worktree>
 	_CLEANUP_HOOK=""
 	PRINT_ERR "Branch '$1' moved during resolution – refusing to overwrite"
 	PRINT_TEXT "Your resolution is intact in %s" 33 "$2"
@@ -1176,11 +1191,7 @@ GIT_AMEND_INTO () {
 	local TARGET=$AMEND_INTO_TARGET
 
 	# Pre-flight: must not be a stale in-flight operation
-	if _STATE_EXISTS; then
-		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
-		exit 1
-	fi
+	_REQUIRE_NO_INFLIGHT
 
 	# Pre-flight: must have staged changes – within the pathspec if one narrows
 	# the fold, since "something is staged" says nothing about the named paths
@@ -1621,18 +1632,11 @@ GIT_SPLIT () {
 	_SPLIT_APPLY "$X" "$TREE1" "$REF" "$ORIG_HEAD" "$TEXT_VALUE"
 }
 
-# Splits a commit whose halves share a file, where no pathspec can name them
-# apart. Hands back an isolated worktree holding the commit's own content and
-# lets the caller edit it back to what the first commit should leave behind –
-# the one description of a hunk-level split a non-interactive caller can give
-# without `git add -p`. `git edit --continue` commits that tree, re-commits
-# the target's tree on top, and rebuilds the descendants.
+# Splits a commit whose halves share a file, where no pathspec can name them apart – hands
+# back an isolated worktree holding the commit's content for the caller to edit down to
+# the first commit's, the one hunk-level split describable without `git add -p`
 GIT_SPLIT_PAUSE () {
-	if _STATE_EXISTS; then
-		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
-		exit 1
-	fi
+	_REQUIRE_NO_INFLIGHT
 
 	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
 	if [ -z "$BRANCH" ]; then
@@ -1769,18 +1773,12 @@ _ABORT_SPLIT () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
-# Reorders a contiguous span of commits. The positional args give the desired
-# new order (oldest-first). Runs the rebase in an isolated temp worktree with
-# a scripted `GIT_SEQUENCE_EDITOR`, CAS-applies the result, and reuses the
-# conflict pause machinery (`--continue`/`--abort`) when replaying commits
-# over their new predecessors conflicts. The branch ref only moves at the end.
+# Reorders a contiguous span, the positional args giving the new order oldest-first – runs
+# the rebase in an isolated temp worktree under a scripted `GIT_SEQUENCE_EDITOR`, reusing
+# the conflict pause machinery, and the branch ref only moves at the end
 GIT_REORDER () {
 	# Pre-flight: must not be a stale in-flight operation
-	if _STATE_EXISTS; then
-		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
-		exit 1
-	fi
+	_REQUIRE_NO_INFLIGHT
 
 	# Pre-flight: must be on a branch
 	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
@@ -4029,9 +4027,20 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "status is not orphaned" 'worktree is gone'
 	_ST_CHECK "the parallel commit was not clobbered" \
 		sh -c "git log --format=%s | grep -qx 'CAS parallel commit'"
+	# Plumbing modes touch no worktree, so they once slipped the in-flight guard
+	# and moved the branch under the paused operation
+	_ST_RUN -M --text="sneaks past" HEAD
+	_ST_EQ "a reword is refused while paused" "$RC" "1"
+	_ST_OUT_HAS "and says why" 'operation is in flight'
+	_ST_CHECK "the branch did not move" sh -c "git log -1 --format=%s | grep -qx 'CAS parallel commit'"
+	_ST_RUN --amend-into=auto
+	_ST_EQ "a fold is refused too" "$RC" "1"
 	_ST_RUN --abort
 	_ST_EQ "abort clears the operation" "$RC" "0"
 	_ST_CHECK "and removes the worktree" sh -c "[ ! -d '$CAS_WT' ]"
+	# ...and the guard lifts once nothing is in flight
+	_ST_RUN -M --text="Reworded after abort" HEAD
+	_ST_EQ "reword works again afterwards" "$RC" "0"
 	git reset -q --hard
 
 	# --- Summary ---
@@ -4161,6 +4170,10 @@ if [ ${#OPT_SELFTEST} -gt 0 ]; then
 	GIT_SELFTEST "${0:A}"
 	exit $?
 fi
+
+# Past this point every path mutates history, and the standalone commands that
+# resolve a pause (--continue/--abort/--undo/--status) have already exited
+_REQUIRE_NO_INFLIGHT
 
 # Extract -C/--dir value. zparseopts with `::` greedily consumes the next word
 # unless it starts with `-`, so `git edit -C HEAD~1` would treat HEAD~1 as the
@@ -4679,18 +4692,11 @@ if [[ "$ACTION" == "drop" || "$ACTION" == "squash" || "$ACTION" == "edit" ]]; th
 	_GUARD_NO_MERGE_SPAN "${COMMITS[1]}"
 fi
 
-# Non-interactive edit: instead of a prompt no one can answer, prepare an
-# isolated worktree checked out at the target and hand control back. The
-# caller edits files there (the commit's own content, clean of any main-
-# checkout WIP), then `git edit --continue` amends, replays the descendants,
-# and CAS-applies. The branch stays untouched throughout, so the pause is
-# free and `--abort` has nothing to roll back.
+# Non-interactive edit – instead of a prompt nobody can answer, prepare an isolated worktree
+# at the target and hand control back, so the caller edits the commit's own content there
+# `git edit --continue` then amends, replays and CAS-applies, the branch staying untouched
 if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
-	if _STATE_EXISTS; then
-		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
-		exit 1
-	fi
+	_REQUIRE_NO_INFLIGHT
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_ERR "Pass --text with 'git edit --continue' – the message is applied at the amend"
 		exit 1
