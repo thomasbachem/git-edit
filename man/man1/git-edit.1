@@ -243,8 +243,10 @@ enabled, from the step that conflicts through the one that resolves it, so a
 resolution is recorded even when the caller has
 .B rerere.enabled
 unset globally. A later re\-conflict of the same hunk \(em a cascade, a retry,
-or a second rewrite over the same lines \(em still pauses, but the file arrives
-already resolved and staged, so the answer never has to be derived twice.
+or a second rewrite over the same lines \(em is then staged and continued
+automatically, and named in the output, so the answer never has to be given
+twice. Only a conflict with no recorded resolution pauses: a replayed one is
+marker\-free, which is exactly what distinguishes the two.
 .SH "EXIT STATUS"
 .TP
 .B 0

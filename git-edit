@@ -743,6 +743,50 @@ _PRINT_UNTRACKED_ABSORB () {
 	fi
 }
 
+# A conflict `rerere` replayed leaves the path unmerged in the index but
+# marker-free in the worktree – the answer is already sitting there, so pausing
+# only asks the caller to re-stage what they resolved once before. Stage it and
+# carry on, looping for a cascade. A genuine conflict still carries markers and
+# still pauses, and the replay is named so it never lands silently.
+_CONTINUE_REPLAYED_RESOLUTION () {
+	# args: <worktree>. Returns 0 if the rebase ran to completion, else 1
+	local WT=$1
+	if [ -z "$WT" ] || [ ! -d "$WT" ]; then
+		return 1
+	fi
+	local -a REPLAYED
+	local ROUNDS=0
+	while [ $ROUNDS -lt 20 ]; do
+		ROUNDS=$((ROUNDS+1))
+		local -a UNMERGED
+		UNMERGED=("${(@f)$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)}")
+		# No unmerged path means an empty step, not a replayed resolution
+		if [ -z "${UNMERGED[1]}" ]; then
+			return 1
+		fi
+		local F
+		for F in "${UNMERGED[@]}"; do
+			if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$WT/$F" 2>/dev/null; then
+				return 1
+			fi
+		done
+		if ! git -C "$WT" add -- "${UNMERGED[@]}" >/dev/null 2>&1; then
+			return 1
+		fi
+		REPLAYED+=("${UNMERGED[@]}")
+		if GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue >/dev/null 2>&1; then
+			PRINT_TEXT "Replayed a recorded resolution for %s – continued without pausing." 33 \
+				"${(j:, :)REPLAYED}"
+			return 0
+		fi
+		local GITDIR=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
+		if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+			return 1
+		fi
+	done
+	return 1
+}
+
 GIT_STASH () {
 	# Scan all unmerged paths and auto-stage any that no longer contain conflict markers
 	for FILE in $(git diff --name-only --diff-filter=U); do
@@ -809,6 +853,10 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
+			# A resolution `rerere` already replayed needs no one to answer
+			if _CONTINUE_REPLAYED_RESOLUTION "${WORKTREE_DIR:-$PWD}"; then
+				return 0
+			fi
 			# In non-TTY contexts (Claude Code, CI, piped stdin) there's no one
 			# to answer CONTINUE_OR_ABORT, whose empty read would auto-proceed –
 			# staging files with conflict markers still in them. When the rebase
@@ -1259,7 +1307,7 @@ GIT_AMEND_INTO () {
 	# and the shared `rr-cache` carries it across retries of the whole operation
 	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
-	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && ! _CONTINUE_REPLAYED_RESOLUTION "$WT"; then
 		# Conflict during autosquash. Save state, leave the worktree alive,
 		# and let the user/agent resolve via `git edit --continue` (or
 		# `git edit --abort` to cancel – the branch was never moved, and the
@@ -1896,7 +1944,8 @@ SEQEOF
 	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
-	   ! { _AUTO_RESOLVE_FINAL_REORDER "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$WT" }; then
+	   ! { _AUTO_RESOLVE_FINAL_REORDER "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$WT" } && \
+	   ! _CONTINUE_REPLAYED_RESOLUTION "$WT"; then
 		rm -f "$SEQ"
 		# Conflict while replaying – persist state for --continue/--abort.
 		# The branch was never moved, so --abort has nothing to roll back.
@@ -2178,7 +2227,7 @@ _EDIT_START_REPLAY () {
 	fi
 	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
-	if ! eval "$CMD" >/dev/null 2>&1; then
+	if ! eval "$CMD" >/dev/null 2>&1 && ! _CONTINUE_REPLAYED_RESOLUTION "$STATE_WORKTREE"; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Conflict while replaying descendants – resolve in worktree, then 'git edit --continue'"
 		PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3966,6 +4015,7 @@ GIT_SELFTEST () {
 	printf 'rr line B\n' > rr.txt && git add rr.txt && git commit -qm "RR middle"
 	local RR_MID=$(git rev-parse HEAD)
 	printf 'rr line C\n' > rr.txt && git add rr.txt && git commit -qm "RR top"
+	local RR_TOP=$(git rev-parse HEAD)
 	_ST_RUN -d -y "$RR_MID"
 	_ST_EQ "the drop conflicts as set up" "$RC" "2"
 	local RR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
@@ -3980,6 +4030,30 @@ GIT_SELFTEST () {
 	# resolution time records nothing and a re-conflict can't replay the answer
 	local RR_AFTER=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
 	_ST_CHECK "the resolution was recorded for replay" sh -c "[ $RR_AFTER -gt $RR_BEFORE ]"
+	git reset -q --hard
+
+	# --- 42. a replayed resolution continues without pausing ---
+	echo -e "\e[1;96m[42] replayed resolutions auto-continue\e[0m"
+	git reset -q --hard
+	# Rewind to the identical pre-drop state, so the drop re-conflicts exactly
+	git reset -q --hard "$RR_TOP"
+	_ST_RUN -d -y "$RR_MID"
+	_ST_EQ "the repeat drop needs no pause" "$RC" "0"
+	_ST_OUT_HAS "names the replay rather than landing silently" 'Replayed a recorded resolution'
+	_ST_CHECK "the replayed content is what was resolved" \
+		sh -c "git show HEAD:rr.txt | grep -qx 'rr line C'"
+	_ST_CHECK "the dropped commit really is gone" \
+		sh -c "! git log --format=%s | grep -qx 'RR middle'"
+	git reset -q --hard
+	# A conflict with no recorded resolution must still pause
+	printf 'fresh X\n' > fresh.txt && git add fresh.txt && git commit -qm "Fresh base"
+	printf 'fresh Y\n' > fresh.txt && git add fresh.txt && git commit -qm "Fresh middle"
+	local FR_MID=$(git rev-parse HEAD)
+	printf 'fresh Z\n' > fresh.txt && git add fresh.txt && git commit -qm "Fresh top"
+	_ST_RUN -d -y "$FR_MID"
+	_ST_EQ "an unseen conflict still pauses" "$RC" "2"
+	_ST_OUT_HAS "and emits the conflict trailer" '^git-edit: conflict — resolve in'
+	_ST_RUN --abort
 	git reset -q --hard
 
 	# --- Summary ---
