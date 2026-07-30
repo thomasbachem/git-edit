@@ -1101,7 +1101,7 @@ GIT_EXEC () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "exec"
 
-	if [ -n "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD" ]; then
+	if [ -n "$BRANCH" ]; then
 		_PRINT_REWRITE_APPLY_HINT "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
 	else
 		PRINT_TEXT "Detached HEAD updated to %s." 32 "$NEW_HEAD"
@@ -3883,6 +3883,27 @@ GIT_SELFTEST () {
 	_ST_RUN -d -y "$TC_SP"
 	_ST_EQ "drop with a spaced path exits 0" "$RC" "0"
 	_ST_OUT_HAS "shell-quotes the spaced path" "restore.*'tc dir/tc file.txt'"
+	git reset -q --hard
+
+	# --- 39. --exec names the branch it moved, and reaches the reconcile hint ---
+	echo -e "\e[1;96m[39] exec reports the branch it rewrote\e[0m"
+	git reset -q --hard
+	echo "xa" > xa.txt && git add xa.txt && git commit -qm "XA base"
+	echo "xb" > xb.txt && git add xb.txt && git commit -qm "XB to reword"
+	_ST_RUN --exec -- git commit --amend -m "XB reworded by exec"
+	_ST_EQ "exec exits 0" "$RC" "0"
+	_ST_EQ "the reword landed" "$(git log -1 --format=%s)" "XB reworded by exec"
+	# A multi-arg `[ -n ... ]` here made every branch exec claim a detached HEAD,
+	# and leaked the shell's own usage error into the output
+	_ST_OUT_LACKS "no raw shell error leaks" 'too many arguments'
+	_ST_OUT_LACKS "does not claim a detached HEAD" 'Detached HEAD updated'
+	_ST_OUT_HAS "names the branch it rewrote" 'Branch.*rewritten'
+	# Only a content-changing exec reaches the per-path hint
+	echo "xc" > xc.txt && git add xc.txt && git commit -qm "XC to change"
+	_ST_RUN --exec -- sh -c 'echo changed > xc.txt && git add xc.txt && git commit -q --amend --no-edit'
+	_ST_EQ "content-changing exec exits 0" "$RC" "0"
+	_ST_OUT_HAS "names the path to reconcile" 'xc\.txt'
+	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
 	git reset -q --hard
 
 	# --- Summary ---
