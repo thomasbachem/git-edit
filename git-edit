@@ -912,9 +912,9 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 GIT_REBASE_DROP () {
 	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
@@ -941,9 +941,9 @@ GIT_REBASE_SQUASH () {
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
 	if git show -s --pretty=%P "$OLDEST" | grep -q .; then
-		local CMD=(rebase --no-autostash --interactive "$OLDEST~")
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$OLDEST~")
 	else
-		local CMD=(rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> reorder+$OP"
 
@@ -983,9 +983,9 @@ GIT_REBASE_SQUASH () {
 GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
@@ -1254,7 +1254,7 @@ GIT_AMEND_INTO () {
 	# Step 3: autosquash. GIT_SEQUENCE_EDITOR=true accepts the auto-arranged
 	# TODO without prompting. GIT_EDITOR=true ensures no message editor opens
 	# (we use fixup semantics, so this is just defensive).
-	# `rerere` here (and on every conflict-capable rebase below): a cascade
+	# `rerere` here (and on every conflict-capable rebase): a cascade
 	# re-conflict of an already-resolved hunk replays the recorded resolution,
 	# and the shared `rr-cache` carries it across retries of the whole operation
 	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
@@ -3955,6 +3955,31 @@ GIT_SELFTEST () {
 	_ST_RUN --continue
 	_ST_EQ "clean continue exits 0" "$RC" "0"
 	_ST_OUT_LACKS "silent when nothing untracked is absorbed" 'Absorbing'
+	git reset -q --hard
+
+	# --- 41. a conflict resolution is recorded for rerere to replay ---
+	echo -e "\e[1;96m[41] conflict resolutions reach rr-cache\e[0m"
+	git reset -q --hard
+	local RR_DIR="$(git rev-parse --git-common-dir)/rr-cache"
+	local RR_BEFORE=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
+	printf 'rr line A\n' > rr.txt && git add rr.txt && git commit -qm "RR base"
+	printf 'rr line B\n' > rr.txt && git add rr.txt && git commit -qm "RR middle"
+	local RR_MID=$(git rev-parse HEAD)
+	printf 'rr line C\n' > rr.txt && git add rr.txt && git commit -qm "RR top"
+	_ST_RUN -d -y "$RR_MID"
+	_ST_EQ "the drop conflicts as set up" "$RC" "2"
+	local RR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	if [ -n "$RR_WT" ] && [ -d "$RR_WT" ]; then
+		printf 'rr line C\n' > "$RR_WT/rr.txt"
+		git -C "$RR_WT" add rr.txt
+		_ST_RUN --continue
+		_ST_EQ "resolved drop completes" "$RC" "0"
+	fi
+	# The rebase START must carry `-c rerere.enabled=true`, not just `--continue`:
+	# rerere stores the preimage when the conflict occurs, so enabling it only at
+	# resolution time records nothing and a re-conflict can't replay the answer
+	local RR_AFTER=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
+	_ST_CHECK "the resolution was recorded for replay" sh -c "[ $RR_AFTER -gt $RR_BEFORE ]"
 	git reset -q --hard
 
 	# --- Summary ---

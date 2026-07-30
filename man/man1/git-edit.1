@@ -236,6 +236,15 @@ empty (its changes are already upstream); skip it with
 .B "git -C <worktree> rebase --skip"
 then
 .BR "git edit \-\-continue" .
+.PP
+Every conflict\-capable rebase runs with
+.B rerere
+enabled, from the step that conflicts through the one that resolves it, so a
+resolution is recorded even when the caller has
+.B rerere.enabled
+unset globally. A later re\-conflict of the same hunk \(em a cascade, a retry,
+or a second rewrite over the same lines \(em still pauses, but the file arrives
+already resolved and staged, so the answer never has to be derived twice.
 .SH "EXIT STATUS"
 .TP
 .B 0
