@@ -723,6 +723,26 @@ _PRINT_REWRITE_APPLY_HINT () {
 	fi
 }
 
+# Staging a worktree for an amend takes untracked files as readily as edits to
+# tracked ones, so a scratch file left in the worktree joins the commit. It
+# shows up in the net-history-change summary as an ordinary addition, reading as
+# a tool bug rather than a sweep – name them up front so the amend stays
+# deliberate. Ignored paths never reach here, `git add` honours `.gitignore`.
+_PRINT_UNTRACKED_ABSORB () {
+	# args: [<worktree>]
+	local WT=${1:-.}
+	local -a UNTRACKED
+	UNTRACKED=("${(@f)$(git -C "$WT" ls-files --others --exclude-standard 2>/dev/null)}")
+	if [ -z "${UNTRACKED[1]}" ]; then
+		return 0
+	fi
+	PRINT_TEXT "Absorbing %s untracked file(s) that were not in the commit:" 33 "${#UNTRACKED[@]}"
+	printf '%s\n' "${UNTRACKED[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	if [ ${#UNTRACKED[@]} -gt 10 ]; then
+		PRINT_TEXT "  … and %s more" 90 "$(( ${#UNTRACKED[@]} - 10 ))"
+	fi
+}
+
 GIT_STASH () {
 	# Scan all unmerged paths and auto-stage any that no longer contain conflict markers
 	for FILE in $(git diff --name-only --diff-filter=U); do
@@ -974,6 +994,7 @@ GIT_REBASE_BEGIN_EDIT () {
 }
 
 GIT_ADD_ALL () {
+	_PRINT_UNTRACKED_ABSORB
 	local CMD="git add --all"
 	PRINT_CMD "$CMD"
 
@@ -1676,6 +1697,7 @@ _CONTINUE_SPLIT () {
 	# refused continue doesn't quietly stage their mistake for the next one
 	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
 	rm -f "$TMPIDX"
+	_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 	local TREE1=""
 	if GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" read-tree "$X" 2>/dev/null; then
 		GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" add -A >/dev/null 2>&1
@@ -2208,6 +2230,7 @@ _CONTINUE_EDIT () {
 			echo -e "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 			exit 1
 		fi
+		_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 		git add -A >/dev/null 2>&1
 		if [ -n "$TEXT_VALUE" ]; then
 			git commit --amend -m "$TEXT_VALUE" >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
@@ -3904,6 +3927,34 @@ GIT_SELFTEST () {
 	_ST_EQ "content-changing exec exits 0" "$RC" "0"
 	_ST_OUT_HAS "names the path to reconcile" 'xc\.txt'
 	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
+	git reset -q --hard
+
+	# --- 40. a continue names the untracked files it absorbs ---
+	echo -e "\e[1;96m[40] untracked absorption is named\e[0m"
+	git reset -q --hard
+	echo "ua" > ua.txt && git add ua.txt && git commit -qm "UA base"
+	echo "ub" > ub.txt && git add ub.txt && git commit -qm "UB target"
+	local UA_TGT=$(git rev-parse HEAD)
+	echo "uc" > uc.txt && git add uc.txt && git commit -qm "UC later"
+	_ST_RUN "$UA_TGT"
+	local UA_WT=$(echo "$OUT" | sed $'s/\e\\[[0-9;]*m//g' | grep -oE '/[^ ]*git-edit-edit\.[A-Za-z0-9]+' | head -1)
+	echo "edited" >> "$UA_WT/ub.txt"
+	echo "scratch" > "$UA_WT/ua-stray.txt"
+	_ST_RUN --continue
+	_ST_EQ "continue exits 0" "$RC" "0"
+	_ST_OUT_HAS "names untracked files it absorbs" 'Absorbing.*untracked file'
+	_ST_OUT_HAS "names the stray itself" 'ua-stray\.txt'
+	_ST_CHECK "the stray really did land in the commit" \
+		sh -c "git show --stat --format= HEAD~1 | grep -q ua-stray"
+	git reset -q --hard
+	# An edit touching only tracked files must not cry wolf
+	echo "ud" > ud.txt && git add ud.txt && git commit -qm "UD target"
+	_ST_RUN "$(git rev-parse HEAD)"
+	local UA_WT2=$(echo "$OUT" | sed $'s/\e\\[[0-9;]*m//g' | grep -oE '/[^ ]*git-edit-edit\.[A-Za-z0-9]+' | head -1)
+	echo "edited" >> "$UA_WT2/ud.txt"
+	_ST_RUN --continue
+	_ST_EQ "clean continue exits 0" "$RC" "0"
+	_ST_OUT_LACKS "silent when nothing untracked is absorbed" 'Absorbing'
 	git reset -q --hard
 
 	# --- Summary ---

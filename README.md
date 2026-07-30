@@ -70,6 +70,8 @@ git edit --continue --text "New subject" # the same, also rewording
 
 Because the content was authored in the isolated worktree, a successful apply leaves your **main checkout holding the pre-edit file** — and its index holding that as a staged revert. `git edit` names the affected paths and the targeted `git restore --source=HEAD --staged --worktree -- <paths>` rather than a blanket reset, which would take unrelated WIP with it.
 
+The amend stages that worktree wholesale, so a scratch file left there joins the commit — every untracked file it absorbs is **named before the amend**, since one arriving unannounced reads as a tool bug rather than a sweep.
+
 On completion the **net history change** is printed (`git diff --stat` old-tip → new-tip) — the at-a-glance proof that history differs by exactly your edit. The replay source is re-read at `--continue` time, so commits that landed on the branch during authoring are carried along rather than dropped; the branch itself never moves until the final CAS, so `--abort` has nothing to roll back.
 
 ### Merging
