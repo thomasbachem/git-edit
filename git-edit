@@ -764,6 +764,13 @@ _CONTINUE_REPLAYED_RESOLUTION () {
 		if [ -z "${UNMERGED[1]}" ]; then
 			return 1
 		fi
+		# Ask `rerere` what it did NOT resolve, rather than inferring from the
+		# file. Marker-freeness is not proof of a replay – a modify/delete
+		# conflict carries no markers either, and staging that one would revert
+		# the deletion and empty out the commit that made it
+		if [ -n "$(git -C "$WT" -c rerere.enabled=true rerere remaining 2>/dev/null)" ]; then
+			return 1
+		fi
 		local F
 		for F in "${UNMERGED[@]}"; do
 			if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$WT/$F" 2>/dev/null; then
@@ -4054,6 +4061,20 @@ GIT_SELFTEST () {
 	_ST_EQ "an unseen conflict still pauses" "$RC" "2"
 	_ST_OUT_HAS "and emits the conflict trailer" '^git-edit: conflict — resolve in'
 	_ST_RUN --abort
+	git reset -q --hard
+	# A modify/delete conflict has no markers anywhere, so marker-freeness alone
+	# would auto-continue it – reverting the deletion and emptying the commit
+	# that made it, under an `ok` trailer
+	printf 'md one\n' > md.txt && git add md.txt && git commit -qm "MD base"
+	printf 'md two\n' > md.txt && git add md.txt && git commit -qm "MD middle"
+	local MD_MID=$(git rev-parse HEAD)
+	git rm -q md.txt && git commit -qm "MD deletes it"
+	_ST_RUN -d -y "$MD_MID"
+	_ST_EQ "modify/delete still pauses" "$RC" "2"
+	_ST_OUT_LACKS "never claims a replay that did not happen" 'Replayed a recorded resolution'
+	_ST_RUN --abort
+	_ST_CHECK "the deletion survived" sh -c "! git cat-file -e HEAD:md.txt 2>/dev/null"
+	_ST_CHECK "and its commit is still there" sh -c "git log --format=%s | grep -qx 'MD deletes it'"
 	git reset -q --hard
 
 	# --- Summary ---
