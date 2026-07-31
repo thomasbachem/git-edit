@@ -2787,6 +2787,16 @@ GIT_REWORD () {
 		if [ "$BODY_LINES" -gt 0 ]; then
 			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed $'s/^/\e[0;90m    /;s/$/\e[0m/'
 		fi
+		# Name the subject that was replaced. A symbolic target resolves once,
+		# at invocation, so a commit landing between the caller's read and this
+		# call is silently reworded instead – and the CAS cannot catch it, since
+		# that guard covers the ref moving mid-run, not the wrong commit being
+		# named. Showing the old subject puts the mistake in the output a caller
+		# actually reads back, rather than only in the line that scrolled past.
+		local OLD_SUBJECT=$(git log -1 --format='%s' "$TARGET" 2>/dev/null)
+		if [ -n "$OLD_SUBJECT" ]; then
+			PRINT_TEXT "  replaced: %s" 90 "$OLD_SUBJECT"
+		fi
 	fi
 }
 
@@ -3122,6 +3132,9 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok — refs/heads/main moved'
 	_ST_OUT_HAS "states tree identity" 'Trees unchanged by construction'
 	_ST_OUT_HAS "echoes the resulting subject" '[0-9a-f]\{7\} C reworded'
+	# A symbolic target resolves once, so the summary has to name what it
+	# replaced – otherwise rewording the wrong commit reads as success
+	_ST_OUT_HAS "names the subject it replaced" 'replaced:.*C commit'
 	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
