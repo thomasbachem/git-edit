@@ -185,6 +185,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
+	ECHO_E "\e[0;94m       -h                              Print this usage ('--help' goes to git's man viewer instead)\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
 	ECHO_E "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"

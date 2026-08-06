@@ -4,6 +4,12 @@
 .TH GIT-EDIT 1 "2026-07-27" "git-edit" "Git Extensions"
 .SH NAME
 git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
+.PP
+Reading this without a terminal? \fBgit edit \-h\fR prints the usage directly.
+.B \-\-help
+reaches this page through
+.BR man ,
+which then emits backspace\-overstruck text.
 .SH SYNOPSIS
 .nf
 \fBgit edit\fR \fIcommit\fR                          # edit a commit (default)
@@ -198,6 +204,18 @@ default.
 .TP
 .B \-y, \-\-yes
 Auto\-confirm the drop/squash confirmation prompt.
+.TP
+.B \-h
+Print the usage block. Prefer it to
+.B \-\-help
+in scripts and agent runs:
+.BR git (1)
+intercepts
+.B \-\-help
+for subcommands and renders this page through
+.BR man ,
+which without a terminal emits backspace\-overstruck text several times the
+size of the usage block.
 .SH "STANDALONE COMMANDS"
 .TP
 .B \-\-continue

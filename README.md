@@ -29,6 +29,7 @@ FLAGS:
 --allow-pushed                  Override the refusal to rewrite commits that exist on a remote
 --text <msg>                    Inline message for -M / -S / --split / --amend-into (skip editor); use - for stdin
 -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)
+-h                              Print this usage (`--help` goes to git's man viewer instead)
 ```
 
 Every run ends with a single status line written as natural prose, anchored by `git-edit: <outcome>` for programmatic dispatch:
@@ -44,6 +45,8 @@ git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continu
 Output is padded with blank lines for readability only when stdout is a terminal. Piped or captured — every agent invocation — it comes out tight, so a `| tail -5` carries the whole completion summary instead of blank space. Color follows the same rule and also honors `NO_COLOR` and `TERM=dumb`, so a captured run greps as plain text rather than as literal text split by escape sequences.
 
 Agents `grep '^git-edit: (ok|error|conflict|paused)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
+
+Reach for `git edit -h` rather than `--help`: git intercepts `--help` for subcommands and hands it to `man`, which without a terminal emits backspace-overstruck text (`N^HNA^HAM^HME^HE`) — several times the size of the usage block and unreadable in a captured run.
 *Tip:* Mode and flags can be given in any order.
 
 ## Usage Examples
