@@ -275,6 +275,14 @@ or
 .BR \-\-abort .
 .SH ENVIRONMENT
 .TP
+.B NO_COLOR
+If set (or if stdout is not a terminal, or
+.B TERM
+is
+.BR dumb ),
+output is emitted without ANSI escapes \(em so captured runs stay greppable
+as plain text.
+.TP
 .B GIT_EDIT_NO_RESOLVE
 If set, disables resolving a stale \fIcommit\fR to its post\-rewrite identity;
 every unreachable commit is then simply refused.

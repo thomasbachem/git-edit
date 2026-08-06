@@ -54,7 +54,46 @@ set -o pipefail
 # longer be called unique, and resolution degrades to a suggestion.
 RESOLVE_SCAN_MAX=100
 
-echo -e "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
+# Blank-line padding between narrative lines reads well in a terminal, but a
+# caller piping through `| tail -N` – how most agent invocations consume this
+# – loses a line of summary to every one of them. Pad only for a real
+# terminal; a pipe or a captured run gets the same lines, tight.
+_PAD=""
+[ -t 1 ] && _PAD="\n"
+
+# Same reasoning for color: escapes read as emphasis in a terminal but as
+# noise in a captured run, where they also split literal text a caller greps
+# for. Honors NO_COLOR and TERM=dumb alongside the pipe check.
+_COLOR=true
+if [ ! -t 1 ] || [ -n "$NO_COLOR" ] || [ "$TERM" = "dumb" ]; then
+	_COLOR=false
+fi
+
+# Gutter colors for the excerpt streams (`git show`/`git log` output piped
+# through `sed`, which can't route through ECHO_E) – empty when color is off,
+# so one `sed` script serves both cases
+_DIM=$'\e[0;90m'
+_RED=$'\e[0;31m'
+_OFF=$'\e[0m'
+if [ "$_COLOR" != "true" ]; then
+	_DIM=""
+	_RED=""
+	_OFF=""
+fi
+
+# Single emitter for every colorized line – strips the escapes in-shell when
+# color is off, so no call site has to know.
+ECHO_E () {
+	if [ "$_COLOR" = "true" ]; then
+		echo -e "$@"
+	else
+		setopt local_options extended_glob
+		local OUT=$(echo -e "$@")
+		print -r -- "${OUT//$'\e'\[[0-9;]#m/}"
+	fi
+}
+
+ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
 
 # Global cleanup hook (any sub-operation that needs cleanup on exit can set
 # this to a shell command). Runs once on script exit, before the error
@@ -66,13 +105,6 @@ _CLEANUP_HOOK=""
 # the global trap doesn't double-emit an `error …` line on top of an
 # explicit `ok …` or `conflict …` trailer.
 _STATUS_EMITTED=false
-
-# Blank-line padding between narrative lines reads well in a terminal, but a
-# caller piping through `| tail -N` – how most agent invocations consume this
-# – loses a line of summary to every one of them. Pad only for a real
-# terminal; a pipe or a captured run gets the same lines, tight.
-_PAD=""
-[ -t 1 ] && _PAD="\n"
 
 # Captures the last message passed to PRINT_ERR, so the global exit trap can
 # include the actual error reason in the trailer line — saving agents from
@@ -103,67 +135,67 @@ trap '_GLOBAL_EXIT_TRAP' EXIT
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	echo -e "\e[0;94musage: git edit <commit>                                    # edit a commit (default)\e[0m"
-	echo -e "\e[0;94m       (non-TTY: pauses with a worktree at the commit – edit files there, then --continue [--text \"…\"])\e[0m"
-	echo -e "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
-	echo -e "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
-	echo -e "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
-	echo -e "\e[0;94m       git edit [-M | --reword] [--text <msg>] <commit>\e[0m"
-	echo -e "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
-	echo -e "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
-	echo -e "\e[0;94m       git edit --exec -- <command>...\e[0m"
-	echo -e "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
-	echo -e "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
-	echo -e "\e[0;94m       git edit --split=<sha>                              # split <sha> by content (same-file halves)\e[0m"
-	echo -e "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
-	echo -e "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
-	echo -e "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
-	echo -e "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
-	echo -e "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
-	echo -e ""
-	echo -e "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
-	echo -e "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
-	echo -e "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges\e[0m"
-	echo -e "\e[0;94m       -s, --squash                    Merge <commit>s into the oldest (auto-routes to plumbing when eligible)\e[0m"
-	echo -e "\e[0;94m       -s=<target>, --squash=<target>  Merge <commit>s into <target> (explicit target)\e[0m"
-	echo -e "\e[0;94m       -S, --resquash                  Strict squash: plumbing only; errors instead of falling back to rebase\e[0m"
-	echo -e "\e[0;94m       -C, --dir                       Run in a separate worktree (default: <repo>.git-edit)\e[0m"
-	echo -e "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
-	echo -e "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
-	echo -e "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
-	echo -e "\e[0;94m       --amend-into=<sha>|auto [-- <pathspec>...]\e[0m"
-	echo -e "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
-	echo -e "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
-	echo -e "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
-	echo -e "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
-	echo -e "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
-	echo -e "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
-	echo -e "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
-	echo -e "\e[0;94m                                       pauses with a worktree at the commit – edit it back to what the\e[0m"
-	echo -e "\e[0;94m                                       first commit should leave, then --continue [--text \"…\"]\e[0m"
-	echo -e "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
-	echo -e "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
-	echo -e "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
-	echo -e "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
-	echo -e "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
-	echo -e "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
-	echo -e "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
-	echo -e "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
-	echo -e "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
-	echo -e "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
-	echo -e "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S (skip editor); '-' reads stdin\e[0m"
-	echo -e "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
-	echo -e ""
-	echo -e "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
-	echo -e "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
-	echo -e "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
-	echo -e "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
-	echo -e "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
-	echo -e "\e[0;94m         git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>\e[0m"
-	echo -e "\e[0;94m         git-edit: ok — refs/heads/main unchanged\e[0m"
-	echo -e "\e[0;94m         git-edit: error — exit code <N>\e[0m"
-	echo -e "\e[0;94m         git-edit: paused — edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'\e[0m"
-	echo -e "\e[0;94m         git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
+	ECHO_E "\e[0;94musage: git edit <commit>                                    # edit a commit (default)\e[0m"
+	ECHO_E "\e[0;94m       (non-TTY: pauses with a worktree at the commit – edit files there, then --continue [--text \"…\"])\e[0m"
+	ECHO_E "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
+	ECHO_E "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
+	ECHO_E "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
+	ECHO_E "\e[0;94m       git edit [-M | --reword] [--text <msg>] <commit>\e[0m"
+	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
+	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
+	ECHO_E "\e[0;94m       git edit --exec -- <command>...\e[0m"
+	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
+	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
+	ECHO_E "\e[0;94m       git edit --split=<sha>                              # split <sha> by content (same-file halves)\e[0m"
+	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
+	ECHO_E "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
+	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
+	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
+	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
+	ECHO_E "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
+	ECHO_E "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges\e[0m"
+	ECHO_E "\e[0;94m       -s, --squash                    Merge <commit>s into the oldest (auto-routes to plumbing when eligible)\e[0m"
+	ECHO_E "\e[0;94m       -s=<target>, --squash=<target>  Merge <commit>s into <target> (explicit target)\e[0m"
+	ECHO_E "\e[0;94m       -S, --resquash                  Strict squash: plumbing only; errors instead of falling back to rebase\e[0m"
+	ECHO_E "\e[0;94m       -C, --dir                       Run in a separate worktree (default: <repo>.git-edit)\e[0m"
+	ECHO_E "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
+	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
+	ECHO_E "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
+	ECHO_E "\e[0;94m       --amend-into=<sha>|auto [-- <pathspec>...]\e[0m"
+	ECHO_E "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
+	ECHO_E "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
+	ECHO_E "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
+	ECHO_E "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
+	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
+	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
+	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
+	ECHO_E "\e[0;94m                                       pauses with a worktree at the commit – edit it back to what the\e[0m"
+	ECHO_E "\e[0;94m                                       first commit should leave, then --continue [--text \"…\"]\e[0m"
+	ECHO_E "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
+	ECHO_E "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
+	ECHO_E "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
+	ECHO_E "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
+	ECHO_E "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
+	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
+	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
+	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
+	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
+	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
+	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S (skip editor); '-' reads stdin\e[0m"
+	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
+	ECHO_E "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
+	ECHO_E "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
+	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
+	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
+	ECHO_E "\e[0;94m         git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>\e[0m"
+	ECHO_E "\e[0;94m         git-edit: ok — refs/heads/main unchanged\e[0m"
+	ECHO_E "\e[0;94m         git-edit: error — exit code <N>\e[0m"
+	ECHO_E "\e[0;94m         git-edit: paused — edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'\e[0m"
+	ECHO_E "\e[0;94m         git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
 }
 
 PRINT_TEXT () {
@@ -183,7 +215,7 @@ PRINT_TEXT () {
 		TEXT="${TEXT#*%s}"
 	done
 	OUTPUT+="$TEXT\e[0m"
-	echo -e "$OUTPUT"
+	ECHO_E "$OUTPUT"
 }
 
 PRINT_ACTION () {
@@ -238,7 +270,7 @@ PRINT_CMD () {
 	# Filter `--no-autostash` arg when printing commands
 	local CMD_FILTERED=$(echo "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
 
-	echo -e "${_PAD}\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
+	ECHO_E "${_PAD}\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
 }
 
 PRINT_ERR () {
@@ -249,9 +281,9 @@ PRINT_ERR () {
 	if [[ "$MSG" == *:* ]]; then
 		local PREFIX="${MSG%%:*}"
 		local REST="${MSG#*: }"
-		echo -e "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
+		ECHO_E "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
 	else
-		echo -e "\n\e[1;91m${MSG}\e[0m" >&2
+		ECHO_E "\n\e[1;91m${MSG}\e[0m" >&2
 	fi
 }
 
@@ -331,7 +363,7 @@ _PRINT_CONFLICT_DETAIL () {
 		PRINT_TEXT "Conflicted files:" 33 >&2
 		local FILE
 		while IFS= read -r FILE; do
-			echo -e "\e[0;33m  - $FILE\e[0m" >&2
+			ECHO_E "\e[0;33m  - $FILE\e[0m" >&2
 		done <<< "$UNMERGED"
 	fi
 
@@ -341,7 +373,7 @@ _PRINT_CONFLICT_DETAIL () {
 		LAST_STEP=$(tail -1 "$GITDIR/rebase-merge/done" 2>/dev/null)
 		if [ -n "$LAST_STEP" ]; then
 			PRINT_TEXT "Currently failing on:" 33 >&2
-			echo -e "\e[0;33m  $LAST_STEP\e[0m" >&2
+			ECHO_E "\e[0;33m  $LAST_STEP\e[0m" >&2
 		fi
 	fi
 
@@ -353,7 +385,7 @@ _PRINT_CONFLICT_DETAIL () {
 			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
 			local STEP
 			while IFS= read -r STEP; do
-				echo -e "\e[0;33m  $STEP\e[0m" >&2
+				ECHO_E "\e[0;33m  $STEP\e[0m" >&2
 			done <<< "$REMAINING"
 		fi
 	fi
@@ -366,12 +398,12 @@ _PRINT_CONFLICT_DETAIL () {
 		local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
 		if [ "$STEP_NOW" = "$STEP_END" ]; then
 			PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
-			echo -e "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
-			echo -e "\e[0;33m  git edit --continue\e[0m" >&2
+			ECHO_E "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
+			ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 		else
 			PRINT_TEXT "Step %s rebuilds a state that never existed – author its content rather than deriving it:" 33 "$STEP_NOW/$STEP_END" >&2
-			echo -e "\e[0;33m  'git apply --3way' cannot work here at all (mid-rebase the paths sit at conflicted stages, not stage 0),\e[0m" >&2
-			echo -e "\e[0;33m  and reverse-applying the other commit's diff tends to fail once its context has shifted.\e[0m" >&2
+			ECHO_E "\e[0;33m  'git apply --3way' cannot work here at all (mid-rebase the paths sit at conflicted stages, not stage 0),\e[0m" >&2
+			ECHO_E "\e[0;33m  and reverse-applying the other commit's diff tends to fail once its context has shifted.\e[0m" >&2
 		fi
 	fi
 
@@ -380,8 +412,8 @@ _PRINT_CONFLICT_DETAIL () {
 	# the escape is skipping that step
 	if [ -z "$UNMERGED" ] && [ -d "$GITDIR/rebase-merge" ]; then
 		PRINT_TEXT "No conflicted files – the current step became empty (its changes are already upstream). Skip it, then continue:" 33 >&2
-		echo -e "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
-		echo -e "\e[0;33m  git edit --continue\e[0m" >&2
+		ECHO_E "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
+		ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 	fi
 
 	# Emit comma-separated unmerged list on stdout for the trailer
@@ -408,7 +440,7 @@ _CURRENT_REF () {
 # Convenience helper to print the success banner + status trailer together.
 PRINT_COMPLETED () {
 	# args: <new_head_sha> <ref> <changed:true|false>
-	[ -n "$_PAD" ] && echo -e "${_PAD}\e[1;92mgit edit completed.\e[0m"
+	[ -n "$_PAD" ] && ECHO_E "${_PAD}\e[1;92mgit edit completed.\e[0m"
 	EMIT_STATUS "$1" "$2" "$3"
 }
 
@@ -430,7 +462,7 @@ _GUARD_UNPUSHED () {
 	local CONTAINING=$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ' | sed 's/^[* ]*//' | head -3 | tr '\n' ' ' | sed 's/ $//')
 	if [ -n "$CONTAINING" ]; then
 		PRINT_ERR "Commit ${C:0:7} is already pushed (on: $CONTAINING)"
-		echo -e "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
+		ECHO_E "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
 		exit 1
 	fi
 }
@@ -507,14 +539,12 @@ _GUARD_REACHABLE () {
 	local -a RESOLVED
 	[ ${#GIT_EDIT_NO_RESOLVE} -eq 0 ] && RESOLVED=($(_RESOLVE_STALE "$C"))
 
-	# An inferred target never reaches pushed history, even under
-	# --allow-pushed: that flag consents to rewriting the commit the caller
-	# named, not to one this resolved on its behalf. Substituting is only ever
-	# a convenience, so where it would compound a guess with a shared-history
-	# rewrite, name the match and let the caller ask for it deliberately.
+	# An inferred target never reaches pushed history, even under `--allow-pushed` – that flag
+	# consents to the commit the caller named, not to one resolved on its behalf, so where a
+	# guess would compound with a shared-history rewrite, name the match and let them ask
 	if [ "${RESOLVED[2]}" = "patch-id" ] && _IS_PUSHED "${RESOLVED[1]}"; then
 		PRINT_ERR "Commit ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
-		echo -e "\e[0;31m  Its only match ${RESOLVED[1]:0:12} is already pushed – name it explicitly to rewrite it.\e[0m" >&2
+		ECHO_E "\e[0;31m  Its only match ${RESOLVED[1]:0:12} is already pushed – name it explicitly to rewrite it.\e[0m" >&2
 		exit 1
 	fi
 
@@ -527,9 +557,9 @@ _GUARD_REACHABLE () {
 
 	PRINT_ERR "Commit ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
 	if [ "${RESOLVED[2]}" = "subject" ]; then
-		echo -e "\e[0;31m  Its counterpart on HEAD is ${RESOLVED[1]:0:12} (same subject, changed content) – retry with that.\e[0m" >&2
+		ECHO_E "\e[0;31m  Its counterpart on HEAD is ${RESOLVED[1]:0:12} (same subject, changed content) – retry with that.\e[0m" >&2
 	else
-		echo -e "\e[0;31m  Re-read the current SHAs with 'git log' before retrying.\e[0m" >&2
+		ECHO_E "\e[0;31m  Re-read the current SHAs with 'git log' before retrying.\e[0m" >&2
 	fi
 	exit 1
 }
@@ -543,7 +573,7 @@ _GUARD_NO_MERGE_SPAN () {
 	local MERGES=$(git rev-list --merges --count "$SPAN" 2>/dev/null)
 	if [ "${MERGES:-0}" -gt 0 ]; then
 		PRINT_ERR "Span ${BASE:0:7}..HEAD contains a merge commit – this rebase-based mode would silently flatten it"
-		echo -e "\e[0;31m  Merge-preserving alternatives: -M / -S / --split (plumbing), or --exec with 'git rebase --rebase-merges ...' deliberately.\e[0m" >&2
+		ECHO_E "\e[0;31m  Merge-preserving alternatives: -M / -S / --split (plumbing), or --exec with 'git rebase --rebase-merges ...' deliberately.\e[0m" >&2
 		exit 1
 	fi
 }
@@ -569,7 +599,7 @@ _RECORD_REF_MOVE () {
 	# args: <ref> <old> <new> <label>
 	local JF=$(_JOURNAL_FILE_PATH)
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
-	echo -e "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
 
 	# A tag is orphaned if it was reachable from the old tip but isn't from
 	# the new one. Suggest the counterpart commit when its subject matches
@@ -585,9 +615,9 @@ _RECORD_REF_MOVE () {
 			CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
 			PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
 			if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
-				echo -e "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
+				ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
 			else
-				echo -e "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
+				ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
 			fi
 		fi
 	done
@@ -613,7 +643,7 @@ GIT_UNDO () {
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' has moved since that operation – refusing to rewind over newer work"
-		echo -e "\e[0;31m  Expected $REF at ${NEW:0:7}, found $(git rev-parse --short "$REF" 2>/dev/null).\e[0m" >&2
+		ECHO_E "\e[0;31m  Expected $REF at ${NEW:0:7}, found $(git rev-parse --short "$REF" 2>/dev/null).\e[0m" >&2
 		exit 1
 	fi
 	# Pop the undone entry off the journal
@@ -708,7 +738,7 @@ _PRINT_REWRITE_APPLY_HINT () {
 		else
 			PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
 		fi
-		printf '%s\n' "${CHANGED[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+		printf '%s\n' "${CHANGED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 		if [ ${#CHANGED[@]} -gt 10 ]; then
 			PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
 		fi
@@ -723,13 +753,11 @@ _PRINT_REWRITE_APPLY_HINT () {
 	fi
 }
 
-# Staging a worktree for an amend takes untracked files as readily as edits to
-# tracked ones, so a scratch file left in the worktree joins the commit. It
-# shows up in the net-history-change summary as an ordinary addition, reading as
-# a tool bug rather than a sweep – name them up front so the amend stays
-# deliberate. Ignored paths never reach here, `git add` honours `.gitignore`.
+# Names the untracked files a staging sweep absorbs – an amend takes them as readily as edits, so a
+# scratch file left there joins the commit and reads as a tool bug in the summary – name
+# them up front so the amend stays deliberate, and ignored paths never reach here anyway
 _PRINT_UNTRACKED_ABSORB () {
-	# args: [<worktree>]
+	# Args: [<worktree>]
 	local WT=${1:-.}
 	local -a UNTRACKED
 	UNTRACKED=("${(@f)$(git -C "$WT" ls-files --others --exclude-standard 2>/dev/null)}")
@@ -737,7 +765,7 @@ _PRINT_UNTRACKED_ABSORB () {
 		return 0
 	fi
 	PRINT_TEXT "Absorbing %s untracked file(s) that were not in the commit:" 33 "${#UNTRACKED[@]}"
-	printf '%s\n' "${UNTRACKED[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	printf '%s\n' "${UNTRACKED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ ${#UNTRACKED[@]} -gt 10 ]; then
 		PRINT_TEXT "  … and %s more" 90 "$(( ${#UNTRACKED[@]} - 10 ))"
 	fi
@@ -780,7 +808,7 @@ _GC_ORPHANED_WORKTREES () {
 _REQUIRE_NO_INFLIGHT () {
 	if _STATE_EXISTS; then
 		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		echo -e "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
+		ECHO_E "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
 		exit 1
 	fi
 }
@@ -830,7 +858,7 @@ GIT_STASH () {
 		if [[ -n "$UNMERGED_FILES" ]]; then
 			PRINT_ERR "Stash failed because of conflict markers in files"
 			while IFS= read -r FILE; do
-				echo -e "\e[0;31m  - $FILE\e[0m" >&2
+				ECHO_E "\e[0;31m  - $FILE\e[0m" >&2
 			done <<< "$UNMERGED_FILES"
 		else
 			PRINT_ERR "Stash failed"
@@ -883,7 +911,7 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 					exit 2
 				fi
 				PRINT_ERR "Merge conflict during non-interactive run – cannot resolve from non-TTY"
-				echo -e "\e[0;31m  Re-run interactively to resolve, or use --exec for full control over the rebase.\e[0m" >&2
+				ECHO_E "\e[0;31m  Re-run interactively to resolve, or use --exec for full control over the rebase.\e[0m" >&2
 				ABORT
 			fi
 			# Identify two commits to name in the prompt:
@@ -1159,7 +1187,7 @@ GIT_EXEC () {
 			if git merge-base --is-ancestor "$R" "$ORIG_HEAD" 2>/dev/null && \
 			   ! git merge-base --is-ancestor "$R" "$NEW_HEAD" 2>/dev/null; then
 				PRINT_ERR "Command rewrote pushed history ($R would be orphaned) – not applied"
-				echo -e "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
+				ECHO_E "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
 				exit 1
 			fi
 		done
@@ -1223,10 +1251,10 @@ GIT_AMEND_INTO () {
 	if git diff --cached --quiet -- "${AMEND_PATHSPECS[@]}" 2>/dev/null; then
 		if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
 			PRINT_ERR "No staged changes under ${AMEND_PATHSPECS[*]}"
-			echo -e "\e[0;31m  Stage them with 'git add <files>', or drop the pathspec to fold everything staged.\e[0m" >&2
+			ECHO_E "\e[0;31m  Stage them with 'git add <files>', or drop the pathspec to fold everything staged.\e[0m" >&2
 		else
 			PRINT_ERR "No staged changes to amend"
-			echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+			ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
 		fi
 		exit 1
 	fi
@@ -1402,7 +1430,7 @@ _RESOLVE_AMEND_TARGET () {
 	PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	if [ -z "${PATHS[1]}" ]; then
 		PRINT_ERR "No staged changes to amend"
-		echo -e "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
 		exit 1
 	fi
 
@@ -1419,19 +1447,19 @@ _RESOLVE_AMEND_TARGET () {
 	if [ ${#BLAMED[@]} -gt 1 ]; then
 		PRINT_ERR "Cannot auto-target: the staged lines were last touched by different commits"
 		for C in "${BLAMED[@]}"; do
-			echo -e "\e[0;31m  ${C:0:7} ($(git log -1 --format=%s "$C" 2>/dev/null))\e[0m" >&2
+			ECHO_E "\e[0;31m  ${C:0:7} ($(git log -1 --format=%s "$C" 2>/dev/null))\e[0m" >&2
 		done
-		echo -e "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
+		ECHO_E "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
 		exit 1
 	fi
 	if [ ${#BLAMED[@]} -eq 1 ]; then
 		C=${BLAMED[1]}
 		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
 			PRINT_ERR "Cannot auto-target: the staged lines were last touched by a pushed commit (${C:0:7})"
-			echo -e "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
+			ECHO_E "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
 			exit 1
 		fi
-		echo -e "\e[0;90mauto-target: commit that last touched the staged lines\e[0m"
+		ECHO_E "\e[0;90mauto-target: commit that last touched the staged lines\e[0m"
 		AMEND_INTO_TARGET=$C
 		return
 	fi
@@ -1448,7 +1476,7 @@ _RESOLVE_AMEND_TARGET () {
 		fi
 		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
 			PRINT_ERR "Cannot auto-target: '$P' was last touched by a pushed commit (${C:0:7})"
-			echo -e "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
+			ECHO_E "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
 			exit 1
 		fi
 		CAND_LINES+=("  $P -> ${C:0:7} ($(git log -1 --format=%s "$C"))")
@@ -1461,20 +1489,20 @@ _RESOLVE_AMEND_TARGET () {
 
 	if [ -z "$CANDIDATE" ]; then
 		PRINT_ERR "Cannot auto-target: no staged path has unpushed history"
-		echo -e "\e[0;31m  All staged paths are new files – pass an explicit --amend-into=<sha>.\e[0m" >&2
+		ECHO_E "\e[0;31m  All staged paths are new files – pass an explicit --amend-into=<sha>.\e[0m" >&2
 		exit 1
 	fi
 	if [ "$MULTIPLE" = "true" ]; then
 		PRINT_ERR "Cannot auto-target: staged paths point at different commits"
 		local LINE
 		for LINE in "${CAND_LINES[@]}"; do
-			echo -e "\e[0;31m$LINE\e[0m" >&2
+			ECHO_E "\e[0;31m$LINE\e[0m" >&2
 		done
-		echo -e "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
+		ECHO_E "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
 		exit 1
 	fi
 
-	echo -e "\e[0;90mauto-target: newest unpushed commit touching ${#PATHS[@]} staged path(s)\e[0m"
+	ECHO_E "\e[0;90mauto-target: newest unpushed commit touching ${#PATHS[@]} staged path(s)\e[0m"
 	AMEND_INTO_TARGET=$CANDIDATE
 }
 
@@ -1489,7 +1517,7 @@ _PRINT_AMENDED_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 32 "Amended commit:"
 	fi
-	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_LEFTOVER_STATE "$4"
 }
 
@@ -1585,8 +1613,8 @@ _SPLIT_APPLY () {
 	# so the tip tree is identical by construction – stated so callers don't
 	# re-verify with a diff
 	PRINT_TEXT "%s – split into:" 32 "Tip tree unchanged by construction ✓"
-	git show --stat --format='  %h %s' "$C1" | head -8 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
-	git show --stat --format='  %h %s' "$C2" | head -8 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$C1" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --stat --format='  %h %s' "$C2" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
@@ -1626,10 +1654,10 @@ GIT_SPLIT () {
 		if [ ${#ALL_FILES[@]} -eq 1 ]; then
 			# One file means no pathspec can separate the halves – send them to
 			# the form that authors the split point instead
-			echo -e "\e[0;31m  It touches one file, so drop the pathspec and split by content:\e[0m" >&2
-			echo -e "\e[0;31m    git edit --split=${X:0:7} --text \"First subject\"\e[0m" >&2
+			ECHO_E "\e[0;31m  It touches one file, so drop the pathspec and split by content:\e[0m" >&2
+			ECHO_E "\e[0;31m    git edit --split=${X:0:7} --text \"First subject\"\e[0m" >&2
 		else
-			echo -e "\e[0;31m  Narrow the pathspec to the subset you want extracted.\e[0m" >&2
+			ECHO_E "\e[0;31m  Narrow the pathspec to the subset you want extracted.\e[0m" >&2
 		fi
 		exit 1
 	fi
@@ -1690,7 +1718,7 @@ GIT_SPLIT_PAUSE () {
 	PRINT_ACTION "Splitting %s..." "$X"
 	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
 	PRINT_TEXT "Edit it back to what the %s commit should leave behind – undo there whatever belongs in the second:" 33 "first"
-	git show --stat --format='' "$X" | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	git show --stat --format='' "$X" | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 	else
@@ -1721,7 +1749,7 @@ _CONTINUE_SPLIT () {
 	# mid-pause would silently re-seat it on content it was never derived from
 	if ! git merge-base --is-ancestor "$X" "$STATE_BRANCH" 2>/dev/null; then
 		PRINT_ERR "Commit ${X:0:7} left the branch during the pause – the authored tree no longer rests on its parent"
-		echo -e "\e[0;31m  Run 'git edit --abort' and redo the split against the current history.\e[0m" >&2
+		ECHO_E "\e[0;31m  Run 'git edit --abort' and redo the split against the current history.\e[0m" >&2
 		exit 1
 	fi
 
@@ -1754,12 +1782,12 @@ _CONTINUE_SPLIT () {
 
 	if [ "$TREE1" = "$(git rev-parse "$X^^{tree}")" ]; then
 		PRINT_ERR "Worktree matches ${X:0:7}'s parent – the extracted commit would be empty"
-		echo -e "\e[0;31m  Edit $STATE_WORKTREE to the state the first commit should leave, then retry.\e[0m" >&2
+		ECHO_E "\e[0;31m  Edit $STATE_WORKTREE to the state the first commit should leave, then retry.\e[0m" >&2
 		exit 1
 	fi
 	if [ "$TREE1" = "$(git rev-parse "$X^{tree}")" ]; then
 		PRINT_ERR "Worktree is unchanged from ${X:0:7} – the remainder commit would be empty"
-		echo -e "\e[0;31m  Undo the parts belonging to the second commit in $STATE_WORKTREE, then retry.\e[0m" >&2
+		ECHO_E "\e[0;31m  Undo the parts belonging to the second commit in $STATE_WORKTREE, then retry.\e[0m" >&2
 		exit 1
 	fi
 
@@ -1771,8 +1799,8 @@ _CONTINUE_SPLIT () {
 		<(git diff-tree -r --name-only "$X^^{tree}" "$X^{tree}" | sort))
 	if [ -n "$STRAY" ]; then
 		PRINT_ERR "Worktree changes paths ${X:0:7} never touched – the remainder would just revert them"
-		echo "$STRAY" | sed $'s/^/\e[0;31m  /;s/$/\e[0m/' >&2
-		echo -e "\e[0;31m  Undo them in $STATE_WORKTREE (git checkout -- <path>, or rm for ones it added), then retry.\e[0m" >&2
+		echo "$STRAY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		ECHO_E "\e[0;31m  Undo them in $STATE_WORKTREE (git checkout -- <path>, or rm for ones it added), then retry.\e[0m" >&2
 		exit 1
 	fi
 
@@ -1853,7 +1881,7 @@ GIT_REORDER () {
 	fi
 	if [ ${#EXPECTED[@]} -ne ${#COMMITS[@]} ]; then
 		PRINT_ERR "--reorder requires a contiguous span of commits"
-		echo -e "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
+		ECHO_E "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
 		exit 1
 	fi
 	for (( i=1; i<=${#COMMITS[@]}; i++ )); do
@@ -2032,7 +2060,7 @@ _PRINT_REORDER_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
 	fi
-	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
 		PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
 			"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
@@ -2189,7 +2217,7 @@ _PRINT_EDIT_RECONCILE_HINT () {
 		return 0
 	fi
 	PRINT_TEXT "Your checkout still holds the pre-edit content of:" 33
-	printf '%s\n' "${STALE[@]}" | head -10 | sed $'/./!d;s/^/\e[0;90m  /;s/$/\e[0m/'
+	printf '%s\n' "${STALE[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ ${#STALE[@]} -gt 10 ]; then
 		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} - 10 ))"
 	fi
@@ -2262,7 +2290,7 @@ _CONTINUE_EDIT () {
 		if [ -z "$(git status --porcelain)" ] && [ -z "$TEXT_VALUE" ]; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Nothing to amend – no changes in the worktree and no --text"
-			echo -e "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
+			ECHO_E "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 			exit 1
 		fi
 		_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
@@ -2443,8 +2471,8 @@ _GUARD_RESOLUTION_CLEAN () {
 	if [ ${#BAD[@]} -gt 0 ]; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
-		printf '%s\n' "${BAD[@]}" | sed $'s/^/\e[0;31m  /;s/$/\e[0m/' >&2
-		echo -e "\e[0;31m  Strip them in $WT, re-stage, then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
+		printf '%s\n' "${BAD[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		ECHO_E "\e[0;31m  Strip them in $WT, re-stage, then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 		EMIT_CONFLICT "$WT" "${(j:,:)BAD}"
 		exit 2
 	fi
@@ -2615,7 +2643,7 @@ _REQUIRE_TTY_FOR_EDITOR () {
 		return 0
 	fi
 	PRINT_ERR "Cannot open editor in non-interactive context (no TTY / agent run)"
-	echo -e "\e[0;31m  Pass --text \"<msg>\" for an inline message, or --text - to read from stdin.\e[0m" >&2
+	ECHO_E "\e[0;31m  Pass --text \"<msg>\" for an inline message, or --text - to read from stdin.\e[0m" >&2
 	exit 1
 }
 
@@ -2734,7 +2762,7 @@ GIT_REWORD () {
 
 	local ORIG_MSG=$(git log -1 --format='%B' "$TARGET" | git stripspace)
 	if [ "$NEW_MSG" = "$ORIG_MSG" ]; then
-		echo -e "${_PAD}\e[0;33mMessage unchanged – nothing to do.\e[0m"
+		ECHO_E "${_PAD}\e[0;33mMessage unchanged – nothing to do.\e[0m"
 		EMIT_STATUS "$ORIG_HEAD" "$REF" false
 		exit 0
 	fi
@@ -2782,10 +2810,10 @@ GIT_REWORD () {
 	# Deriving it by offset instead walks first parents, so a merge in the span
 	# – whose commit count includes the side branch – named the wrong commit.
 	if [ -n "$NEW_TARGET" ]; then
-		git log -1 --format='  %h %s' "$NEW_TARGET" | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+		git log -1 --format='  %h %s' "$NEW_TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
-			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed $'s/^/\e[0;90m    /;s/$/\e[0m/'
+			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
 		fi
 		# Name the subject that was replaced. A symbolic target resolves once,
 		# at invocation, so a commit landing between the caller's read and this
@@ -2838,8 +2866,8 @@ GIT_RESQUASH () {
 
 	if [ ${#EXPECTED[@]} -ne ${#COMMITS[@]} ]; then
 		PRINT_ERR "-S/--resquash requires contiguous commits"
-		echo -e "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
-		echo -e "\e[0;31m  For non-contiguous squashes, use -s (combine with -C for safety).\e[0m" >&2
+		ECHO_E "\e[0;31m  Selected ${#COMMITS[@]}; range ${OLDEST:0:7}..${NEWEST:0:7} contains ${#EXPECTED[@]}.\e[0m" >&2
+		ECHO_E "\e[0;31m  For non-contiguous squashes, use -s (combine with -C for safety).\e[0m" >&2
 		exit 1
 	fi
 	local i
@@ -2856,7 +2884,7 @@ GIT_RESQUASH () {
 		P_LIST=$(git log -1 --format='%P' "$C")
 		if [[ "$P_LIST" == *" "* ]]; then
 			PRINT_ERR "-S/--resquash cannot handle merge commit ${C:0:7}"
-			echo -e "\e[0;31m  Use -s (combine with -C for safety) instead.\e[0m" >&2
+			ECHO_E "\e[0;31m  Use -s (combine with -C for safety) instead.\e[0m" >&2
 			exit 1
 		fi
 	done
@@ -2934,7 +2962,7 @@ GIT_RESQUASH () {
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
 	PRINT_TEXT "%s – squashed commit:" 32 "Tip tree unchanged by construction ✓"
-	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed $'/./!d;s/^/\e[0;90m/;s/$/\e[0m/'
+	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 GIT_COMMIT_AMEND () {
@@ -2991,7 +3019,7 @@ CONTINUE_OR_ABORT () {
 	local SKIPPABLE=$2
 
 	if [[ "$SKIPPABLE" == "skip" && ${#OPT_YES} -gt 0 ]]; then
-		echo -e "\e[0;90m(-y / --yes: auto-confirmed)\e[0m"
+		ECHO_E "\e[0;90m(-y / --yes: auto-confirmed)\e[0m"
 		return 0
 	fi
 
@@ -3029,7 +3057,7 @@ ABORT () {
 	# Print "Aborted." directly (not via PRINT_ERR) so we don't overwrite
 	# _LAST_ERROR — the trailer should show the actual error reason that
 	# triggered the abort, not the generic "Aborted." follow-up.
-	echo -e "\n\e[1;91mAborted.\e[0m" >&2
+	ECHO_E "\n\e[1;91mAborted.\e[0m" >&2
 	exit 1
 }
 
@@ -3059,7 +3087,7 @@ GIT_SELFTEST () {
 		if [[ "$OUT" == *"command not found"* || "$OUT" == *"no matches found"* || \
 		      "$OUT" == *"bad substitution"* || "$OUT" == *"parse error"* ]]; then
 			FAIL=$((FAIL+1))
-			echo -e "  \e[1;31mFAIL\e[0m shell noise from 'git edit $*'"
+			ECHO_E "  \e[1;31mFAIL\e[0m shell noise from 'git edit $*'"
 			echo "$OUT" | grep -E 'command not found|no matches found|bad substitution|parse error' \
 				| head -3 | sed 's/^/       | /'
 		fi
@@ -3067,9 +3095,9 @@ GIT_SELFTEST () {
 	_ST_CHECK () {
 		local DESC=$1; shift
 		if "$@" >/dev/null 2>&1; then
-			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
-			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | tail -5 | sed 's/^/       | /'
 		fi
 	}
@@ -3077,9 +3105,9 @@ GIT_SELFTEST () {
 		local DESC=$1
 		local PATTERN=$2
 		if echo "$OUT" | grep -q "$PATTERN"; then
-			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
-			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | tail -5 | sed 's/^/       | /'
 		fi
 	}
@@ -3087,18 +3115,18 @@ GIT_SELFTEST () {
 		local DESC=$1
 		local PATTERN=$2
 		if echo "$OUT" | grep -q "$PATTERN"; then
-			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC"
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | grep "$PATTERN" | head -3 | sed 's/^/       | /'
 		else
-			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		fi
 	}
 	_ST_EQ () {
 		local DESC=$1
 		if [ "$2" = "$3" ]; then
-			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m $DESC"
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
-			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m $DESC ('$2' != '$3')"
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC ('$2' != '$3')"
 		fi
 	}
 
@@ -3124,7 +3152,7 @@ GIT_SELFTEST () {
 	local SHA_C=$(git rev-parse HEAD~2)
 
 	# --- 1. Reword (-M --text): plumbing, tree-identical, trailer ---
-	echo -e "\e[1;96m[1] reword (-M --text)\e[0m"
+	ECHO_E "\e[1;96m[1] reword (-M --text)\e[0m"
 	local PRE_HEAD=$(git rev-parse HEAD)
 	local PRE_TREE=$(git rev-parse 'HEAD^{tree}')
 	_ST_RUN -M --text="C reworded" "$SHA_C"
@@ -3140,13 +3168,13 @@ GIT_SELFTEST () {
 	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
 
 	# --- 2. Undo: reverts the reword, CAS-guarded ---
-	echo -e "\e[1;96m[2] undo\e[0m"
+	ECHO_E "\e[1;96m[2] undo\e[0m"
 	_ST_RUN --undo
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "HEAD restored" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 3. Pushed guard: refuse B, allow with --allow-pushed ---
-	echo -e "\e[1;96m[3] pushed guard\e[0m"
+	ECHO_E "\e[1;96m[3] pushed guard\e[0m"
 	_ST_RUN -M --text="B reworded" "$SHA_B"
 	_ST_CHECK "refuses pushed commit" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'already pushed'
@@ -3156,7 +3184,7 @@ GIT_SELFTEST () {
 	_ST_EQ "undo restores" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 4. Fold (--amend-into) clean: a.txt change into C ---
-	echo -e "\e[1;96m[4] amend-into (clean)\e[0m"
+	ECHO_E "\e[1;96m[4] amend-into (clean)\e[0m"
 	echo "alpha folded" > a.txt
 	git add a.txt
 	_ST_RUN --amend-into="$SHA_C"
@@ -3169,7 +3197,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "no fixup commit on branch" test -z "$(git log --format=%s | grep '^fixup!')"
 
 	# --- 5. Fold conflict -> status -> abort: branch + staged intact ---
-	echo -e "\e[1;96m[5] amend-into conflict + abort\e[0m"
+	ECHO_E "\e[1;96m[5] amend-into conflict + abort\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	local SHA_C2=$(git rev-parse HEAD~2)
 	echo "line1-conflict" > c.txt
@@ -3186,7 +3214,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "staged change preserved" sh -c "git diff --cached --name-only | grep -q c.txt"
 
 	# --- 6. Fold conflict -> resolve -> continue (with cascade) ---
-	echo -e "\e[1;96m[6] amend-into conflict + continue\e[0m"
+	ECHO_E "\e[1;96m[6] amend-into conflict + continue\e[0m"
 	_ST_RUN --amend-into="$SHA_C2"
 	_ST_EQ "pauses with exit 2" "$RC" "2"
 	local ROUNDS=0
@@ -3212,7 +3240,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- 6b. Conflict resolved manually in the worktree, staged WIP survives ---
-	echo -e "\e[1;96m[6b] manual worktree completion + parallel staged WIP\e[0m"
+	ECHO_E "\e[1;96m[6b] manual worktree completion + parallel staged WIP\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	local SHA_C3=$(git rev-parse HEAD~2)
 	echo "line1-again" > c.txt
@@ -3242,19 +3270,19 @@ GIT_SELFTEST () {
 	git reset -q -- w.txt && rm -f w.txt
 
 	# --- 6c. Standalone commands refuse stray arguments ---
-	echo -e "\e[1;96m[6c] stray-argument refusal\e[0m"
+	ECHO_E "\e[1;96m[6c] stray-argument refusal\e[0m"
 	_ST_RUN --undo "$(git rev-parse HEAD)"
 	_ST_CHECK "refuses" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'take no arguments'
 
 	# --- 7. Drop (auto-isolated, non-TTY) ---
-	echo -e "\e[1;96m[7] drop\e[0m"
+	ECHO_E "\e[1;96m[7] drop\e[0m"
 	_ST_RUN -d "$(git rev-parse HEAD)"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_CHECK "dropped commit's file gone" sh -c "! git cat-file -e 'HEAD:e.txt'"
 
 	# --- 8. Squash (implicit, plumbing route) ---
-	echo -e "\e[1;96m[8] squash (plumbing)\e[0m"
+	ECHO_E "\e[1;96m[8] squash (plumbing)\e[0m"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
 	local PRE_COUNT=$(git rev-list --count HEAD)
 	_ST_RUN --text="C and D combined" "$(git rev-parse HEAD~1)" "$(git rev-parse HEAD)"
@@ -3265,7 +3293,7 @@ GIT_SELFTEST () {
 	_ST_EQ "combined message" "$(git log --format=%s -1)" "C and D combined"
 
 	# --- 9. Reorder: swap two independent tip commits ---
-	echo -e "\e[1;96m[9] reorder\e[0m"
+	ECHO_E "\e[1;96m[9] reorder\e[0m"
 	echo "ex" > x.txt && git add x.txt && git commit -qm "X commit"
 	echo "why" > y.txt && git add y.txt && git commit -qm "Y commit"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
@@ -3277,7 +3305,7 @@ GIT_SELFTEST () {
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 
 	# --- 10. Edit mode pauses in non-TTY instead of prompting ---
-	echo -e "\e[1;96m[10] edit-mode non-TTY pause\e[0m"
+	ECHO_E "\e[1;96m[10] edit-mode non-TTY pause\e[0m"
 	_ST_RUN "$(git rev-parse HEAD)"
 	_ST_EQ "pauses (exit 2)" "$RC" "2"
 	_ST_OUT_HAS "paused trailer names the worktree" 'git-edit: paused'
@@ -3285,13 +3313,13 @@ GIT_SELFTEST () {
 	_ST_EQ "abort clears it" "$RC" "0"
 
 	# --- 11. Exec: amend via isolated worktree ---
-	echo -e "\e[1;96m[11] exec\e[0m"
+	ECHO_E "\e[1;96m[11] exec\e[0m"
 	_ST_RUN --exec -- git commit --amend -m "amended via exec"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "amend applied" "$(git log --format=%s -1)" "amended via exec"
 
 	# --- 12. Exec pushed-orphan guard ---
-	echo -e "\e[1;96m[12] exec pushed-orphan guard\e[0m"
+	ECHO_E "\e[1;96m[12] exec pushed-orphan guard\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	_ST_RUN --exec -- git reset --hard "$SHA_A"
 	_ST_CHECK "refuses" test "$RC" != "0"
@@ -3299,20 +3327,20 @@ GIT_SELFTEST () {
 	_ST_EQ "branch unchanged" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 13. Undo refuses after the branch moved on ---
-	echo -e "\e[1;96m[13] undo CAS guard\e[0m"
+	ECHO_E "\e[1;96m[13] undo CAS guard\e[0m"
 	echo "zeta" > z.txt && git add z.txt && git commit -qm "Z commit"
 	_ST_RUN --undo
 	_ST_CHECK "refuses" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'has moved since'
 
 	# --- 14. Status: idle report ---
-	echo -e "\e[1;96m[14] status (idle)\e[0m"
+	ECHO_E "\e[1;96m[14] status (idle)\e[0m"
 	_ST_RUN --status
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "reports idle" '^git-edit: ok — no operation in flight'
 
 	# --- 15. amend-into=auto: consensus target, new file follows ---
-	echo -e "\e[1;96m[15] amend-into=auto\e[0m"
+	ECHO_E "\e[1;96m[15] amend-into=auto\e[0m"
 	echo "em" > m.txt && git add m.txt && git commit -qm "M commit"
 	echo "en" > n.txt && git add n.txt && git commit -qm "N commit"
 	echo "em2" > m.txt && git add m.txt
@@ -3324,7 +3352,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "new file followed consensus" git cat-file -e 'HEAD~1:p.txt'
 
 	# --- 16. auto refuses ambiguous targets ---
-	echo -e "\e[1;96m[16] auto ambiguity refusal\e[0m"
+	ECHO_E "\e[1;96m[16] auto ambiguity refusal\e[0m"
 	echo "em3" > m.txt && echo "en3" > n.txt
 	git add m.txt n.txt
 	_ST_RUN --amend-into=auto
@@ -3333,7 +3361,7 @@ GIT_SELFTEST () {
 	git reset -q && git checkout -q -- m.txt n.txt
 
 	# --- 17. auto refuses pushed-only history ---
-	echo -e "\e[1;96m[17] auto pushed-history refusal\e[0m"
+	ECHO_E "\e[1;96m[17] auto pushed-history refusal\e[0m"
 	echo "beta2" > b.txt && git add b.txt
 	_ST_RUN --amend-into=auto
 	_ST_CHECK "refuses" test "$RC" != "0"
@@ -3341,7 +3369,7 @@ GIT_SELFTEST () {
 	git reset -q && git checkout -q -- b.txt
 
 	# --- 18. split by pathspec ---
-	echo -e "\e[1;96m[18] split\e[0m"
+	ECHO_E "\e[1;96m[18] split\e[0m"
 	echo "s1" > s1.txt && echo "s2" > s2.txt
 	git add s1.txt s2.txt && git commit -qm "S mixed commit"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
@@ -3361,7 +3389,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "single-file split points at the content form" 'drop the pathspec and split by content'
 
 	# --- 19. empty-step pause: guidance + skip, plus graceful no-op continue ---
-	echo -e "\e[1;96m[19] empty-step guidance\e[0m"
+	ECHO_E "\e[1;96m[19] empty-step guidance\e[0m"
 	echo "f1" > f1.txt && echo "v1" > f2.txt && git add f1.txt f2.txt && git commit -qm "R0 base"
 	echo "f1x" > f1.txt && echo "v2" > f2.txt && git add f1.txt f2.txt && git commit -qm "R1 commit"
 	echo "v1" > f2.txt && git add f2.txt && git commit -qm "R2 revert"
@@ -3393,7 +3421,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- 20. tag-orphan warning on rewrites beneath a tag ---
-	echo -e "\e[1;96m[20] tag-orphan warning\e[0m"
+	ECHO_E "\e[1;96m[20] tag-orphan warning\e[0m"
 	echo "t1" > t1.txt && git add t1.txt && git commit -qm "T1 commit"
 	echo "t2" > t2.txt && git add t2.txt && git commit -qm "T2 commit"
 	git tag marker
@@ -3411,7 +3439,7 @@ GIT_SELFTEST () {
 	git tag -d marker >/dev/null 2>&1
 
 	# --- 21. auto-target resolves from a subdirectory ---
-	echo -e "\e[1;96m[21] auto-target from subdirectory\e[0m"
+	ECHO_E "\e[1;96m[21] auto-target from subdirectory\e[0m"
 	mkdir -p subd
 	echo "sd" > subd/sd.txt && git add subd/sd.txt && git commit -qm "SD commit"
 	cd subd
@@ -3423,7 +3451,7 @@ GIT_SELFTEST () {
 	_ST_EQ "fold landed in SD" "$(git show 'HEAD:subd/sd.txt')" "sd2"
 
 	# --- 22. man page exists and documents every mode (drift guard vs. USAGE) ---
-	echo -e "\e[1;96m[22] man page coverage\e[0m"
+	ECHO_E "\e[1;96m[22] man page coverage\e[0m"
 	local MANPAGE="$(dirname "$SELF")/man/man1/git-edit.1"
 	_ST_CHECK "man page present" test -f "$MANPAGE"
 	if [ -f "$MANPAGE" ]; then
@@ -3433,14 +3461,14 @@ GIT_SELFTEST () {
 			sed 's/\\//g' "$MANPAGE" | grep -q -- "$mflag" || missing="$missing $mflag"
 		done
 		if [ -z "$missing" ]; then
-			PASS=$((PASS+1)); echo -e "  \e[0;32mPASS\e[0m man page documents every mode"
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m man page documents every mode"
 		else
-			FAIL=$((FAIL+1)); echo -e "  \e[1;31mFAIL\e[0m man page missing:$missing"
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m man page missing:$missing"
 		fi
 	fi
 
 	# --- 23. stale (rewritten) SHAs are refused, never silently no-op'd ---
-	echo -e "\e[1;96m[23] stale SHA handling\e[0m"
+	ECHO_E "\e[1;96m[23] stale SHA handling\e[0m"
 	echo "stale" > stale.txt && git add stale.txt && git commit -qm "Stale target"
 	local STALE_SHA=$(git rev-parse HEAD)
 	# Fold into it: the SHA changes, the subject survives for the counterpart hint
@@ -3502,7 +3530,7 @@ GIT_SELFTEST () {
 	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$TWIN_HEAD"
 
 	# --- 24. merge topology: plumbing rebuilds preserve it, rebase modes refuse ---
-	echo -e "\e[1;96m[24] merge topology\e[0m"
+	ECHO_E "\e[1;96m[24] merge topology\e[0m"
 	echo "l1" > l1.txt && git add l1.txt && git commit -qm "Low one"
 	local LOW1=$(git rev-parse HEAD)
 	echo "l2" > l2.txt && git add l2.txt && git commit -qm "Low two"
@@ -3537,7 +3565,7 @@ GIT_SELFTEST () {
 	git branch -q -D d-side
 
 	# --- 25. move mode: reposition one commit via derived span reorder ---
-	echo -e "\e[1;96m[25] move mode\e[0m"
+	ECHO_E "\e[1;96m[25] move mode\e[0m"
 	for MC in m1 m2 m3 m4; do
 		echo "$MC" > "$MC.txt" && git add "$MC.txt" && git commit -qm "Move $MC"
 	done
@@ -3585,7 +3613,7 @@ GIT_SELFTEST () {
 	# The rebuilt-commit case: descendants of one rewrite all share a committer
 	# second, so timestamp sorts tie – the span must sort from HEAD's history,
 	# and short SHAs must normalize for that sort's exact match to hit
-	echo -e "\e[1;96m[26] explicit-target squash ordering\e[0m"
+	ECHO_E "\e[1;96m[26] explicit-target squash ordering\e[0m"
 	local QN
 	for QN in q1 q2 q3 q4; do
 		echo "$QN" > q.txt && git add q.txt
@@ -3611,7 +3639,7 @@ GIT_SELFTEST () {
 	# --- 27. rebase-path conflicts pause into --continue/--abort ---
 	# Dropping a commit whose successor edits the same line conflicts, and the
 	# isolated rebase must pause like the plumbing modes rather than bail
-	echo -e "\e[1;96m[27] rebase-path conflict pause\e[0m"
+	ECHO_E "\e[1;96m[27] rebase-path conflict pause\e[0m"
 	printf 'x\nb\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ base"
 	printf 'x\nMID\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ mid"
 	printf 'x\nTIP\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ tip"
@@ -3637,7 +3665,7 @@ GIT_SELFTEST () {
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$PZ_TIP2"
 
 	# --- 28. auto-target follows the edited lines, not the file ---
-	echo -e "\e[1;96m[28] blame-aware auto-target\e[0m"
+	ECHO_E "\e[1;96m[28] blame-aware auto-target\e[0m"
 	printf 'bl1\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
 	git add bl.txt && git commit -qm "BL base"
 	printf 'bl1\nBL-A original\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
@@ -3664,7 +3692,7 @@ GIT_SELFTEST () {
 	git reset -q --hard HEAD
 
 	# --- 29. non-interactive edit mode: pause, author, continue ---
-	echo -e "\e[1;96m[29] edit mode (agent flow)\e[0m"
+	ECHO_E "\e[1;96m[29] edit mode (agent flow)\e[0m"
 	git reset -q --hard   # reconcile the scratch checkout so later commits carry no phantom reverts
 	printf 'e1\nEDIT-ME\ne2\n' > ed.txt && git add ed.txt && git commit -qm "ED target"
 	local ED_TARGET=$(git rev-parse HEAD)
@@ -3701,7 +3729,7 @@ GIT_SELFTEST () {
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$ED_TIP2"
 
 	# --- 30. content split: pause, author the split point, continue ---
-	echo -e "\e[1;96m[30] content split (same-file halves)\e[0m"
+	ECHO_E "\e[1;96m[30] content split (same-file halves)\e[0m"
 	git reset -q --hard
 	printf 'first\nsecond\n' > cs.txt && git add cs.txt && git commit -qm "CS base"
 	printf 'FIRST\nsecond\nthird\n' > cs.txt && git add cs.txt && git commit -qm "CS mixed commit"
@@ -3758,7 +3786,7 @@ GIT_SELFTEST () {
 	_ST_EQ "pre-split tip tree preserved" "$(git rev-parse 'HEAD~1^{tree}')" "$CS_TIP_TREE"
 
 	# --- 31. argument mistakes name the right form instead of dead-ending ---
-	echo -e "\e[1;96m[31] argument-error guidance\e[0m"
+	ECHO_E "\e[1;96m[31] argument-error guidance\e[0m"
 	_ST_RUN -M "Some prose that is a message, not a commit"
 	_ST_EQ "prose in the <commit> slot refused" "$RC" "1"
 	_ST_OUT_HAS "points at --text" 'pass it as --text'
@@ -3773,7 +3801,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "bare invocation still shows usage" 'usage: git edit'
 
 	# --- 32. scoped fold: a pathspec keeps the rest of the index out ---
-	echo -e "\e[1;96m[32] scoped --amend-into\e[0m"
+	ECHO_E "\e[1;96m[32] scoped --amend-into\e[0m"
 	git reset -q --hard
 	echo "sc1" > sc.txt && echo "other" > sc-other.txt && git add sc.txt sc-other.txt && git commit -qm "SC base"
 	local SC_TARGET=$(git rev-parse HEAD)
@@ -3797,7 +3825,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the empty match" 'No staged changes under'
 	git reset -q --hard
 	# --- 33. a reorder step resolved to empty must not vanish under an `ok` ---
-	echo -e "\e[1;96m[33] dropped-commit reporting\e[0m"
+	ECHO_E "\e[1;96m[33] dropped-commit reporting\e[0m"
 	git reset -q --hard
 	printf 'd1\nd2\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR base"
 	printf 'd1\nDX\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR one"
@@ -3817,7 +3845,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 34. a staged resolution with conflict markers must not continue ---
-	echo -e "\e[1;96m[34] conflict-marker guard\e[0m"
+	ECHO_E "\e[1;96m[34] conflict-marker guard\e[0m"
 	git reset -q --hard
 	printf 'm1\nm2\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK base"
 	printf 'm1\nMT\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK target"
@@ -3843,7 +3871,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 35. the final-step auto-resolve must refuse when it can't prove itself ---
-	echo -e "\e[1;96m[35] auto-resolve proof\e[0m"
+	ECHO_E "\e[1;96m[35] auto-resolve proof\e[0m"
 	git reset -q --hard
 	printf 'p1\n' > pa.txt && printf 'q1\n' > pb.txt && git add pa.txt pb.txt && git commit -qm "PR base"
 	printf 'p1\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR A"
@@ -3867,7 +3895,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 36. reporting must survive the shapes that break naive derivation ---
-	echo -e "\e[1;96m[36] reporting under merges + scoped conflicts\e[0m"
+	ECHO_E "\e[1;96m[36] reporting under merges + scoped conflicts\e[0m"
 	git reset -q --hard
 	# (a) a merge in the reword span: commit count includes the side branch,
 	# but `~N` walks first parents – deriving the commit by offset misses
@@ -3906,7 +3934,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 37. edit mode must report the stale checkout it leaves behind ---
-	echo -e "\e[1;96m[37] edit-mode checkout staleness\e[0m"
+	ECHO_E "\e[1;96m[37] edit-mode checkout staleness\e[0m"
 	git reset -q --hard
 	printf 'ed1\nSTALE-ME\ned3\n' > stale.js && git add stale.js && git commit -qm "STALE target"
 	local STALE_T=$(git rev-parse HEAD)
@@ -3932,7 +3960,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 38. a tree-changing rewrite reconciles per path, never by stashing ---
-	echo -e "\e[1;96m[38] targeted checkout reconcile\e[0m"
+	ECHO_E "\e[1;96m[38] targeted checkout reconcile\e[0m"
 	git reset -q --hard
 	echo "tc-keep" > tc-keep.txt && git add tc-keep.txt && git commit -qm "TC base"
 	echo "tc-drop" > tc-drop.txt && git add tc-drop.txt && git commit -qm "TC to drop"
@@ -3967,7 +3995,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 39. --exec names the branch it moved, and reaches the reconcile hint ---
-	echo -e "\e[1;96m[39] exec reports the branch it rewrote\e[0m"
+	ECHO_E "\e[1;96m[39] exec reports the branch it rewrote\e[0m"
 	git reset -q --hard
 	echo "xa" > xa.txt && git add xa.txt && git commit -qm "XA base"
 	echo "xb" > xb.txt && git add xb.txt && git commit -qm "XB to reword"
@@ -3988,7 +4016,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 40. a continue names the untracked files it absorbs ---
-	echo -e "\e[1;96m[40] untracked absorption is named\e[0m"
+	ECHO_E "\e[1;96m[40] untracked absorption is named\e[0m"
 	git reset -q --hard
 	echo "ua" > ua.txt && git add ua.txt && git commit -qm "UA base"
 	echo "ub" > ub.txt && git add ub.txt && git commit -qm "UB target"
@@ -4016,7 +4044,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 41. a conflict resolution is recorded for rerere to replay ---
-	echo -e "\e[1;96m[41] conflict resolutions reach rr-cache\e[0m"
+	ECHO_E "\e[1;96m[41] conflict resolutions reach rr-cache\e[0m"
 	git reset -q --hard
 	local RR_DIR="$(git rev-parse --git-common-dir)/rr-cache"
 	local RR_BEFORE=$(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ')
@@ -4069,7 +4097,7 @@ GIT_SELFTEST () {
 		sh -c "! grep -qE '^[[:space:]]*local CMD=\\(rebase' '$SELF'"
 
 	# --- 42. a CAS refusal keeps the resolution instead of deleting it ---
-	echo -e "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
+	ECHO_E "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
 	git reset -q --hard
 	printf 'cas one\ncas two\n' > cas.txt && git add cas.txt && git commit -qm "CAS base"
 	local CAS_TARGET=$(git rev-parse HEAD)
@@ -4121,7 +4149,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 43. the orphan sweep takes debris and nothing else ---
-	echo -e "\e[1;96m[43] orphan worktree sweep\e[0m"
+	ECHO_E "\e[1;96m[43] orphan worktree sweep\e[0m"
 	git reset -q --hard
 	local GCBASE=${TMPDIR:-/tmp}
 	GCBASE=${GCBASE%/}
@@ -4147,7 +4175,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 44. marker-free conflicts must still pause, with history intact ---
-	echo -e "\e[1;96m[44] marker-free conflicts still pause\e[0m"
+	ECHO_E "\e[1;96m[44] marker-free conflicts still pause\e[0m"
 	git reset -q --hard
 	# Neither of these carries conflict markers, so any attempt to decide a
 	# conflict by inspecting the file auto-resolves them the wrong way – which
@@ -4410,7 +4438,7 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt
 	USAGE
 	PRINT_ERR "Option --amend-into cannot be combined with other modes (it folds staged changes into <sha> via fixup+autosquash)"
 	if [ ${#OPT_REWORD} -gt 0 ]; then
-		echo -e "\e[0;31m  To reword instead: git edit -M --text=\"…\" <sha>\e[0m" >&2
+		ECHO_E "\e[0;31m  To reword instead: git edit -M --text=\"…\" <sha>\e[0m" >&2
 	fi
 	exit 1
 fi
@@ -4678,7 +4706,7 @@ for ARG in "$@"; do
 			# that takes both invites, and nothing about "unknown commit" hints
 			# at the real fix
 			if [[ "$ARG" == *" "* ]]; then
-				echo -e "\e[0;31m  That looks like a message – pass it as --text \"…\" and give the commit separately.\e[0m" >&2
+				ECHO_E "\e[0;31m  That looks like a message – pass it as --text \"…\" and give the commit separately.\e[0m" >&2
 			fi
 			exit 1
 		fi
@@ -4870,27 +4898,19 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 	exit 2
 fi
 
-# Final --text validation: only valid for message-producing modes. We deferred
-# this until after action determination so implicit squash (multi-commit args
-# without -s) and auto-routing are both accounted for.
+# Final `--text` validation, only valid for message-producing modes – deferred until after
+# action determination so implicit squash and auto-routing are both accounted for
 if [ -n "$TEXT_VALUE" ] && [[ "$ACTION" != "reword" && "$ACTION" != "resquash" && "$ACTION" != "squash" ]]; then
 	PRINT_ERR "Option --text only applies to message-producing modes (-M, -s, -S, or implicit squash); got action: $ACTION"
 	exit 1
 fi
 
-# Auto-isolate in non-interactive contexts (stdin not a TTY): when run by
-# Claude Code, CI, or any script, default to `-C` for the modes that would
-# otherwise touch the main working tree (drop / edit / non-eligible squash).
-# Protects parallel sessions from accidentally clobbering each other.
-# Plumbing modes (-M, -S, --exec) already skip the working tree, so they're
-# left alone here. Override with GIT_EDIT_NO_AUTO_ISOLATE=1.
-#
-# Uses a unique per-invocation temp worktree (cleaned up via _CLEANUP_HOOK
-# on exit) so concurrent agent sessions never collide on the same worktree
-# – mirroring `--exec`'s isolation guarantee.
+# Auto-isolate in non-interactive contexts – run by an agent, CI or any script, default to
+# `-C` for the modes that would otherwise touch the main working tree, so parallel
+# sessions cannot clobber each other, with `GIT_EDIT_NO_AUTO_ISOLATE=1` to override
 if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -eq 0 ] && \
    [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
-	echo -e "${_PAD}\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
+	ECHO_E "${_PAD}\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
 	OPT_DIR=(--dir)
 	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso)
 	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
@@ -5037,7 +5057,7 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		WT_STATUS=$?
 		if [ $WT_STATUS -ne 0 ]; then
 			if [[ "$WT_OUT" == *"missing but already registered"* ]]; then
-				echo -e "\e[0;90m(stale worktree registration — pruning and retrying)\e[0m"
+				ECHO_E "\e[0;90m(stale worktree registration — pruning and retrying)\e[0m"
 				git worktree prune 2>/dev/null
 				eval "$CMD" || ABORT
 			else

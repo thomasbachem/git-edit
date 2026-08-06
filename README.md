@@ -41,7 +41,7 @@ git-edit: paused — edit|split <sha> in <worktree>; then 'git edit --continue' 
 git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
-Output is padded with blank lines for readability only when stdout is a terminal. Piped or captured — every agent invocation — it comes out tight, so a `| tail -5` carries the whole completion summary instead of blank space.
+Output is padded with blank lines for readability only when stdout is a terminal. Piped or captured — every agent invocation — it comes out tight, so a `| tail -5` carries the whole completion summary instead of blank space. Color follows the same rule and also honors `NO_COLOR` and `TERM=dumb`, so a captured run greps as plain text rather than as literal text split by escape sequences.
 
 Agents `grep '^git-edit: (ok|error|conflict|paused)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
 *Tip:* Mode and flags can be given in any order.
