@@ -10,7 +10,7 @@ git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 \fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR] \fIcommit\fR
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
-\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-\fR \fIpathspec\fR...]
+\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
@@ -104,7 +104,7 @@ contiguous, merge\-free range whose target is the oldest commit.
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
-.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-\fR \fIpathspec\fR...]
+.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-\fR \fIpathspec\fR...]
 Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
 isolated worktree. A \fIpathspec\fR narrows the fold to those staged paths and
 leaves the rest staged \(em worth using when the index may hold more than you
@@ -118,6 +118,12 @@ falling back to the newest commit touching the staged paths only where the
 change adds lines and so attributes to nothing. It refuses when the evidence
 points at several commits, or at a pushed one. Only staged changes are folded;
 unstaged edits are left untouched.
+.B \-\-text
+also rewords \fIsha\fR in the same run \(em
+.BR git\-commit (1)
+.BR \-\-amend " " \-m
+semantics. The reword is plumbing and runs before the fixup, so both land
+under one ref update and neither can be left applied without the other.
 .TP
 .B \-\-split=\fIsha\fR [\fB\-\-\fR \fIpathspec\fR...]
 Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
@@ -168,11 +174,17 @@ Also edit the commit message after applying changes.
 Inline message for
 .BR \-M ,
 .BR \-s / \-S ,
+.BR \-\-split ,
 or
-.BR \-\-split
+.BR \-\-amend\-into
 (skips the editor).
 .B \-\-text \-
-reads the message from standard input.
+reads the message from standard input. With
+.BR \-\-amend\-into
+it must be given up front, not on
+.BR \-\-continue :
+the reword happens before the replay starts, so the commits being resolved
+already carry the message.
 .TP
 .B \-C, \-\-dir\fR[=\fIpath\fR]
 Run the rebase in a separate worktree (default:

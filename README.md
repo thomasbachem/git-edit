@@ -27,7 +27,7 @@ FLAGS:
 -C, --dir                       Run in a separate worktree (default: <repo>.git-edit)
 -C=<path>, --dir=<path>         Run in the specified worktree path
 --allow-pushed                  Override the refusal to rewrite commits that exist on a remote
---text <msg>                    Inline message for -M / -S (skip editor); use - for stdin
+--text <msg>                    Inline message for -M / -S / --split / --amend-into (skip editor); use - for stdin
 -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)
 ```
 
@@ -143,6 +143,9 @@ git edit --amend-into=<sha>
 
 # Or fold only some of what's staged, leaving the rest staged
 git edit --amend-into=<sha> -- src/js/foo.js
+
+# Or fold and reword in one go — `git commit --amend -m` semantics
+git edit --amend-into=<sha> --text="Better subject"
 ```
 
 The pathspec form is worth reaching for whenever the index might hold more than you mean to fold. `--amend-into` snapshots the **whole** index, and in a shared checkout a parallel session can stage into it during the gap between your `git add` and this call — a pathspec makes that impossible to sweep into a past commit, and removes the `git diff --cached` pre-check you'd otherwise run to be sure.
@@ -151,6 +154,8 @@ What happens internally:
 1. The staged index is snapshotted into a `fixup!` commit **object** (`git write-tree` + `git commit-tree`) — no ref moves, so the branch stays visually untouched and parallel sessions never see an intermediate `fixup!` commit.
 2. A unique temp worktree is created at that object and `git rebase --autosquash` runs there, folding the fixup into `<sha>`.
 3. The branch ref is atomically CAS-updated from its pre-operation tip to the rebased tip.
+
+With `--text`, the target is reworded in the same run. That step is plumbing and runs *before* the fixup, so the autosquash carries the new message and one CAS applies both — the fold can never land with the reword missing, and no positional lookup is needed to find the amended commit afterwards (a replay can drop a commit that went empty, which would shift it). Because the replayed commits already carry the message, `--text` has to be given up front; passing it to `--continue` is refused rather than ignored.
 
 Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits. Nothing is consumed until the final CAS lands: on any failure or `--abort`, your staged changes are simply still staged, ready for a retry — there is nothing to roll back. On success, the amended commit's `--stat` is printed so no follow-up `git show` is needed.
 
