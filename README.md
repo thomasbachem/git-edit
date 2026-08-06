@@ -328,7 +328,7 @@ git config --add edit.worktreeLink node_modules
 
 Every temporary worktree then gets them symlinked in from the checkout (repeatable for more than one path; `GIT_EDIT_WORKTREE_LINK=a:b` does the same ad hoc). Links, not copies — they cost nothing, and a check running against a copy could quietly diverge from what's actually installed.
 
-One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it, so the link lands *untracked* where the directory would have been ignored — and the amend at `--continue` stages the worktree wholesale. `git edit` says so, and removes its own links before staging either way, so the scaffolding can't reach a commit; dropping the trailing slash silences the notice.
+One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it. Such a link would land *untracked* where the directory was ignored, and the amend at `--continue` stages the worktree wholesale — so `git edit` doesn't create it, and says why. Not linking is the whole remedy: an ignored link can never be staged, so nothing has to be cleaned up afterwards and `git edit` never removes a file you might own. Dropping the trailing slash gets you the link.
 
 ### Pushed-Commit Guard
 

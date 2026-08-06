@@ -308,7 +308,7 @@ _LINK_WORKTREE_EXTRAS () {
 	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
 	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
 
-	local -a LINKED EXPOSED FAILED
+	local -a LINKED SKIPPED FAILED
 	local P
 	for P in "${EXTRAS[@]}"; do
 		[ -z "$P" ] && continue
@@ -316,6 +316,13 @@ _LINK_WORKTREE_EXTRAS () {
 		# commit itself carries – the worktree's own content wins
 		[ -e "$FROM/$P" ] || continue
 		[ -e "$WT/$P" ] && continue
+		# An ignore pattern written for a directory (`node_modules/`) misses the symlink standing
+		# in for it, so the link lands untracked where the directory was ignored – and
+		# `--continue` stages the worktree wholesale, so skipping the link is the whole remedy
+		if ! git -C "$WT" check-ignore -q "$P" 2>/dev/null; then
+			SKIPPED+=("$P")
+			continue
+		fi
 		# A nested path needs its parent to exist, or `ln` fails and the caller
 		# gets silence where they configured something
 		[[ "$P" == */* ]] && mkdir -p "$WT/${P:h}" 2>/dev/null
@@ -324,54 +331,23 @@ _LINK_WORKTREE_EXTRAS () {
 			continue
 		fi
 		LINKED+=("$P")
-		# A pattern written for a directory (`node_modules/`) does not match a
-		# symlink, so the link can land untracked where the directory it
-		# stands in for would have been ignored – and the amend at --continue
-		# stages this worktree wholesale
-		git -C "$WT" check-ignore -q "$P" 2>/dev/null || EXPOSED+=("$P")
 	done
 	if [ ${#LINKED[@]} -gt 0 ]; then
 		PRINT_TEXT "Linked into the worktree: %s" 90 "${(j:, :)LINKED}"
 	fi
-	if [ ${#EXPOSED[@]} -gt 0 ]; then
-		PRINT_TEXT "%s is not ignored here – drop the trailing slash in .gitignore so the link is covered too." 33 \
-			"${(j:, :)EXPOSED}"
+	if [ ${#SKIPPED[@]} -gt 0 ]; then
+		PRINT_TEXT "Not linking %s – its ignore pattern doesn't cover a symlink, so the amend would commit it." 33 \
+			"${(j:, :)SKIPPED}"
+		PRINT_TEXT "Drop the trailing slash in %s to have it linked." 33 ".gitignore"
 	fi
 	if [ ${#FAILED[@]} -gt 0 ]; then
 		PRINT_TEXT "Could not link %s into the worktree – check the path." 33 "${(j:, :)FAILED}"
 	fi
 }
 
-# Removes the links `_LINK_WORKTREE_EXTRAS` put in, before anything stages the
-# worktree wholesale. They are this script's scaffolding, not the caller's
-# content – and where the ignore pattern was written for a directory it does
-# not cover the symlink standing in for it, so the amend would otherwise commit
-# a link into someone's home directory. Only ever removes a symlink at a
-# configured path that points outside the worktree.
-_UNLINK_WORKTREE_EXTRAS () {
-	local WT=$1
-	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
-	# Only ever inside a worktree this script made. The staging sweep also runs
-	# in the caller's own checkout (an interactive edit without -C), and there
-	# a `node_modules` symlink is the user's – pnpm's layout, say – not ours to
-	# delete. Every link site passes a `MKTEMP_DIR git-edit-*` path.
-	local TMPBASE="${TMPDIR:-/tmp}"
-	[[ "${WT:h}" == "${TMPBASE%/}" && "${WT:t}" == git-edit-* ]] || return 0
-
-	local -a EXTRAS
-	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
-	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
-
-	local P DEST
-	for P in "${EXTRAS[@]}"; do
-		[ -z "$P" ] && continue
-		[ -L "$WT/$P" ] || continue
-		DEST=$(readlink "$WT/$P" 2>/dev/null)
-		[[ "$DEST" == "$WT"/* ]] && continue
-		rm -f "$WT/$P"
-	done
-}
-
+# Creates a temp dir or file from a full `$TMPDIR` path template – BSD/macOS `mktemp -t`
+# takes its arg as a literal prefix and appends its own suffix, leaving the inner `XXXXXX`
+# verbatim, while a full template has its trailing `X`s replaced on both GNU and BSD
 MKTEMP_DIR () {
 	local BASE="${TMPDIR:-/tmp}"
 	mktemp -d "${BASE%/}/$1.XXXXXX"
@@ -1156,7 +1132,6 @@ GIT_REBASE_BEGIN_EDIT () {
 }
 
 GIT_ADD_ALL () {
-	_UNLINK_WORKTREE_EXTRAS "$(git rev-parse --show-toplevel 2>/dev/null)"
 	_PRINT_UNTRACKED_ABSORB
 	local CMD="git add --all"
 	PRINT_CMD "$CMD"
@@ -1891,7 +1866,6 @@ _CONTINUE_SPLIT () {
 	# refused continue doesn't quietly stage their mistake for the next one
 	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
 	rm -f "$TMPIDX"
-	_UNLINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
 	_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 	local TREE1=""
 	if GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" read-tree "$X" 2>/dev/null; then
@@ -2791,7 +2765,6 @@ _CONTINUE_EDIT () {
 			ECHO_E "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 			exit 1
 		fi
-		_UNLINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
 		_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 		git add -A >/dev/null 2>&1
 		if [ -n "$TEXT_VALUE" ]; then
@@ -5004,20 +4977,23 @@ GIT_SELFTEST () {
 	_ST_CHECK "and resolves to the origin's copy" \
 		sh -c "test -f '$WL_WT/node_modules/dep/index.js'"
 	_ST_CHECK "as a symlink, not a copy" sh -c "test -L '$WL_WT/node_modules'"
-	_ST_OUT_LACKS "an ignored path draws no warning" 'is not ignored here'
+	_ST_OUT_LACKS "an ignored path draws no notice" 'Not linking'
 	_ST_RUN --abort
 
-	# A directory pattern doesn't match a symlink, so the link lands untracked
-	# where the directory would have been ignored – and the amend sweeps it in
+	# A directory pattern doesn't match the symlink standing in for it, so the
+	# link would land untracked where the directory was ignored – and the amend
+	# stages the worktree wholesale. Not creating it is the whole remedy: an
+	# ignored link can never be staged, so nothing needs removing afterwards.
 	printf 'node_modules/\n' > .gitignore && git add .gitignore && git commit -qm "WL slash"
 	_ST_RUN HEAD
-	_ST_OUT_HAS "a trailing-slash pattern is called out" 'is not ignored here'
-	# …and the amend must not commit the link anyway – it is this script's
-	# scaffolding, and the warning alone still left it in history
+	_ST_OUT_HAS "a trailing-slash pattern is called out" 'Not linking'
+	_ST_OUT_HAS "with the one-character remedy" 'Drop the trailing slash'
 	local WL_WT2=$(echo "$OUT" | sed -n 's/.*paused — edit [^ ]* in \([^;]*\);.*/\1/p')
+	_ST_CHECK "and no link was created at all" \
+		sh -c "test ! -e '$WL_WT2/node_modules'"
 	printf 'wl edited\n' > "$WL_WT2/wl.txt"
 	_ST_RUN --continue
-	_ST_CHECK "the link is not swept into the commit" \
+	_ST_CHECK "so nothing about it reaches the commit" \
 		sh -c "! git show HEAD --stat --format= | grep -q node_modules"
 	_ST_CHECK "while the real edit landed" \
 		sh -c "git show HEAD:wl.txt | grep -qx 'wl edited'"
@@ -5036,24 +5012,6 @@ GIT_SELFTEST () {
 	_ST_RUN --abort
 	rm -rf vendor
 
-	# The staging sweep also runs in the caller's own checkout (an interactive
-	# edit without -C). A same-named symlink there is theirs – pnpm keeps
-	# `node_modules` as one – so the removal must not reach outside the temp
-	# worktrees this script makes.
-	mkdir -p "$TMP/wl-store" "$TMP/pretend-checkout"
-	git config --add edit.worktreeLink node_modules
-	ln -sfn "$TMP/wl-store" "$TMP/pretend-checkout/node_modules"
-	_UNLINK_WORKTREE_EXTRAS "$TMP/pretend-checkout"
-	_ST_CHECK "a symlink outside our temp worktrees is left alone" \
-		test -L "$TMP/pretend-checkout/node_modules"
-	local WL_OURS="${TMPDIR:-/tmp}"
-	WL_OURS="${WL_OURS%/}/git-edit-unlink-probe"
-	mkdir -p "$WL_OURS"
-	ln -sfn "$TMP/wl-store" "$WL_OURS/node_modules"
-	_UNLINK_WORKTREE_EXTRAS "$WL_OURS"
-	_ST_CHECK "but one inside them is removed before staging" \
-		sh -c "test ! -L '$WL_OURS/node_modules'"
-	rm -rf "$WL_OURS" "$TMP/pretend-checkout" "$TMP/wl-store"
 	git config --unset-all edit.worktreeLink
 	rm -rf node_modules
 	git reset -q --hard

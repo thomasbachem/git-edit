@@ -347,11 +347,12 @@ a virtualenv \(em and a fresh worktree has none of it. Links rather than
 copies, so a check there cannot diverge from what the real checkout has
 installed. A pattern written for a directory
 .RI ( node_modules/ )
-does not match the symlink that stands in for it, so the link would land
-untracked where the directory was ignored; that case is reported, since the
-amend at
+does not match the symlink that stands in for it, so such a link would land
+untracked where the directory was ignored \(em and the amend at
 .B \-\-continue
-stages the worktree wholesale.
+stages the worktree wholesale. That link is therefore not created, and the
+reason is reported. Not creating it is the whole remedy: an ignored link can
+never be staged, so nothing has to be removed afterwards.
 .SH ENVIRONMENT
 .TP
 .B GIT_EDIT_WORKTREE_LINK
