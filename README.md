@@ -314,6 +314,8 @@ Those duplicates are dropped by the replay, and the count is repeated in the com
 
 Like `--reorder`, the replay runs in an isolated worktree and the branch ref moves once, at the end, under a CAS. Unlike `--reorder` — which preserves the tree — a replant genuinely changes the branch's content, so the caller's checkout is brought along with it (via `read-tree -u -m`, which keeps uncommitted work and refuses rather than overwriting it). Left stale, every commit the upstream gained would show up there as a local deletion, and the next `git commit -a` would carry it out.
 
+Which is why uncommitted work on a path the replant has to rewrite is refused **up front**, before anything moves — otherwise the branch would land and the checkout would decline to follow it, leaving the ref and the files disagreeing. Dirt on any other path is fine and comes through untouched.
+
 ### Running the Project's Own Checks Inside a Pause (`edit.worktreeLink`)
 
 A pause hands you an isolated worktree so the commit can be verified clean of any main-checkout WIP — but that worktree starts without whatever the repo deliberately doesn't track, so `npm test` there fails on a missing `node_modules` rather than on the commit. Name those paths once:
@@ -324,7 +326,7 @@ git config --add edit.worktreeLink node_modules
 
 Every temporary worktree then gets them symlinked in from the checkout (repeatable for more than one path; `GIT_EDIT_WORKTREE_LINK=a:b` does the same ad hoc). Links, not copies — they cost nothing, and a check running against a copy could quietly diverge from what's actually installed.
 
-One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it, so the link lands *untracked* where the directory would have been ignored — and the amend at `--continue` stages the worktree wholesale. `git edit` checks and says so; dropping the trailing slash fixes it.
+One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it, so the link lands *untracked* where the directory would have been ignored — and the amend at `--continue` stages the worktree wholesale. `git edit` says so, and removes its own links before staging either way, so the scaffolding can't reach a commit; dropping the trailing slash silences the notice.
 
 ### Pushed-Commit Guard
 

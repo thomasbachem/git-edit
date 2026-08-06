@@ -81,14 +81,16 @@ if [ "$_COLOR" != "true" ]; then
 	_OFF=""
 fi
 
-# Single emitter for every colorized line – strips the escapes in-shell when
-# color is off, so no call site has to know.
+# Emits one colorized line, stripping the escapes in-shell when color is off so no call
+# site has to know – `print -v` over a command substitution: it expands them without
+# forking, the path agents take, and keeps trailing newlines that `$(…)` would have eaten
 ECHO_E () {
 	if [ "$_COLOR" = "true" ]; then
 		echo -e "$@"
 	else
 		setopt local_options extended_glob
-		local OUT=$(echo -e "$@")
+		local OUT
+		print -v OUT -- "$@"
 		print -r -- "${OUT//$'\e'\[[0-9;]#m/}"
 	fi
 }
@@ -306,7 +308,7 @@ _LINK_WORKTREE_EXTRAS () {
 	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
 	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
 
-	local -a LINKED EXPOSED
+	local -a LINKED EXPOSED FAILED
 	local P
 	for P in "${EXTRAS[@]}"; do
 		[ -z "$P" ] && continue
@@ -314,7 +316,13 @@ _LINK_WORKTREE_EXTRAS () {
 		# commit itself carries – the worktree's own content wins
 		[ -e "$FROM/$P" ] || continue
 		[ -e "$WT/$P" ] && continue
-		ln -sfn "$FROM/$P" "$WT/$P" 2>/dev/null || continue
+		# A nested path needs its parent to exist, or `ln` fails and the caller
+		# gets silence where they configured something
+		[[ "$P" == */* ]] && mkdir -p "$WT/${P:h}" 2>/dev/null
+		if ! ln -sfn "$FROM/$P" "$WT/$P" 2>/dev/null; then
+			FAILED+=("$P")
+			continue
+		fi
 		LINKED+=("$P")
 		# A pattern written for a directory (`node_modules/`) does not match a
 		# symlink, so the link can land untracked where the directory it
@@ -329,11 +337,35 @@ _LINK_WORKTREE_EXTRAS () {
 		PRINT_TEXT "%s is not ignored here – drop the trailing slash in .gitignore so the link is covered too." 33 \
 			"${(j:, :)EXPOSED}"
 	fi
+	if [ ${#FAILED[@]} -gt 0 ]; then
+		PRINT_TEXT "Could not link %s into the worktree – check the path." 33 "${(j:, :)FAILED}"
+	fi
 }
 
-# Creates a temp dir or file from a full `$TMPDIR` path template – BSD/macOS `mktemp -t`
-# takes its arg as a literal prefix and appends its own suffix, leaving the inner `XXXXXX`
-# verbatim, while a full template has its trailing `X`s replaced on both GNU and BSD
+# Removes the links `_LINK_WORKTREE_EXTRAS` put in, before anything stages the
+# worktree wholesale. They are this script's scaffolding, not the caller's
+# content – and where the ignore pattern was written for a directory it does
+# not cover the symlink standing in for it, so the amend would otherwise commit
+# a link into someone's home directory. Only ever removes a symlink at a
+# configured path that points outside the worktree.
+_UNLINK_WORKTREE_EXTRAS () {
+	local WT=$1
+	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
+
+	local -a EXTRAS
+	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
+	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
+
+	local P DEST
+	for P in "${EXTRAS[@]}"; do
+		[ -z "$P" ] && continue
+		[ -L "$WT/$P" ] || continue
+		DEST=$(readlink "$WT/$P" 2>/dev/null)
+		[[ "$DEST" == "$WT"/* ]] && continue
+		rm -f "$WT/$P"
+	done
+}
+
 MKTEMP_DIR () {
 	local BASE="${TMPDIR:-/tmp}"
 	mktemp -d "${BASE%/}/$1.XXXXXX"
@@ -1118,6 +1150,7 @@ GIT_REBASE_BEGIN_EDIT () {
 }
 
 GIT_ADD_ALL () {
+	_UNLINK_WORKTREE_EXTRAS "$(git rev-parse --show-toplevel 2>/dev/null)"
 	_PRINT_UNTRACKED_ABSORB
 	local CMD="git add --all"
 	PRINT_CMD "$CMD"
@@ -1852,6 +1885,7 @@ _CONTINUE_SPLIT () {
 	# refused continue doesn't quietly stage their mistake for the next one
 	local TMPIDX=$(MKTEMP_FILE git-edit-split-idx)
 	rm -f "$TMPIDX"
+	_UNLINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
 	_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 	local TREE1=""
 	if GIT_INDEX_FILE=$TMPIDX git -C "$STATE_WORKTREE" read-tree "$X" 2>/dev/null; then
@@ -2222,6 +2256,7 @@ GIT_ONTO () {
 	# covers the rest since no descendant of an unpushed commit is pushed
 	_GUARD_UNPUSHED "${SPAN[1]}"
 	_GUARD_NO_MERGE_SPAN "${SPAN[1]}"
+	_GUARD_ONTO_CHECKOUT_CLEAN "$MAIN_DIR" "$ORIG_HEAD" "$UPSTREAM_FULL"
 
 	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
 	# Whether the old base still sits on the upstream decides how surprising
@@ -2343,22 +2378,65 @@ _PRINT_ONTO_SKIP_HINT () {
 	fi
 }
 
-# Brings the caller's checkout along after the branch it is on was replanted.
-# The other isolated modes can skip this – a reorder preserves the tree – but a
-# replant genuinely changes it, and leaving it behind makes every commit the
-# upstream gained read as a local deletion, which the next `git commit -a`
-# would then carry out. `read-tree -u -m` applies the difference the way a
-# checkout does, refusing rather than overwriting uncommitted work.
+# Refuses before anything moves where the checkout holds uncommitted work on a path the
+# replant would rewrite – the sync afterwards declines to overwrite it, correctly, but
+# only once the branch had moved, leaving the ref and the files disagreeing
+_GUARD_ONTO_CHECKOUT_CLEAN () {
+	local DIR=$1
+	local FROM=$2
+	local UPSTREAM=$3
+	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
+
+	local -a AFFECTED DIRTY BLOCKED
+	AFFECTED=("${(@f)$(git -C "$DIR" diff --name-only "$FROM" "$UPSTREAM" 2>/dev/null)}")
+	[ -z "${AFFECTED[1]}" ] && return 0
+	# Unstaged, staged, and untracked all block a two-way merge onto that path
+	DIRTY=("${(@f)$(
+		git -C "$DIR" diff --name-only 2>/dev/null
+		git -C "$DIR" diff --cached --name-only 2>/dev/null
+		git -C "$DIR" ls-files --others --exclude-standard 2>/dev/null
+	)}")
+	[ -z "${DIRTY[1]}" ] && return 0
+
+	local A D
+	for A in "${AFFECTED[@]}"; do
+		[ -z "$A" ] && continue
+		for D in "${DIRTY[@]}"; do
+			[ "$A" = "$D" ] && BLOCKED+=("$A")
+		done
+	done
+	[ ${#BLOCKED[@]} -eq 0 ] && return 0
+
+	PRINT_ERR "Uncommitted work sits on ${#BLOCKED[@]} path(s) the replant rewrites – refusing to strand the checkout"
+	printf '%s\n' "${(@u)BLOCKED}" | head -10 | sed "/./!d;s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	ECHO_E "\e[0;31m  Commit, stash, or move them, then retry – nothing was changed.\e[0m" >&2
+	exit 1
+}
+
+# Brings the caller's checkout along after the branch it is on was replanted – the other
+# isolated modes skip this since a reorder preserves the tree, and leaving a replant
+# behind makes every commit the upstream gained read as a local deletion
 _SYNC_ONTO_CHECKOUT () {
 	local DIR=$1
 	local FROM=$2
 	local TO=$3
 	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
-	if git -C "$DIR" read-tree -u -m "$FROM" "$TO" 2>/dev/null; then
+	local ERR=$(git -C "$DIR" read-tree -u -m "$FROM" "$TO" 2>&1)
+	if [ -z "$ERR" ]; then
 		PRINT_TEXT "Checkout updated to the replanted branch." 32
 	else
-		PRINT_TEXT "%s" 33 "Checkout still holds the pre-replant content – local changes would be overwritten."
-		PRINT_TEXT "Reconcile it with: %s" 33 "git -C $DIR checkout -- ."
+		# The branch has moved, so the checkout now disagrees with `HEAD` – but the paths that
+		# blocked the update are the caller's uncommitted work, and naming them matters more than
+		# a command, since the obvious `checkout -- .` discards what the refusal just protected
+		local -a BLOCKED
+		BLOCKED=("${(@f)$(printf '%s\n' "$ERR" | grep -o "'[^']*'" | tr -d "'" | sort -u)}")
+		PRINT_TEXT "%s" 33 "Branch replanted, but the checkout could not follow – it still holds the pre-replant content."
+		if [ -n "${BLOCKED[1]}" ]; then
+			PRINT_TEXT "Blocked by uncommitted work in: %s" 33 "${(j:, :)BLOCKED}"
+			PRINT_TEXT "Commit or move those, then: %s" 33 "git -C $DIR checkout -- ."
+		else
+			PRINT_TEXT "Reconcile once your uncommitted work is safe: %s" 33 "git -C $DIR checkout -- ."
+		fi
 	fi
 }
 
@@ -2696,6 +2774,7 @@ _CONTINUE_EDIT () {
 			ECHO_E "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 			exit 1
 		fi
+		_UNLINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
 		_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 		git add -A >/dev/null 2>&1
 		if [ -n "$TEXT_VALUE" ]; then
@@ -4826,13 +4905,45 @@ GIT_SELFTEST () {
 	_ST_EQ "a merge in the span is refused" "$RC" "1"
 	_ST_OUT_HAS "rather than flattened silently" 'contains a merge commit'
 
+	# A replant that would strand the checkout must refuse before the CAS, not
+	# move the branch and then decline to follow
+	git checkout -q -B onto-dirty onto-main
+	printf 'od branch\n' > od.txt && git add od.txt && git commit -qm "OD on branch"
+	git checkout -q onto-main
+	printf 'od upstream\n' > od.txt && git add od.txt && git commit -qm "OD upstream"
+	git checkout -q onto-dirty
+	local OD_BEFORE=$(git rev-parse onto-dirty)
+	printf 'od uncommitted\n' > od.txt
+	_ST_RUN --onto=onto-main
+	_ST_EQ "a replant onto dirty paths is refused" "$RC" "1"
+	_ST_OUT_HAS "naming the blocked path" 'od.txt'
+	_ST_EQ "and the branch never moved" "$(git rev-parse onto-dirty)" "$OD_BEFORE"
+	_ST_CHECK "with the uncommitted work intact" sh -c "grep -qx 'od uncommitted' od.txt"
+	git checkout -q -- od.txt 2>/dev/null
+	git reset -q --hard
+
+	# Dirt on a path the replant does not touch is no reason to refuse. A fresh
+	# branch, since od.txt differs on both sides and would conflict on its own
+	# merits – which would prove nothing about the guard.
+	git checkout -q -B onto-clean onto-main
+	printf 'oc branch\n' > oc.txt && git add oc.txt && git commit -qm "OC on branch"
+	git checkout -q onto-main
+	printf 'om fifth\n' > om5.txt && git add om5.txt && git commit -qm "OM fifth"
+	git checkout -q onto-clean
+	printf 'oc unrelated\n' > oc-unrelated.txt
+	_ST_RUN --onto=onto-main
+	_ST_EQ "unrelated dirt does not block it" "$RC" "0"
+	_ST_CHECK "and that file survives" sh -c "grep -qx 'oc unrelated' oc-unrelated.txt"
+	rm -f oc-unrelated.txt
+	git reset -q --hard
+
 	# --skip belongs to this mode alone; elsewhere the paused commit is the point
 	git checkout -q -B onto-skip onto-main
 	_ST_RUN --skip
 	_ST_EQ "a skip with nothing in flight is refused" "$RC" "1"
 	git checkout -q onto-main
 	git push -q origin --delete onto-pushed 2>/dev/null
-	git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase 2>/dev/null
+	git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase onto-dirty onto-clean 2>/dev/null
 	git checkout -q main
 	git reset -q --hard
 
@@ -4864,7 +4975,29 @@ GIT_SELFTEST () {
 	printf 'node_modules/\n' > .gitignore && git add .gitignore && git commit -qm "WL slash"
 	_ST_RUN HEAD
 	_ST_OUT_HAS "a trailing-slash pattern is called out" 'is not ignored here'
+	# …and the amend must not commit the link anyway – it is this script's
+	# scaffolding, and the warning alone still left it in history
+	local WL_WT2=$(echo "$OUT" | sed -n 's/.*paused — edit [^ ]* in \([^;]*\);.*/\1/p')
+	printf 'wl edited\n' > "$WL_WT2/wl.txt"
+	_ST_RUN --continue
+	_ST_CHECK "the link is not swept into the commit" \
+		sh -c "! git show HEAD --stat --format= | grep -q node_modules"
+	_ST_CHECK "while the real edit landed" \
+		sh -c "git show HEAD:wl.txt | grep -qx 'wl edited'"
+	_ST_RUN --undo
+
+	# A nested path needs its parent created, or the link silently never happens
+	git config --unset-all edit.worktreeLink
+	mkdir -p vendor/deps && printf 'dep\n' > vendor/deps/lib.js
+	printf 'node_modules\nvendor/deps\n' > .gitignore && git add .gitignore && git commit -qm "WL nested ignore"
+	git config --add edit.worktreeLink vendor/deps
+	_ST_RUN HEAD
+	local WL_WT3=$(echo "$OUT" | sed -n 's/.*paused — edit [^ ]* in \([^;]*\);.*/\1/p')
+	_ST_CHECK "a nested path is linked, not silently skipped" \
+		sh -c "test -f '$WL_WT3/vendor/deps/lib.js'"
+	_ST_OUT_LACKS "and reports no failure" 'Could not link'
 	_ST_RUN --abort
+	rm -rf vendor
 	git config --unset-all edit.worktreeLink
 	rm -rf node_modules
 	git reset -q --hard

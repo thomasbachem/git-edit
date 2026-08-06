@@ -180,7 +180,9 @@ those are dropped by the replay, and the count is repeated afterwards so a
 shorter branch is never mistaken for lost work. Runs in an isolated worktree
 and CAS\-updates the branch, then brings the caller's checkout along \(em a
 replant changes its content, and left behind, every commit \fIupstream\fR
-gained would read there as a local deletion. A conflict pauses as usual;
+gained would read there as a local deletion. Uncommitted work on a path the
+replant rewrites is refused before anything moves, rather than landing the
+branch and leaving the checkout unable to follow. A conflict pauses as usual;
 where the paused commit is one \fIupstream\fR already carries in another form,
 .B git edit \-\-skip
 steps over it.
