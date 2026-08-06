@@ -5096,6 +5096,12 @@ GIT_SELFTEST () {
 	# "Color follows the same rule and also honours NO_COLOR and TERM=dumb" –
 	# a captured run proves the pipe case, the other two only structurally,
 	# since the selftest can never present a TTY to its own sub-invocations
+	# The cleanup below enumerates this repo's worktrees to collect the temp
+	# ones that live outside $TMP. Pointed a level too high it silently listed
+	# nothing, so the collection never happened – assert the path resolves.
+	_ST_CHECK "the cleanup can enumerate the scratch repo's worktrees" \
+		sh -c "test \$(git -C '$TMP/repo' worktree list --porcelain 2>/dev/null | grep -c '^worktree ') -ge 1"
+
 	_ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"
 
@@ -5107,10 +5113,14 @@ GIT_SELFTEST () {
 		# A passing run leaves nothing to inspect, so it takes the scratch repo
 		# and every temp worktree anchored to it along – otherwise each run
 		# seeds exactly the debris the sweep above exists to clean up
+		# `-C $TMP/repo`, not `$TMP`: the scratch repo is a level down, and
+		# pointed at the wrong directory this enumerated nothing – so the temp
+		# worktrees it exists to collect (siblings under TMPDIR, outside the
+		# `rm -rf` below) were only ever removed by their own operation
 		local WT
-		git -C "$TMP" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | \
+		git -C "$TMP/repo" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | \
 		while IFS= read -r WT; do
-			if [ "$WT" != "$TMP" ]; then
+			if [ "$WT" != "$TMP/repo" ]; then
 				rm -rf "$WT" 2>/dev/null
 			fi
 		done
