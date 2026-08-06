@@ -330,7 +330,29 @@ Paused on a conflict awaiting
 .B \-\-continue
 or
 .BR \-\-abort .
+.SH CONFIGURATION
+.TP
+.B edit.worktreeLink
+Gitignored paths to symlink from the checkout into every temporary worktree,
+one per value (repeatable). A pause exists so the commit can be verified in
+isolation, but a project's own checks usually need what the repository
+deliberately does not track \(em a
+.IR node_modules ,
+a virtualenv \(em and a fresh worktree has none of it. Links rather than
+copies, so a check there cannot diverge from what the real checkout has
+installed. A pattern written for a directory
+.RI ( node_modules/ )
+does not match the symlink that stands in for it, so the link would land
+untracked where the directory was ignored; that case is reported, since the
+amend at
+.B \-\-continue
+stages the worktree wholesale.
 .SH ENVIRONMENT
+.TP
+.B GIT_EDIT_WORKTREE_LINK
+Colon\-separated paths to link into temporary worktrees, added to whatever
+.B edit.worktreeLink
+already names.
 .TP
 .B NO_COLOR
 If set (or if stdout is not a terminal, or

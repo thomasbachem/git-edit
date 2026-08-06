@@ -314,6 +314,18 @@ Those duplicates are dropped by the replay, and the count is repeated in the com
 
 Like `--reorder`, the replay runs in an isolated worktree and the branch ref moves once, at the end, under a CAS. Unlike `--reorder` — which preserves the tree — a replant genuinely changes the branch's content, so the caller's checkout is brought along with it (via `read-tree -u -m`, which keeps uncommitted work and refuses rather than overwriting it). Left stale, every commit the upstream gained would show up there as a local deletion, and the next `git commit -a` would carry it out.
 
+### Running the Project's Own Checks Inside a Pause (`edit.worktreeLink`)
+
+A pause hands you an isolated worktree so the commit can be verified clean of any main-checkout WIP — but that worktree starts without whatever the repo deliberately doesn't track, so `npm test` there fails on a missing `node_modules` rather than on the commit. Name those paths once:
+
+```
+git config --add edit.worktreeLink node_modules
+```
+
+Every temporary worktree then gets them symlinked in from the checkout (repeatable for more than one path; `GIT_EDIT_WORKTREE_LINK=a:b` does the same ad hoc). Links, not copies — they cost nothing, and a check running against a copy could quietly diverge from what's actually installed.
+
+One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it, so the link lands *untracked* where the directory would have been ignored — and the amend at `--continue` stages the worktree wholesale. `git edit` checks and says so; dropping the trailing slash fixes it.
+
 ### Pushed-Commit Guard
 
 Every rewriting mode refuses to touch a commit that already exists on a remote-tracking ref — rewriting pushed history disrupts collaborators, and in shared or public repos it should never happen by accident:

@@ -292,11 +292,48 @@ PRINT_ERR () {
 	fi
 }
 
-# Create a temp dir/file via a full $TMPDIR path template. BSD/macOS mktemp's
-# `-t <arg>` treats <arg> as a literal prefix and appends its own random suffix,
-# so a template's inner `XXXXXX` survives verbatim (leaving an unusable path like
-# `git-edit-amend-into.XXXXXX.k2QEeVwNEN`); a full template has its trailing `X`s
-# replaced on both GNU and BSD.
+# Symlinks gitignored paths named by `edit.worktreeLink` into a fresh worktree – a pause
+# verifies the commit in isolation, but the project's own checks need what the checkout
+# does not track, and links over copies keep a run from diverging from what is installed
+_LINK_WORKTREE_EXTRAS () {
+	local WT=$1
+	local FROM=$2
+	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
+	[ -z "$FROM" ] && FROM=$(git rev-parse --show-toplevel 2>/dev/null)
+	[ -z "$FROM" ] || [ ! -d "$FROM" ] && return 0
+
+	local -a EXTRAS
+	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
+	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
+
+	local -a LINKED EXPOSED
+	local P
+	for P in "${EXTRAS[@]}"; do
+		[ -z "$P" ] && continue
+		# Only what the origin actually has, and never over a tracked path the
+		# commit itself carries – the worktree's own content wins
+		[ -e "$FROM/$P" ] || continue
+		[ -e "$WT/$P" ] && continue
+		ln -sfn "$FROM/$P" "$WT/$P" 2>/dev/null || continue
+		LINKED+=("$P")
+		# A pattern written for a directory (`node_modules/`) does not match a
+		# symlink, so the link can land untracked where the directory it
+		# stands in for would have been ignored – and the amend at --continue
+		# stages this worktree wholesale
+		git -C "$WT" check-ignore -q "$P" 2>/dev/null || EXPOSED+=("$P")
+	done
+	if [ ${#LINKED[@]} -gt 0 ]; then
+		PRINT_TEXT "Linked into the worktree: %s" 90 "${(j:, :)LINKED}"
+	fi
+	if [ ${#EXPOSED[@]} -gt 0 ]; then
+		PRINT_TEXT "%s is not ignored here – drop the trailing slash in .gitignore so the link is covered too." 33 \
+			"${(j:, :)EXPOSED}"
+	fi
+}
+
+# Creates a temp dir or file from a full `$TMPDIR` path template – BSD/macOS `mktemp -t`
+# takes its arg as a literal prefix and appends its own suffix, leaving the inner `XXXXXX`
+# verbatim, while a full template has its trailing `X`s replaced on both GNU and BSD
 MKTEMP_DIR () {
 	local BASE="${TMPDIR:-/tmp}"
 	mktemp -d "${BASE%/}/$1.XXXXXX"
@@ -1157,15 +1194,16 @@ GIT_EXEC () {
 	local CMD="git worktree add --detach '$WT' $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	eval "$CMD" || { rm -rf "$WT"; exit 1; }
+	_LINK_WORKTREE_EXTRAS "$WT"
 
-	# Register cleanup via the global hook so the EXIT trap removes the
-	# worktree on any exit path (success, failure, signal).
+	# Register cleanup via the global hook so the `EXIT` trap removes the worktree on any
+	# exit path – success, failure or signal
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
 
 	cd "$WT" || exit 1
 
-	# Run the user's command. Don't `eval` – pass the array straight through
-	# so quoting and special characters in args are preserved.
+	# Run the caller's command – no `eval`, the array passes straight through so quoting
+	# and special characters survive
 	PRINT_CMD "$* # (in $WT)"
 	"$@"
 	local STATUS=$?
@@ -1342,6 +1380,7 @@ GIT_AMEND_INTO () {
 		exit 1
 	fi
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_LINK_WORKTREE_EXTRAS "$WT"
 
 	cd "$WT" || exit 1
 
@@ -1735,6 +1774,7 @@ GIT_SPLIT_PAUSE () {
 		PRINT_ERR "Cannot create split worktree at ${X:0:7}"
 		exit 1
 	fi
+	_LINK_WORKTREE_EXTRAS "$WT"
 
 	# A message given up front survives the pause in a sidecar – the state
 	# file's key=value lines can't carry a multi-line one
@@ -1958,12 +1998,12 @@ GIT_REORDER () {
 		exit 1
 	fi
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
-	# Scripted sequence editor: drop the span's `pick` lines and re-emit them
-	# at the first one's position in the desired order. The todo's abbreviated
-	# SHAs are matched as prefixes of our full ones (unambiguous repo-wide);
-	# the order travels via env so the script file needs no interpolation.
+	# Scripted sequence editor – drop the span's `pick` lines and re-emit them at the first
+	# one's position in the desired order, matching the todo's abbreviated SHAs as prefixes
+	# of our full ones, with the order traveling by env so the script needs no interpolation
 	local SEQ=$(MKTEMP_FILE git-edit-reorder-seq)
 	cat > "$SEQ" <<'SEQEOF'
 #!/bin/zsh
@@ -2185,6 +2225,7 @@ GIT_ONTO () {
 		exit 1
 	fi
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
 	# Detached, so the branch ref stays put until the CAS – and the branch can
@@ -4694,6 +4735,39 @@ GIT_SELFTEST () {
 	git checkout -q main
 	git reset -q --hard
 
+	ECHO_E "\e[1;96m[47] linking gitignored paths into a pause worktree\e[0m"
+	git reset -q --hard
+	printf 'wl one\n' > wl.txt && git add wl.txt && git commit -qm "WL one"
+	printf 'wl two\n' > wl.txt && git add wl.txt && git commit -qm "WL two"
+	mkdir -p node_modules/dep && printf 'installed\n' > node_modules/dep/index.js
+	_ST_RUN HEAD~1
+	local WL_WT=$(echo "$OUT" | sed -n 's/.*paused — edit [^ ]* in \([^;]*\);.*/\1/p')
+	_ST_CHECK "nothing is linked without the config" sh -c "test ! -e '$WL_WT/node_modules'"
+	_ST_RUN --abort
+
+	printf 'node_modules\n' > .gitignore && git add .gitignore && git commit -qm "WL ignore"
+	git config --add edit.worktreeLink node_modules
+	# Target HEAD, not HEAD~1: the worktree checks out the commit being edited,
+	# so its `.gitignore` is the one that decides whether the link is covered
+	_ST_RUN HEAD
+	WL_WT=$(echo "$OUT" | sed -n 's/.*paused — edit [^ ]* in \([^;]*\);.*/\1/p')
+	_ST_OUT_HAS "the link is reported" 'Linked into the worktree'
+	_ST_CHECK "and resolves to the origin's copy" \
+		sh -c "test -f '$WL_WT/node_modules/dep/index.js'"
+	_ST_CHECK "as a symlink, not a copy" sh -c "test -L '$WL_WT/node_modules'"
+	_ST_OUT_LACKS "an ignored path draws no warning" 'is not ignored here'
+	_ST_RUN --abort
+
+	# A directory pattern doesn't match a symlink, so the link lands untracked
+	# where the directory would have been ignored – and the amend sweeps it in
+	printf 'node_modules/\n' > .gitignore && git add .gitignore && git commit -qm "WL slash"
+	_ST_RUN HEAD
+	_ST_OUT_HAS "a trailing-slash pattern is called out" 'is not ignored here'
+	_ST_RUN --abort
+	git config --unset-all edit.worktreeLink
+	rm -rf node_modules
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -5430,6 +5504,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		PRINT_ERR "Cannot create edit worktree at ${EDIT_TARGET:0:7}"
 		exit 1
 	fi
+	_LINK_WORKTREE_EXTRAS "$EDIT_WT"
 	_SAVE_STATE "operation=edit" "worktree=$EDIT_WT" "branch=refs/heads/$EDIT_BRANCH" \
 		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)"
 	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
