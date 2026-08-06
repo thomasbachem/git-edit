@@ -1241,8 +1241,8 @@ GIT_SELFTEST () {
 	_ST_EQ "the fold settles" "$RC" "0"
 	_ST_CHECK "a commit really was dropped as empty" \
 		sh -c "! git log --format=%s | grep -qx 'AE top'"
-	_ST_OUT_HAS "the summary names the commit folded into" 'AE target'
-	_ST_OUT_LACKS "not the one below it" 'Amended commit:.*AE base'
+	_ST_OUT_HAS "the summary names the commit folded into" 'amended: .*AE target'
+	_ST_OUT_LACKS "not the one below it" 'amended: .*AE base'
 	git reset -q --hard
 
 	ECHO_E "\e[1;96m[46] replanting a branch onto a moved upstream\e[0m"
@@ -1515,6 +1515,29 @@ GIT_SELFTEST () {
 	_ST_RUN -d -y "$MG_BASE"
 	_ST_OUT_HAS "a span containing one is refused" 'contains a merge commit'
 	git branch -q -D dg-side 2>/dev/null
+	git reset -q --hard
+
+	ECHO_E "\e[1;96m[49] which commit an operation landed in survives a short tail\e[0m"
+	git reset -q --hard
+	printf 'id base\n' > id.txt && git add id.txt && git commit -qm "ID base"
+	# A target wide enough that its own stat block would bury a line printed
+	# above it – the shape that hid which commit a fold had landed in
+	local IDF
+	for IDF in {1..14}; do printf 'id %s\n' "$IDF" > "id$IDF.txt"; done
+	git add -A && git commit -qm "ID wide target"
+	printf 'id staged\n' > id-staged.txt && git add id-staged.txt
+	_ST_RUN --amend-into=HEAD
+	_ST_EQ "the wide fold succeeds" "$RC" "0"
+	_ST_OUT_HAS "names the commit folded into" 'amended: .*ID wide target'
+	_ST_EQ "and names it within a 'tail -3'" \
+		"$(echo "$OUT" | tail -3 | grep -c 'amended: ')" "1"
+
+	printf 'id s1\n' > id-s1.txt && git add id-s1.txt && git commit -qm "ID squash one"
+	printf 'id s2\n' > id-s2.txt && git add id-s2.txt && git commit -qm "ID squash two"
+	_ST_RUN -s -y HEAD~1 HEAD
+	_ST_EQ "the squash succeeds" "$RC" "0"
+	_ST_EQ "its own summary lands within a 'tail -3' too" \
+		"$(echo "$OUT" | tail -3 | grep -c 'squashed: ')" "1"
 	git reset -q --hard
 
 	# "Color follows the same rule and also honours NO_COLOR and TERM=dumb" –

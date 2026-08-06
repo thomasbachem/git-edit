@@ -1605,26 +1605,27 @@ _PRINT_AMENDED_SUMMARY () {
 	[ -z "$AMENDED" ] && AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
 	[ -z "$AMENDED" ] && return 0
 	if [ -n "$3" ]; then
-		PRINT_TEXT "Folded %s into:" 32 "$(echo "$3" | sed 's/,/, /g')"
+		PRINT_TEXT "Folded %s" 32 "$(echo "$3" | sed 's/,/, /g')"
 	else
-		PRINT_TEXT "%s" 32 "Amended commit:"
+		PRINT_TEXT "%s" 32 "Amended commit"
 	fi
-	git show --stat --format='  %h %s' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	# Same reasoning as reword's: a fold that also reworded replaced a subject,
-	# and a symbolic target can make that the wrong one
+	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	_PRINT_LEFTOVER_STATE "$4"
+	# Names the commit that received the fold below the stat block, never above
+	# it – that block grows with the target, and callers read this back through
+	# a `tail -3`, where a symbolic target that resolved to another session's
+	# commit would otherwise land as nothing but a diffstat and `ok`
+	PRINT_TEXT "  amended: %s" 90 "$(git log -1 --format='%h %s' "$AMENDED")"
+	# Same reasoning: a fold that also reworded replaced a subject, and a
+	# symbolic target can make that the wrong one
 	if [ -n "$AMEND_OLD_SUBJECT" ]; then
 		PRINT_TEXT "  replaced: %s" 90 "$AMEND_OLD_SUBJECT"
 	fi
-	_PRINT_LEFTOVER_STATE "$4"
 }
 
-# States what the fold left behind in the main checkout. A fold consumes the
-# staged changes and nothing else, but the caller can't see that from here –
-# and "did my WIP survive?" was the single most common follow-up probe, so
-# answer it rather than making them run `git status` for it. The fold itself
-# runs from an isolated worktree, so this must read the caller's checkout by
-# path – reporting the worktree's own state would be a confident wrong answer,
-# which is worse than printing nothing (hence the silent return).
+# States what the fold left behind in the main checkout – a fold consumes the staged changes
+# and nothing else, but the caller cannot see that from here, and "did my WIP survive?"
+# was the most common probe, so read their checkout by path rather than this worktree's
 _PRINT_LEFTOVER_STATE () {
 	local D=$1
 	[ -z "$D" ] || [ ! -d "$D" ] && return 0
@@ -3476,8 +3477,10 @@ GIT_RESQUASH () {
 	# The squashed commit takes the newest member's tree and descendants keep
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
-	PRINT_TEXT "%s – squashed commit:" 32 "Tip tree unchanged by construction ✓"
-	git show --stat --format='  %h %s' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	PRINT_TEXT "%s" 32 "Tip tree unchanged by construction ✓"
+	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	# Identity below the stat block, for the same reason the fold's is
+	PRINT_TEXT "  squashed: %s" 90 "$(git log -1 --format='%h %s' "$NEW_SQUASHED")"
 }
 
 GIT_COMMIT_AMEND () {
