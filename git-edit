@@ -2202,6 +2202,12 @@ GIT_ONTO () {
 		exit 0
 	fi
 
+	# The replay rewrites every commit in the span, so the same guards the
+	# other rewriting modes apply hold here – anchored on the oldest, which
+	# covers the rest since no descendant of an unpushed commit is pushed
+	_GUARD_UNPUSHED "${SPAN[1]}"
+	_GUARD_NO_MERGE_SPAN "${SPAN[1]}"
+
 	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
 	# Whether the old base still sits on the upstream decides how surprising
 	# this is – an orphaned one means the upstream was rewritten underneath
@@ -4726,12 +4732,40 @@ GIT_SELFTEST () {
 	_ST_CHECK "the branch keeps only its own commit" \
 		sh -c "test \$(git rev-list --count onto-main..onto-dup) -eq 1"
 
+	# A replant rewrites its whole span, so it owes the same guards every other
+	# rewriting mode applies – it reached the branch without them at first
+	git checkout -q -B onto-pushed onto-main
+	printf 'op work\n' > op.txt && git add op.txt && git commit -qm "OP pushed"
+	git push -q origin onto-pushed 2>/dev/null
+	git checkout -q onto-main
+	printf 'om third\n' > om3.txt && git add om3.txt && git commit -qm "OM third"
+	git checkout -q onto-pushed
+	_ST_RUN --onto=onto-main
+	_ST_EQ "a pushed span is refused" "$RC" "1"
+	_ST_OUT_HAS "naming the reason" 'already pushed'
+	_ST_RUN --onto=onto-main --allow-pushed
+	_ST_EQ "--allow-pushed overrides it" "$RC" "0"
+
+	# A merge in the span would be flattened by the replay, silently
+	git checkout -q -B onto-merge onto-main
+	printf 'oms\n' > oms.txt && git add oms.txt && git commit -qm "OMS side"
+	git checkout -q -B onto-mergebase onto-main~1
+	printf 'omb\n' > omb.txt && git add omb.txt && git commit -qm "OMB base"
+	git merge -q --no-ff -m "OMB merge" onto-merge 2>/dev/null
+	git checkout -q onto-main
+	printf 'om fourth\n' > om4.txt && git add om4.txt && git commit -qm "OM fourth"
+	git checkout -q onto-mergebase
+	_ST_RUN --onto=onto-main
+	_ST_EQ "a merge in the span is refused" "$RC" "1"
+	_ST_OUT_HAS "rather than flattened silently" 'contains a merge commit'
+
 	# --skip belongs to this mode alone; elsewhere the paused commit is the point
 	git checkout -q -B onto-skip onto-main
 	_ST_RUN --skip
 	_ST_EQ "a skip with nothing in flight is refused" "$RC" "1"
 	git checkout -q onto-main
-	git branch -q -D onto-feature onto-orphan onto-dup onto-skip 2>/dev/null
+	git push -q origin --delete onto-pushed 2>/dev/null
+	git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase 2>/dev/null
 	git checkout -q main
 	git reset -q --hard
 
