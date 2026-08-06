@@ -1412,6 +1412,7 @@ GIT_AMEND_INTO () {
 			"orig_head=$ORIG_HEAD" \
 			"target=$TARGET_FULL" \
 			"depth=$DEPTH" \
+			"rebasebase=$REBASE_BASE" \
 			"maindir=$MAIN_DIR" \
 			"files=${(pj:\t:)STAGED_PATHS}"\
 			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
@@ -1446,7 +1447,7 @@ GIT_AMEND_INTO () {
 	# staged state (a whole-index reset would silently wipe it).
 	git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
 
-	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR"
+	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE"
 
 	# Export new HEAD + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
@@ -1572,8 +1573,22 @@ _RESOLVE_AMEND_TARGET () {
 # Prints the amended commit's stat after a completed --amend-into, so the
 # caller doesn't need a follow-up `git show` to verify where the fold landed.
 _PRINT_AMENDED_SUMMARY () {
-	# args: <new_head> <depth> <folded-files-comma-separated> [<main-checkout>]
-	local AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
+	# args: <new_head> <depth> <folded-files-comma-separated> [<main-checkout>] [<rebase-base>]
+	# The autosquash replays the target first, so the commit directly above the
+	# base is the amended one whatever happens above it. An offset from the new
+	# tip is not equivalent: a replayed commit whose resolution went empty is
+	# dropped, and the count then walks one commit too far – naming a commit
+	# the fold never touched, in the block a caller reads to check where it
+	# landed. The depth stays as the fallback for states written before this.
+	local AMENDED
+	if [ -n "$5" ]; then
+		if [ "$5" = "--root" ]; then
+			AMENDED=$(git rev-list --reverse "$1" 2>/dev/null | head -1)
+		else
+			AMENDED=$(git rev-list --reverse "$5..$1" 2>/dev/null | head -1)
+		fi
+	fi
+	[ -z "$AMENDED" ] && AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
 	[ -z "$AMENDED" ] && return 0
 	if [ -n "$3" ]; then
 		PRINT_TEXT "Folded %s into:" 32 "$(echo "$3" | sed 's/,/, /g')"
@@ -2797,6 +2812,7 @@ _LOAD_STATE () {
 	STATE_TARGET=""
 	STATE_HEAD_WITH_FIXUP=""
 	STATE_DEPTH=""
+	STATE_REBASEBASE=""
 	STATE_MAINDIR=""
 	STATE_FILES=""
 	STATE_PATHSPECS=""
@@ -2816,6 +2832,7 @@ _LOAD_STATE () {
 			target)          STATE_TARGET=$VAL ;;
 			head_with_fixup) STATE_HEAD_WITH_FIXUP=$VAL ;;
 			depth)           STATE_DEPTH=$VAL ;;
+			rebasebase)      STATE_REBASEBASE=$VAL ;;
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
@@ -2968,7 +2985,7 @@ _CONTINUE_AMEND_INTO () {
 	# The fold's scope decides how the leftover index reads – restore it, or a
 	# scoped fold that conflicted would report its intended leftovers as an anomaly
 	[ -n "$STATE_PATHSPECS" ] && AMEND_PATHSPECS=("${(@ps:\t:)STATE_PATHSPECS}")
-	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "" "$STATE_MAINDIR"
+	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "" "$STATE_MAINDIR" "$STATE_REBASEBASE"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -4677,6 +4694,30 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "--text on --continue is refused, not ignored" 'takes --text up front'
 	_ST_RUN --abort
 	_ST_CHECK "abort leaves the branch intact" sh -c "git log --format=%s | grep -qx 'ATC top'"
+	git reset -q --hard
+
+	# A resolution that empties the replayed commit shortens the chain, so an
+	# offset from the new tip names a commit the fold never touched
+	printf 'ae base\n' > ae.txt && git add ae.txt && git commit -qm "AE base"
+	printf 'ae mid\n' > ae.txt && git add ae.txt && git commit -qm "AE target"
+	local AE_TARGET=$(git rev-parse HEAD)
+	printf 'ae top\n' > ae.txt && git add ae.txt && git commit -qm "AE top"
+	printf 'ae folded\n' > ae.txt && git add ae.txt
+	_ST_RUN --amend-into="$AE_TARGET"
+	local AE_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	local AE_ROUNDS=0
+	while [ -n "$AE_WT" ] && [ -d "$AE_WT" ] && [ $AE_ROUNDS -lt 5 ]; do
+		AE_ROUNDS=$((AE_ROUNDS+1))
+		printf 'ae folded\n' > "$AE_WT/ae.txt"
+		git -C "$AE_WT" add ae.txt
+		_ST_RUN --continue
+		AE_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
+	done
+	_ST_EQ "the fold settles" "$RC" "0"
+	_ST_CHECK "a commit really was dropped as empty" \
+		sh -c "! git log --format=%s | grep -qx 'AE top'"
+	_ST_OUT_HAS "the summary names the commit folded into" 'AE target'
+	_ST_OUT_LACKS "not the one below it" 'Amended commit:.*AE base'
 	git reset -q --hard
 
 	ECHO_E "\e[1;96m[46] replanting a branch onto a moved upstream\e[0m"
