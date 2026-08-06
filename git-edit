@@ -351,6 +351,12 @@ _LINK_WORKTREE_EXTRAS () {
 _UNLINK_WORKTREE_EXTRAS () {
 	local WT=$1
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
+	# Only ever inside a worktree this script made. The staging sweep also runs
+	# in the caller's own checkout (an interactive edit without -C), and there
+	# a `node_modules` symlink is the user's – pnpm's layout, say – not ours to
+	# delete. Every link site passes a `MKTEMP_DIR git-edit-*` path.
+	local TMPBASE="${TMPDIR:-/tmp}"
+	[[ "${WT:h}" == "${TMPBASE%/}" && "${WT:t}" == git-edit-* ]] || return 0
 
 	local -a EXTRAS
 	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
@@ -4998,6 +5004,25 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "and reports no failure" 'Could not link'
 	_ST_RUN --abort
 	rm -rf vendor
+
+	# The staging sweep also runs in the caller's own checkout (an interactive
+	# edit without -C). A same-named symlink there is theirs – pnpm keeps
+	# `node_modules` as one – so the removal must not reach outside the temp
+	# worktrees this script makes.
+	mkdir -p "$TMP/wl-store" "$TMP/pretend-checkout"
+	git config --add edit.worktreeLink node_modules
+	ln -sfn "$TMP/wl-store" "$TMP/pretend-checkout/node_modules"
+	_UNLINK_WORKTREE_EXTRAS "$TMP/pretend-checkout"
+	_ST_CHECK "a symlink outside our temp worktrees is left alone" \
+		test -L "$TMP/pretend-checkout/node_modules"
+	local WL_OURS="${TMPDIR:-/tmp}"
+	WL_OURS="${WL_OURS%/}/git-edit-unlink-probe"
+	mkdir -p "$WL_OURS"
+	ln -sfn "$TMP/wl-store" "$WL_OURS/node_modules"
+	_UNLINK_WORKTREE_EXTRAS "$WL_OURS"
+	_ST_CHECK "but one inside them is removed before staging" \
+		sh -c "test ! -L '$WL_OURS/node_modules'"
+	rm -rf "$WL_OURS" "$TMP/pretend-checkout" "$TMP/wl-store"
 	git config --unset-all edit.worktreeLink
 	rm -rf node_modules
 	git reset -q --hard
