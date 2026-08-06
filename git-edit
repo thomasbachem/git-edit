@@ -270,10 +270,15 @@ PRINT_ACTION () {
 	fi
 }
 
+# Prints one dim line naming <commit> via <format> – formatted by git and piped rather than
+# routed through `PRINT_TEXT`, whose `echo -e` eats a `\d` in the subject and splits at a `\n`
+# Silent on a missing object, where a `fatal:` would read as the operation having failed
+_PRINT_COMMIT_LINE () {
+	git log -1 --format="$2" "$1" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+}
+
 PRINT_CMD () {
-	# First arg is the full command string to be printed.
-	# Optional second arg overrides the color (default 90 = gray, matching
-	# the trailing color used for the executed command's own output).
+	# Args: <command string> [<color – default 90 gray, matching the command's own output>]
 	local CMD="$1"
 	local COLOR="${2:-90}"
 
@@ -1616,15 +1621,12 @@ _PRINT_AMENDED_SUMMARY () {
 	_PRINT_LEFTOVER_STATE "$4"
 	# Names the commit that received the fold below the stat block, never above
 	# it – that block grows with the target, and a caller reading this back
-	# through a `tail -3` would otherwise see only a diffstat and `ok`. Every
-	# identity line here is formatted by git and piped, never routed through
-	# `PRINT_TEXT` – that ends in `echo -e`, which eats a `\d` in the subject
-	# and breaks the line at a `\n`, turning the name into a different commit's
-	git log -1 --format='  amended: %h %s' "$AMENDED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	# through a `tail -3` would otherwise see only a diffstat and `ok`
+	_PRINT_COMMIT_LINE "$AMENDED" '  amended: %h %s'
 	# Same reasoning: a fold that also reworded replaced a subject, and a
 	# symbolic target can make that the wrong one
 	if [ -n "$AMEND_OLD_SHA" ]; then
-		git log -1 --format='  replaced: %s' "$AMEND_OLD_SHA" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		_PRINT_COMMIT_LINE "$AMEND_OLD_SHA" '  replaced: %s'
 	fi
 }
 
@@ -1721,7 +1723,7 @@ _SPLIT_APPLY () {
 	# Each half's stat has to stay under its own subject to say which files went
 	# where, so the pair can't move below the block the way a fold's name does –
 	# one line naming the commit that was split carries that into the tail instead
-	git log -1 --format="  split: %h %s -> ${C1:0:7} + ${C2:0:7}" "$X" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	_PRINT_COMMIT_LINE "$X" "  split: %h %s -> ${C1:0:7} + ${C2:0:7}"
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
@@ -2820,7 +2822,7 @@ _CONTINUE_EDIT () {
 	# A pause outlives the run that opened it, so the name in its trailer is long
 	# gone by now – and both blocks above grow with the edit, which would bury a
 	# line printed before them
-	git log -1 --format='  edited: %h %s' "$STATE_TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	_PRINT_COMMIT_LINE "$STATE_TARGET" '  edited: %h %s'
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -3339,7 +3341,7 @@ GIT_REWORD () {
 	# Deriving it by offset instead walks first parents, so a merge in the span
 	# – whose commit count includes the side branch – named the wrong commit.
 	if [ -n "$NEW_TARGET" ]; then
-		git log -1 --format='  %h %s' "$NEW_TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		_PRINT_COMMIT_LINE "$NEW_TARGET" '  %h %s'
 		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
 			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
@@ -3352,7 +3354,7 @@ GIT_REWORD () {
 		# actually reads back, rather than only in the line that scrolled past.
 		local OLD_SUBJECT=$(git log -1 --format='%s' "$TARGET" 2>/dev/null)
 		if [ -n "$OLD_SUBJECT" ]; then
-			git log -1 --format='  replaced: %s' "$TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			_PRINT_COMMIT_LINE "$TARGET" '  replaced: %s'
 		fi
 	fi
 }
@@ -3492,9 +3494,8 @@ GIT_RESQUASH () {
 	# don't re-verify with a diff
 	PRINT_TEXT "%s" 32 "Tip tree unchanged by construction ✓"
 	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	# Identity below the stat block, git-formatted and piped, for the same two
-	# reasons the fold's is
-	git log -1 --format='  squashed: %h %s' "$NEW_SQUASHED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	# Identity below the stat block, for the same reason the fold's is
+	_PRINT_COMMIT_LINE "$NEW_SQUASHED" '  squashed: %h %s'
 }
 
 GIT_COMMIT_AMEND () {
@@ -4563,18 +4564,18 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# guessed wrong is worse than none. These commits are orphaned by now but
 		# still objects, and they are the SHAs the reflog and preamble both carry
 		if [ "$ACTION" = "squash" ] && [ -n "$TARGET" ]; then
-			git log -1 --format='  squashed into: %h %s' "$TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			_PRINT_COMMIT_LINE "$TARGET" '  squashed into: %h %s'
 		elif [ "$ACTION" = "drop" ]; then
 			# The hint above lists the restored paths, one per file – unbounded,
 			# so the commit's own name has to follow it rather than precede it
 			local DROPPED
 			for DROPPED in "${COMMITS[@]}"; do
-				git log -1 --format='  dropped: %h %s' "$DROPPED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+				_PRINT_COMMIT_LINE "$DROPPED" '  dropped: %h %s'
 			done
 		elif [ "$ACTION" = "edit" ] && [ -n "$COMMIT" ]; then
 			# A pause can outlive the session that opened it, so name the commit
 			# again here – the one the trailer carried is long scrolled away
-			git log -1 --format='  edited: %h %s' "$COMMIT" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			_PRINT_COMMIT_LINE "$COMMIT" '  edited: %h %s'
 		fi
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"

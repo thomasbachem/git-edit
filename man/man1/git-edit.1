@@ -54,9 +54,10 @@ modes that would otherwise touch the working tree auto\-isolate into a unique
 temporary worktree.
 .IP \(bu 3
 Output carries blank\-line padding only when stdout is a terminal. Piped or
-captured it comes out tight \(em same lines, no padding \(em so a
-.B "| tail -5"
-reaches the completion summary rather than blank space.
+captured it comes out tight \(em same lines, no padding \(em so even a
+.B "| tail -3"
+reaches the trailer and the line naming the commit the run touched. Nothing
+above those two is guaranteed: a stat block or path list grows with the commit.
 .IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with

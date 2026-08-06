@@ -744,6 +744,9 @@ GIT_SELFTEST () {
 	_ST_EQ "continue completes the split" "$RC" "0"
 	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
 	_ST_OUT_HAS "trailer anchors on the branch, not the worktree HEAD" "moved $CS_PRE"
+	# The resumed path reaches the same summary as the pathspec one
+	_ST_EQ "names the commit it split within a 'tail -3'" \
+		"$(print -r -- "$OUT" | tail -3 | grep -c 'split: ')" "1"
 	_ST_CHECK "mid-pause commit absorbed" sh -c "git log --format=%s | grep -q 'CS mid-pause'"
 	local CS_KEPT=$(git log --format='%H %s' | grep 'CS mixed commit' | cut -d' ' -f1)
 	_ST_EQ "extracted commit sits below the remainder" "$(git log --format=%s -1 "$CS_KEPT^")" "CS extracted"
