@@ -4500,8 +4500,10 @@ if [[ "$ACTION" == "drop" ]]; then
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
+	# Doubled like `PRINT_ACTION`'s own subjects – this one rides in the format
+	# string, which `ECHO_E` interprets just the same
 	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "$TARGET")
-	PRINT_ACTION "Merging %s -> ${TARGET:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#$TARGET}"
+	PRINT_ACTION "Merging %s -> ${TARGET:0:7}\e[22m (${TARGET_SUBJECT//\\/\\\\})" "${COMMITS[@]:#$TARGET}"
 
 	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
 	CONTINUE_OR_ABORT "" skip
@@ -4550,6 +4552,15 @@ if [ -n "$WORKTREE_DIR" ]; then
 		fi
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
 		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION"
+		# Names the destination the caller targeted rather than a commit located
+		# in the replayed range: this fold takes commits from either side of the
+		# target, so neither an offset from the base nor one from the tip survives
+		# it – and on the line meant to catch a mistargeted squash, a name guessed
+		# wrong is worse than none. The target is orphaned by now but still an
+		# object, and it is the SHA the reflog entry and the preamble both carry
+		if [ "$ACTION" = "squash" ] && [ -n "$TARGET" ]; then
+			git log -1 --format='  squashed into: %h %s' "$TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		fi
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
 	fi

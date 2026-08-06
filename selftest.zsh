@@ -1557,6 +1557,18 @@ GIT_SELFTEST () {
 	_ST_EQ "the preamble keeps them too" \
 		"$(print -r -- "$OUT" | grep -F 'Amending staged changes' | grep -cF 'ID esc \d and \n intact')" "1"
 
+	# A non-contiguous selection falls back to the rebase path, which has no
+	# plumbing commit of its own to name – it names the destination instead
+	printf 'id f1\n' > id-f1.txt && git add -A && git commit -qm 'ID fallback \d target'
+	printf 'id f2\n' > id-f2.txt && git add -A && git commit -qm "ID fallback skipped"
+	printf 'id f3\n' > id-f3.txt && git add -A && git commit -qm "ID fallback folded"
+	_ST_RUN -s -y HEAD~2 HEAD
+	_ST_EQ "the non-contiguous squash succeeds" "$RC" "0"
+	_ST_EQ "it names its destination within a 'tail -3'" \
+		"$(print -r -- "$OUT" | tail -3 | grep -c 'squashed into: ')" "1"
+	_ST_EQ "with that subject's escapes intact" \
+		"$(print -r -- "$OUT" | grep -F 'squashed into: ' | grep -cF 'ID fallback \d target')" "1"
+
 	# A split's two halves keep their stats paired under their own subjects, so
 	# it names the commit it split rather than moving those
 	printf 'id p\n' > id-p.txt && printf 'id q\n' > id-q.txt
