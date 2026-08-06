@@ -2201,17 +2201,20 @@ _PRINT_REORDER_SUMMARY () {
 _ONTO_FORK_POINT () {
 	local BRANCH_TIP=$1
 	local UPSTREAM=$2
-	local FORK=$(git merge-base --fork-point "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
-	if [ -z "$FORK" ]; then
-		FORK=$(git merge-base "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
+	# Returns through `$_ONTO_FORK` / `$_ONTO_FORK_GUESSED` rather than stdout:
+	# a command substitution would run this in a subshell, and the caller needs
+	# to know whether the reflog answered, not just what the answer was
+	_ONTO_FORK_GUESSED=false
+	_ONTO_FORK=$(git merge-base --fork-point "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
+	if [ -z "$_ONTO_FORK" ]; then
+		_ONTO_FORK=$(git merge-base "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
+		_ONTO_FORK_GUESSED=true
 	fi
-	echo "$FORK"
 }
 
-# Replays the current branch onto `$ONTO_UPSTREAM`, deriving the fork point
-# rather than taking it as an argument. Automates the "rebase onto a rewritten
-# main" sequence: find the fork, report what each side carries, replay in an
-# isolated worktree, CAS the branch.
+# Replays the current branch onto `$ONTO_UPSTREAM`, deriving the fork point rather than
+# taking it as an argument – automates the rebase-onto-a-rewritten-main sequence: find the
+# fork, report what each side carries, replay in an isolated worktree, CAS the branch
 GIT_ONTO () {
 	_REQUIRE_NO_INFLIGHT
 
@@ -2236,7 +2239,8 @@ GIT_ONTO () {
 		exit 1
 	fi
 
-	local FORK=$(_ONTO_FORK_POINT "$ORIG_HEAD" "$ONTO_UPSTREAM")
+	_ONTO_FORK_POINT "$ORIG_HEAD" "$ONTO_UPSTREAM"
+	local FORK=$_ONTO_FORK
 	if [ -z "$FORK" ]; then
 		PRINT_ERR "No common ancestor between '$ORIG_BRANCH' and '$ONTO_UPSTREAM' – nothing to replay from"
 		exit 1
@@ -2267,7 +2271,14 @@ GIT_ONTO () {
 	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
 	# Whether the old base still sits on the upstream decides how surprising
 	# this is – an orphaned one means the upstream was rewritten underneath
-	if git merge-base --is-ancestor "$FORK" "$UPSTREAM_FULL" 2>/dev/null; then
+	if [ "$_ONTO_FORK_GUESSED" = "true" ]; then
+		# The reflog is what makes the fork point exact – without it this is the last common
+		# ancestor, which after a content-changing rewrite of the upstream sits well below the
+		# real fork, so the span takes in commits the upstream has in a form patch ids miss
+		PRINT_TEXT "%s could not answer from %s's reflog – using the merge base %s." 33 \
+			"Fork point" "$ONTO_UPSTREAM" "$(git log -1 --format='%h %s' "$FORK")"
+		PRINT_TEXT "If %s was rewritten, this span may be too wide – check the list below before continuing." 33 "$ONTO_UPSTREAM"
+	elif git merge-base --is-ancestor "$FORK" "$UPSTREAM_FULL" 2>/dev/null; then
 		PRINT_TEXT "Fork point %s is still on %s." 32 "$(git log -1 --format='%h %s' "$FORK")" "$ONTO_UPSTREAM"
 	else
 		PRINT_TEXT "Fork point %s was orphaned by a rewrite – recovered from the reflog." 33 \
@@ -4867,6 +4878,7 @@ GIT_SELFTEST () {
 	_ST_RUN --onto=onto-main
 	_ST_EQ "the orphaned replant succeeds" "$RC" "0"
 	_ST_OUT_HAS "and says the fork was recovered" 'orphaned by a rewrite'
+	_ST_OUT_LACKS "without claiming it guessed" 'could not answer'
 	_ST_CHECK "no upstream commit was replayed onto the branch" \
 		sh -c "test \$(git log --format=%s onto-main..onto-orphan | grep -c '^OM ') -eq 0"
 
@@ -4943,13 +4955,32 @@ GIT_SELFTEST () {
 	rm -f oc-unrelated.txt
 	git reset -q --hard
 
+	# Without the upstream's reflog the fork point is only a merge base, which
+	# after a content-changing rewrite sits below the real fork – the span then
+	# takes in commits the upstream already has, so it must say so rather than
+	# present a guess as the answer
+	# The upstream also has to have moved past the fork – while its tip is still
+	# an ancestor, `--fork-point` answers from the graph alone and needs no
+	# reflog, so expiring one proves nothing
+	git checkout -q -B onto-noreflog onto-main
+	printf 'onr branch\n' > onr.txt && git add onr.txt && git commit -qm "ONR on branch"
+	git checkout -q onto-main
+	printf 'onr up\n' > onr-up.txt && git add onr-up.txt && git commit -qm "ONR upstream"
+	git checkout -q onto-noreflog
+	git reflog expire --expire=now --all 2>/dev/null
+	_ST_CHECK "the reflog can no longer answer" \
+		sh -c "test -z \"\$(git merge-base --fork-point onto-main onto-noreflog 2>/dev/null)\""
+	_ST_RUN --onto=onto-main
+	_ST_OUT_HAS "a guessed fork point is flagged" 'could not answer'
+	_ST_OUT_HAS "and warns the span may be too wide" 'may be too wide'
+
 	# --skip belongs to this mode alone; elsewhere the paused commit is the point
 	git checkout -q -B onto-skip onto-main
 	_ST_RUN --skip
 	_ST_EQ "a skip with nothing in flight is refused" "$RC" "1"
 	git checkout -q onto-main
 	git push -q origin --delete onto-pushed 2>/dev/null
-	git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase onto-dirty onto-clean 2>/dev/null
+	git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase onto-dirty onto-clean onto-noreflog 2>/dev/null
 	git checkout -q main
 	git reset -q --hard
 

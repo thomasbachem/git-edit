@@ -295,7 +295,9 @@ When the branch you're on forked from a `main` that has since moved — or been 
 git edit --onto=main
 ```
 
-The point of the mode is that it derives the fork point instead of asking for it. `git rebase --onto main <old-base> <branch>` needs `<old-base>` spelled out, and after a rewrite of `main` that commit is orphaned — so the caller has to have tracked the pre-rewrite SHA, or reconstruct it. `--onto` recovers it from `main`'s reflog via `git merge-base --fork-point`, falling back to a plain merge base when the reflog can't answer (a fresh clone, an expired reflog).
+The point of the mode is that it derives the fork point instead of asking for it. `git rebase --onto main <old-base> <branch>` needs `<old-base>` spelled out, and after a rewrite of `main` that commit is orphaned — so the caller has to have tracked the pre-rewrite SHA, or reconstruct it. `--onto` recovers it from `main`'s reflog via `git merge-base --fork-point`.
+
+Where the reflog can't answer — a fresh clone, an expired reflog — it falls back to a plain merge base and **says so**. That fallback is only as good as the graph: if `main` was rewritten in a way that changed content, the last common ancestor sits well below the real fork, and the span then takes in commits `main` already has in a form patch ids no longer match. The notice tells you to check the replay list before continuing, and a conflict there is the signal to abort rather than resolve.
 
 It reports the triage up front — what the upstream gained, and which of your commits it already carries by patch id:
 
