@@ -3899,17 +3899,43 @@ GIT_SELFTEST () {
 	# --- 22. man page exists and documents every mode (drift guard vs. USAGE) ---
 	ECHO_E "\e[1;96m[22] man page coverage\e[0m"
 	local MANPAGE="$(dirname "$SELF")/man/man1/git-edit.1"
+	local READMEFILE="$(dirname "$SELF")/README.md"
 	_ST_CHECK "man page present" test -f "$MANPAGE"
 	if [ -f "$MANPAGE" ]; then
+		# Derive the flags from the parser itself. A hardcoded list drifts the
+		# moment a mode is added – which is the very drift this check exists to
+		# catch, so it must not be the thing needing maintenance. Anchored on
+		# `^if ! zparseopts`, since this block's own source mentions it too.
+		local -a DOCFLAGS
+		local ZLINE=$(command grep -m1 '^if ! zparseopts' "$SELF")
+		local ztok zname
+		for ztok in ${(z)ZLINE}; do
+			[[ "$ztok" != *"=OPT_"* ]] && continue
+			ztok=${ztok%%=OPT_*}
+			ztok=${ztok%%:*}
+			ztok=${ztok//[\{\}]/}
+			for zname in ${(s:,:)ztok}; do
+				[[ "$zname" == -* ]] && DOCFLAGS+=("-$zname")
+			done
+		done
+		_ST_CHECK "flag list derived from the parser" test ${#DOCFLAGS[@]} -ge 20
 		# Strip roff backslash escapes so flag spellings match; no man/mandoc dep
-		local mflag missing=""
-		for mflag in --amend-into --split --reorder --move --exec --undo --status --allow-pushed --continue --abort --reword --resquash --selftest; do
-			sed 's/\\//g' "$MANPAGE" | grep -q -- "$mflag" || missing="$missing $mflag"
+		local mflag missing="" rmissing=""
+		local MANTEXT=$(sed 's/\\//g' "$MANPAGE")
+		for mflag in "${DOCFLAGS[@]}"; do
+			[ -z "$mflag" ] && continue
+			echo "$MANTEXT" | grep -q -- "$mflag" || missing="$missing $mflag"
+			[ -f "$READMEFILE" ] && { grep -q -- "$mflag" "$READMEFILE" || rmissing="$rmissing $mflag" }
 		done
 		if [ -z "$missing" ]; then
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m man page documents every mode"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m man page missing:$missing"
+		fi
+		if [ -z "$rmissing" ]; then
+			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m README documents every mode"
+		else
+			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m README missing:$rmissing"
 		fi
 	fi
 

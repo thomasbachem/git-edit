@@ -354,7 +354,7 @@ Undo: git edit --undo  (or: git update-ref refs/heads/main <old> <new>)
 git edit --selftest
 ```
 
-Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, reorder, move, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — ~270 assertions, PASS/FAIL per check, non-zero exit on any failure. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
+Builds a scratch repo (with a bare "remote" for pushed-guard coverage) in a temp dir and exercises every mode through real sub-invocations of the installed script: reword, fold, conflict → abort, conflict → resolve → continue (including cascades), drop, squash, split, reorder, move, replant, exec, the pushed guards, stale-SHA resolution and refusal, merge-topology handling, undo semantics, and status reporting — several hundred assertions, PASS/FAIL per check, non-zero exit on any failure. It also checks that every flag the parser declares is documented in both the man page and this README, so a new mode can't ship undocumented. Run it after any change to this script; sub-invocations run with stdin redirected so the non-TTY (agent) behaviors are always the ones tested.
 
 ### Running Any Raw Git Command Safely (`--exec`)
 
