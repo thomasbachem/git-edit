@@ -1578,6 +1578,29 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "it names the commit it split" 'split: .*ID split source'
 	_ST_EQ "and does so within a 'tail -3'" \
 		"$(echo "$OUT" | tail -3 | grep -c 'split: ')" "1"
+
+	# A drop's hint lists every restored path, so the commit's own name has to
+	# follow that list – it is the only mode whose tail named no commit at all
+	printf 'id d1\n' > id-d1.txt && git add -A && git commit -qm 'ID drop \d target'
+	_ST_RUN -d -y HEAD
+	_ST_EQ "the drop succeeds" "$RC" "0"
+	_ST_EQ "it names what it dropped within a 'tail -3'" \
+		"$(print -r -- "$OUT" | tail -3 | grep -c 'dropped: ')" "1"
+	_ST_EQ "with that subject's escapes intact" \
+		"$(print -r -- "$OUT" | grep -F 'dropped: ' | grep -cF 'ID drop \d target')" "1"
+
+	# An edit resumes in a later run, where the paused trailer's name is gone
+	printf 'id e1\n' > id-e1.txt && git add -A && git commit -qm "ID edit target"
+	_ST_RUN HEAD
+	_ST_EQ "the edit pauses" "$RC" "2"
+	local ID_WT=$(print -r -- "$OUT" | sed -n 's/^git-edit: paused — edit [^ ]* in \([^;]*\);.*/\1/p' | head -1)
+	_ST_CHECK "it opened a worktree" test -d "$ID_WT"
+	printf 'id e1 edited\n' > "$ID_WT/id-e1.txt"
+	git -C "$ID_WT" add id-e1.txt
+	_ST_RUN --continue
+	_ST_EQ "the edit settles" "$RC" "0"
+	_ST_EQ "and names what it edited within a 'tail -3'" \
+		"$(print -r -- "$OUT" | tail -3 | grep -c 'edited: ')" "1"
 	git reset -q --hard
 
 	# "Color follows the same rule and also honours NO_COLOR and TERM=dumb" –

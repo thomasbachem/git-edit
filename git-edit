@@ -2817,6 +2817,10 @@ _CONTINUE_EDIT () {
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
 	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
 	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
+	# A pause outlives the run that opened it, so the name in its trailer is long
+	# gone by now – and both blocks above grow with the edit, which would bury a
+	# line printed before them
+	git log -1 --format='  edited: %h %s' "$STATE_TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -4552,14 +4556,25 @@ if [ -n "$WORKTREE_DIR" ]; then
 		fi
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
 		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION"
-		# Names the destination the caller targeted rather than a commit located
-		# in the replayed range: this fold takes commits from either side of the
-		# target, so neither an offset from the base nor one from the tip survives
-		# it – and on the line meant to catch a mistargeted squash, a name guessed
-		# wrong is worse than none. The target is orphaned by now but still an
-		# object, and it is the SHA the reflog entry and the preamble both carry
+		# Named from what the caller selected, never located in the replayed range:
+		# a replay drops a commit that went empty and a fold consumes commits from
+		# either side of its target, so no offset from the base or the tip survives
+		# both – and on the line meant to catch a mistargeted rewrite, a name
+		# guessed wrong is worse than none. These commits are orphaned by now but
+		# still objects, and they are the SHAs the reflog and preamble both carry
 		if [ "$ACTION" = "squash" ] && [ -n "$TARGET" ]; then
 			git log -1 --format='  squashed into: %h %s' "$TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		elif [ "$ACTION" = "drop" ]; then
+			# The hint above lists the restored paths, one per file – unbounded,
+			# so the commit's own name has to follow it rather than precede it
+			local DROPPED
+			for DROPPED in "${COMMITS[@]}"; do
+				git log -1 --format='  dropped: %h %s' "$DROPPED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			done
+		elif [ "$ACTION" = "edit" ] && [ -n "$COMMIT" ]; then
+			# A pause can outlive the session that opened it, so name the commit
+			# again here – the one the trailer carried is long scrolled away
+			git log -1 --format='  edited: %h %s' "$COMMIT" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 		fi
 	else
 		PRINT_TEXT "Detached HEAD – rebased commits are at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
