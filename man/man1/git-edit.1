@@ -268,9 +268,14 @@ Report the in\-flight operation (or the last completed one) in the trailer
 grammar \(em for an agent or session re\-entering mid\-operation.
 .TP
 .B \-\-selftest
-Run the built\-in end\-to\-end test suite in a scratch repository. A passing run
-removes that repository and every temp worktree anchored to it; a failing run
-keeps both and prints the path, since that tree is the evidence.
+Run the end\-to\-end test suite in a scratch repository. A passing run removes
+that repository and every temp worktree anchored to it; a failing run keeps
+both and prints the path, since that tree is the evidence. The suite lives in
+.I selftest.zsh
+beside this script and is sourced only for this mode; it drives
+.B git\-edit
+as a subprocess rather than calling into it, so what it exercises is the
+shipped behaviour.
 .PP
 Independently, each mutating run sweeps temp worktrees left in
 .B TMPDIR
