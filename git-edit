@@ -3852,6 +3852,10 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="Some subject"
 	_ST_EQ "missing commit refused" "$RC" "1"
 	_ST_OUT_HAS "names the missing argument" 'Missing <commit>'
+	# The retry is always a bare HEAD, so the error has to show what that is
+	_ST_OUT_HAS "and says what HEAD currently is" 'HEAD is currently'
+	_ST_OUT_HAS "with its subject, not just a sha" \
+		"HEAD is currently [0-9a-f]\{7\} ."
 	_ST_RUN --amend-into=HEAD -M
 	_ST_EQ "--amend-into + -M refused" "$RC" "1"
 	_ST_OUT_HAS "points at the reword form" 'To reword only'
@@ -4774,6 +4778,14 @@ if [ $# -eq 0 ]; then
 	# than making them find it in a screen of usage
 	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o -n "$TEXT_VALUE" ]; then
 		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" HEAD')"
+		# The retry for this is always a bare `HEAD`, so say what that is right
+		# now: a parallel session's commit landing in the gap is exactly how a
+		# reword reaches the wrong one, and the CAS cannot catch it – that guard
+		# covers the ref moving mid-run, not the wrong commit being named
+		local HEAD_LINE=$(git log -1 --format='%h %s' 2>/dev/null)
+		if [ -n "$HEAD_LINE" ]; then
+			ECHO_E "\e[0;31m  HEAD is currently $HEAD_LINE\e[0m" >&2
+		fi
 		exit 1
 	fi
 	USAGE
