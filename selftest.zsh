@@ -1538,6 +1538,16 @@ GIT_SELFTEST () {
 	_ST_EQ "the squash succeeds" "$RC" "0"
 	_ST_EQ "its own summary lands within a 'tail -3' too" \
 		"$(echo "$OUT" | tail -3 | grep -c 'squashed: ')" "1"
+
+	# A split's two halves keep their stats paired under their own subjects, so
+	# it names the commit it split rather than moving those
+	printf 'id p\n' > id-p.txt && printf 'id q\n' > id-q.txt
+	git add -A && git commit -qm "ID split source"
+	_ST_RUN --split HEAD --text='ID extracted' -- id-p.txt
+	_ST_EQ "the split succeeds" "$RC" "0"
+	_ST_OUT_HAS "it names the commit it split" 'split: .*ID split source'
+	_ST_EQ "and does so within a 'tail -3'" \
+		"$(echo "$OUT" | tail -3 | grep -c 'split: ')" "1"
 	git reset -q --hard
 
 	# "Color follows the same rule and also honours NO_COLOR and TERM=dumb" –

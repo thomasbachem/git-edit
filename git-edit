@@ -1713,6 +1713,10 @@ _SPLIT_APPLY () {
 	PRINT_TEXT "%s – split into:" 32 "Tip tree unchanged by construction ✓"
 	git show --stat --format='  %h %s' "$C1" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	git show --stat --format='  %h %s' "$C2" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	# Each half's stat has to stay under its own subject to say which files went
+	# where, so the pair can't move below the block the way a fold's name does –
+	# one line naming the commit that was split carries that into the tail instead
+	PRINT_TEXT "  split: %s -> %s + %s" 90 "${X:0:7} ${X_MSG%%$'\n'*}" "${C1:0:7}" "${C2:0:7}"
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
