@@ -150,6 +150,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
 	ECHO_E "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
+	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
 	ECHO_E ""
@@ -178,6 +179,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
 	ECHO_E "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
+	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, deriving the fork point\e[0m"
+	ECHO_E "\e[0;94m                                       (recovers it from the reflog when a rewrite orphaned the old base)\e[0m"
+	ECHO_E "\e[0;94m       --skip                          Resume past the paused commit instead of through it (--onto only)\e[0m"
 	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
 	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
@@ -2092,6 +2096,318 @@ _PRINT_REORDER_SUMMARY () {
 	fi
 }
 
+# Resolves where `$1` (a branch tip) left `$2` (the upstream). A rewritten
+# upstream orphans the commit the branch actually forked from, and plain
+# `merge-base` then answers with a far older ancestor – replaying from there
+# would re-apply commits the upstream already carries. `--fork-point` reads
+# the upstream's reflog, which still holds the pre-rewrite tip, so it finds
+# the real fork. It has nothing to work from on a freshly cloned or expired
+# reflog, hence the fallback.
+_ONTO_FORK_POINT () {
+	local BRANCH_TIP=$1
+	local UPSTREAM=$2
+	local FORK=$(git merge-base --fork-point "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
+	if [ -z "$FORK" ]; then
+		FORK=$(git merge-base "$UPSTREAM" "$BRANCH_TIP" 2>/dev/null)
+	fi
+	echo "$FORK"
+}
+
+# Replays the current branch onto `$ONTO_UPSTREAM`, deriving the fork point
+# rather than taking it as an argument. Automates the "rebase onto a rewritten
+# main" sequence: find the fork, report what each side carries, replay in an
+# isolated worktree, CAS the branch.
+GIT_ONTO () {
+	_REQUIRE_NO_INFLIGHT
+
+	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	if [ -z "$ORIG_BRANCH" ]; then
+		PRINT_ERR "--onto requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+	local REF="refs/heads/$ORIG_BRANCH"
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	# Captured before the cd into the temp worktree – the replant changes what
+	# this checkout should hold, so it has to be brought along afterwards
+	local MAIN_DIR=$(git rev-parse --show-toplevel)
+
+	if ! git rev-parse --quiet --verify "$ONTO_UPSTREAM^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown upstream: $ONTO_UPSTREAM"
+		exit 1
+	fi
+	local UPSTREAM_FULL=$(git rev-parse "$ONTO_UPSTREAM^{commit}")
+	if [ "$UPSTREAM_FULL" = "$ORIG_HEAD" ]; then
+		PRINT_ERR "--onto target is the branch itself – name the branch to replant onto"
+		exit 1
+	fi
+
+	local FORK=$(_ONTO_FORK_POINT "$ORIG_HEAD" "$ONTO_UPSTREAM")
+	if [ -z "$FORK" ]; then
+		PRINT_ERR "No common ancestor between '$ORIG_BRANCH' and '$ONTO_UPSTREAM' – nothing to replay from"
+		exit 1
+	fi
+
+	# Already replanted: the upstream tip is the fork, so there is nothing to move
+	if [ "$(git rev-parse "$FORK")" = "$UPSTREAM_FULL" ]; then
+		PRINT_TEXT "%s" 33 "Already on top of $ONTO_UPSTREAM – nothing to replay."
+		EMIT_STATUS "$ORIG_HEAD" "$REF" false
+		exit 0
+	fi
+
+	local -a SPAN
+	SPAN=("${(@f)$(git rev-list --reverse "$FORK..$ORIG_HEAD" 2>/dev/null)}")
+	if [ -z "${SPAN[1]}" ]; then
+		PRINT_TEXT "%s" 33 "Branch '$ORIG_BRANCH' carries no commits past the fork – nothing to replay."
+		EMIT_STATUS "$ORIG_HEAD" "$REF" false
+		exit 0
+	fi
+
+	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
+	# Whether the old base still sits on the upstream decides how surprising
+	# this is – an orphaned one means the upstream was rewritten underneath
+	if git merge-base --is-ancestor "$FORK" "$UPSTREAM_FULL" 2>/dev/null; then
+		PRINT_TEXT "Fork point %s is still on %s." 32 "$(git log -1 --format='%h %s' "$FORK")" "$ONTO_UPSTREAM"
+	else
+		PRINT_TEXT "Fork point %s was orphaned by a rewrite – recovered from the reflog." 33 \
+			"$(git log -1 --format='%h %s' "$FORK")"
+	fi
+	local GAINED=$(git rev-list --count "$FORK..$UPSTREAM_FULL" 2>/dev/null)
+	PRINT_TEXT "%s gained %s commit(s); replaying %s from '%s' on top:" 32 \
+		"$ONTO_UPSTREAM" "${GAINED:-0}" "${#SPAN[@]}" "$ORIG_BRANCH"
+	_PRINT_ONTO_TRIAGE "$UPSTREAM_FULL" "$ORIG_HEAD" "$FORK"
+
+	local WT=$(MKTEMP_DIR git-edit-onto)
+	rmdir "$WT"
+	local WT_CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	PRINT_CMD "$WT_CMD" 90
+	if ! eval "$WT_CMD" >/dev/null 2>&1; then
+		PRINT_ERR "Failed to create temp worktree"
+		exit 1
+	fi
+	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	cd "$WT" || exit 1
+
+	# Detached, so the branch ref stays put until the CAS – and the branch can
+	# stay checked out in whatever worktree the caller is using
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --onto $UPSTREAM_FULL $FORK"
+	PRINT_CMD "$REBASE_CMD" 90
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+		# The upstream's name and the span size are only known here – without
+		# them the resumed run reports the replant against a bare SHA and a
+		# count that trivially matches itself
+		_SAVE_STATE \
+			"operation=onto" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$UPSTREAM_FULL" \
+			"upstream=$ONTO_UPSTREAM" \
+			"span=${#SPAN[@]}" \
+			"fork=$FORK" \
+			"maindir=$MAIN_DIR"
+		_CLEANUP_HOOK=""
+
+		PRINT_ERR "Conflict while replanting – resolve in worktree, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$WT"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
+		_PRINT_ONTO_SKIP_HINT "$WT" "$UPSTREAM_FULL"
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
+		exit 2
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
+		PRINT_TEXT "Replanted history is at %s (not applied)." 33 "$NEW_HEAD"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "onto ${UPSTREAM_FULL:0:7}"
+	_SYNC_ONTO_CHECKOUT "$MAIN_DIR" "$ORIG_HEAD" "$NEW_HEAD"
+
+	_PRINT_ONTO_SUMMARY "$UPSTREAM_FULL" "$NEW_HEAD" "${#SPAN[@]}" "$ORIG_HEAD" "$FORK"
+
+	ONTO_NEW_HEAD=$NEW_HEAD
+	ONTO_REF=$REF
+}
+
+# Splits the span into what the upstream already carries and what is genuinely
+# this branch's, using patch ids – the rebase drops the former silently, and a
+# caller who doesn't know that reads the shorter result as lost work
+_PRINT_ONTO_TRIAGE () {
+	local UPSTREAM=$1
+	local TIP=$2
+	local FORK=$3
+	local -a UNIQUE DUPLICATE
+	local LINE
+	while IFS= read -r LINE; do
+		[ -z "$LINE" ] && continue
+		if [[ "$LINE" == "+ "* ]]; then
+			UNIQUE+=("${LINE#+ }")
+		else
+			DUPLICATE+=("${LINE#- }")
+		fi
+	done < <(git cherry "$UPSTREAM" "$TIP" "$FORK" 2>/dev/null)
+
+	local C
+	for C in "${UNIQUE[@]}"; do
+		git log -1 --format='  %h %s' "$C" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	done
+	if [ ${#DUPLICATE[@]} -gt 0 ]; then
+		PRINT_TEXT "%s commit(s) are already on %s and will be dropped:" 33 "${#DUPLICATE[@]}" "$ONTO_UPSTREAM"
+		for C in "${DUPLICATE[@]}"; do
+			git log -1 --format='  %h %s' "$C" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		done
+	fi
+}
+
+# Names the skip a replant wants – a conflict on a commit the upstream carries another way
+# case where skipping is the answer rather than a merge – say so, since the
+# generic "resolve it" advice produces a duplicate commit instead
+_PRINT_ONTO_SKIP_HINT () {
+	local WT=$1
+	local UPSTREAM=$2
+	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
+	local STOPPED=$(cat "$GITDIR/rebase-merge/stopped-sha" 2>/dev/null)
+	[ -z "$STOPPED" ] && return 0
+	# `git cherry` compares patch ids, so an upstream that took the same change
+	# via a different commit still matches
+	local VERDICT=$(git cherry "$UPSTREAM" "$STOPPED" "$STOPPED^" 2>/dev/null | head -1)
+	if [[ "$VERDICT" == "- "* ]]; then
+		PRINT_TEXT "%s is already on %s in another form – %s is likely right here." 33 \
+			"$(git log -1 --format='%h %s' "$STOPPED" 2>/dev/null)" "$ONTO_UPSTREAM" "git edit --skip"
+	fi
+}
+
+# Brings the caller's checkout along after the branch it is on was replanted.
+# The other isolated modes can skip this – a reorder preserves the tree – but a
+# replant genuinely changes it, and leaving it behind makes every commit the
+# upstream gained read as a local deletion, which the next `git commit -a`
+# would then carry out. `read-tree -u -m` applies the difference the way a
+# checkout does, refusing rather than overwriting uncommitted work.
+_SYNC_ONTO_CHECKOUT () {
+	local DIR=$1
+	local FROM=$2
+	local TO=$3
+	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
+	if git -C "$DIR" read-tree -u -m "$FROM" "$TO" 2>/dev/null; then
+		PRINT_TEXT "Checkout updated to the replanted branch." 32
+	else
+		PRINT_TEXT "%s" 33 "Checkout still holds the pre-replant content – local changes would be overwritten."
+		PRINT_TEXT "Reconcile it with: %s" 33 "git -C $DIR checkout -- ."
+	fi
+}
+
+# Prints what the replant produced, so the caller doesn't reach for `git log` next
+_PRINT_ONTO_SUMMARY () {
+	local UPSTREAM=$1
+	local NEW_HEAD=$2
+	local EXPECTED=$3
+	local PREOP=$4
+	local FORK=$5
+	local LANDED=$(git rev-list --count "$UPSTREAM..$NEW_HEAD" 2>/dev/null)
+	if [ -n "$EXPECTED" ]; then
+		PRINT_TEXT "Replanted %s of %s commit(s) onto %s:" 32 "${LANDED:-0}" "$EXPECTED" "$ONTO_UPSTREAM"
+	else
+		PRINT_TEXT "Replanted %s commit(s) onto %s:" 32 "${LANDED:-0}" "$ONTO_UPSTREAM"
+	fi
+	git log --reverse --format='  %h %s' "$UPSTREAM..$NEW_HEAD" 2>/dev/null | head -12 | \
+		sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+
+	# A shorter result reads as lost work unless the shortfall is accounted for, and its two
+	# causes are not interchangeable – the rebase drops what the upstream already carries,
+	# while a skip was the caller's call, so count duplicates from patch ids, not the gap
+	[ -z "$LANDED" ] || [ -z "$EXPECTED" ] || [ "$LANDED" -ge "$EXPECTED" ] && return 0
+	local DUPLICATES=0
+	if [ -n "$PREOP" ] && [ -n "$FORK" ]; then
+		DUPLICATES=$(git cherry "$UPSTREAM" "$PREOP" "$FORK" 2>/dev/null | grep -c '^-')
+	fi
+	local SKIPPED=$((EXPECTED - LANDED - DUPLICATES))
+	if [ "$DUPLICATES" -gt 0 ]; then
+		PRINT_TEXT "%s commit(s) were dropped as already upstream." 33 "$DUPLICATES"
+	fi
+	if [ "$SKIPPED" -gt 0 ]; then
+		PRINT_TEXT "%s commit(s) were skipped." 33 "$SKIPPED"
+	fi
+}
+
+_CONTINUE_ONTO () {
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+
+	cd "$STATE_WORKTREE" || exit 1
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+
+	# Restore what the summary and the skip hint name the upstream by
+	ONTO_UPSTREAM=${STATE_UPSTREAM:-${STATE_TARGET:0:7}}
+	PRINT_ACTION "Continuing replant onto %s..." "$ONTO_UPSTREAM"
+
+	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
+	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
+		if [ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ]; then
+			_CLEAR_STATE
+			PRINT_TEXT "%s – branch unchanged." 33 "Replant finished with nothing to apply"
+			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+			exit 0
+		fi
+		PRINT_TEXT "%s – applying its result." 33 "Replant already completed in worktree"
+	else
+		local CMD
+		if [ ${#OPT_SKIP} -gt 0 ]; then
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --skip"
+		else
+			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		fi
+		PRINT_CMD "$CMD"
+		if ! eval "$CMD" >/dev/null 2>&1; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
+			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			_PRINT_ONTO_SKIP_HINT "$STATE_WORKTREE" "$STATE_TARGET"
+			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
+			exit 2
+		fi
+	fi
+
+	local NEW_HEAD=$(git rev-parse HEAD)
+	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
+	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "onto ${STATE_TARGET:0:7}"
+	_SYNC_ONTO_CHECKOUT "$STATE_MAINDIR" "$STATE_ORIG_HEAD" "$NEW_HEAD"
+
+	_PRINT_ONTO_SUMMARY "$STATE_TARGET" "$NEW_HEAD" "$STATE_SPAN" "$STATE_ORIG_HEAD" "$STATE_FORK"
+
+	_CLEAR_STATE
+	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
+}
+
+_ABORT_ONTO () {
+	PRINT_ACTION "Aborting replant onto %s..." "${STATE_UPSTREAM:-${STATE_TARGET:0:7}}"
+
+	if [ -d "$STATE_WORKTREE" ]; then
+		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+
+	_CLEAR_STATE
+	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	PRINT_TEXT "%s" 32 "Replant aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+}
+
 _CONTINUE_REORDER () {
 	if [ ! -d "$STATE_WORKTREE" ]; then
 		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
@@ -2439,6 +2755,9 @@ _LOAD_STATE () {
 	STATE_PATHSPECS=""
 	STATE_AMENDED=""
 	STATE_REPLAY_TIP=""
+	STATE_UPSTREAM=""
+	STATE_SPAN=""
+	STATE_FORK=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -2455,6 +2774,9 @@ _LOAD_STATE () {
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
 			amended)         STATE_AMENDED=$VAL ;;
 			replay_tip)      STATE_REPLAY_TIP=$VAL ;;
+			upstream)        STATE_UPSTREAM=$VAL ;;
+			span)            STATE_SPAN=$VAL ;;
+			fork)            STATE_FORK=$VAL ;;
 		esac
 	done < "$SF"
 }
@@ -4310,6 +4632,68 @@ GIT_SELFTEST () {
 	_ST_CHECK "abort leaves the branch intact" sh -c "git log --format=%s | grep -qx 'ATC top'"
 	git reset -q --hard
 
+	ECHO_E "\e[1;96m[46] replanting a branch onto a moved upstream\e[0m"
+	git reset -q --hard
+	git checkout -q -B onto-main
+	printf 'om base\n' > om.txt && git add om.txt && git commit -qm "OM base"
+	git checkout -q -b onto-feature
+	printf 'of one\n' > of1.txt && git add of1.txt && git commit -qm "OF one"
+	printf 'of two\n' > of2.txt && git add of2.txt && git commit -qm "OF two"
+	git checkout -q onto-main
+	printf 'om next\n' > om2.txt && git add om2.txt && git commit -qm "OM next"
+	git checkout -q onto-feature
+	_ST_RUN --onto=onto-main
+	_ST_EQ "the replant succeeds" "$RC" "0"
+	_ST_CHECK "the branch now sits on the upstream tip" \
+		sh -c "git merge-base --is-ancestor onto-main onto-feature"
+	_ST_CHECK "and still carries its own commits" \
+		sh -c "test \$(git rev-list --count onto-main..onto-feature) -eq 2"
+	_ST_OUT_HAS "reports what landed" 'Replanted 2 of 2'
+	# The branch moved under this checkout and a replant changes its content –
+	# left stale, every commit the upstream gained reads as a local deletion
+	_ST_CHECK "the checkout came along" sh -c "test -f om2.txt"
+	_ST_CHECK "and reports nothing pending" sh -c "git diff --quiet && git diff --cached --quiet"
+	_ST_OUT_HAS "which is stated, not left to be discovered" 'Checkout updated'
+	_ST_RUN --onto=onto-main
+	_ST_OUT_HAS "a second run is a no-op" 'Already on top of'
+
+	# The case the manual flow exists for: a rewrite orphans the fork point,
+	# so plain merge-base answers with a far older ancestor and would replay
+	# commits the upstream already carries
+	git checkout -q onto-main
+	_ST_RUN -M --text='OM base, reworded' onto-main~1
+	git checkout -q -B onto-orphan onto-feature
+	_ST_CHECK "the fork point really is orphaned" \
+		sh -c "! git merge-base --is-ancestor \$(git rev-parse onto-orphan~2) onto-main"
+	_ST_RUN --onto=onto-main
+	_ST_EQ "the orphaned replant succeeds" "$RC" "0"
+	_ST_OUT_HAS "and says the fork was recovered" 'orphaned by a rewrite'
+	_ST_CHECK "no upstream commit was replayed onto the branch" \
+		sh -c "test \$(git log --format=%s onto-main..onto-orphan | grep -c '^OM ') -eq 0"
+
+	# A commit the upstream already carries by patch id is dropped, not lost –
+	# and the summary has to say so, or the shorter branch reads as lost work
+	git checkout -q -B onto-dup onto-main
+	printf 'dup work\n' > dup.txt && git add dup.txt && git commit -qm "Dup on branch"
+	printf 'own\n' > own.txt && git add own.txt && git commit -qm "Own work"
+	git checkout -q onto-main
+	printf 'dup work\n' > dup.txt && git add dup.txt && git commit -qm "Dup landed upstream"
+	git checkout -q onto-dup
+	_ST_RUN --onto=onto-main
+	_ST_OUT_HAS "duplicates are named before the replay" 'already on onto-main'
+	_ST_OUT_HAS "and counted afterwards" 'dropped as already upstream'
+	_ST_CHECK "the branch keeps only its own commit" \
+		sh -c "test \$(git rev-list --count onto-main..onto-dup) -eq 1"
+
+	# --skip belongs to this mode alone; elsewhere the paused commit is the point
+	git checkout -q -B onto-skip onto-main
+	_ST_RUN --skip
+	_ST_EQ "a skip with nothing in flight is refused" "$RC" "1"
+	git checkout -q onto-main
+	git branch -q -D onto-feature onto-orphan onto-dup onto-skip 2>/dev/null
+	git checkout -q main
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -4354,7 +4738,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -4396,12 +4780,27 @@ if [ ${#OPT_CONTINUE} -gt 0 ] && [ ${#OPT_ABORT} -gt 0 ]; then
 	PRINT_ERR "--continue and --abort cannot be combined"
 	exit 1
 fi
+# --skip resumes too, just past the current commit rather than through it
+if [ ${#OPT_SKIP} -gt 0 ]; then
+	if [ ${#OPT_ABORT} -gt 0 ]; then
+		PRINT_ERR "--skip and --abort cannot be combined"
+		exit 1
+	fi
+	OPT_CONTINUE=(--continue)
+fi
 if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	_LOAD_STATE
 	_REANCHOR_INITIAL_HEAD
+	# Only a replant has commits worth stepping over – elsewhere the paused
+	# commit is the whole point, so skipping it would quietly discard the work
+	if [ ${#OPT_SKIP} -gt 0 ] && [ "$STATE_OPERATION" != "onto" ]; then
+		PRINT_ERR "--skip applies to --onto only; '$STATE_OPERATION' has no commit to step over"
+		exit 1
+	fi
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		reorder)    _CONTINUE_REORDER ;;
+		onto)       _CONTINUE_ONTO ;;
 		rebase)     _CONTINUE_REBASE ;;
 		edit)       _CONTINUE_EDIT ;;
 		split)      _CONTINUE_SPLIT ;;
@@ -4415,6 +4814,7 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
 		reorder)    _ABORT_REORDER ;;
+		onto)       _ABORT_ONTO ;;
 		rebase)     _ABORT_REBASE ;;
 		edit)       _ABORT_EDIT ;;
 		split)      _ABORT_SPLIT ;;
@@ -4552,6 +4952,11 @@ fi
 if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "Option --reorder cannot be combined with other modes (it manages its own isolated worktree)"
+	exit 1
+fi
+if [ ${#OPT_ONTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o -n "$TEXT_VALUE" ]; then
+	USAGE
+	PRINT_ERR "Option --onto cannot be combined with other modes (it replays the whole branch, not a named commit)"
 	exit 1
 fi
 if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
@@ -4696,6 +5101,27 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 	PRINT_ACTION "Moving %s $MOVE_KIND %s..." "$MOVE_SHA" "$MOVE_ANCHOR"
 	GIT_REORDER
 	PRINT_COMPLETED "$REORDER_NEW_HEAD" "$REORDER_REF" true
+	exit 0
+fi
+
+# --onto dispatches immediately: it acts on the current branch as a whole, so
+# positional commits would have nothing to name
+if [ ${#OPT_ONTO} -gt 0 ]; then
+	if [[ ${#OPT_ONTO} -gt 1 && -n "${OPT_ONTO[2]}" ]]; then
+		ONTO_UPSTREAM="${OPT_ONTO[2]#=}"
+	fi
+	if [ -z "$ONTO_UPSTREAM" ]; then
+		USAGE
+		PRINT_ERR "--onto requires an upstream (e.g., --onto=main)"
+		exit 1
+	fi
+	if [ $# -gt 0 ]; then
+		USAGE
+		PRINT_ERR "--onto takes no <commit> arguments – it replants the current branch"
+		exit 1
+	fi
+	GIT_ONTO
+	PRINT_COMPLETED "$ONTO_NEW_HEAD" "$ONTO_REF" true
 	exit 0
 fi
 

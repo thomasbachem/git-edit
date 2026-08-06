@@ -18,6 +18,8 @@ MODES:
 -S, --resquash                  Merge contiguous <commit>s — no working-tree touch
 --reorder <commit>...           Reorder a contiguous span (args give the new order, oldest-first)
 --move=<sha> --after|--before=<sha>  Reposition one commit relative to an anchor (span derived automatically)
+--onto=<upstream>               Replant this branch onto <upstream> (fork point derived, even if orphaned)
+--skip                          Resume past the paused commit instead of through it (--onto only)
 --exec -- <cmd>...              Run <cmd> in an isolated temp worktree (parallel-safe)
 --undo                          Revert the last completed ref move (refuses if the branch moved since)
 --status                        Report the in-flight operation, or the last completed one
@@ -284,6 +286,33 @@ git edit --move=<sha> --after=<anchor>     # or --before=<anchor>
 ```
 
 The minimal contiguous span and its new ordering are derived automatically and executed through `--reorder`'s machinery — the shorthand for what would otherwise be a hand-built full-span `--reorder` call or a `git rebase --onto` chain. Works in both directions (moving a commit earlier or later), both SHAs go through stale-SHA resolution, and a commit already in position is a clean no-op. Typical agent flow: commit at `HEAD`, then slot the commit where it belongs with `--move=HEAD --after=<sha>`.
+
+### Replanting a Branch onto a Moved Upstream (`--onto`)
+
+When the branch you're on forked from a `main` that has since moved — or been rewritten — `--onto` replays it on the new tip:
+
+```
+git edit --onto=main
+```
+
+The point of the mode is that it derives the fork point instead of asking for it. `git rebase --onto main <old-base> <branch>` needs `<old-base>` spelled out, and after a rewrite of `main` that commit is orphaned — so the caller has to have tracked the pre-rewrite SHA, or reconstruct it. `--onto` recovers it from `main`'s reflog via `git merge-base --fork-point`, falling back to a plain merge base when the reflog can't answer (a fresh clone, an expired reflog).
+
+It reports the triage up front — what the upstream gained, and which of your commits it already carries by patch id:
+
+```
+$ git edit --onto=main
+Replanting cancel (Optimization: Skip weather re-derivation) onto main...
+Fork point 1e028e0 Optimization: Skip weather re-derivation was orphaned by a rewrite – recovered from the reflog.
+main gained 5 commit(s); replaying 4 from 'cancel' on top:
+  a1b2c3d Add cancellation parsing
+  …
+1 commit(s) are already on main and will be dropped:
+  9e518b1 Refactor: Catch MCP selection drift
+```
+
+Those duplicates are dropped by the replay, and the count is repeated in the completion summary — a shorter branch that isn't accounted for reads as lost work. If a commit conflicts because the upstream took the same change a *different* way, resolving it would duplicate the change; `git edit --skip` steps over it instead, and the conflict message says so when the patch ids match.
+
+Like `--reorder`, the replay runs in an isolated worktree and the branch ref moves once, at the end, under a CAS. Unlike `--reorder` — which preserves the tree — a replant genuinely changes the branch's content, so the caller's checkout is brought along with it (via `read-tree -u -m`, which keeps uncommitted work and refuses rather than overwriting it). Left stale, every commit the upstream gained would show up there as a local deletion, and the next `git commit -a` would carry it out.
 
 ### Pushed-Commit Guard
 

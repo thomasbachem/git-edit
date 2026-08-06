@@ -20,6 +20,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
+\fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR
 .fi
@@ -165,6 +166,25 @@ otherwise be a hand\-built span reorder or a
 chain. Moving in either direction works; a commit already in position is a
 clean no\-op.
 .TP
+.B \-\-onto=\fIupstream\fR
+Replant the current branch onto \fIupstream\fR, deriving the fork point rather
+than taking it as an argument. Where
+.B "git rebase \-\-onto"
+needs the old base spelled out, this recovers it from \fIupstream\fR's reflog
+via
+.BR "git merge\-base \-\-fork\-point" ,
+so a rewrite that orphaned the branch's base is handled without the caller
+tracking the pre\-rewrite SHA. Before replaying it reports what \fIupstream\fR
+gained and which of the branch's commits it already carries (by patch id);
+those are dropped by the replay, and the count is repeated afterwards so a
+shorter branch is never mistaken for lost work. Runs in an isolated worktree
+and CAS\-updates the branch, then brings the caller's checkout along \(em a
+replant changes its content, and left behind, every commit \fIupstream\fR
+gained would read there as a local deletion. A conflict pauses as usual;
+where the paused commit is one \fIupstream\fR already carries in another form,
+.B git edit \-\-skip
+steps over it.
+.TP
 .B \-\-exec \fB\-\-\fR \fIcommand\fR...
 Run any \fIcommand\fR (e.g. a raw
 .BR "git rebase" )
@@ -204,6 +224,13 @@ default.
 .TP
 .B \-y, \-\-yes
 Auto\-confirm the drop/squash confirmation prompt.
+.TP
+.B \-\-skip
+With
+.BR \-\-onto ,
+resume past the paused commit instead of through it \(em for one the upstream
+already carries in another form, where resolving would duplicate it. Refused
+for every other operation, whose paused commit is the point of the run.
 .TP
 .B \-h
 Print the usage block. Prefer it to
