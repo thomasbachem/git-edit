@@ -233,7 +233,10 @@ PRINT_ACTION () {
 	local COMMIT
 	for COMMIT in "${COMMITS[@]}"; do
 		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
-		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT})")
+		# `ECHO_E` interprets whatever lands here, which the `\e[22m` above needs
+		# – so double the subject's own backslashes, or a `\d` in it arrives as
+		# `d` and a `\n` splits the line
+		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT//\\/\\\\})")
 	done
 
 	# Count placeholders (assumes %s is the only placeholder type used)
@@ -1359,7 +1362,7 @@ GIT_AMEND_INTO () {
 	# it, leaving one CAS for both changes
 	local FIXUP_PARENT=$ORIG_HEAD
 	if [ -n "$TEXT_VALUE" ]; then
-		AMEND_OLD_SUBJECT=$TARGET_SUBJECT
+		AMEND_OLD_SHA=$TARGET_FULL
 		_REWORD_AND_REBUILD "$TARGET_FULL" "$TEXT_VALUE"
 		# The fixup rides on the rebuilt chain, and `fixup!` matches by subject,
 		# so both must follow the reword
@@ -1612,14 +1615,16 @@ _PRINT_AMENDED_SUMMARY () {
 	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_LEFTOVER_STATE "$4"
 	# Names the commit that received the fold below the stat block, never above
-	# it – that block grows with the target, and callers read this back through
-	# a `tail -3`, where a symbolic target that resolved to another session's
-	# commit would otherwise land as nothing but a diffstat and `ok`
-	PRINT_TEXT "  amended: %s" 90 "$(git log -1 --format='%h %s' "$AMENDED")"
+	# it – that block grows with the target, and a caller reading this back
+	# through a `tail -3` would otherwise see only a diffstat and `ok`. Every
+	# identity line here is formatted by git and piped, never routed through
+	# `PRINT_TEXT` – that ends in `echo -e`, which eats a `\d` in the subject
+	# and breaks the line at a `\n`, turning the name into a different commit's
+	git log -1 --format='  amended: %h %s' "$AMENDED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	# Same reasoning: a fold that also reworded replaced a subject, and a
 	# symbolic target can make that the wrong one
-	if [ -n "$AMEND_OLD_SUBJECT" ]; then
-		PRINT_TEXT "  replaced: %s" 90 "$AMEND_OLD_SUBJECT"
+	if [ -n "$AMEND_OLD_SHA" ]; then
+		git log -1 --format='  replaced: %s' "$AMEND_OLD_SHA" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	fi
 }
 
@@ -1716,7 +1721,7 @@ _SPLIT_APPLY () {
 	# Each half's stat has to stay under its own subject to say which files went
 	# where, so the pair can't move below the block the way a fold's name does –
 	# one line naming the commit that was split carries that into the tail instead
-	PRINT_TEXT "  split: %s -> %s + %s" 90 "${X:0:7} ${X_MSG%%$'\n'*}" "${C1:0:7}" "${C2:0:7}"
+	git log -1 --format="  split: %h %s -> ${C1:0:7} + ${C2:0:7}" "$X" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 
 	SPLIT_NEW_HEAD=$PREV_NEW
 	SPLIT_REF=$REF
@@ -3343,7 +3348,7 @@ GIT_REWORD () {
 		# actually reads back, rather than only in the line that scrolled past.
 		local OLD_SUBJECT=$(git log -1 --format='%s' "$TARGET" 2>/dev/null)
 		if [ -n "$OLD_SUBJECT" ]; then
-			PRINT_TEXT "  replaced: %s" 90 "$OLD_SUBJECT"
+			git log -1 --format='  replaced: %s' "$TARGET" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 		fi
 	fi
 }
@@ -3483,8 +3488,9 @@ GIT_RESQUASH () {
 	# don't re-verify with a diff
 	PRINT_TEXT "%s" 32 "Tip tree unchanged by construction ✓"
 	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	# Identity below the stat block, for the same reason the fold's is
-	PRINT_TEXT "  squashed: %s" 90 "$(git log -1 --format='%h %s' "$NEW_SQUASHED")"
+	# Identity below the stat block, git-formatted and piped, for the same two
+	# reasons the fold's is
+	git log -1 --format='  squashed: %h %s' "$NEW_SQUASHED" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 GIT_COMMIT_AMEND () {

@@ -50,7 +50,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS () {
 		local DESC=$1
 		local PATTERN=$2
-		if echo "$OUT" | grep -q "$PATTERN"; then
+		if print -r -- "$OUT" | grep -q "$PATTERN"; then
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
@@ -60,7 +60,7 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS () {
 		local DESC=$1
 		local PATTERN=$2
-		if echo "$OUT" | grep -q "$PATTERN"; then
+		if print -r -- "$OUT" | grep -q "$PATTERN"; then
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | grep "$PATTERN" | head -3 | sed 's/^/       | /'
 		else
@@ -1538,6 +1538,24 @@ GIT_SELFTEST () {
 	_ST_EQ "the squash succeeds" "$RC" "0"
 	_ST_EQ "its own summary lands within a 'tail -3' too" \
 		"$(echo "$OUT" | tail -3 | grep -c 'squashed: ')" "1"
+
+	# These lines are the mis-target signal, so a subject has to reach them
+	# verbatim – routed through an `echo -e` a `\d` collapses to `d` and a `\n`
+	# breaks the line, leaving a name that reads as a different commit
+	printf 'id esc\n' > id-esc.txt && git add id-esc.txt
+	git commit -qm 'ID esc \d and \n intact'
+	printf 'id esc2\n' > id-esc2.txt && git add id-esc2.txt
+	_ST_RUN --amend-into=HEAD
+	_ST_EQ "a subject's backslash escapes reach the identity line intact" \
+		"$(echo "$OUT" | grep -cF 'amended: ')" "1"
+	# `print -r`, not `echo` – zsh's `echo` would interpret the escapes here in
+	# the harness and report a mangling that never happened
+	_ST_EQ "and are not interpreted on the way" \
+		"$(print -r -- "$OUT" | grep -F 'amended: ' | grep -cF 'ID esc \d and \n intact')" "1"
+	# The preamble names the same subject through a different path, so it needs
+	# its own guard – `PRINT_ACTION` embeds it in a string `ECHO_E` interprets
+	_ST_EQ "the preamble keeps them too" \
+		"$(print -r -- "$OUT" | grep -F 'Amending staged changes' | grep -cF 'ID esc \d and \n intact')" "1"
 
 	# A split's two halves keep their stats paired under their own subjects, so
 	# it names the commit it split rather than moving those
