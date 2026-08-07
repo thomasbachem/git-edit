@@ -48,6 +48,8 @@ Output is padded with blank lines for readability only when stdout is a terminal
 
 Agents `grep '^git-edit: (ok|error|conflict|paused)'` to dispatch on outcome; the rest is self-explanatory text that doesn't need brittle key=value parsing. SHAs, paths, and filenames are extractable with simple regex if needed (e.g. `moved [a-f0-9]+ → ([a-f0-9]+)$` for the new HEAD).
 
+Every rewrite reports its old→new map the way git does: notes are carried across it (honoring `notes.rewriteRef` and `notes.rewriteMode`, and doing nothing when unset), and a `post-rewrite` hook runs with the same pairs on stdin. This matters because the plumbing modes compose commits with `commit-tree` rather than replaying them, so without it they would orphan anything keyed to a SHA — while `-d` and `--move`, which are rebase-backed, kept it. A squash maps every member onto the commit that absorbed them, and a split maps the original onto the remainder, which keeps its message and full tree.
+
 Reach for `git edit -h` rather than `--help`: git intercepts `--help` for subcommands and hands it to `man`, which without a terminal emits backspace-overstruck text (`N^HNA^HAM^HME^HE`) — several times the size of the usage block and unreadable in a captured run.
 *Tip:* Mode and flags can be given in any order.
 

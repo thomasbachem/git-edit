@@ -685,10 +685,38 @@ _RECORD_REF_MOVE () {
 			fi
 		fi
 	done
+
+	_EMIT_REWRITES
 }
 
-# Reverts the last journaled ref move, CAS-guarded: refuses if the branch has
-# moved since (a later commit or rewrite would be silently discarded).
+# The plumbing modes compose commits with `commit-tree`, which runs none of the
+# machinery a real rebase does – so anything keyed to a SHA is silently orphaned
+# by them while surviving `-d` or `--move`, an inconsistency worse than uniformly
+# not supporting it. Every rebuild records its old->new pair here, and the CAS
+# hands the map to the two interfaces git itself uses for a rewrite. Policy stays
+# git's: `notes copy` honors `notes.rewriteRef`/`notes.rewriteMode` and no-ops
+# when unconfigured, and a repo with no hook simply has nothing to run.
+_REWRITE_PAIRS=()
+
+_RECORD_REWRITE () {
+	_REWRITE_PAIRS+=("$1 $2")
+}
+
+_EMIT_REWRITES () {
+	[ ${#_REWRITE_PAIRS[@]} -eq 0 ] && return 0
+	local MAP=${(F)_REWRITE_PAIRS}
+	print -r -- "$MAP" | git notes copy --for-rewrite=rebase 2>/dev/null
+	local HOOK=$(git rev-parse --git-path hooks/post-rewrite 2>/dev/null)
+	if [ -n "$HOOK" ] && [ -x "$HOOK" ]; then
+		print -r -- "$MAP" | "$HOOK" rebase
+	fi
+	# One ref move reports one rewrite – a mode that moves twice must not replay
+	# the first move's pairs into the second
+	_REWRITE_PAIRS=()
+}
+
+# Reverts the last journaled ref move, CAS-guarded – refuses where the branch has moved
+# since, whose later commit or rewrite would otherwise be discarded
 GIT_UNDO () {
 	local JF=$(_JOURNAL_FILE_PATH)
 	if [ -z "$JF" ] || [ ! -s "$JF" ]; then
@@ -1369,6 +1397,12 @@ GIT_AMEND_INTO () {
 	if [ -n "$TEXT_VALUE" ]; then
 		AMEND_OLD_SHA=$TARGET_FULL
 		_REWORD_AND_REBUILD "$TARGET_FULL" "$TEXT_VALUE"
+		# Hand this step's map over now, not at the CAS: the autosquash below
+		# rebuilds these commits again, so holding it would name intermediates
+		# that never reach the branch – copying notes onto commits nothing can
+		# reach. Applied here, the rebase's own copy carries them the rest of
+		# the way, the same relay git runs between two of its own rebases
+		_EMIT_REWRITES
 		# The fixup rides on the rebuilt chain, and `fixup!` matches by subject,
 		# so both must follow the reword
 		FIXUP_PARENT=$_REWORDED_TIP
@@ -1698,6 +1732,10 @@ _SPLIT_APPLY () {
 		git commit-tree "$X^{tree}" -p "$C1" -m "$X_MSG"
 	) || ABORT
 	PRINT_CMD "git commit-tree ... -> ${C1:0:7} + ${C2:0:7}  # split ${X:0:7}"
+
+	# The remainder carries the split commit's own message and full tree, so it
+	# is where anything keyed to the original belongs – not the extracted half
+	_RECORD_REWRITE "$X" "$C2"
 
 	# Rebuild descendants on top of the remainder commit
 	PREV_OLD=$X
@@ -3207,6 +3245,7 @@ _REBUILD_DESCENDANTS () {
 		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
 
 		REWRITTEN[$DESC]=$D_NEW
+		_RECORD_REWRITE "$DESC" "$D_NEW"
 		PREV_OLD=$DESC
 		PREV_NEW=$D_NEW
 	done
@@ -3233,6 +3272,7 @@ _REWORD_AND_REBUILD () {
 	) || ABORT
 	PRINT_CMD "git commit-tree ${TREE:0:7} ... -> ${PREV_NEW:0:7}  # reworded ${AT:0:7}"
 	_REWORDED_TARGET=$PREV_NEW
+	_RECORD_REWRITE "$AT" "$PREV_NEW"
 
 	PREV_OLD=$AT
 	_REBUILD_DESCENDANTS "$AT"
@@ -3317,13 +3357,15 @@ GIT_REWORD () {
 
 	PRINT_CMD "git commit-tree ${TREE:0:7} ... -> ${NEW_TARGET:0:7}"
 
-	# Walk every descendant of $TARGET up to HEAD, rebuild with new parent
+	_RECORD_REWRITE "$TARGET" "$NEW_TARGET"
+
+	# Walk every descendant of `$TARGET` up to `HEAD`, rebuild with new parent
 	PREV_OLD=$TARGET
 	PREV_NEW=$NEW_TARGET
 	_REBUILD_DESCENDANTS "$TARGET"
 
-	# Atomic compare-and-swap on the ref. If the branch moved (e.g., a
-	# concurrent commit from Claude Code or another tool), refuse.
+	# Atomic compare-and-swap on the ref – refuse where the branch moved under us, such as a
+	# concurrent commit landing from another tool
 	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
@@ -3475,7 +3517,14 @@ GIT_RESQUASH () {
 
 	PRINT_CMD "git commit-tree ${NEW_TREE:0:7} ${NEW_PARENT_ARGS[*]} -> ${NEW_SQUASHED:0:7}  # squashed ${#COMMITS[@]} commits"
 
-	# Rebuild any descendants of NEWEST up to HEAD with the new squashed commit as their parent
+	# Every member maps to the one commit that absorbed it – `notes copy` folds
+	# their notes together or takes the first, per `notes.rewriteMode`
+	local MEMBER
+	for MEMBER in "${COMMITS[@]}"; do
+		_RECORD_REWRITE "$MEMBER" "$NEW_SQUASHED"
+	done
+
+	# Rebuild any descendants of `NEWEST` up to `HEAD` with the new squashed commit as their parent
 	PREV_OLD=$NEWEST
 	PREV_NEW=$NEW_SQUASHED
 	_REBUILD_DESCENDANTS "$NEWEST"

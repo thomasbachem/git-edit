@@ -61,6 +61,14 @@ mode but \fB\-\-exec\fR, whose command is yours and has no single target.
 Nothing above those two is guaranteed: a stat block or path list grows with
 the commit.
 .IP \(bu 3
+Every rewrite reports its old\(->new map the way git does: notes are carried
+across it (honoring \fBnotes.rewriteRef\fR and \fBnotes.rewriteMode\fR, and
+doing nothing when unset), and a \fBpost\-rewrite\fR hook runs with the same
+pairs on stdin. The plumbing modes compose commits with \fBcommit\-tree\fR
+rather than replaying them, so without this they would orphan anything keyed
+to a SHA. A squash maps every member onto the commit that absorbed them; a
+split maps the original onto the remainder, which keeps its message and tree.
+.IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
 its likely counterpart named \(em so a stale SHA never silently no\-ops.
