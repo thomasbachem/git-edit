@@ -789,6 +789,8 @@ GIT_SELFTEST () {
 	_ST_RUN --amend-into="$SC_TARGET" -- sc.txt
 	_ST_EQ "scoped fold exits 0" "$RC" "0"
 	_ST_OUT_HAS "reports what stayed staged" 'outside the pathspec'
+	# A count can't say whose leftovers these are, so the caller has to guess
+	_ST_OUT_HAS "names the leftover path" 'outside the pathspec.*sc-other\.txt'
 	# Agents overwhelmingly read this through `| tail -N`, so the summary has
 	# to survive the truncation rather than be padded out of reach
 	_ST_EQ "non-TTY output carries no blank lines" "$(echo "$OUT" | grep -c '^$')" "0"

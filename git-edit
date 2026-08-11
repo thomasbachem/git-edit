@@ -1664,34 +1664,47 @@ _PRINT_AMENDED_SUMMARY () {
 	fi
 }
 
+# Joins newline-separated paths onto one line, capping the tail so a large leftover
+# set can't swamp the summary – the exact list is one `git diff --cached --name-only` away
+_JOIN_PATHS () {
+	local -a NAMES=(${(f)1})
+	local MORE=$(( ${#NAMES[@]} - 4 ))
+	if [ "$MORE" -gt 0 ]; then
+		print -r -- "${(j:, :)NAMES[1,4]}, +$MORE more"
+	else
+		print -r -- "${(j:, :)NAMES}"
+	fi
+}
+
 # States what the fold left behind in the main checkout – a fold consumes the staged changes
 # and nothing else, but the caller cannot see that from here, and "did my WIP survive?"
 # was the most common probe, so read their checkout by path rather than this worktree's
 _PRINT_LEFTOVER_STATE () {
 	local D=$1
 	[ -z "$D" ] || [ ! -d "$D" ] && return 0
-	local STAGED=$(git -C "$D" diff --cached --name-only 2>/dev/null | grep -c .)
+	local STAGED_PATHS=$(git -C "$D" diff --cached --name-only 2>/dev/null)
+	local STAGED=$(print -r -- "$STAGED_PATHS" | grep -c .)
 	local UNSTAGED=$(git -C "$D" diff --name-only 2>/dev/null | grep -c .)
 	local UNTRACKED=$(git -C "$D" ls-files --others --exclude-standard 2>/dev/null | grep -c .)
 	local PARTS=""
 	[ "$UNSTAGED" -gt 0 ]  && PARTS="$UNSTAGED modified"
 	[ "$UNTRACKED" -gt 0 ] && PARTS="${PARTS:+$PARTS, }$UNTRACKED untracked"
 	if [ "$STAGED" -gt 0 ] && [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
-		# A scoped fold is meant to leave the rest staged – state it plainly
-		PRINT_TEXT "Left staged (outside the pathspec): %s file(s)." 32 "$STAGED"
+		# A scoped fold is meant to leave the rest staged – name the paths, since a count cannot say
+		# whether they are the caller's own leftovers or another session's, which only they clear
+		PRINT_TEXT "Left staged (outside the pathspec): %s" 32 "$(_JOIN_PATHS "$STAGED_PATHS")"
 	elif [ "$STAGED" -gt 0 ]; then
-		# Nothing should survive an unscoped fold – the caller expects an empty
-		# index, so anything left is worth flagging
-		PRINT_TEXT "Left staged: %s file(s) – not folded." 33 "$STAGED"
+		# Nothing should survive an unscoped fold – the caller expects an empty index, so anything
+		# left over is worth flagging to them
+		PRINT_TEXT "Left staged, not folded: %s" 33 "$(_JOIN_PATHS "$STAGED_PATHS")"
 	else
 		PRINT_TEXT "Index now empty; working tree keeps %s." 32 "${PARTS:-no changes}"
 	fi
 }
 
-# Shared pre-flight for both split paths: resolves a <sha> an earlier rewrite
-# staled, then refuses what neither path can express – the initial commit (no
-# parent to rest the extracted half on), a merge, or pushed history. Leaves
-# the resolved SHA in `_RESOLVED_SHA` for the caller to adopt.
+# Guards both split paths – resolves a <sha> an earlier rewrite staled, then
+# refuses what neither can express: the initial commit, a merge, or pushed history
+# Leaves the resolved SHA in `_RESOLVED_SHA` for the caller to adopt
 _SPLIT_GUARDS () {
 	local X=$1
 	_GUARD_REACHABLE "$X"
