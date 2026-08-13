@@ -3588,7 +3588,15 @@ GIT_COMMIT_AMEND () {
 _FOLD_EDITOR_CMD () {
 	# args: <command taking the message path>, [worktree holding the rebase]
 	local RUN=$1
-	local DONE=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)/rebase-merge/done
+	local GITDIR=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)
+	if [ -z "$GITDIR" ]; then
+		# Unresolved, the guard matches nothing and the message goes silently –
+		# the very loss it exists to prevent, so refuse instead (needs git 2.13)
+		PRINT_ERR "Cannot resolve the git dir for ${2:-the current directory} – 'rev-parse --absolute-git-dir' failed"
+		ECHO_E "\e[0;31m  The fold's message can't be applied without it. Reword afterwards: git edit -M --text=\"…\" <sha>\e[0m" >&2
+		exit 1
+	fi
+	local DONE=$GITDIR/rebase-merge/done
 	# `sh` parses this, so every path goes in single-quoted – a repo living under
 	# an apostrophe would otherwise close the quote and leave a syntax error,
 	# which git reports as a failed editor and abandons the commit over
