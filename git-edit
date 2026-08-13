@@ -1130,6 +1130,12 @@ GIT_REBASE_SQUASH () {
 	else
 		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
 	fi
+	# The initial run opens an editor only for the fold, never for a clean pick, so
+	# `--text`'s own `#` lines just need git's cleanup out of the way – with `-m` the
+	# editor shows git's template, whose comments still have to go
+	if [ -n "$TEXT_VALUE" ]; then
+		CMD=(-c commit.cleanup=whitespace "${CMD[@]}")
+	fi
 	PRINT_CMD "git ${CMD[*]} # -> reorder+$OP"
 
 	# Build `sed` script
@@ -2703,14 +2709,18 @@ _CONTINUE_REBASE () {
 		# The command is too long to trace literally, so the display elides it
 		local FOLD_EDITOR="true"
 		local SHOWN="true"
+		local CLEANUP=""
 		local MSGFILE=$(_TEXT_MSG_PATH)
 		if [ -f "$MSGFILE" ]; then
 			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "cp ${(qq)MSGFILE}" "$STATE_WORKTREE")
+			_TEMP_FILES+=("$FOLD_EDITOR")
 			SHOWN="<applies --text to the fold>"
+			# Safe because the stand-in writes every replayed message back itself
+			CLEANUP="-c commit.cleanup=whitespace "
 		fi
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git -c rerere.enabled=true rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" git -c rerere.enabled=true rebase --continue >/dev/null 2>&1; then
+		if ! GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true rebase --continue" >/dev/null 2>&1; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3592,12 +3602,12 @@ GIT_COMMIT_AMEND () {
 	eval "$CMD" || ABORT
 }
 
-# Editor stand-in reaching the fold's message alone – a resume commits the step
-# that conflicted too, whose own message is already right. The discriminator is
-# the last step the rebase logged as done. Git appends the message path to the
-# command, which the trailing `:` absorbs on a non-fold step.
+# Writes the editor stand-in a rebase runs in place of a real editor, and echoes its path –
+# a resume commits the conflicted step as well as the fold, so the fold is recognized by
+# the last step logged as done and every other gets its own message written back
 _FOLD_EDITOR_CMD () {
-	# args: <command taking the message path>, [worktree holding the rebase]
+	# Args: <command taking the message path>, [worktree holding the rebase],
+	# [strip: the fold's message comes from a template git seeded with comments]
 	local RUN=$1
 	local GITDIR=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)
 	if [ -z "$GITDIR" ]; then
@@ -3608,36 +3618,75 @@ _FOLD_EDITOR_CMD () {
 		exit 1
 	fi
 	local DONE=$GITDIR/rebase-merge/done
-	# `sh` parses this, so every path goes in single-quoted – a repo living under
-	# an apostrophe would otherwise close the quote and leave a syntax error,
-	# which git reports as a failed editor and abandons the commit over
-	print -r -- 'case "$(tail -1 '"${(qq)DONE}"' 2>/dev/null)" in squash*|fixup*) '"$RUN"' "$1" ;; esac; :'
+	local STRIP=":"
+	if [ -n "$3" ]; then
+		STRIP='git stripspace --strip-comments < "$1" > "$1.ge-msg" && mv -f "$1.ge-msg" "$1"'
+	fi
+	# Callers register the path for cleanup themselves – this runs inside a
+	# command substitution, so anything appended to _TEMP_FILES here is a
+	# subshell's copy and the file would outlive the run
+	local SCRIPT=$(MKTEMP_FILE git-edit-fold-editor)
+	# Paths go in single-quoted – a repo living under an apostrophe would
+	# otherwise close the quote and leave a syntax error, which git reports
+	# only as a failed editor and abandons the commit over
+	cat > "$SCRIPT" <<-SH
+		#!/bin/sh
+		# Written by git-edit for one rebase – \$1 is the message file git opened
+		STEP=\$(tail -1 ${(qq)DONE} 2>/dev/null)
+		case "\$STEP" in
+			squash*|fixup*)
+				$RUN "\$1"
+				$STRIP
+				;;
+			*)
+				SHA=\${STEP#* }
+				SHA=\${SHA%% *}
+				if git log -1 --format=%B "\$SHA" > "\$1.ge-msg" 2>/dev/null; then
+					mv -f "\$1.ge-msg" "\$1"
+				else
+					rm -f "\$1.ge-msg"
+					git stripspace --strip-comments < "\$1" > "\$1.ge-msg" && mv -f "\$1.ge-msg" "\$1"
+				fi
+				;;
+		esac
+		exit 0
+	SH
+	chmod +x "$SCRIPT"
+	print -r -- "$SCRIPT"
 }
 
 GIT_REBASE_CONTINUE () {
 	# First arg is the rebase sub-command, defaulting to "--continue"
 	local SUBCMD="${1:---continue}"
 
+	# The stand-in restores every replayed message itself, so the rebase can run
+	# under the cleanup the fold needs – set only where the stand-in goes in
 	local CMD="git -c rerere.enabled=true rebase $SUBCMD"
+	if [[ "$ACTION" == "squash" && ( -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ) ]]; then
+		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true rebase $SUBCMD"
+	fi
 	PRINT_CMD "$CMD"
 
-	# Whichever message the run supplies, the override carrying it lasts one
-	# rebase invocation, so each resume has to re-establish it – and aim it at
-	# the fold, since the step that conflicted gets committed by the same resume.
-	# --text first: given both, it is the one the initial invocation honored
+	# Whichever message the run supplies, the override carrying it lasts one rebase invocation,
+	# so each resume re-establishes it – aimed at the fold, since the conflicted step gets
+	# committed by the same resume, and `--text` first as the initial invocation honored it
 	if [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
 		local MSG=$(MKTEMP_FILE git-edit-squash-msg)
 		_TEMP_FILES+=("$MSG")
 		print -r -- "$TEXT_VALUE" > "$MSG"
-		GIT_EDITOR="$(_FOLD_EDITOR_CMD "cp ${(qq)MSG}")" \
+		local FOLD_EDITOR=$(_FOLD_EDITOR_CMD "cp ${(qq)MSG}")
+		_TEMP_FILES+=("$FOLD_EDITOR")
+		GIT_EDITOR="$FOLD_EDITOR" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 		rm -f "$MSG"
 	elif [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
-		# `-m` asked to edit the combined message – open the real editor there,
-		# and nowhere else, rather than on a replayed commit's own message.
-		# Resolved once, as a cascade re-enters this with the stand-in in place
+		# `-m` asked to edit the combined message – open the real editor there and nowhere else,
+		# rather than on a replayed commit's own, resolved once as a cascade re-enters with the
+		# stand-in in place, and its template carries git's instructions, so that one is stripped
 		_REAL_EDITOR=${_REAL_EDITOR:-$(_RESOLVE_EDITOR)}
-		GIT_EDITOR="$(_FOLD_EDITOR_CMD "$_REAL_EDITOR")" \
+		local FOLD_EDITOR=$(_FOLD_EDITOR_CMD "$_REAL_EDITOR" "" strip)
+		_TEMP_FILES+=("$FOLD_EDITOR")
+		GIT_EDITOR="$FOLD_EDITOR" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 	else
 		GIT_EDITOR=true \

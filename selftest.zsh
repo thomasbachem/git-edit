@@ -1713,13 +1713,19 @@ GIT_SELFTEST () {
 	_ST_EQ "the commit replayed ahead of it is untouched" "$(git log --format=%s --skip=1 -1)" "TF 3"
 	git reset -q --hard
 
-	# A fold must not edit the messages of the commits it replays past. Nudging
-	# git's cleanup to protect the fold's own message reached them instead, and
-	# every one that stopped on a conflict committed the `# Conflicts:` template
+	# A fold must not edit the messages of the commits it replays past, and the message here
+	# carries a `#` line, which is what makes that a real assertion – git's own rebase drops
+	# those from any commit it stops on, and the fold's cleanup leaves `# Conflicts:` instead
 	git reset -q --hard
 	echo "tr1" > tr.txt && git add tr.txt && git commit -qm "TR 1"
 	echo "tr2" > tr.txt && git add tr.txt && git commit -qm "TR 2 target"
-	echo "tr3" > tr.txt && git add tr.txt && git commit -qm "TR 3 replayed"
+	echo "tr3" > tr.txt && git add tr.txt
+	git commit -q -F - <<-'TRMSG'
+		TR 3 replayed
+
+		refs:
+		#77 belongs to this commit
+	TRMSG
 	echo "tr4" > tr.txt && git add tr.txt && git commit -qm "TR 4 victim"
 	local TR_BEFORE=$(git log --format=%B --grep='^TR 3 replayed$' -1)
 	_ST_RUN -s="$(git log --format=%H --grep='^TR 2 target$' -1)" -y --text="TR folded subject" \
@@ -1732,6 +1738,8 @@ GIT_SELFTEST () {
 	_ST_EQ "the replay settles" "$RC" "0"
 	_ST_EQ "a replayed commit's message survives byte for byte" \
 		"$(git log --format=%B --grep='^TR 3 replayed$' -1)" "$TR_BEFORE"
+	_ST_EQ "its own '#' line included" \
+		"$(git log --format=%B | grep -c '^#77 belongs to this commit$')" "1"
 	_ST_CHECK "with none of git's conflict template in it" \
 		sh -c "! git log --format=%B | grep -q 'Conflicts:'"
 	git reset -q --hard
@@ -1739,6 +1747,7 @@ GIT_SELFTEST () {
 	# A conflict exits straight from the handler, past the `rm` that follows the
 	# call – so the message file it wrote survived the run, once per pause
 	local TX_TMP_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-squash-msg.*' 2>/dev/null | grep -c .)
+	local TX_ED_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-fold-editor.*' 2>/dev/null | grep -c .)
 	for N in 1 2 3 4; do
 		echo "tl$N" > tl.txt && git add tl.txt && git commit -qm "TL $N"
 	done
@@ -1748,6 +1757,10 @@ GIT_SELFTEST () {
 	_ST_RUN --abort
 	local TX_TMP_AFTER=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-squash-msg.*' 2>/dev/null | grep -c .)
 	_ST_EQ "a paused fold leaves no temp message behind" "$TX_TMP_AFTER" "$TX_TMP_BEFORE"
+	# The stand-in is built inside a command substitution, so registering it for
+	# cleanup there would only ever reach a subshell's copy of the list
+	local TX_ED_AFTER=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-fold-editor.*' 2>/dev/null | grep -c .)
+	_ST_EQ "nor the editor stand-in it built" "$TX_ED_AFTER" "$TX_ED_BEFORE"
 	git reset -q --hard
 
 	# --- 52. a resume's editor reaches the fold and nothing else ---
@@ -1763,6 +1776,7 @@ GIT_SELFTEST () {
 	local FE_DEST=$FE/COMMIT_EDITMSG
 	print -r -- "FE folded subject" > "$FE_MSG"
 	local FE_CMD=$(_FOLD_EDITOR_CMD "cp '$FE_MSG'" "$FE")
+	_TEMP_FILES+=("$FE_CMD")
 
 	# The step that conflicted is committed by the same resume, and its message
 	# is already right – a stand-in reaching it rewords an untouched commit
@@ -1788,6 +1802,7 @@ GIT_SELFTEST () {
 	{ echo '#!/bin/sh'; echo "echo opened >> '$FE_LOG'" } > "$FE_STUB"
 	chmod +x "$FE_STUB"
 	local FE_ED=$(_FOLD_EDITOR_CMD "$FE_STUB" "$FE")
+	_TEMP_FILES+=("$FE_ED")
 	: > "$FE_LOG"
 	print -r -- "pick 4444444" > "$FE_REB/done"
 	sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
@@ -1810,7 +1825,9 @@ GIT_SELFTEST () {
 	local FE2_DEST="$FE2/COMMIT_EDITMSG"
 	print -r -- "FE quoted-path subject" > "$FE2_MSG"
 	print -r -- "FE untouched" > "$FE2_DEST"
-	sh -c "$(_FOLD_EDITOR_CMD "cp ${(qq)FE2_MSG}" "$FE2") \"\$@\"" ge-editor "$FE2_DEST"
+	local FE2_ED=$(_FOLD_EDITOR_CMD "cp ${(qq)FE2_MSG}" "$FE2")
+	_TEMP_FILES+=("$FE2_ED")
+	sh -c "$FE2_ED \"\$@\"" ge-editor "$FE2_DEST"
 	local FE2_RC=$?
 	_ST_EQ "a path with an apostrophe still applies the message" \
 		"$(cat "$FE2_DEST")" "FE quoted-path subject"
@@ -1858,22 +1875,29 @@ GIT_SELFTEST () {
 	TEXT_VALUE="FE inline message"
 	OPT_MESSAGE=()
 	GIT_REBASE_CONTINUE >/dev/null
-	FE_GUARD=no; [[ "$_FE_ED" == *rebase-merge/done*cp\ * ]] && FE_GUARD=yes
-	FE_CLEAN=no; [[ "$_FE_CMD" == *commit.cleanup* ]] && FE_CLEAN=yes
-	_ST_EQ "--text installs the guard around its message" "$FE_GUARD" "yes"
-	# Overriding cleanup is per-rebase, so it would reach the replayed commits too
-	_ST_EQ "and leaves git's cleanup alone" "$FE_CLEAN" "no"
+	FE_GUARD=no
+	[[ -x "$_FE_ED" ]] && grep -q 'rebase-merge/done' "$_FE_ED" && grep -q 'cp ' "$_FE_ED" && FE_GUARD=yes
+	FE_CLEAN=no; [[ "$_FE_CMD" == *commit.cleanup=whitespace* ]] && FE_CLEAN=yes
+	_ST_EQ "--text installs the stand-in around its message" "$FE_GUARD" "yes"
+	# Safe only because the stand-in writes each replayed message back itself
+	_ST_EQ "and the cleanup that keeps its '#' lines" "$FE_CLEAN" "yes"
+	FE_GUARD=no; grep -q 'git log -1 --format=%B' "$_FE_ED" && FE_GUARD=yes
+	_ST_EQ "every other step is restored from the commit replayed" "$FE_GUARD" "yes"
 
 	TEXT_VALUE=""
 	OPT_MESSAGE=(-m)
 	GIT_REBASE_CONTINUE >/dev/null
-	FE_GUARD=no; [[ "$_FE_ED" == *rebase-merge/done*$(_RESOLVE_EDITOR)* ]] && FE_GUARD=yes
-	_ST_EQ "-m installs the guard around the real editor" "$FE_GUARD" "yes"
+	FE_GUARD=no
+	[[ -x "$_FE_ED" ]] && grep -qF -- "$(_RESOLVE_EDITOR)" "$_FE_ED" && FE_GUARD=yes
+	_ST_EQ "-m installs the stand-in around the real editor" "$FE_GUARD" "yes"
+	# Its template is git's own, so that one message keeps the comment stripping
+	FE_GUARD=no; grep -q 'stripspace --strip-comments' "$_FE_ED" && FE_GUARD=yes
+	_ST_EQ "and strips the template git seeded it with" "$FE_GUARD" "yes"
 
 	TEXT_VALUE="FE inline message"
 	OPT_MESSAGE=(-m)
 	GIT_REBASE_CONTINUE >/dev/null
-	FE_GUARD=no; [[ "$_FE_ED" == *cp\ * ]] && FE_GUARD=yes
+	FE_GUARD=no; grep -q 'cp ' "$_FE_ED" && FE_GUARD=yes
 	_ST_EQ "given both, --text wins as the initial run had it" "$FE_GUARD" "yes"
 
 	ACTION=drop
@@ -1908,24 +1932,18 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$(git rev-parse HEAD~1)" -y --text="$HM_BODY" "$(git rev-parse HEAD)"
 	_ST_EQ "a plumbing fold keeps them" "$(git log --format=%B | grep -c '^#123 route-plumbing$')" "1"
 
-	# Non-adjacent, so it falls to the rebase path, where the message reaches the
-	# commit through an editor and meets git's editor cleanup. git splits the
-	# same way – `commit -m` keeps `#` lines, a rebase strips them from any
-	# commit it stops on – so this route follows git rather than fighting it.
-	# Forcing it back costs `commit.cleanup=whitespace`, which is per-rebase and
-	# not per-commit: every replayed commit would then keep git's `# Conflicts:`
-	# template, trading a dropped line for a far uglier one
+	# Non-adjacent, so it falls to the rebase path where the message reaches the commit through
+	# an editor – which route a fold takes turns on adjacency, not on anything the caller
+	# said, so the two must not disagree here
 	HM_BODY=$(printf 'HM gapped\n\nSee also:\n#123 route-rebase')
 	echo "hm4" > hm4.txt && git add hm4.txt && git commit -qm "HM gap a"
 	echo "hm5" > hm5.txt && git add hm5.txt && git commit -qm "HM gap b"
 	echo "hm6" > hm6.txt && git add hm6.txt && git commit -qm "HM gap c"
 	_ST_RUN -s="$(git rev-parse HEAD~2)" -y --text="$HM_BODY" "$(git rev-parse HEAD)"
-	_ST_EQ "the rebase path still lands the fold" \
-		"$(git log --format=%s | grep -c '^HM gapped$')" "1"
-	_ST_EQ "its '#' lines go, as an editor-route commit's do in git itself" \
-		"$(git log --format=%B | grep -c '^#123 route-rebase$')" "0"
+	_ST_EQ "a rebase-path fold keeps them too" \
+		"$(git log --format=%B | grep -c '^#123 route-rebase$')" "1"
 	_ST_CHECK "and no template boilerplate rode along" \
-		sh -c "! git log --format=%B | grep -qE 'This is a combination of|rebase in progress'"
+		sh -c "! git log --format=%B | grep -qE 'This is a combination of|rebase in progress|^# Conflicts:'"
 
 	# Whitespace-only input still has nothing to commit, so the guard stays live
 	_ST_RUN -M --text='   ' HEAD
