@@ -1760,7 +1760,52 @@ GIT_SELFTEST () {
 	_ST_EQ "-m's editor opens on the fold" "$(grep -c . "$FE_LOG")" "1"
 	_ST_CHECK "and the -m branch routes through the guard" \
 		sh -c "command grep -q '_FOLD_EDITOR_CMD \"\$_REAL_EDITOR\"' '$SELF'"
-	rm -rf "$FE"
+
+	# `sh` parses the emitted command, so a repo living under an apostrophe used
+	# to close the quote and leave a syntax error – which surfaces only as a
+	# failed editor, git abandoning the commit and the operation wedging
+	local FE2="$TMP/it's a \$repo"
+	rm -rf "$FE2" && mkdir -p "$FE2" && git -C "$FE2" init -q
+	local FE2_REB=$(git -C "$FE2" rev-parse --absolute-git-dir)/rebase-merge
+	mkdir -p "$FE2_REB"
+	print -r -- "squash 6666666" > "$FE2_REB/done"
+	local FE2_MSG="$FE2/folded msg.txt"
+	local FE2_DEST="$FE2/COMMIT_EDITMSG"
+	print -r -- "FE quoted-path subject" > "$FE2_MSG"
+	print -r -- "FE untouched" > "$FE2_DEST"
+	sh -c "$(_FOLD_EDITOR_CMD "cp ${(qq)FE2_MSG}" "$FE2") \"\$@\"" ge-editor "$FE2_DEST"
+	local FE2_RC=$?
+	_ST_EQ "a path with an apostrophe still applies the message" \
+		"$(cat "$FE2_DEST")" "FE quoted-path subject"
+	_ST_EQ "and parses cleanly rather than failing the editor" "$FE2_RC" "0"
+	rm -rf "$FE" "$FE2"
+
+	# The case above quotes the message path itself, so it pins the helper alone –
+	# drive a real resume for the caller, which has to quote it just the same
+	local QR="$TMP/quote'd repo"
+	rm -rf "$QR"
+	mkdir -p "$QR"
+	git -C "$QR" init -q
+	git -C "$QR" config user.email selftest@example.com
+	git -C "$QR" config user.name "git-edit selftest"
+	for N in 1 2 3 4; do
+		echo "qr$N" > "$QR/qr.txt"
+		git -C "$QR" add qr.txt
+		git -C "$QR" commit -qm "QR $N"
+	done
+	cd "$QR"
+	_ST_RUN -s="$(git log --format=%H --grep='^QR 2$' -1)" -y --text="QR folded subject" \
+		"$(git log --format=%H --grep='^QR 4$' -1)"
+	_ST_EQ "a repo under an apostrophe still pauses, not errors" "$RC" "2"
+	local QR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	echo "qr4" > "$QR_WT/qr.txt" && git -C "$QR_WT" add qr.txt
+	_ST_RUN --continue
+	echo "qr3" > "$QR_WT/qr.txt" && git -C "$QR_WT" add qr.txt
+	_ST_RUN --continue
+	_ST_EQ "its resume settles" "$RC" "0"
+	_ST_EQ "and the fold carries --text" "$(git log --format=%s --skip=1 -1)" "QR folded subject"
+	cd "$TMP/repo"
+	rm -rf "$QR"
 
 	_ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"

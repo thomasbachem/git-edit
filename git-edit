@@ -2694,7 +2694,7 @@ _CONTINUE_REBASE () {
 		local SHOWN="true"
 		local MSGFILE=$(_TEXT_MSG_PATH)
 		if [ -f "$MSGFILE" ]; then
-			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "cp '$MSGFILE'" "$STATE_WORKTREE")
+			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "cp ${(qq)MSGFILE}" "$STATE_WORKTREE")
 			SHOWN="<applies --text to the fold>"
 		fi
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git -c rerere.enabled=true rebase --continue"
@@ -3589,7 +3589,10 @@ _FOLD_EDITOR_CMD () {
 	# args: <command taking the message path>, [worktree holding the rebase]
 	local RUN=$1
 	local DONE=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)/rebase-merge/done
-	print -r -- 'case "$(tail -1 "'"$DONE"'" 2>/dev/null)" in squash*|fixup*) '"$RUN"' "$1" ;; esac; :'
+	# `sh` parses this, so every path goes in single-quoted – a repo living under
+	# an apostrophe would otherwise close the quote and leave a syntax error,
+	# which git reports as a failed editor and abandons the commit over
+	print -r -- 'case "$(tail -1 '"${(qq)DONE}"' 2>/dev/null)" in squash*|fixup*) '"$RUN"' "$1" ;; esac; :'
 }
 
 GIT_REBASE_CONTINUE () {
@@ -3606,7 +3609,7 @@ GIT_REBASE_CONTINUE () {
 	if [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
 		local MSG=$(MKTEMP_FILE git-edit-squash-msg)
 		print -r -- "$TEXT_VALUE" > "$MSG"
-		GIT_EDITOR="$(_FOLD_EDITOR_CMD "cp '$MSG'")" \
+		GIT_EDITOR="$(_FOLD_EDITOR_CMD "cp ${(qq)MSG}")" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 		rm -f "$MSG"
 	elif [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
