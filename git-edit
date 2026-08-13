@@ -983,15 +983,16 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 
 	if [[ $STATUS -ne 0 ]]; then
 		if [[ "$OUTPUT" == *"CONFLICT ("* ]]; then
-			# In non-TTY contexts (Claude Code, CI, piped stdin) there's no one
-			# to answer CONTINUE_OR_ABORT, whose empty read would auto-proceed –
-			# staging files with conflict markers still in them. When the rebase
-			# is isolated, pause into --continue/--abort like the other modes; the
-			# branch hasn't moved, so the caller resolves in the worktree at their
-			# own pace. Without a worktree the rebase sits in the main checkout,
-			# where a pause would strand every other session – abort there.
+			# A non-TTY run has nobody to answer `CONTINUE_OR_ABORT`, whose empty read would auto-proceed
+			# and stage files with markers still in them – where the rebase is isolated, pause into
+			# `--continue` like the other modes, and abort in the main checkout, where a pause strands
 			if _IS_NON_INTERACTIVE; then
 				if [ -n "$WORKTREE_DIR" ] && [ -n "$ORIG_BRANCH" ]; then
+					# The editor override carrying --text lasts this one rebase
+					# invocation – hand the message on, as `--continue` spawns its own
+					if [ -n "$TEXT_VALUE" ]; then
+						print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
+					fi
 					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
 						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
 					_CLEANUP_HOOK=""
@@ -1868,10 +1869,9 @@ GIT_SPLIT_PAUSE () {
 	fi
 	_LINK_WORKTREE_EXTRAS "$WT"
 
-	# A message given up front survives the pause in a sidecar – the state
-	# file's key=value lines can't carry a multi-line one
+	# A message given up front survives the pause in the sidecar
 	if [ -n "$TEXT_VALUE" ]; then
-		print -r -- "$TEXT_VALUE" > "$(_SPLIT_MSG_PATH)"
+		print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
 	fi
 	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
 		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(git rev-parse --show-toplevel)"
@@ -1915,7 +1915,7 @@ _CONTINUE_SPLIT () {
 	fi
 
 	local MSG=$TEXT_VALUE
-	local MSGFILE=$(_SPLIT_MSG_PATH)
+	local MSGFILE=$(_TEXT_MSG_PATH)
 	if [ -z "$MSG" ] && [ -f "$MSGFILE" ]; then
 		MSG=$(cat "$MSGFILE")
 	fi
@@ -2688,9 +2688,18 @@ _CONTINUE_REBASE () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		# Re-establish the --text override the paused invocation took down with it
+		# The command is too long to trace literally, so the display elides it
+		local FOLD_EDITOR="true"
+		local SHOWN="true"
+		local MSGFILE=$(_TEXT_MSG_PATH)
+		if [ -f "$MSGFILE" ]; then
+			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "$MSGFILE" "$STATE_WORKTREE")
+			SHOWN="<applies --text to the fold>"
+		fi
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1; then
+		if ! GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" git -c rerere.enabled=true rebase --continue >/dev/null 2>&1; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -2981,8 +2990,9 @@ _LOAD_STATE () {
 	done < "$SF"
 }
 
-# Sidecar holding a paused split's --text, alongside the state file
-_SPLIT_MSG_PATH () {
+# Sidecar carrying a paused --text across the exit, alongside the state file –
+# the state file's own key=value lines can't hold a multi-line message
+_TEXT_MSG_PATH () {
 	local SF
 	SF=$(_STATE_FILE_PATH) || return 1
 	echo "$SF-msg"
@@ -3571,6 +3581,17 @@ GIT_COMMIT_AMEND () {
 	eval "$CMD" || ABORT
 }
 
+# Editor stand-in applying the fold's message to the fold alone – a resume also
+# commits the step that conflicted, whose own message is already right. The
+# discriminator is the last step the rebase logged as done. Git appends the
+# message path to the command, which the trailing `:` absorbs on a non-fold step.
+_FOLD_EDITOR_CMD () {
+	# args: <file holding the message>, [worktree holding the rebase]
+	local MSG=$1
+	local DONE=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)/rebase-merge/done
+	print -r -- 'case "$(tail -1 "'"$DONE"'" 2>/dev/null)" in squash*|fixup*) cp "'"$MSG"'" "$1" ;; esac; :'
+}
+
 GIT_REBASE_CONTINUE () {
 	# First arg is the rebase sub-command, defaulting to "--continue"
 	local SUBCMD="${1:---continue}"
@@ -3581,6 +3602,14 @@ GIT_REBASE_CONTINUE () {
 	# Only use the interactive editor if we are in "squash" mode AND `-m` was passed
 	if [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
+	elif [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
+		# The override carrying --text lasts one rebase invocation, so each
+		# resume has to re-establish it
+		local MSG=$(MKTEMP_FILE git-edit-squash-msg)
+		print -r -- "$TEXT_VALUE" > "$MSG"
+		GIT_EDITOR="$(_FOLD_EDITOR_CMD "$MSG")" \
+		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
+		rm -f "$MSG"
 	else
 		GIT_EDITOR=true \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"

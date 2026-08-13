@@ -1664,6 +1664,55 @@ GIT_SELFTEST () {
 	_ST_CHECK "the cleanup can enumerate the scratch repo's worktrees" \
 		sh -c "test \$(git -C '$TMP/repo' worktree list --porcelain 2>/dev/null | grep -c '^worktree ') -ge 1"
 
+	# --- 51. a squash's --text has to outlive the conflicts it pauses on ---
+	# The override applying it lasts one rebase invocation, so every `--continue`
+	# spawned its own process without it and the fold silently kept git's default
+	# combined message – a wrong result the run still reported as ok
+	ECHO_E "\e[1;96m[51] --text survives a squash's conflict pauses\e[0m"
+	git reset -q --hard
+	local N
+	for N in 1 2 3 4; do
+		echo "tx$N" > tx.txt && git add tx.txt && git commit -qm "TX $N"
+	done
+	local TX_TARGET=$(git log --format=%H --grep='^TX 2$' -1)
+	local TX_VICTIM=$(git log --format=%H --grep='^TX 4$' -1)
+	_ST_RUN -s="$TX_TARGET" -y --text="$(printf 'TX folded subject\n\n• TX folded body')" "$TX_VICTIM"
+	_ST_EQ "the squash pauses on a conflict" "$RC" "2"
+	local TX_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	echo "tx4" > "$TX_WT/tx.txt" && git -C "$TX_WT" add tx.txt
+	_ST_RUN --continue
+	echo "tx3" > "$TX_WT/tx.txt" && git -C "$TX_WT" add tx.txt
+	_ST_RUN --continue
+	_ST_EQ "the resumed squash settles" "$RC" "0"
+	_ST_EQ "the fold carries --text, not the combined default" \
+		"$(git log --format=%s --skip=1 -1)" "TX folded subject"
+	_ST_CHECK "including its body" \
+		sh -c "git log --format=%B --skip=1 -1 | grep -q '• TX folded body'"
+	_ST_CHECK "and no commit kept git's squash boilerplate" \
+		sh -c "! git log --format=%B | grep -q 'This is a combination of'"
+	_ST_EQ "the replayed commit keeps its own message" "$(git log --format=%s -1)" "TX 3"
+
+	# Folding an older commit forward replays the commits it skipped first, and
+	# a resume commits those too – each opening an editor the fold's message
+	# must not answer, or an untouched commit silently takes the fold's subject
+	git reset -q --hard
+	for N in 1 2 3 4; do
+		echo "tf$N" > tf.txt && git add tf.txt && git commit -qm "TF $N"
+	done
+	local TF_VICTIM=$(git log --format=%H --grep='^TF 2$' -1)
+	local TF_TARGET=$(git log --format=%H --grep='^TF 4$' -1)
+	_ST_RUN -s="$TF_TARGET" -y --text="TF folded subject" "$TF_VICTIM"
+	_ST_EQ "folding forward pauses before reaching the fold" "$RC" "2"
+	local TF_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	echo "tf3" > "$TF_WT/tf.txt" && git -C "$TF_WT" add tf.txt
+	_ST_RUN --continue
+	echo "tf2" > "$TF_WT/tf.txt" && git -C "$TF_WT" add tf.txt
+	_ST_RUN --continue
+	_ST_EQ "the forward fold settles" "$RC" "0"
+	_ST_EQ "the fold still takes --text" "$(git log --format=%s -1)" "TF folded subject"
+	_ST_EQ "the commit replayed ahead of it is untouched" "$(git log --format=%s --skip=1 -1)" "TF 3"
+	git reset -q --hard
+
 	_ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"
 
