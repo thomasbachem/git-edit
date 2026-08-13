@@ -160,6 +160,12 @@ if it was not given up front) commits that tree, re\-commits \fIsha\fR's tree on
 top, and replays the descendants. It refuses rather than committing nonsense
 when either half would be empty, when the worktree touches a path \fIsha\fR
 never did, or when \fIsha\fR was rewritten mid\-pause.
+.IP
+Both forms insert a new commit beneath \fIsha\fR and leave \fIsha\fR itself
+above it, keeping its tree, message and identity \(em so
+.B \-\-text
+always names the inserted commit, and the surviving one keeps the original
+subject whether or not it still fits.
 .TP
 .B \-\-reorder \fIcommit\fR...
 Reorder a contiguous span; the positional arguments give the desired new
@@ -405,7 +411,7 @@ Reword an earlier commit without touching the working tree:
 Split an icons change out of a mixed commit:
 .B git edit \-\-split=abc1234 \-\-text="Add icons" \-\- src/svg/
 .TP
-Split a refactor out of a commit that mixed it into one file:
+Split a refactor out of a commit that mixed it into one file (\fB\-\-text\fR names the lower commit):
 .B git edit \-\-split=abc1234 \-\-text="Refactor: Rename helpers"
 .TP
 Undo the last operation:
