@@ -1713,6 +1713,29 @@ GIT_SELFTEST () {
 	_ST_EQ "the commit replayed ahead of it is untouched" "$(git log --format=%s --skip=1 -1)" "TF 3"
 	git reset -q --hard
 
+	# A fold must not edit the messages of the commits it replays past. Nudging
+	# git's cleanup to protect the fold's own message reached them instead, and
+	# every one that stopped on a conflict committed the `# Conflicts:` template
+	git reset -q --hard
+	echo "tr1" > tr.txt && git add tr.txt && git commit -qm "TR 1"
+	echo "tr2" > tr.txt && git add tr.txt && git commit -qm "TR 2 target"
+	echo "tr3" > tr.txt && git add tr.txt && git commit -qm "TR 3 replayed"
+	echo "tr4" > tr.txt && git add tr.txt && git commit -qm "TR 4 victim"
+	local TR_BEFORE=$(git log --format=%B --grep='^TR 3 replayed$' -1)
+	_ST_RUN -s="$(git log --format=%H --grep='^TR 2 target$' -1)" -y --text="TR folded subject" \
+		"$(git log --format=%H --grep='^TR 4 victim$' -1)"
+	local TR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	echo "tr4" > "$TR_WT/tr.txt" && git -C "$TR_WT" add tr.txt
+	_ST_RUN --continue
+	echo "tr3" > "$TR_WT/tr.txt" && git -C "$TR_WT" add tr.txt
+	_ST_RUN --continue
+	_ST_EQ "the replay settles" "$RC" "0"
+	_ST_EQ "a replayed commit's message survives byte for byte" \
+		"$(git log --format=%B --grep='^TR 3 replayed$' -1)" "$TR_BEFORE"
+	_ST_CHECK "with none of git's conflict template in it" \
+		sh -c "! git log --format=%B | grep -q 'Conflicts:'"
+	git reset -q --hard
+
 	# --- 52. a resume's editor reaches the fold and nothing else ---
 	# `-m` needs a TTY this suite can never present, so its guarantee is asserted
 	# on the discriminator both message modes route through – driven directly,
@@ -1806,6 +1829,95 @@ GIT_SELFTEST () {
 	_ST_EQ "and the fold carries --text" "$(git log --format=%s --skip=1 -1)" "QR folded subject"
 	cd "$TMP/repo"
 	rm -rf "$QR"
+
+	# `-m` wants a TTY no sub-invocation here can present, so drive the branch
+	# that carried the bug in-process: stub the runner and read back the editor
+	# and cleanup each mode installs. Nothing is executed, so no editor can open
+	local FE_SAVED=$(functions GIT_RUN_AND_HANDLE_CONFLICTS)
+	GIT_RUN_AND_HANDLE_CONFLICTS () { _FE_CMD=$1; _FE_ED=$GIT_EDITOR }
+	local FE_KEEP_ACTION=$ACTION
+	local FE_KEEP_TEXT=$TEXT_VALUE
+	local -a FE_KEEP_OPTM=("${OPT_MESSAGE[@]}")
+	local FE_GUARD FE_CLEAN
+	ACTION=squash
+
+	TEXT_VALUE="FE inline message"
+	OPT_MESSAGE=()
+	GIT_REBASE_CONTINUE >/dev/null
+	FE_GUARD=no; [[ "$_FE_ED" == *rebase-merge/done*cp\ * ]] && FE_GUARD=yes
+	FE_CLEAN=no; [[ "$_FE_CMD" == *commit.cleanup* ]] && FE_CLEAN=yes
+	_ST_EQ "--text installs the guard around its message" "$FE_GUARD" "yes"
+	# Overriding cleanup is per-rebase, so it would reach the replayed commits too
+	_ST_EQ "and leaves git's cleanup alone" "$FE_CLEAN" "no"
+
+	TEXT_VALUE=""
+	OPT_MESSAGE=(-m)
+	GIT_REBASE_CONTINUE >/dev/null
+	FE_GUARD=no; [[ "$_FE_ED" == *rebase-merge/done*$(_RESOLVE_EDITOR)* ]] && FE_GUARD=yes
+	_ST_EQ "-m installs the guard around the real editor" "$FE_GUARD" "yes"
+
+	TEXT_VALUE="FE inline message"
+	OPT_MESSAGE=(-m)
+	GIT_REBASE_CONTINUE >/dev/null
+	FE_GUARD=no; [[ "$_FE_ED" == *cp\ * ]] && FE_GUARD=yes
+	_ST_EQ "given both, --text wins as the initial run had it" "$FE_GUARD" "yes"
+
+	ACTION=drop
+	TEXT_VALUE=""
+	OPT_MESSAGE=()
+	GIT_REBASE_CONTINUE >/dev/null
+	_ST_EQ "every other resume still silences the editor" "$_FE_ED" "true"
+
+	eval "$FE_SAVED"
+	ACTION=$FE_KEEP_ACTION
+	TEXT_VALUE=$FE_KEEP_TEXT
+	OPT_MESSAGE=("${FE_KEEP_OPTM[@]}")
+	unset _REAL_EDITOR _FE_CMD _FE_ED
+
+	# --- 53. --text keeps the caller's own `#` lines ---
+	# Comment stripping exists to drop the instructions git seeds an editor
+	# template with. Nothing seeds --text, so a `#` line there is the caller's
+	# content – an issue reference, a Markdown heading, a shell snippet – and
+	# dropping it rewrote the message silently, on every route
+	ECHO_E "\e[1;96m[53] --text keeps the caller's own '#' lines\e[0m"
+	git reset -q --hard
+	local HM_BODY
+
+	HM_BODY=$(printf 'HM reworded\n\nSee also:\n#123 route-reword')
+	echo "hm1" > hm.txt && git add hm.txt && git commit -qm "HM base"
+	_ST_RUN -M --text="$HM_BODY" HEAD
+	_ST_EQ "a reword keeps them" "$(git log --format=%B | grep -c '^#123 route-reword$')" "1"
+
+	HM_BODY=$(printf 'HM folded\n\nSee also:\n#123 route-plumbing')
+	echo "hm2" > hm2.txt && git add hm2.txt && git commit -qm "HM one"
+	echo "hm3" > hm3.txt && git add hm3.txt && git commit -qm "HM two"
+	_ST_RUN -s="$(git rev-parse HEAD~1)" -y --text="$HM_BODY" "$(git rev-parse HEAD)"
+	_ST_EQ "a plumbing fold keeps them" "$(git log --format=%B | grep -c '^#123 route-plumbing$')" "1"
+
+	# Non-adjacent, so it falls to the rebase path, where the message reaches the
+	# commit through an editor and meets git's editor cleanup. git splits the
+	# same way – `commit -m` keeps `#` lines, a rebase strips them from any
+	# commit it stops on – so this route follows git rather than fighting it.
+	# Forcing it back costs `commit.cleanup=whitespace`, which is per-rebase and
+	# not per-commit: every replayed commit would then keep git's `# Conflicts:`
+	# template, trading a dropped line for a far uglier one
+	HM_BODY=$(printf 'HM gapped\n\nSee also:\n#123 route-rebase')
+	echo "hm4" > hm4.txt && git add hm4.txt && git commit -qm "HM gap a"
+	echo "hm5" > hm5.txt && git add hm5.txt && git commit -qm "HM gap b"
+	echo "hm6" > hm6.txt && git add hm6.txt && git commit -qm "HM gap c"
+	_ST_RUN -s="$(git rev-parse HEAD~2)" -y --text="$HM_BODY" "$(git rev-parse HEAD)"
+	_ST_EQ "the rebase path still lands the fold" \
+		"$(git log --format=%s | grep -c '^HM gapped$')" "1"
+	_ST_EQ "its '#' lines go, as an editor-route commit's do in git itself" \
+		"$(git log --format=%B | grep -c '^#123 route-rebase$')" "0"
+	_ST_CHECK "and no template boilerplate rode along" \
+		sh -c "! git log --format=%B | grep -qE 'This is a combination of|rebase in progress'"
+
+	# Whitespace-only input still has nothing to commit, so the guard stays live
+	_ST_RUN -M --text='   ' HEAD
+	_ST_EQ "a blank message is still refused" "$RC" "1"
+	_ST_OUT_HAS "and says why" 'empty message'
+	git reset -q --hard
 
 	_ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"

@@ -3735,8 +3735,11 @@ if [ ${#OPT_TEXT} -gt 0 ]; then
 	if [ "$TEXT_VALUE" = "-" ]; then
 		TEXT_VALUE=$(cat)
 	fi
-	# Pass through `git stripspace` so it matches what the editor flow produces
-	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace --strip-comments)
+	# Normalize whitespace the way the editor flow does – but not its comment
+	# stripping, which exists to drop the instructions git seeds a template with.
+	# Nothing seeds this one, so a `#` line here is the caller's own content:
+	# an issue reference, a Markdown heading, a shell snippet
+	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace)
 	if [ -z "$TEXT_VALUE" ]; then
 		PRINT_ERR "--text produced an empty message after stripping"
 		exit 1
