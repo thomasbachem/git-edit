@@ -1736,6 +1736,20 @@ GIT_SELFTEST () {
 		sh -c "! git log --format=%B | grep -q 'Conflicts:'"
 	git reset -q --hard
 
+	# A conflict exits straight from the handler, past the `rm` that follows the
+	# call – so the message file it wrote survived the run, once per pause
+	local TX_TMP_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-squash-msg.*' 2>/dev/null | grep -c .)
+	for N in 1 2 3 4; do
+		echo "tl$N" > tl.txt && git add tl.txt && git commit -qm "TL $N"
+	done
+	_ST_RUN -s="$(git log --format=%H --grep='^TL 2$' -1)" -y --text="TL folded subject" \
+		"$(git log --format=%H --grep='^TL 4$' -1)"
+	_ST_EQ "the leak probe's fold pauses" "$RC" "2"
+	_ST_RUN --abort
+	local TX_TMP_AFTER=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-squash-msg.*' 2>/dev/null | grep -c .)
+	_ST_EQ "a paused fold leaves no temp message behind" "$TX_TMP_AFTER" "$TX_TMP_BEFORE"
+	git reset -q --hard
+
 	# --- 52. a resume's editor reaches the fold and nothing else ---
 	# `-m` needs a TTY this suite can never present, so its guarantee is asserted
 	# on the discriminator both message modes route through – driven directly,

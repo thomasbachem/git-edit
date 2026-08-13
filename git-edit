@@ -103,6 +103,12 @@ ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
 # for the per-invocation tmp worktree.
 _CLEANUP_HOOK=""
 
+# Temp files to remove however the run ends. A conflict exits straight from the
+# handler, past whatever `rm` followed the call that made them – and the pause
+# deliberately clears the hook above to keep its worktree, so these need a list
+# of their own rather than a place in it
+_TEMP_FILES=()
+
 # Tracks whether a status trailer was emitted (success, abort, conflict) so
 # the global trap doesn't double-emit an `error …` line on top of an
 # explicit `ok …` or `conflict …` trailer.
@@ -122,6 +128,10 @@ _GLOBAL_EXIT_TRAP () {
 	if [ -n "$_CLEANUP_HOOK" ]; then
 		eval "$_CLEANUP_HOOK" 2>/dev/null
 		_CLEANUP_HOOK=""
+	fi
+	if [ ${#_TEMP_FILES[@]} -gt 0 ]; then
+		rm -f "${_TEMP_FILES[@]}" 2>/dev/null
+		_TEMP_FILES=()
 	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
 		if [ -n "$_LAST_ERROR" ]; then
@@ -1140,6 +1150,7 @@ GIT_REBASE_SQUASH () {
 	local TEXT_MSG_FILE=""
 	if [[ -n "$TEXT_VALUE" ]]; then
 		TEXT_MSG_FILE=$(MKTEMP_FILE git-edit-squash-msg)
+		_TEMP_FILES+=("$TEXT_MSG_FILE")
 		printf '%s\n' "$TEXT_VALUE" > "$TEXT_MSG_FILE"
 	fi
 
@@ -3616,6 +3627,7 @@ GIT_REBASE_CONTINUE () {
 	# --text first: given both, it is the one the initial invocation honored
 	if [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
 		local MSG=$(MKTEMP_FILE git-edit-squash-msg)
+		_TEMP_FILES+=("$MSG")
 		print -r -- "$TEXT_VALUE" > "$MSG"
 		GIT_EDITOR="$(_FOLD_EDITOR_CMD "cp ${(qq)MSG}")" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
