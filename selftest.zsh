@@ -1713,6 +1713,55 @@ GIT_SELFTEST () {
 	_ST_EQ "the commit replayed ahead of it is untouched" "$(git log --format=%s --skip=1 -1)" "TF 3"
 	git reset -q --hard
 
+	# --- 52. a resume's editor reaches the fold and nothing else ---
+	# `-m` needs a TTY this suite can never present, so its guarantee is asserted
+	# on the discriminator both message modes route through – driven directly,
+	# the way git invokes an editor, against a fabricated rebase state
+	ECHO_E "\e[1;96m[52] a resume's editor reaches the fold alone\e[0m"
+	local FE=$TMP/fold-editor
+	rm -rf "$FE" && mkdir -p "$FE" && git -C "$FE" init -q
+	local FE_REB=$(git -C "$FE" rev-parse --absolute-git-dir)/rebase-merge
+	mkdir -p "$FE_REB"
+	local FE_MSG=$FE/folded.txt
+	local FE_DEST=$FE/COMMIT_EDITMSG
+	print -r -- "FE folded subject" > "$FE_MSG"
+	local FE_CMD=$(_FOLD_EDITOR_CMD "cp '$FE_MSG'" "$FE")
+
+	# The step that conflicted is committed by the same resume, and its message
+	# is already right – a stand-in reaching it rewords an untouched commit
+	print -r -- "pick 1111111 # FE replayed" > "$FE_REB/done"
+	print -r -- "FE replayed message" > "$FE_DEST"
+	sh -c "$FE_CMD \"\$@\"" ge-editor "$FE_DEST"
+	local FE_RC=$?
+	_ST_EQ "a replayed step keeps its own message" "$(cat "$FE_DEST")" "FE replayed message"
+	# A non-zero editor makes git abandon the commit, so the no-op must exit clean
+	_ST_EQ "and the stand-in still exits clean" "$FE_RC" "0"
+
+	print -r -- "squash 2222222 # FE victim" > "$FE_REB/done"
+	sh -c "$FE_CMD \"\$@\"" ge-editor "$FE_DEST"
+	_ST_EQ "the fold takes the supplied message" "$(cat "$FE_DEST")" "FE folded subject"
+	print -r -- "fixup 3333333" > "$FE_REB/done"
+	print -r -- "FE other message" > "$FE_DEST"
+	sh -c "$FE_CMD \"\$@\"" ge-editor "$FE_DEST"
+	_ST_EQ "a fixup step is the fold too" "$(cat "$FE_DEST")" "FE folded subject"
+
+	# `-m` supplies an editor rather than a message, through the same guard
+	local FE_LOG=$FE/opened.log
+	local FE_STUB=$FE/stub-editor.sh
+	{ echo '#!/bin/sh'; echo "echo opened >> '$FE_LOG'" } > "$FE_STUB"
+	chmod +x "$FE_STUB"
+	local FE_ED=$(_FOLD_EDITOR_CMD "$FE_STUB" "$FE")
+	: > "$FE_LOG"
+	print -r -- "pick 4444444" > "$FE_REB/done"
+	sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
+	_ST_EQ "-m's editor stays shut on a replayed step" "$(grep -c . "$FE_LOG")" "0"
+	print -r -- "squash 5555555" > "$FE_REB/done"
+	sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
+	_ST_EQ "-m's editor opens on the fold" "$(grep -c . "$FE_LOG")" "1"
+	_ST_CHECK "and the -m branch routes through the guard" \
+		sh -c "command grep -q '_FOLD_EDITOR_CMD \"\$_REAL_EDITOR\"' '$SELF'"
+	rm -rf "$FE"
+
 	_ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"
 

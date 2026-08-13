@@ -2694,7 +2694,7 @@ _CONTINUE_REBASE () {
 		local SHOWN="true"
 		local MSGFILE=$(_TEXT_MSG_PATH)
 		if [ -f "$MSGFILE" ]; then
-			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "$MSGFILE" "$STATE_WORKTREE")
+			FOLD_EDITOR=$(_FOLD_EDITOR_CMD "cp '$MSGFILE'" "$STATE_WORKTREE")
 			SHOWN="<applies --text to the fold>"
 		fi
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git -c rerere.enabled=true rebase --continue"
@@ -3581,15 +3581,15 @@ GIT_COMMIT_AMEND () {
 	eval "$CMD" || ABORT
 }
 
-# Editor stand-in applying the fold's message to the fold alone – a resume also
-# commits the step that conflicted, whose own message is already right. The
-# discriminator is the last step the rebase logged as done. Git appends the
-# message path to the command, which the trailing `:` absorbs on a non-fold step.
+# Editor stand-in reaching the fold's message alone – a resume commits the step
+# that conflicted too, whose own message is already right. The discriminator is
+# the last step the rebase logged as done. Git appends the message path to the
+# command, which the trailing `:` absorbs on a non-fold step.
 _FOLD_EDITOR_CMD () {
-	# args: <file holding the message>, [worktree holding the rebase]
-	local MSG=$1
+	# args: <command taking the message path>, [worktree holding the rebase]
+	local RUN=$1
 	local DONE=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)/rebase-merge/done
-	print -r -- 'case "$(tail -1 "'"$DONE"'" 2>/dev/null)" in squash*|fixup*) cp "'"$MSG"'" "$1" ;; esac; :'
+	print -r -- 'case "$(tail -1 "'"$DONE"'" 2>/dev/null)" in squash*|fixup*) '"$RUN"' "$1" ;; esac; :'
 }
 
 GIT_REBASE_CONTINUE () {
@@ -3599,17 +3599,23 @@ GIT_REBASE_CONTINUE () {
 	local CMD="git -c rerere.enabled=true rebase $SUBCMD"
 	PRINT_CMD "$CMD"
 
-	# Only use the interactive editor if we are in "squash" mode AND `-m` was passed
-	if [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
-		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
-	elif [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
-		# The override carrying --text lasts one rebase invocation, so each
-		# resume has to re-establish it
+	# Whichever message the run supplies, the override carrying it lasts one
+	# rebase invocation, so each resume has to re-establish it – and aim it at
+	# the fold, since the step that conflicted gets committed by the same resume.
+	# --text first: given both, it is the one the initial invocation honored
+	if [[ "$ACTION" == "squash" && -n "$TEXT_VALUE" ]]; then
 		local MSG=$(MKTEMP_FILE git-edit-squash-msg)
 		print -r -- "$TEXT_VALUE" > "$MSG"
-		GIT_EDITOR="$(_FOLD_EDITOR_CMD "$MSG")" \
+		GIT_EDITOR="$(_FOLD_EDITOR_CMD "cp '$MSG'")" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 		rm -f "$MSG"
+	elif [[ "$ACTION" == "squash" && -n "$OPT_MESSAGE" ]]; then
+		# `-m` asked to edit the combined message – open the real editor there,
+		# and nowhere else, rather than on a replayed commit's own message.
+		# Resolved once, as a cascade re-enters this with the stand-in in place
+		_REAL_EDITOR=${_REAL_EDITOR:-$(_RESOLVE_EDITOR)}
+		GIT_EDITOR="$(_FOLD_EDITOR_CMD "$_REAL_EDITOR")" \
+		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
 	else
 		GIT_EDITOR=true \
 		GIT_RUN_AND_HANDLE_CONFLICTS "$CMD"
