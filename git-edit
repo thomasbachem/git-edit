@@ -1,23 +1,16 @@
 #!/bin/zsh
 
-# git edit – Easily edit commits via interactive rebase
+# `git edit` – Edit, reword, drop, squash, reorder, split, or fold past commits
 #
-# usage: `git-edit [-m | --message] <commit>`
-#    or: `git-edit [-d | --drop | -s | --squash] <commit>...`
+# Usage: `git edit -h` prints the full flag reference, `man git-edit` the details.
 #
-# This Git command script allows you to edit/modify/merge
-# previous Git commits easily. It essentially is a more
-# convenient version of using `git rebase --interactive`
-# for that use case.
-#
-# It will stash any local changes, then reset your local copy
-# to the state of the commit you want to edit via `git rebase`,
-# then pause to let you make changes. After resuming the script,
-# all changes will be added to the commit, and the rebase will
-# continue. The script also pauses in case any conflicts arise,
-# so you can manually resolve them before continuing with the
-# merge/rebase. After completion, your previous local changes
-# will be unstashed/reapplied.
+# A convenience wrapper around `git rebase --interactive` and plumbing,
+# hardened for AI coding agents and parallel sessions: every ref move is an
+# atomic compare-and-swap, the plumbing and isolated modes never touch the
+# main working tree, and staged changes are not consumed until the final
+# update lands – a failure or `--abort` leaves everything as it was.
+# Conflicts pause with a temp worktree to resolve in (`git edit --continue`
+# / `--abort`), and every run ends in a machine-readable trailer.
 #
 # If you want to alter the commit message as well, add the
 # `-m` switch. You can also delete (drop) one or more commits
