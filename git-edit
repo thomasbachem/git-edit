@@ -1487,6 +1487,7 @@ GIT_AMEND_INTO () {
 			"target=$TARGET_FULL" \
 			"depth=$DEPTH" \
 			"rebasebase=$REBASE_BASE" \
+			"stagedtree=$STAGED_TREE" \
 			"maindir=$MAIN_DIR" \
 			"files=${(pj:\t:)STAGED_PATHS}"\
 			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
@@ -1503,6 +1504,16 @@ GIT_AMEND_INTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
+	# A tip tree identical to the pre-op tip means nothing folded: the target
+	# already carried every staged hunk's content (e.g. a staged revert of a
+	# later commit's change), so the fixup dissolved and each pick replayed
+	# itself. Landing that would report a fold that never happened
+	if [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$ORIG_HEAD^{tree}")" ]; then
+		PRINT_ERR "The fold left history unchanged – ${TARGET_FULL:0:7} already carries the staged content"
+		PRINT_TEXT "Nothing was applied; your staged changes are untouched." 33
+		exit 1
+	fi
+
 	# Step 4: atomic CAS-update of branch ref, guarded on the pre-op tip. If
 	# the branch moved during autosquash (parallel commit), refuse – nothing
 	# was consumed, so the staged changes are still intact for a retry.
@@ -1515,29 +1526,21 @@ GIT_AMEND_INTO () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "amend-into ${TARGET_FULL:0:7}"
 
-	# Re-sync exactly the folded paths' index entries to the new HEAD: those
-	# staged changes are now part of history, so they should report clean.
-	# Path-scoped so anything a parallel session staged meanwhile keeps its
-	# staged state (a whole-index reset would silently wipe it).
+	# Re-sync exactly the folded paths' index entries to the new `HEAD`, those staged changes
+	# being history now – path-scoped, so anything a parallel session staged meanwhile keeps
+	# its staged state where a whole-index reset would wipe it
 	git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
 
-	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE"
+	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE" "$ORIG_HEAD" "$STAGED_TREE" ""
 
-	# Export new HEAD + ref for the success trailer in the dispatch block
+	# Export new `HEAD` + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
 	AMEND_REF=$REF
 }
 
-# Resolves `--amend-into=auto`: the newest unpushed commit touching the
-# staged paths. Conservative – every staged path with history must agree on
-# one target; paths with no history (new files) follow that consensus. Each
-# refusal lists the per-path candidates – exactly the lookup an explicit
-# invocation would have needed anyway.
-# Commits that last touched the exact lines the staged diff rewrites. A fix
-# usually belongs to whoever wrote the line being fixed, which is not always the
-# newest commit to touch the file – whenever an unrelated later commit edited the
-# same file, a file-level guess silently folds into the wrong one. Hunks that only
-# add lines have no old lines to attribute and so carry no evidence.
+# Commits that last touched the exact lines the staged diff rewrites – a fix usually belongs
+# to whoever wrote the line, not the newest commit to touch the file, so a file-level
+# guess folds into the wrong one, and pure additions carry no old lines to attribute
 _BLAME_AMEND_TARGETS () {
 	local TOPLEVEL=$(git rev-parse --show-toplevel)
 	local P HUNK START COUNT
@@ -1644,16 +1647,12 @@ _RESOLVE_AMEND_TARGET () {
 	AMEND_INTO_TARGET=$CANDIDATE
 }
 
-# Prints the amended commit's stat after a completed --amend-into, so the
-# caller doesn't need a follow-up `git show` to verify where the fold landed.
+# Prints the amended commit's stat after a completed `--amend-into`, so the caller needs no
+# follow-up `git show` to see where the fold landed
 _PRINT_AMENDED_SUMMARY () {
-	# args: <new_head> <depth> <folded-files-comma-separated> [<main-checkout>] [<rebase-base>]
-	# The autosquash replays the target first, so the commit directly above the
-	# base is the amended one whatever happens above it. An offset from the new
-	# tip is not equivalent: a replayed commit whose resolution went empty is
-	# dropped, and the count then walks one commit too far – naming a commit
-	# the fold never touched, in the block a caller reads to check where it
-	# landed. The depth stays as the fallback for states written before this.
+	# Args: <new_head> <depth> <folded-files-comma-separated> [<main-checkout>] [<rebase-base>]
+	#       [<orig-head>] [<staged-tree>] [<resolved-flag>]
+	# The autosquash replays the target first, so the commit above the base is the amended one
 	local AMENDED
 	if [ -n "$5" ]; then
 		if [ "$5" = "--root" ]; then
@@ -1679,6 +1678,36 @@ _PRINT_AMENDED_SUMMARY () {
 	# symbolic target can make that the wrong one
 	if [ -n "$AMEND_OLD_SHA" ]; then
 		_PRINT_COMMIT_LINE "$AMEND_OLD_SHA" '  replaced: %s'
+	fi
+
+	# Same count check as a reorder's summary: a resolution that reproduces its
+	# predecessor's content leaves that commit empty and the rebase drops it,
+	# which a clean diffstat and an `ok` trailer would otherwise wave through
+	if [ -n "$6" ] && [ -n "$5" ]; then
+		local BEFORE
+		local AFTER
+		if [ "$5" = "--root" ]; then
+			BEFORE=$(git rev-list --count "$6" 2>/dev/null)
+			AFTER=$(git rev-list --count "$1" 2>/dev/null)
+		else
+			BEFORE=$(git rev-list --count "$5..$6" 2>/dev/null)
+			AFTER=$(git rev-list --count "$5..$1" 2>/dev/null)
+		fi
+		if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
+			PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
+				"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
+		fi
+	fi
+	# The fold's correct tip is knowable up front – the pre-op tip plus the
+	# staged changes – so a tip that differs means content beyond the fold
+	# moved: a staged hunk dissolved against a later commit's content, or a
+	# conflict resolution deliberately diverged
+	if [ -n "$7" ] && [ "$(git rev-parse "$1^{tree}" 2>/dev/null)" != "$7" ]; then
+		if [ -n "$8" ]; then
+			PRINT_TEXT "Note: tip tree differs from the staged result – a resolution changed content beyond the fold (compare: %s)" 33 "git diff ${7:0:12} ${1:0:12}"
+		else
+			PRINT_TEXT "Note: tip tree differs from the staged result – part of the fold dissolved against a later commit's content (compare: %s)" 33 "git diff ${7:0:12} ${1:0:12}"
+		fi
 	fi
 }
 
@@ -2979,6 +3008,7 @@ _LOAD_STATE () {
 	STATE_HEAD_WITH_FIXUP=""
 	STATE_DEPTH=""
 	STATE_REBASEBASE=""
+	STATE_STAGEDTREE=""
 	STATE_MAINDIR=""
 	STATE_FILES=""
 	STATE_PATHSPECS=""
@@ -2999,6 +3029,7 @@ _LOAD_STATE () {
 			head_with_fixup) STATE_HEAD_WITH_FIXUP=$VAL ;;
 			depth)           STATE_DEPTH=$VAL ;;
 			rebasebase)      STATE_REBASEBASE=$VAL ;;
+			stagedtree)      STATE_STAGEDTREE=$VAL ;;
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
@@ -3152,7 +3183,7 @@ _CONTINUE_AMEND_INTO () {
 	# The fold's scope decides how the leftover index reads – restore it, or a
 	# scoped fold that conflicted would report its intended leftovers as an anomaly
 	[ -n "$STATE_PATHSPECS" ] && AMEND_PATHSPECS=("${(@ps:\t:)STATE_PATHSPECS}")
-	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "" "$STATE_MAINDIR" "$STATE_REBASEBASE"
+	[ -n "$STATE_DEPTH" ] && _PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "" "$STATE_MAINDIR" "$STATE_REBASEBASE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE" resolved
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true

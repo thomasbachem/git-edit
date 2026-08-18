@@ -136,6 +136,13 @@ falling back to the newest commit touching the staged paths only where the
 change adds lines and so attributes to nothing. It refuses when the evidence
 points at several commits, or at a pushed one. Only staged changes are folded;
 unstaged edits are left untouched.
+The completion summary verifies what landed: it counts commits a conflict
+resolution left empty (the rebase drops them), and notes a tip that differs
+from the staged result \(em the pre\-op tip plus the staged changes, which a
+faithful fold must reproduce. A fold that would leave history unchanged
+\(em every staged hunk already carried by the target \(em is refused, with
+the staged changes left intact.
+.IP
 .B \-\-text
 also rewords \fIsha\fR in the same run \(em
 .BR git\-commit (1)

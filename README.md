@@ -166,6 +166,8 @@ With `--text`, the target is reworded in the same run. That step is plumbing and
 
 Only **staged** changes are folded — unstaged edits in the main working tree are left untouched. Works the same for `<sha> = HEAD` and for older commits. Nothing is consumed until the final CAS lands: on any failure or `--abort`, your staged changes are simply still staged, ready for a retry — there is nothing to roll back. On success, the amended commit's `--stat` is printed so no follow-up `git show` is needed.
 
+The completion summary also verifies what landed. The fold's correct tip is knowable up front — the pre-op tip plus the staged changes — so a tip that falls short of it is called out rather than waved through: a run that would leave history unchanged (every staged hunk already carried by the target, e.g. a staged revert of a later commit's change) is refused with the staged changes intact, a staged hunk that dissolved against a later commit's content lands with a note naming the divergence, and a conflict resolution that left a replayed commit empty gets its drop counted — a clean diffstat and an `ok` trailer would otherwise hide all three.
+
 #### Automatic target discovery (`--amend-into=auto`)
 
 A fix belongs to whoever wrote the line being fixed, so `auto` resolves the target from the staged **lines** (via `git blame`), not merely the files:
