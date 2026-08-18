@@ -906,6 +906,10 @@ GIT_SELFTEST () {
 	local SF_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ ]*\).*/\1/p' | head -1)
 	printf 'sc1\nSFS\nsc3\n' > "$SF_WT/sf.txt" && git -C "$SF_WT" add sf.txt
 	_ST_RUN --continue
+	# The final pick's staged-tree resolution would empty "SF later" – the
+	# auto-resolve must decline that and leave the call with the resolver
+	_ST_EQ "final step that would empty its commit still pauses" "$RC" "2"
+	_ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
 	printf 'sc1\nSFL\nsc3\n' > "$SF_WT/sf.txt" 2>/dev/null && git -C "$SF_WT" add sf.txt 2>/dev/null
 	_ST_RUN --continue
 	_ST_OUT_HAS "scope survives the conflict pause" 'outside the pathspec'
@@ -1103,10 +1107,10 @@ GIT_SELFTEST () {
 	done
 	_ST_EQ "the CAS refuses the write" "$RC" "1"
 	_ST_OUT_HAS "says the branch moved" 'moved during resolution'
-	# The refusal used to fire the exit trap, deleting the one copy of the work
-	# and leaving a state whose worktree was gone
+	# A refusal must not fire the exit trap, which would delete the one copy of the work and
+	# leave a state whose worktree is gone
 	_ST_CHECK "the worktree survives the refusal" sh -c "[ -d '$CAS_WT' ]"
-	_ST_CHECK "and still holds the resolution" sh -c "grep -q 'cas RESOLVED' '$CAS_WT/cas.txt'"
+	_ST_CHECK "and still holds the resolution" sh -c "grep -q 'cas FOLDED' '$CAS_WT/cas.txt' && git -C '$CAS_WT' show 'HEAD~1:cas.txt' | grep -q 'cas RESOLVED'"
 	_ST_OUT_HAS "points at the surviving worktree" 'resolution is intact'
 	_ST_RUN --status
 	_ST_OUT_LACKS "status is not orphaned" 'worktree is gone'
@@ -2030,6 +2034,48 @@ GIT_SELFTEST () {
 	_ST_EQ "clean fold exits 0" "$RC" "0"
 	_ST_OUT_LACKS "no tree note on a faithful fold" 'tip tree differs'
 	_ST_OUT_LACKS "no drop count on a faithful fold" 'resolved to empty'
+	cd "$TMP/repo"
+
+	# --- 55. a fold's final conflicted step resolves itself, mid steps pause ---
+	# The finished tip is the pre-op tip plus the staged changes, so the final
+	# step's resolution is provable (staged-tree identity) before anything is
+	# committed – earlier steps have no such answer and must keep pausing
+	ECHO_E "\e[1;96m[55] fold final-step auto-resolve\e[0m"
+	local R55="$TMP/fold55"
+	git init -q -b main "$R55"
+	git -C "$R55" config user.email selftest@git-edit
+	git -C "$R55" config user.name "git-edit selftest"
+	cd "$R55"
+	printf 'g1\n' > g.txt && git add g.txt && git commit -qm "G one"
+	printf 'g2\n' > g.txt && git commit -qam "G two"
+	printf 'g3\n' > g.txt && git commit -qam "G three"
+	printf 'g9\n' > g.txt && git add g.txt
+	local G_STAGED=$(git write-tree)
+
+	# Fold into the root: the fixup conflicts (mid step – must pause)
+	_ST_RUN --amend-into="$(git rev-parse HEAD~2)"
+	_ST_EQ "fixup step pauses" "$RC" "2"
+	local WT55=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ (;]*\).*/\1/p' | head -1)
+	_ST_CHECK "conflict worktree exists" test -d "$WT55"
+	printf 'g9\n' > "$WT55/g.txt" && git -C "$WT55" add g.txt
+
+	# "G two" replays next – still not the final step, so it pauses too
+	_ST_RUN --continue
+	_ST_EQ "mid pick still pauses" "$RC" "2"
+	_ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
+	WT55=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict — resolve in \([^ (;]*\).*/\1/p' | head -1)
+	printf 'g8\n' > "$WT55/g.txt" && git -C "$WT55" add g.txt
+
+	# "G three" is the final step – its result is the staged tree, so this
+	# continue resolves it itself and completes in one go
+	_ST_RUN --continue
+	_ST_EQ "final step completes without another pause" "$RC" "0"
+	_ST_OUT_HAS "names the auto-resolution" 'auto-resolved'
+	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok'
+	_ST_EQ "tip content is the staged content" "$(git show HEAD:g.txt)" "g9"
+	_ST_EQ "tip tree is the staged tree" "$(git rev-parse 'HEAD^{tree}')" "$G_STAGED"
+	_ST_EQ "no commit was lost" "$(git rev-list --count HEAD)" "3"
+	_ST_OUT_LACKS "and no drop was counted" 'resolved to empty'
 	cd "$TMP/repo"
 
 	# --- Summary ---

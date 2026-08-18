@@ -1474,7 +1474,8 @@ GIT_AMEND_INTO () {
 	# and the shared `rr-cache` carries it across retries of the whole operation
 	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
-	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
+	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$STAGED_TREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$WT" "staged" }; then
 		# Conflict during autosquash. Save state, leave the worktree alive,
 		# and let the user/agent resolve via `git edit --continue` (or
 		# `git edit --abort` to cancel – the branch was never moved, and the
@@ -2168,10 +2169,10 @@ SEQEOF
 	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
-	   ! { _AUTO_RESOLVE_FINAL_REORDER "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$WT" }; then
+	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$WT" "pre-op" }; then
 		rm -f "$SEQ"
-		# Conflict while replaying – persist state for --continue/--abort.
-		# The branch was never moved, so --abort has nothing to roll back.
+		# Conflict while replaying – persist state for --continue/--abort
+		# The branch was never moved, so --abort has nothing to roll back
 		_SAVE_STATE \
 			"operation=reorder" \
 			"worktree=$WT" \
@@ -2201,30 +2202,24 @@ SEQEOF
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reorder ${OLDEST:0:7}..${NEWEST:0:7}"
 
-	# Completion summary: tree identity (clean reorders preserve the tip tree;
-	# conflict resolutions may not) + the rewritten span in its new order
+	# Completion summary – tree identity, which a clean reorder preserves and a resolution may
+	# not, plus the rewritten span in its new order
 	_PRINT_REORDER_SUMMARY "$ORIG_HEAD" "$NEW_HEAD"
 
 	REORDER_NEW_HEAD=$NEW_HEAD
 	REORDER_REF=$REF
 }
 
-# Resume an in-flight --reorder after conflict resolution. Mirrors
-# _CONTINUE_AMEND_INTO: continue the rebase in the preserved worktree, then
-# CAS the branch from its (untouched) pre-op tip.
-# A reorder's FINAL step has exactly one correct resolution – the reorder
-# preserves the tree, so the conflicted paths take the pre-op tip's blobs. The
-# tool already derives that and used to print it as homework, costing a
-# round-trip to run a command it had computed. Applying it here is safe because
-# on the last step it is provable before anything is committed: the staged tree
-# becomes the final commit's tree, so it must equal the pre-op tree. Any other
-# shape – earlier step, missing path, tree mismatch – falls through to the
-# manual pause untouched.
-_AUTO_RESOLVE_FINAL_REORDER () {
-	# args: <worktree> <pre-op head>
+# Resumes an in-flight `--reorder` after resolution, mirroring `_CONTINUE_AMEND_INTO` –
+# continue the rebase in the preserved worktree, then CAS the branch from its pre-op tip
+# A reorder's final step resolves to the pre-op tip's blobs, a fold's to the fixup's
+_AUTO_RESOLVE_FINAL_STEP () {
+	# Args: <worktree> <result tree-ish – pre-op head (reorder) or staged tree (fold)>
+	#       [<guard-empty – decline when the resolution would empty the commit>]
 	local WT=$1
-	local PREOP=$2
-	[ -z "$PREOP" ] && return 1
+	local SOURCE=$2
+	local GUARD_EMPTY=$3
+	[ -z "$SOURCE" ] && return 1
 	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
 	[ -z "$GITDIR" ] && return 1
 	local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
@@ -2232,23 +2227,31 @@ _AUTO_RESOLVE_FINAL_REORDER () {
 	if [ -z "$STEP_NOW" ] || [ "$STEP_NOW" != "$STEP_END" ]; then
 		return 1
 	fi
+	# A result tree matching the stopped rebase's `HEAD` leaves the final commit empty and the
+	# rebase drops it – for a reorder that change was absorbed by the new order, tree identity
+	# proving no loss, while for a fold it would be overwritten outright, so decline first
+	if [ -n "$GUARD_EMPTY" ] && \
+	   [ "$(git rev-parse "$SOURCE^{tree}" 2>/dev/null)" = "$(git -C "$WT" rev-parse 'HEAD^{tree}' 2>/dev/null)" ]; then
+		return 1
+	fi
 	local -a UNMERGED
 	UNMERGED=("${(@f)$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)}")
 	[ -z "${UNMERGED[1]}" ] && return 1
 	local P
 	for P in "${UNMERGED[@]}"; do
-		git -C "$WT" checkout "$PREOP" -- "$P" >/dev/null 2>&1 || return 1
+		git -C "$WT" checkout "$SOURCE" -- "$P" >/dev/null 2>&1 || return 1
 		git -C "$WT" add -- "$P" >/dev/null 2>&1 || return 1
 	done
 	# The proof: on the last step the staged tree is the result
-	local STAGED_TREE=$(git -C "$WT" write-tree 2>/dev/null)
-	[ -n "$STAGED_TREE" ] && [ "$STAGED_TREE" = "$(git rev-parse "$PREOP^{tree}" 2>/dev/null)" ]
+	local RESULT_TREE=$(git -C "$WT" write-tree 2>/dev/null)
+	[ -n "$RESULT_TREE" ] && [ "$RESULT_TREE" = "$(git rev-parse "$SOURCE^{tree}" 2>/dev/null)" ]
 }
 
-# Finishes a rebase whose final step `_AUTO_RESOLVE_FINAL_REORDER()` just staged
-_FINISH_AUTO_RESOLVED_REORDER () {
+# Finishes a rebase whose final step `_AUTO_RESOLVE_FINAL_STEP()` just staged
+_FINISH_AUTO_RESOLVED_STEP () {
+	# args: <worktree> <blob source name – "pre-op" or "staged">
 	local WT=$1
-	PRINT_TEXT "%s – restored the pre-op blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)"
+	PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
 	GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue >/dev/null 2>&1
 }
 
@@ -2679,7 +2682,7 @@ _CONTINUE_REORDER () {
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" >/dev/null 2>&1 && \
-		   ! { _AUTO_RESOLVE_FINAL_REORDER "$STATE_WORKTREE" "$STATE_ORIG_HEAD" && _FINISH_AUTO_RESOLVED_REORDER "$STATE_WORKTREE" }; then
+		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "pre-op" }; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3142,7 +3145,8 @@ _CONTINUE_AMEND_INTO () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1; then
+		if ! eval "$CMD" >/dev/null 2>&1 && \
+		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_STAGEDTREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "staged" }; then
 			# Another conflict downstream – keep state, keep worktree, exit
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
