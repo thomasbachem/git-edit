@@ -106,6 +106,18 @@ git edit -M 0123456789abcdef0123456789abcdef01234567
 
 This opens your `$EDITOR` on the current message, then rebuilds just the affected commit (and any descendants) using `git commit-tree` + `git update-ref` — no checkout, no stash, no rebase, no temporary worktree. The working tree is physically untouched (file inodes and mtimes preserved); the operation is atomic from your perspective: a single ref update at the end. Safe to run while another tool (e.g., an AI coding assistant) is editing files in your checkout.
 
+### Rewording Many Commits at Once
+
+To reword **many** commits in one pass, drop the positional commit and feed `--- <commit>` records on stdin (via `--text -`). Each record is a header naming a commit followed by its new message — exactly the shape `git log` emits, so the flow is dump -> edit -> feed back:
+
+```
+git log --format='--- %h%n%B' origin/main..HEAD > msgs.txt   # every unpushed message, batch-shaped
+$EDITOR msgs.txt                                             # fix the bodies that need it
+git edit -M --text - < msgs.txt                              # a record whose message is unchanged is skipped
+```
+
+One walk rebuilds the span once under a single compare-and-swap, where N separate rewords would replay the tail N times and open N ref-move windows. It stays pure plumbing — every tree is reused verbatim, only messages change — and it is all-or-nothing: an unreachable, already-pushed, empty, or duplicated target aborts the whole batch before any object is written. A stale SHA (from a rewrite another session landed meanwhile) resolves to its current identity by patch id, and a header may name its commit any way `git rev-parse` accepts (`:/subject` included). The `--- ` line is a reserved record separator, so a commit whose own message contains a `--- ` line is refused before anything is written (its dump would split mid-body) — reword that one with the single `-M <commit>` form.
+
 ### Squashing Commits
 
 Plain `-s` (and implicit squash via multi-commit args) **auto-routes** to the plumbing path whenever the operation is eligible — contiguous range, no merge commits, target = oldest commit. So:

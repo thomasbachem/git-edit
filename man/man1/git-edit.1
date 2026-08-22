@@ -106,6 +106,18 @@ the amend.
 .B \-M, \-\-reword
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
 or worktree; the working tree is untouched and the tip tree is unchanged.
+.IP
+Drop \fIcommit\fR and pass \fB\-\-text \-\fR to reword many commits at once,
+reading \fB\-\-\-\fR \fIcommit\fR records from stdin \(em a header naming a
+commit, then its new message, the shape
+.B git log \-\-format='\-\-\- %h%n%B'
+emits. One walk rebuilds the span under a single compare\-and\-swap rather than
+one replay per commit; it stays plumbing (every tree reused verbatim), skips a
+record whose message is unchanged, and is all\-or\-nothing \(em an unreachable,
+pushed, empty, or duplicated target aborts the batch before anything is written.
+A stale SHA resolves by patch id. A commit whose own message contains a
+.B \-\-\-
+line is refused (that line is the record separator) \(em reword it singly.
 .TP
 .B \-d, \-\-drop
 Delete one or more \fIcommit\fRs or ranges. The checkout is not touched, so the

@@ -38,6 +38,20 @@ GIT_SELFTEST () {
 				| head -3 | sed 's/^/       | /'
 		fi
 	}
+	# Feeds <stdin> as the first argument, otherwise as `_ST_RUN`, for the records form
+	# form of reword (`-M --text -`) which reads its targets from stdin
+	_ST_RUN_IN () {
+		local INPUT=$1; shift
+		OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$@" <<<"$INPUT" 2>&1)
+		RC=$?
+		if [[ "$OUT" == *"command not found"* || "$OUT" == *"no matches found"* || \
+		      "$OUT" == *"bad substitution"* || "$OUT" == *"parse error"* ]]; then
+			FAIL=$((FAIL+1))
+			ECHO_E "  \e[1;31mFAIL\e[0m shell noise from 'git edit $*'"
+			echo "$OUT" | grep -E 'command not found|no matches found|bad substitution|parse error' \
+				| head -3 | sed 's/^/       | /'
+		fi
+	}
 	_ST_CHECK () {
 		local DESC=$1; shift
 		if "$@" >/dev/null 2>&1; then
@@ -2077,6 +2091,72 @@ GIT_SELFTEST () {
 	_ST_EQ "no commit was lost" "$(git rev-list --count HEAD)" "3"
 	_ST_OUT_LACKS "and no drop was counted" 'resolved to empty'
 	cd "$TMP/repo"
+
+	# --- 56. batch reword rewrites many messages in one pass from stdin records ---
+	ECHO_E "\e[1;96m[56] batch reword (-M --text - records)\e[0m"
+	cd "$TMP/repo"
+	# Self-contained commits so an earlier fixture can't collide
+	local _bw
+	for _bw in bw1 bw2 bw3 bw4; do echo "$_bw" > "$_bw.txt"; git add "$_bw.txt"; git commit -qm "Batch $_bw"; done
+	local BW_TIP0=$(git rev-parse HEAD)
+	local BW_TREE0=$(git rev-parse 'HEAD^{tree}')
+	local BW_COUNT0=$(git rev-list --count HEAD)
+	local BW1=$(git rev-parse --short :/Batch\ bw1)
+	local BW3=$(git rev-parse --short :/Batch\ bw3)
+	# Dump the run's shape, edit two bodies, feed it straight back
+	_ST_RUN_IN "$(printf -- '--- %s\nBatch bw1 reworded\n--- %s\nBatch bw3 reworded\n\nWith a body\n' "$BW1" "$BW3")" -M --text -
+	_ST_EQ "batch reword exits 0" "$RC" "0"
+	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok'
+	_ST_OUT_HAS "reports the count" 'Reworded 2 commits'
+	_ST_OUT_HAS "asserts the tree invariant" 'Trees unchanged by construction'
+	_ST_EQ "first target's message applied" "$(git log --format=%s | grep -c '^Batch bw1 reworded$')" "1"
+	_ST_EQ "second target's message applied" "$(git log --format=%s | grep -c '^Batch bw3 reworded$')" "1"
+	_ST_EQ "second target's body applied" "$(git log -1 --format=%b :/'Batch bw3 reworded' | grep -c 'With a body')" "1"
+	_ST_EQ "untouched neighbour intact" "$(git log --format=%s | grep -c '^Batch bw2$')" "1"
+	_ST_EQ "tip tree preserved (content unchanged)" "$(git rev-parse 'HEAD^{tree}')" "$BW_TREE0"
+	_ST_EQ "commit count unchanged" "$(git rev-list --count HEAD)" "$BW_COUNT0"
+	# The reflog top is the single CAS – not two, not one per commit
+	_ST_EQ "exactly one ref update" "$(git reflog show main | head -1 | grep -c 'git edit: reword 2 commits')" "1"
+	# Undo reverses the whole batch in one step
+	_ST_RUN --undo
+	_ST_EQ "undo restores the pre-batch tip" "$(git rev-parse HEAD)" "$BW_TIP0"
+
+	# Re-apply, then exercise every rejection path against a stable tip
+	_ST_RUN_IN "$(printf -- '--- %s\nBatch bw1 reworded\n' "$BW1")" -M --text -
+	local BW_AFTER=$(git rev-parse HEAD)
+	_ST_RUN_IN "$(printf -- '--- %s\nX\n--- %s\nY\n' "$(git rev-parse --short HEAD)" "$(git rev-parse --short HEAD)")" -M --text -
+	_ST_EQ "duplicate target refused" "$RC" "1"
+	_ST_OUT_HAS "names the duplicate" 'named by two records'
+	_ST_EQ "duplicate left the tip untouched" "$(git rev-parse HEAD)" "$BW_AFTER"
+	_ST_RUN_IN "$(printf -- '--- %s\n\n' "$(git rev-parse --short HEAD)")" -M --text -
+	_ST_EQ "empty message refused" "$RC" "1"
+	_ST_OUT_HAS "names the empty record" 'empty message'
+	_ST_RUN_IN "$(printf -- '--- %s\nok\n--- deadbeefdeadbeef\nno\n' "$(git rev-parse --short HEAD)")" -M --text -
+	_ST_EQ "unknown header refused" "$RC" "1"
+	_ST_EQ "unknown header left the tip untouched" "$(git rev-parse HEAD)" "$BW_AFTER"
+	# Every record already matches -> nothing to do, no ref move
+	local BW_NOW=$(git rev-parse HEAD)
+	_ST_RUN_IN "$(git log -1 --format='--- %h%n%B' HEAD)" -M --text -
+	_ST_EQ "all-no-op exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports nothing to do" 'nothing to do'
+	_ST_EQ "all-no-op moved no ref" "$(git rev-parse HEAD)" "$BW_NOW"
+	# A stale SHA in a record resolves to its rewritten identity
+	local BW_S1=$(git rev-parse HEAD)
+	_ST_RUN -M --text="staled once" "$BW_S1"
+	_ST_RUN_IN "$(printf -- '--- %s\nrecovered via stale sha\n' "${BW_S1:0:9}")" -M --text -
+	_ST_EQ "stale sha resolved and applied" "$RC" "0"
+	_ST_EQ "stale target's new message present" "$(git log --format=%s | grep -c '^recovered via stale sha$')" "1"
+	# A target whose own message carries a `--- ` line is refused – that line
+	# is the record separator, so its dump would mis-split; the single form has
+	# none to collide with.
+	printf 'Body with a separator\n\n--- probe\n' | git commit -q --allow-empty -F -
+	local BW_MARK=$(git rev-parse HEAD)
+	_ST_RUN_IN "$(printf -- '--- %s\nReworded marker body\n' "$(git rev-parse --short HEAD)")" -M --text -
+	_ST_EQ "marker-body target refused" "$RC" "1"
+	_ST_OUT_HAS "names the reserved separator" "reserves"
+	_ST_EQ "marker refusal moved no ref" "$(git rev-parse HEAD)" "$BW_MARK"
+	cd "$TMP/repo"
+
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

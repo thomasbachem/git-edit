@@ -3473,6 +3473,187 @@ GIT_REWORD () {
 	fi
 }
 
+
+# Answers whether `--text` or stdin carries `--- <commit>` records rather than one message – a
+# `--- ` line at column 0 with a token after it is the batch reword's record header, and
+# its absence leaves the ordinary single-message form
+_LOOKS_LIKE_RECORDS () {
+	print -r -- "$1" | grep -q '^--- .'
+}
+
+# Rewords many commits in one plumbing pass, reading `--- <commit>` records from `--text`
+# in place of a positional target – each record is a header then that commit's new
+# message, exactly what `git log --format='--- %h%n%B'` emits, all-or-nothing on a miss
+GIT_REWORD_BATCH () {
+	local ORIG_HEAD=$(git rev-parse HEAD)
+	local REF=$(_CURRENT_REF)
+
+	# Parse records – lines before the first header are ignored, a blank line inside a message
+	# is kept, and only the header token's trailing whitespace is trimmed, since its body may
+	# carry spaces itself, as `:/some subject` does
+	local -a REC_LINES=("${(@f)RAW_TEXT_VALUE}")
+	local -a REC_REFS=() REC_MSGS=()
+	local L cur_ref="" cur_msg="" have=0
+	for L in "${REC_LINES[@]}"; do
+		if [[ "$L" == '--- '* ]]; then
+			[ "$have" -eq 1 ] && { REC_REFS+=("$cur_ref"); REC_MSGS+=("$cur_msg"); }
+			cur_ref=$(print -r -- "${L#--- }" | sed 's/[[:space:]]*$//')
+			cur_msg=""
+			have=1
+		elif [ "$have" -eq 1 ]; then
+			if [ -z "$cur_msg" ]; then
+				cur_msg="$L"
+			else
+				cur_msg="$cur_msg"$'\n'"$L"
+			fi
+		fi
+	done
+	[ "$have" -eq 1 ] && { REC_REFS+=("$cur_ref"); REC_MSGS+=("$cur_msg"); }
+
+	if [ ${#REC_REFS[@]} -eq 0 ]; then
+		PRINT_ERR "No records on stdin – expected '--- <commit>' headers"
+		exit 1
+	fi
+
+	# Resolve, guard and de-duplicate every target before writing anything.
+	# `_GUARD_REACHABLE` maps a stale SHA to its current identity (so a caller
+	# holding SHAs from before another session's rewrite still lands) and exits
+	# on a miss; the pushed and empty/duplicate checks reject the whole batch
+	# rather than half-applying it. A record already matching its commit is
+	# dropped here, so dumping the full run and editing a few is the natural
+	# path – only what changed is rebuilt.
+	local -A SEEN MSG_MAP
+	local -a TARGETS=()
+	local i n=${#REC_REFS[@]}
+	local ref raw msg sha cur
+	for ((i = 1; i <= n; i++)); do
+		raw="${REC_REFS[i]}"
+		# Resolve to a commit object first, as the positional path does – a
+		# `:/subject` or short ref becomes a full SHA, while a stale (orphaned)
+		# one is left for `_GUARD_REACHABLE` to map by patch id or refuse. A
+		# header that resolves to nothing is refused outright rather than
+		# skipping its commit silently while the batch still reports success.
+		ref=$(git rev-parse --verify --quiet "$raw" 2>/dev/null)
+		[ -z "$ref" ] && ref="$raw"
+		_GUARD_REACHABLE "$ref"
+		sha="$_RESOLVED_SHA"
+		if ! git rev-parse --verify --quiet "${sha}^{commit}" >/dev/null 2>&1; then
+			PRINT_ERR "Record header '${raw}' did not resolve to a commit"
+			exit 1
+		fi
+		_GUARD_UNPUSHED "$sha"
+		msg=$(print -r -- "${REC_MSGS[i]}" | git stripspace)
+		if [ -z "$msg" ]; then
+			PRINT_ERR "Record for ${raw} has an empty message"
+			exit 1
+		fi
+		if [ -n "${SEEN[$sha]+x}" ]; then
+			PRINT_ERR "Commit ${sha:0:7} is named by two records"
+			exit 1
+		fi
+		SEEN[$sha]=1
+		cur=$(git log -1 --format='%B' "$sha" | git stripspace)
+		# The `--- ` line is this format's record separator, so a commit whose own message carries
+		# one cannot be represented – its dump would split mid-body and mis-attribute the
+		# remainder, so refuse it here and name the single form, which has no separator
+		if print -r -- "$cur" | grep -q '^--- '; then
+			PRINT_ERR "Commit ${sha:0:7}'s message has a '--- ' line, which the record format reserves"
+			ECHO_E "\e[0;31m  Reword it on its own instead: git edit -M ${sha:0:9}\e[0m" >&2
+			exit 1
+		fi
+		if [ "$msg" = "$cur" ]; then
+			continue
+		fi
+		MSG_MAP[$sha]="$msg"
+		TARGETS+=("$sha")
+	done
+
+	if [ ${#TARGETS[@]} -eq 0 ]; then
+		ECHO_E "${_PAD}\e[0;33mAll messages already match – nothing to do.\e[0m"
+		EMIT_STATUS "$ORIG_HEAD" "$REF" false
+		exit 0
+	fi
+
+	# Walk from just below the oldest target up to `HEAD`, rebuilding a commit where it is a
+	# target or has a rewritten parent – carrying the old->new map across the walk is what
+	# lets a merge topology rebuild, and the tree is always reused verbatim
+	local OLDEST=$(git rev-list --reverse --topo-order HEAD 2>/dev/null \
+		| grep -Fx -f <(printf '%s\n' "${TARGETS[@]}") | head -1)
+	local WALK
+	if git rev-parse -q --verify "${OLDEST}^" >/dev/null 2>&1; then
+		WALK=$(git rev-list --reverse --topo-order "${OLDEST}^..HEAD")
+	else
+		WALK=$(git rev-list --reverse --topo-order HEAD)
+	fi
+
+	local -A REWRITTEN
+	local DESC P D_TREE D_MSG D_NEW touched
+	local -a PARENTS_ARGS
+	for DESC in ${(f)WALK}; do
+		PARENTS_ARGS=()
+		touched=false
+		for P in $(git log -1 --format='%P' "$DESC"); do
+			if [ -n "${REWRITTEN[$P]}" ]; then
+				PARENTS_ARGS+=(-p "${REWRITTEN[$P]}")
+				touched=true
+			else
+				PARENTS_ARGS+=(-p "$P")
+			fi
+		done
+		if [ "$touched" = false ] && [ -z "${MSG_MAP[$DESC]+x}" ]; then
+			continue
+		fi
+		D_TREE=$(git rev-parse "$DESC^{tree}")
+		if [ -n "${MSG_MAP[$DESC]+x}" ]; then
+			D_MSG="${MSG_MAP[$DESC]}"
+		else
+			D_MSG=$(git log -1 --format='%B' "$DESC")
+		fi
+		D_NEW=$(
+			GIT_AUTHOR_NAME="$(git log -1 --format='%an' "$DESC")" \
+			GIT_AUTHOR_EMAIL="$(git log -1 --format='%ae' "$DESC")" \
+			GIT_AUTHOR_DATE="$(git log -1 --format='%aI' "$DESC")" \
+			git commit-tree "$D_TREE" "${PARENTS_ARGS[@]}" -m "$D_MSG"
+		) || ABORT
+		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
+		REWRITTEN[$DESC]=$D_NEW
+		_RECORD_REWRITE "$DESC" "$D_NEW"
+	done
+
+	# Every target must have been reached by the walk – the range is seeded from the
+	# topologically-earliest target, so this holds, but assert it before the CAS rather than
+	# let an out-of-range target skip silently while the batch reports success
+	local T
+	for T in "${TARGETS[@]}"; do
+		if [ -z "${REWRITTEN[$T]+x}" ]; then
+			PRINT_ERR "Internal: target ${T:0:7} fell outside the rebuild range – no ref moved"
+			exit 1
+		fi
+	done
+
+	local NEW_HEAD="${REWRITTEN[$ORIG_HEAD]}"
+	if [ -z "$NEW_HEAD" ]; then
+		PRINT_ERR "Internal: HEAD was not rebuilt"
+		exit 1
+	fi
+
+	# Single atomic compare-and-swap – refuse if the branch moved meanwhile
+	# (a concurrent commit or rewrite), exactly as the single reword does
+	local CMD="git update-ref -m 'git edit: reword ${#TARGETS[@]} commits' $REF $NEW_HEAD $ORIG_HEAD"
+	PRINT_CMD "$CMD"
+	if ! eval "$CMD" 2>/dev/null; then
+		PRINT_ERR "Ref '$REF' moved during batch reword – refusing to overwrite"
+		PRINT_TEXT "Reworded history is at %s (not applied)." 33 "$NEW_HEAD"
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reword ${#TARGETS[@]} commits"
+	PRINT_TEXT "%s – only messages were rewritten." 32 "Trees unchanged by construction ✓"
+	PRINT_TEXT "Reworded %s commits:" 32 "${#TARGETS[@]}"
+	for sha in "${TARGETS[@]}"; do
+		_PRINT_COMMIT_LINE "${REWRITTEN[$sha]}" '  %h %s'
+	done
+}
+
 # Squash a contiguous range of commits into one via plumbing only. Like
 # GIT_REWORD: no checkout, no stash, no rebase, single atomic ref update.
 # Refuses non-contiguous selections and ranges containing merge commits
@@ -3832,10 +4013,13 @@ if [ ${#OPT_TEXT} -gt 0 ]; then
 	if [ "$TEXT_VALUE" = "-" ]; then
 		TEXT_VALUE=$(cat)
 	fi
-	# Normalize whitespace the way the editor flow does – but not its comment
-	# stripping, which exists to drop the instructions git seeds a template with.
-	# Nothing seeds this one, so a `#` line here is the caller's own content:
-	# an issue reference, a Markdown heading, a shell snippet
+	# Keep the un-normalized text so a records batch can split on its own
+	# `--- ` headers – the single-message stripspace below would still leave those
+	# intact, but records parse from the raw form for clarity
+	RAW_TEXT_VALUE=$TEXT_VALUE
+	# Normalize whitespace the way the editor flow does, but not its comment stripping, which
+	# exists to drop the instructions git seeds a template with – nothing seeds this one, so
+	# a `#` line here is the caller's own content
 	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace)
 	if [ -z "$TEXT_VALUE" ]; then
 		PRINT_ERR "--text produced an empty message after stripping"
@@ -4279,16 +4463,24 @@ fi
 COMMITS=()
 
 if [ $# -eq 0 ]; then
-	# A bare `git edit` is a request for help, and the usage block already makes
-	# the required `<commit>` obvious. But with a mode flag given, the caller
-	# meant to do something and only left the target off – name that, rather
-	# than making them find it in a screen of usage
+	# Records-mode reword – `--- <commit>` messages on stdin or `--text`, targets named inline
+	# rather than positionally, detected before the missing-target error since this is the
+	# one action carrying its commits in the text
+	if [ ${#OPT_REWORD} -gt 0 ] && _LOOKS_LIKE_RECORDS "$RAW_TEXT_VALUE"; then
+		PRINT_ACTION "Rewording commits from records..."
+		GIT_REWORD_BATCH
+		PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
+		exit 0
+	fi
+
+	# A bare `git edit` is a request for help, and the usage block already makes the required
+	# `<commit>` obvious – but with a mode flag given the caller meant to do something and
+	# only left the target off, so name that rather than printing a screen of usage
 	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o -n "$TEXT_VALUE" ]; then
 		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" HEAD')"
-		# The retry for this is always a bare `HEAD`, so say what that is right
-		# now: a parallel session's commit landing in the gap is exactly how a
-		# reword reaches the wrong one, and the CAS cannot catch it – that guard
-		# covers the ref moving mid-run, not the wrong commit being named
+		# The retry for this is always a bare `HEAD`, so say what that is right now – a parallel
+		# session's commit landing in the gap is exactly how a reword reaches the wrong one, and
+		# the CAS covers the ref moving mid-run, not the wrong commit being named
 		local HEAD_LINE=$(git log -1 --format='%h %s' 2>/dev/null)
 		if [ -n "$HEAD_LINE" ]; then
 			ECHO_E "\e[0;31m  HEAD is currently $HEAD_LINE\e[0m" >&2
