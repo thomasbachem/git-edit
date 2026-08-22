@@ -3284,14 +3284,18 @@ _READ_MESSAGE_FROM_EDITOR () {
 # `--topo-order` guards the parents-before-children walk against clock skew.
 _REBUILD_DESCENDANTS () {
 	local FROM=$1
-	local DESC P D_TREE D_MSG D_AN D_AE D_AD D_NEW D_TOUCHED
-	local D_PARENTS_ARGS
+	local DESC P D_NEW D_TOUCHED
+	local -a D_PARENTS_ARGS NF
 	local -A REWRITTEN
 	REWRITTEN[$(git rev-parse "$PREV_OLD")]=$PREV_NEW
 	for DESC in $(git rev-list --reverse --topo-order "$FROM..HEAD"); do
+		# One git-log per commit packs tree, parents, author and message, NUL-separated with the
+		# message last so `$()` strips its trailing newlines as a bare `%B` capture would, and
+		# `(@0)` keeps an empty parents field so a root commit does not shift the author
+		NF=("${(@0)$(git log -1 --format='%T%x00%P%x00%an%x00%ae%x00%aI%x00%B' "$DESC")}")
 		D_PARENTS_ARGS=()
 		D_TOUCHED=false
-		for P in $(git log -1 --format='%P' "$DESC"); do
+		for P in ${=NF[2]}; do
 			if [ -n "${REWRITTEN[$P]}" ]; then
 				D_PARENTS_ARGS+=(-p "${REWRITTEN[$P]}")
 				D_TOUCHED=true
@@ -3303,18 +3307,12 @@ _REBUILD_DESCENDANTS () {
 			continue
 		fi
 
-		D_TREE=$(git rev-parse "$DESC^{tree}")
-		D_MSG=$(git log -1 --format='%B' "$DESC")
-		D_AN=$(git log -1 --format='%an' "$DESC")
-		D_AE=$(git log -1 --format='%ae' "$DESC")
-		D_AD=$(git log -1 --format='%aI' "$DESC")
-
 		D_NEW=$(
-			GIT_AUTHOR_NAME="$D_AN" GIT_AUTHOR_EMAIL="$D_AE" GIT_AUTHOR_DATE="$D_AD" \
-			git commit-tree "$D_TREE" "${D_PARENTS_ARGS[@]}" -m "$D_MSG"
+			GIT_AUTHOR_NAME="${NF[3]}" GIT_AUTHOR_EMAIL="${NF[4]}" GIT_AUTHOR_DATE="${NF[5]}" \
+			git commit-tree "${NF[1]}" "${D_PARENTS_ARGS[@]}" -m "${NF[6]}"
 		) || ABORT
 
-		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
+		PRINT_CMD "git commit-tree ${NF[1]:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
 
 		REWRITTEN[$DESC]=$D_NEW
 		_RECORD_REWRITE "$DESC" "$D_NEW"
@@ -3587,12 +3585,15 @@ GIT_REWORD_BATCH () {
 	fi
 
 	local -A REWRITTEN
-	local DESC P D_TREE D_MSG D_NEW touched
-	local -a PARENTS_ARGS
+	local DESC P D_MSG D_NEW touched
+	local -a PARENTS_ARGS NF
 	for DESC in ${(f)WALK}; do
+		# One git-log per commit (see _REBUILD_DESCENDANTS): tree, parents,
+		# author and body in a single NUL-separated capture, `(@0)`-split
+		NF=("${(@0)$(git log -1 --format='%T%x00%P%x00%an%x00%ae%x00%aI%x00%B' "$DESC")}")
 		PARENTS_ARGS=()
 		touched=false
-		for P in $(git log -1 --format='%P' "$DESC"); do
+		for P in ${=NF[2]}; do
 			if [ -n "${REWRITTEN[$P]}" ]; then
 				PARENTS_ARGS+=(-p "${REWRITTEN[$P]}")
 				touched=true
@@ -3603,19 +3604,16 @@ GIT_REWORD_BATCH () {
 		if [ "$touched" = false ] && [ -z "${MSG_MAP[$DESC]+x}" ]; then
 			continue
 		fi
-		D_TREE=$(git rev-parse "$DESC^{tree}")
 		if [ -n "${MSG_MAP[$DESC]+x}" ]; then
 			D_MSG="${MSG_MAP[$DESC]}"
 		else
-			D_MSG=$(git log -1 --format='%B' "$DESC")
+			D_MSG="${NF[6]}"
 		fi
 		D_NEW=$(
-			GIT_AUTHOR_NAME="$(git log -1 --format='%an' "$DESC")" \
-			GIT_AUTHOR_EMAIL="$(git log -1 --format='%ae' "$DESC")" \
-			GIT_AUTHOR_DATE="$(git log -1 --format='%aI' "$DESC")" \
-			git commit-tree "$D_TREE" "${PARENTS_ARGS[@]}" -m "$D_MSG"
+			GIT_AUTHOR_NAME="${NF[3]}" GIT_AUTHOR_EMAIL="${NF[4]}" GIT_AUTHOR_DATE="${NF[5]}" \
+			git commit-tree "${NF[1]}" "${PARENTS_ARGS[@]}" -m "$D_MSG"
 		) || ABORT
-		PRINT_CMD "git commit-tree ${D_TREE:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
+		PRINT_CMD "git commit-tree ${NF[1]:0:7} ... -> ${D_NEW:0:7}  # rebuilt ${DESC:0:7}"
 		REWRITTEN[$DESC]=$D_NEW
 		_RECORD_REWRITE "$DESC" "$D_NEW"
 	done
