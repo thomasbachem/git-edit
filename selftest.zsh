@@ -2146,15 +2146,21 @@ GIT_SELFTEST () {
 	_ST_RUN_IN "$(printf -- '--- %s\nrecovered via stale sha\n' "${BW_S1:0:9}")" -M --text -
 	_ST_EQ "stale sha resolved and applied" "$RC" "0"
 	_ST_EQ "stale target's new message present" "$(git log --format=%s | grep -c '^recovered via stale sha$')" "1"
-	# A target whose own message carries a `--- ` line is refused – that line
-	# is the record separator, so its dump would mis-split; the single form has
-	# none to collide with.
+	# A target whose own message carries a `--- ` line is refused, that line being the record
+	# separator, so its dump would mis-split – the single form has none to collide with
 	printf 'Body with a separator\n\n--- probe\n' | git commit -q --allow-empty -F -
 	local BW_MARK=$(git rev-parse HEAD)
 	_ST_RUN_IN "$(printf -- '--- %s\nReworded marker body\n' "$(git rev-parse --short HEAD)")" -M --text -
 	_ST_EQ "marker-body target refused" "$RC" "1"
 	_ST_OUT_HAS "names the reserved separator" "reserves"
 	_ST_EQ "marker refusal moved no ref" "$(git rev-parse HEAD)" "$BW_MARK"
+	# A pushed target is refused via the bulk unpushed-set check, which falls back to
+	# `_GUARD_UNPUSHED` for the message, and `origin/main` is pushed history
+	local BW_TIP=$(git rev-parse HEAD)
+	_ST_RUN_IN "$(printf -- '--- %s\nRewrite pushed history\n' "$(git rev-parse origin/main)")" -M --text -
+	_ST_EQ "pushed target refused" "$RC" "1"
+	_ST_OUT_HAS "names it as pushed" "already pushed"
+	_ST_EQ "pushed refusal moved no ref" "$(git rev-parse HEAD)" "$BW_TIP"
 	cd "$TMP/repo"
 
 

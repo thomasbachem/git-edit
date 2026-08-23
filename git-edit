@@ -3513,24 +3513,29 @@ GIT_REWORD_BATCH () {
 		exit 1
 	fi
 
-	# Resolve, guard and de-duplicate every target before writing anything.
-	# `_GUARD_REACHABLE` maps a stale SHA to its current identity (so a caller
-	# holding SHAs from before another session's rewrite still lands) and exits
-	# on a miss; the pushed and empty/duplicate checks reject the whole batch
-	# rather than half-applying it. A record already matching its commit is
-	# dropped here, so dumping the full run and editing a few is the natural
-	# path – only what changed is rebuilt.
+	# Resolve, guard and de-duplicate every target before writing anything – `_GUARD_REACHABLE`
+	# maps a stale SHA to its current identity and exits on a miss, while the pushed and empty
+	# checks reject the whole batch, and a record matching its commit is dropped unrebuilt
 	local -A SEEN MSG_MAP
 	local -a TARGETS=()
 	local i n=${#REC_REFS[@]}
 	local ref raw msg sha cur
+	# Resolve pushed-ness once for the whole batch – commits reachable from `HEAD` but not from
+	# any remote-tracking ref are exactly the unpushed run, so membership answers each target
+	# locally, and a target that misses the set falls back to `_GUARD_UNPUSHED`
+	local -A UNPUSHED
+	local _check_pushed=false _u
+	if [ ${#OPT_ALLOW_PUSHED} -eq 0 ] && [ -n "$(git for-each-ref --count=1 refs/remotes 2>/dev/null)" ]; then
+		_check_pushed=true
+		for _u in ${(f)"$(git rev-list HEAD --not --remotes 2>/dev/null)"}; do
+			UNPUSHED[$_u]=1
+		done
+	fi
 	for ((i = 1; i <= n; i++)); do
 		raw="${REC_REFS[i]}"
-		# Resolve to a commit object first, as the positional path does – a
-		# `:/subject` or short ref becomes a full SHA, while a stale (orphaned)
-		# one is left for `_GUARD_REACHABLE` to map by patch id or refuse. A
-		# header that resolves to nothing is refused outright rather than
-		# skipping its commit silently while the batch still reports success.
+		# Resolve to a commit object first, as the positional path does – a `:/subject` or short ref
+		# becomes a full SHA, while a stale one is left for `_GUARD_REACHABLE` to map or refuse
+		# A header resolving to nothing is refused outright rather than skipping its commit
 		ref=$(git rev-parse --verify --quiet "$raw" 2>/dev/null)
 		[ -z "$ref" ] && ref="$raw"
 		_GUARD_REACHABLE "$ref"
@@ -3539,7 +3544,9 @@ GIT_REWORD_BATCH () {
 			PRINT_ERR "Record header '${raw}' did not resolve to a commit"
 			exit 1
 		fi
-		_GUARD_UNPUSHED "$sha"
+		if [ "$_check_pushed" = true ] && [ -z "${UNPUSHED[$sha]+x}" ]; then
+			_GUARD_UNPUSHED "$sha"
+		fi
 		msg=$(print -r -- "${REC_MSGS[i]}" | git stripspace)
 		if [ -z "$msg" ]; then
 			PRINT_ERR "Record for ${raw} has an empty message"
