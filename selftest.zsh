@@ -1056,6 +1056,7 @@ GIT_SELFTEST () {
 	printf 'rr line C\n' > rr.txt && git add rr.txt && git commit -qm "RR top"
 	_ST_RUN -d -y "$RR_MID"
 	_ST_EQ "the drop conflicts as set up" "$RC" "2"
+	_ST_OUT_LACKS "a marker conflict gets no marker-free flag" 'No conflict markers'
 	local RR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 	if [ -n "$RR_WT" ] && [ -d "$RR_WT" ]; then
 		printf 'rr line C\n' > "$RR_WT/rr.txt"
@@ -1188,6 +1189,7 @@ GIT_SELFTEST () {
 	git rm -q md2.txt && git commit -qm "MD2 deletes it"
 	_ST_RUN -d -y "$MD2_MID"
 	_ST_EQ "modify/delete pauses" "$RC" "2"
+	_ST_OUT_HAS "and the marker-free state is flagged" 'No conflict markers in md2.txt'
 	_ST_RUN --abort
 	_ST_CHECK "its deleting commit survives" sh -c "git log --format=%s | grep -qx 'MD2 deletes it'"
 	_ST_CHECK "and the file is still deleted at the tip" \
@@ -1202,6 +1204,7 @@ GIT_SELFTEST () {
 		sh -c "git diff --numstat HEAD~1 HEAD -- bin.dat | grep -q '^-'"
 	_ST_RUN -d -y "$BIN_MID"
 	_ST_EQ "binary conflict pauses" "$RC" "2"
+	_ST_OUT_HAS "the binary marker-free state is flagged too" 'No conflict markers in bin.dat'
 	_ST_RUN --abort
 	_ST_CHECK "no commit was dropped" sh -c "git log --format=%s | grep -qx 'BIN top'"
 	git reset -q --hard

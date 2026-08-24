@@ -438,9 +438,18 @@ _PRINT_CONFLICT_DETAIL () {
 	if [ -n "$UNMERGED" ]; then
 		PRINT_TEXT "Conflicted files:" 33 >&2
 		local FILE
+		local -a MARKERLESS
 		while IFS= read -r FILE; do
 			ECHO_E "\e[0;33m  - $FILE\e[0m" >&2
+			# A marker grep is how drivers decide "resolved" – but four states
+			# arrive marker-free, and only one of them is a finished resolution
+			if ! grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$WT/$FILE" 2>/dev/null; then
+				MARKERLESS+=("$FILE")
+			fi
 		done <<< "$UNMERGED"
+		if [ ${#MARKERLESS[@]} -gt 0 ]; then
+			PRINT_TEXT "No conflict markers in %s – an add/add, a modify/delete, a rerere prefill, or a resolution left unstaged all read as finished. Validate the content, then stage it to resolve." 33 "${(j:, :)MARKERLESS}" >&2
+		fi
 	fi
 
 	# Currently-failing rebase step (last line of the done log)

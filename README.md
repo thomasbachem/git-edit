@@ -496,6 +496,8 @@ The sections above assume someone reading the output; this is the contract for a
 - **Unmerged, no markers** — an add/add or modify/delete places one side's file whole (or none at all), with no textual merge to mark. The file reads as finished and is not.
 - **Pre-filled by `rerere`** — a recorded resolution replayed into the file, which merely needs staging. Validate it like your own resolution first: a wrong resolution, recorded once, replays wrong every time after, and nothing flags it.
 
+(The pause output flags such files itself — a "No conflict markers in …" line naming them.)
+
 **Validate before staging.** "No markers left" is not validation — `--continue` refuses staged `<<<<<<<` blocks on its own, but semantically wrong content passes every marker check. Parse the file, run the test that covers it, compare row or line counts against both parents.
 
 The loop those rules produce:
