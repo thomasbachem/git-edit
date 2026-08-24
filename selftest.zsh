@@ -2267,40 +2267,88 @@ GIT_SELFTEST () {
 	for RR58_E in "$RR58_DIR"/*(N/); do rm -rf "$RR58_E"; done
 	git reset -q --hard
 
-	# --- 59. a fold refuses a path its target predates ---
-	# Folding a staged path into a commit older than the path's introduction
-	# replays the introducing commit as an add/add conflict – refused up
-	# front with the introducer named, --allow-new-path opens it through,
-	# and a path new to the whole span backfills without any override
-	ECHO_E "\e[1;96m[59] --amend-into refuses a path the target predates\e[0m"
+	# --- 60. --verify gates the CAS on the caller's own check ---
+	# A rewrite can land semantically wrong yet green – a bad resolution, a
+	# fold that breaks a later commit – so --verify=<cmd> / edit.verifyCmd run
+	# the caller's check over the built result before the CAS applies it:
+	# primary commit + tip by default, every rebuilt commit with --verify-span.
+	# A failure pauses with the state kept, so '--no-verify --continue'
+	# applies anyway and '--abort' cancels with nothing consumed.
+	ECHO_E "\e[1;96m[60] --verify gates the CAS, pausing on failure\e[0m"
 	git reset -q --hard
-	printf 'np one\n' > np1.txt && git add np1.txt && git commit -qm "NP base"
-	local NP_BASE=$(git rev-parse HEAD)
-	printf 'np two\n' > np2.txt && git add np2.txt && git commit -qm "NP adds second"
-	local NP_INTRO=$(git rev-parse HEAD)
-	printf 'np one more\n' >> np1.txt && git add np1.txt && git commit -qm "NP top"
-	local NP_TOP=$(git rev-parse HEAD)
-	printf 'np two edited\n' > np2.txt && git add np2.txt
-	_ST_RUN --amend-into="$NP_BASE" -- np2.txt
-	_ST_EQ "the fold is refused" "$RC" "1"
-	_ST_OUT_HAS "the refusal names the introducing commit" "arrives in ${NP_INTRO:0:7}"
-	_ST_OUT_HAS "the refusal names the override" 'allow-new-path'
-	_ST_EQ "history is untouched" "$(git rev-parse HEAD)" "$NP_TOP"
-	_ST_CHECK "the staged change is untouched" sh -c "! git diff --cached --quiet -- np2.txt"
-	# The override opens the path through – straight into the predicted
-	# add/add pause on the introducing commit's replay
-	_ST_RUN --allow-new-path --amend-into="$NP_BASE" -- np2.txt
-	_ST_EQ "the override reaches the replay conflict" "$RC" "2"
+	printf '#!/bin/sh\n! grep -q FORBIDDEN vf.txt\n' > "$TMP/verify.sh" && chmod +x "$TMP/verify.sh"
+	git config edit.verifyCmd "$TMP/verify.sh"
+	printf 'vf one\n' > vf.txt && git add vf.txt && git commit -qm "VF base"
+	local VF_BASE=$(git rev-parse HEAD)
+	printf 'vo\n' > vo.txt && git add vo.txt && git commit -qm "VF top"
+	local VF_TOP=$(git rev-parse HEAD)
+	# A clean fold passes at the amended commit and the tip
+	printf 'vf one\nvf two\n' > vf.txt && git add vf.txt
+	_ST_RUN --amend-into="$VF_BASE" -- vf.txt
+	_ST_EQ "a clean fold passes verification" "$RC" "0"
+	_ST_OUT_HAS "both tiers ran" 'Verified 2 commit(s)'
+	# A fold that lands failing content pauses before the CAS
+	local VF_TIP=$(git rev-parse HEAD)
+	printf 'vf one\nvf two\nFORBIDDEN\n' > vf.txt && git add vf.txt
+	_ST_RUN --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "a failing fold pauses" "$RC" "2"
+	_ST_OUT_HAS "the pause is a verify pause" 'git-edit: paused – verify failed'
+	_ST_OUT_HAS "the failing commit is named" 'Verification failed at'
+	_ST_EQ "the branch has not moved" "$(git rev-parse HEAD)" "$VF_TIP"
+	_ST_CHECK "the staged change is untouched" sh -c "! git diff --cached --quiet -- vf.txt"
+	# Plain --continue re-verifies and pauses again
+	_ST_RUN --continue
+	_ST_EQ "a plain continue re-verifies and pauses" "$RC" "2"
+	# --abort cancels the paused verdict with nothing consumed
 	_ST_RUN --abort
-	_ST_EQ "the aborted override rolls back clean" "$RC" "0"
-	git reset -q --hard
-	# A path new to the whole span backfills cleanly – no descendant re-adds
-	# it, so no replay can conflict on it
-	printf 'np three\n' > np3.txt && git add np3.txt
-	_ST_RUN --amend-into="$NP_BASE" -- np3.txt
-	_ST_EQ "a span-new path folds without the override" "$RC" "0"
-	_ST_OUT_HAS "and is noted as new to the target" 'does not exist at'
-	_ST_CHECK "the new file landed at the rewritten target" sh -c "git cat-file -e HEAD~2:np3.txt"
+	_ST_EQ "the verify pause aborts clean" "$RC" "0"
+	_ST_EQ "the abort left the branch alone" "$(git rev-parse HEAD)" "$VF_TIP"
+	_ST_CHECK "and the staged change is still staged" sh -c "! git diff --cached --quiet -- vf.txt"
+	# The same failing fold pauses again, and --no-verify --continue applies it
+	_ST_RUN --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "the retried fold pauses again" "$RC" "2"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "the override applies the fold" "$RC" "0"
+	_ST_EQ "the whole chain survived" "$(git rev-list --count HEAD)" "$(git rev-list --count $VF_TIP)"
+	_ST_CHECK "the overridden content landed at the base" \
+		sh -c "git show \"\$(git rev-parse ':/VF base'):vf.txt\" | grep -q FORBIDDEN"
+	# --no-verify up front skips the gate entirely
+	printf 'vf one\nvf two\nFORBIDDEN\nmore FORBIDDEN\n' > vf.txt && git add vf.txt
+	_ST_RUN --no-verify --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "--no-verify skips the gate up front" "$RC" "0"
+	_ST_OUT_LACKS "and the check never ran" 'Verified'
+	# The flag outranks the config
+	git config edit.verifyCmd "false"
+	printf 'vf flag\n' >> vf.txt && git add vf.txt
+	_ST_RUN --verify=true --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "--verify=<cmd> overrides edit.verifyCmd" "$RC" "0"
+	git config edit.verifyCmd "$TMP/verify.sh"
+	# The span tier runs the command once per rebuilt commit
+	printf '#!/bin/sh\necho x >> %s/vcount\n' "$TMP" > "$TMP/count.sh" && chmod +x "$TMP/count.sh"
+	rm -f "$TMP/vcount"
+	printf 'vf span\n' >> vf.txt && git add vf.txt
+	_ST_RUN --verify="$TMP/count.sh" --verify-span --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "the span fold applies" "$RC" "0"
+	_ST_EQ "every rebuilt commit was verified" "$(wc -l < "$TMP/vcount" | tr -d ' ')" "$(git rev-list --count "$(git rev-parse ':/VF base')^..HEAD")"
+	# --verify-span without any command is refused loudly
+	printf 'vf refuse\n' >> vf.txt && git add vf.txt
+	git config --unset edit.verifyCmd
+	_ST_RUN --verify-span --amend-into="$(git rev-parse HEAD)" -- vf.txt
+	_ST_EQ "--verify-span without a command refuses" "$RC" "1"
+	git reset -q -- vf.txt && git checkout -q -- vf.txt
+	# The other rebase modes run the same gate – a reorder verifies its tip
+	# (a pass-through command: vf.txt legitimately carries "FORBIDDEN" by now)
+	git config edit.verifyCmd "true"
+	printf 'ra\n' > ra.txt && git add ra.txt && git commit -qm "VR one"
+	printf 'rb\n' > rb.txt && git add rb.txt && git commit -qm "VR two"
+	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
+	_ST_EQ "a reorder passes through verification" "$RC" "0"
+	_ST_OUT_HAS "and verified its result" 'Verified 1 commit(s)'
+	# Plumbing modes have nothing to verify – a reword must not run the check
+	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
+	_ST_EQ "a reword still completes" "$RC" "0"
+	_ST_OUT_LACKS "without running verification" 'Verified'
+	git config --unset edit.verifyCmd
 	git reset -q --hard
 
 

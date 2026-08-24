@@ -195,6 +195,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
 	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
+	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
+	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip\e[0m"
+	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
@@ -408,6 +411,15 @@ EMIT_CONFLICT () {
 EMIT_PAUSED () {
 	# args: <operation> <sha> <worktree-path>
 	echo "git-edit: paused – $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
+	_STATUS_EMITTED=true
+}
+
+# The pause a completed rewrite takes when its verification fails – the result
+# is built but not applied, and the state stays, so the resolution work
+# survives the verdict whichever way the caller decides
+EMIT_VERIFY_PAUSED () {
+	# args: <failing-sha> <worktree-path>
+	echo "git-edit: paused – verify failed at ${1:0:7} in $2; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -1493,19 +1505,43 @@ GIT_AMEND_INTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	# A tip tree identical to the pre-op tip means nothing folded: the target
-	# already carried every staged hunk's content (e.g. a staged revert of a
-	# later commit's change), so the fixup dissolved and each pick replayed
-	# itself. Landing that would report a fold that never happened
+	# A tip tree identical to the pre-op tip means nothing folded – the target already carried
+	# every staged hunk, a staged revert of a later change say, so the fixup dissolved and
+	# each pick replayed itself, and landing it would report a fold that never happened
 	if [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$ORIG_HEAD^{tree}")" ]; then
 		PRINT_ERR "The fold left history unchanged – ${TARGET_FULL:0:7} already carries the staged content"
 		PRINT_TEXT "Nothing was applied; your staged changes are untouched." 33
 		exit 1
 	fi
 
-	# Step 4: atomic CAS-update of branch ref, guarded on the pre-op tip. If
-	# the branch moved during autosquash (parallel commit), refuse – nothing
-	# was consumed, so the staged changes are still intact for a retry.
+	# Verification gate – the fold is built but not applied, so a failure pauses with
+	# everything in place and the resolution work survives
+	local VERIFY_PRIMARY
+	if [ "$REBASE_BASE" = "--root" ]; then
+		VERIFY_PRIMARY=$(git rev-list --reverse "$NEW_HEAD" 2>/dev/null | head -1)
+	else
+		VERIFY_PRIMARY=$(git rev-list --reverse "$REBASE_BASE..$NEW_HEAD" 2>/dev/null | head -1)
+	fi
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$VERIFY_PRIMARY"; then
+		_SAVE_STATE \
+			"operation=amend-into" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$TARGET_FULL" \
+			"depth=$DEPTH" \
+			"rebasebase=$REBASE_BASE" \
+			"stagedtree=$STAGED_TREE" \
+			"maindir=$MAIN_DIR" \
+			"files=${(pj:\t:)STAGED_PATHS}"\
+			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		exit 2
+	fi
+
+	# Step 4 – atomic CAS-update of the branch ref, guarded on the pre-op tip, refusing where
+	# the branch moved during autosquash, since nothing was consumed and the staging stands
 	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
@@ -2181,6 +2217,18 @@ SEQEOF
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+		_SAVE_STATE \
+			"operation=reorder" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$OLDEST"
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		exit 2
+	fi
+
 	# Atomic CAS-update, guarded on the pre-op tip
 	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
@@ -2407,6 +2455,23 @@ GIT_ONTO () {
 	fi
 
 	local NEW_HEAD=$(git rev-parse HEAD)
+
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+		_SAVE_STATE \
+			"operation=onto" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=$UPSTREAM_FULL" \
+			"upstream=$ONTO_UPSTREAM" \
+			"span=${#SPAN[@]}" \
+			"fork=$FORK" \
+			"maindir=$MAIN_DIR"
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		exit 2
+	fi
+
 	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
@@ -2611,6 +2676,13 @@ _CONTINUE_ONTO () {
 	fi
 
 	local NEW_HEAD=$(git rev-parse HEAD)
+
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		exit 2
+	fi
+
 	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
@@ -2685,6 +2757,12 @@ _CONTINUE_REORDER () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		exit 2
+	fi
+
 	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
@@ -2754,6 +2832,12 @@ _CONTINUE_REBASE () {
 	fi
 
 	local NEW_HEAD=$(git rev-parse HEAD)
+
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		exit 2
+	fi
 
 	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
@@ -2907,6 +2991,12 @@ _CONTINUE_EDIT () {
 		_EDIT_START_REPLAY
 		NEW_HEAD=$(git rev-parse HEAD)
 		BASE=$STATE_REPLAY_TIP
+	fi
+
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$STATE_AMENDED"; then
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		exit 2
 	fi
 
 	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $BASE"
@@ -3143,20 +3233,86 @@ _GUARD_RESOLUTION_CLEAN () {
 	fi
 }
 
-# `--continue`/`--abort` are often run from inside the operation's own
-# worktree, where HEAD is a detached commit rather than the branch – so the
-# trailer's "before" comes from the branch the operation will actually move,
-# not from wherever the script happened to start. A no-op from the main
-# checkout, where the two already agree.
+# Runs the caller's verification over what a rewrite built, before the CAS
+# applies it – the gate for a result that landed semantically wrong yet green,
+# since "ok" says the branch moved, not that the content works. The command
+# comes from --verify=<cmd> (this run) or `edit.verifyCmd` (standing);
+# --no-verify skips both. By default it runs at the primary commit the mode
+# authored (where one is known) and at the new tip; --verify-span runs it at
+# every rebuilt commit instead. Each run happens in the operation's isolated
+# worktree checked out at that commit – gitignored links from
+# `edit.worktreeLink` are already in place – with `GIT_EDIT_VERIFY_COMMIT`
+# naming the commit under test. Returns non-zero on the first failure, leaving
+# the worktree at the failing commit; callers pause the operation with state
+# kept, so '--continue' re-verifies, '--no-verify --continue' applies anyway,
+# and '--abort' cancels with nothing consumed.
+_VERIFY_REWRITE () {
+	# args: <worktree> <new_head> <orig_head> [<primary-commit>]
+	local WT=$1
+	local NEW_HEAD=$2
+	local ORIG_HEAD=$3
+	local PRIMARY=$4
+	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
+	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 0
+	local VERIFY_CMD=$VERIFY_VALUE
+	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	if [ -z "$VERIFY_CMD" ]; then
+		if [ ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+			PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
+			exit 1
+		fi
+		return 0
+	fi
+	local -a COMMITS
+	if [ ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+		COMMITS=("${(@f)$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)}")
+	else
+		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
+		COMMITS+=("$NEW_HEAD")
+	fi
+	[ ${#COMMITS[@]} -eq 0 ] && return 0
+	PRINT_CMD "$VERIFY_CMD  # verify ${#COMMITS[@]} commit(s)" 90
+	local C
+	local OUT
+	for C in "${COMMITS[@]}"; do
+		if ! git -C "$WT" checkout -qf --detach "$C" 2>/dev/null; then
+			PRINT_ERR "Cannot check out ${C:0:7} for verification"
+			_VERIFY_FAILED=$C
+			return 1
+		fi
+		# The subshell contains both the cd and the env naming the commit
+		if ! OUT=$(cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$C eval "$VERIFY_CMD" </dev/null 2>&1); then
+			# Back to the result tip before anything else – every resume path
+			# reads the worktree's HEAD as the result to apply, so a worktree
+			# left at the failing commit would make '--no-verify --continue'
+			# land that commit as the new tip, dropping everything above it
+			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
+			PRINT_ERR "Verification failed at ${C:0:7} – nothing was applied"
+			_PRINT_COMMIT_LINE "$C" '  failing: %h %s'
+			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
+			PRINT_TEXT "Command: %s" 33 "$VERIFY_CMD"
+			PRINT_TEXT "Inspect the failing state: %s" 33 "git -C $WT checkout ${C:0:7}"
+			_VERIFY_FAILED=$C
+			return 1
+		fi
+	done
+	# End at the tip, so the worktree a later step or reader sees is the result
+	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
+	PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "${#COMMITS[@]}" "$VERIFY_CMD"
+	return 0
+}
+
+# `--continue` and `--abort` often run from inside the operation's own worktree, where
+# `HEAD` is a detached commit rather than the branch – so the trailer's "before" comes
+# from the branch the operation will move, and it is a no-op from the main checkout
 _REANCHOR_INITIAL_HEAD () {
 	local TIP
 	TIP=$(git rev-parse "${STATE_BRANCH:-HEAD}" 2>/dev/null)
 	[ -n "$TIP" ] && SCRIPT_INITIAL_HEAD=$TIP
 }
 
-# Resume an in-flight --amend-into after the user/agent has resolved the
-# conflicts. The agent should have edited the files in $STATE_WORKTREE and
-# staged them (e.g. `git -C <worktree> add <files>`) before calling this.
+# Resumes an in-flight `--amend-into` once the conflicts are resolved – the caller edits
+# the files in `$STATE_WORKTREE` and stages them before calling this
 _CONTINUE_AMEND_INTO () {
 	# The reword happens before the replay starts, so the commits being
 	# resolved already carry the message – accepting one here would silently
@@ -3213,8 +3369,20 @@ _CONTINUE_AMEND_INTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	# Atomic CAS-update of the branch ref. New-format states guard on the
-	# pre-op tip (branch never moved); legacy states guard on the fixup tip.
+	local VERIFY_PRIMARY=""
+	if [ "$STATE_REBASEBASE" = "--root" ]; then
+		VERIFY_PRIMARY=$(git rev-list --reverse "$NEW_HEAD" 2>/dev/null | head -1)
+	elif [ -n "$STATE_REBASEBASE" ]; then
+		VERIFY_PRIMARY=$(git rev-list --reverse "$STATE_REBASEBASE..$NEW_HEAD" 2>/dev/null | head -1)
+	fi
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$VERIFY_PRIMARY"; then
+		_CLEANUP_HOOK=""
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		exit 2
+	fi
+
+	# Atomic CAS-update of the branch ref – new-format states guard on the pre-op tip, the
+	# branch never having moved, while legacy states guard on the fixup tip
 	local GUARD=$STATE_ORIG_HEAD
 	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
 	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $GUARD"
@@ -4045,12 +4213,12 @@ for ARG in "$@"; do
 	COMMANDLINE+=" $(printf '%q' "$ARG")"
 done
 
-# -D pulls parsed flags out of $@
-# -E allows flags/args and positionals to be mixed
-# -F says fail if we find a flag that wasn't defined
-# (the first dash is automatically handled, so long options are -opt, not --opt)
+# • `-D` pulls parsed flags out of `$@`
+# • `-E` allows flags, args and positionals to be mixed
+# • `-F` fails on a flag that was not defined
+# The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -4087,6 +4255,17 @@ if [ ${#OPT_TEXT} -gt 0 ]; then
 	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace)
 	if [ -z "$TEXT_VALUE" ]; then
 		PRINT_ERR "--text produced an empty message after stripping"
+		exit 1
+	fi
+fi
+
+# Resolve --verify's command – both `--verify=<cmd>` and `--verify <cmd>` forms
+if [ ${#OPT_VERIFY} -gt 0 ]; then
+	if [[ ${#OPT_VERIFY} -gt 1 ]]; then
+		VERIFY_VALUE=${OPT_VERIFY[2]#=}
+	fi
+	if [ -z "$VERIFY_VALUE" ]; then
+		PRINT_ERR "--verify needs a command (--verify=<cmd>)"
 		exit 1
 	fi
 fi
@@ -4988,6 +5167,13 @@ GIT_UNSTASH
 if [ -n "$WORKTREE_DIR" ]; then
 	NEW_HEAD=$(git rev-parse HEAD)
 	if [ -n "$ORIG_BRANCH" ]; then
+		if ! _VERIFY_REWRITE "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+			_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
+				"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
+			_CLEANUP_HOOK=""
+			EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WORKTREE_DIR"
+			exit 2
+		fi
 		# Atomic compare-and-swap: only update if the ref still matches ORIG_HEAD,
 		# so any concurrent commit (e.g., from an editor working in the main checkout)
 		# is not silently overwritten.

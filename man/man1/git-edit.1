@@ -281,6 +281,38 @@ fold a staged path into a commit that predates it, against the refusal
 above under
 .BR MODES .
 .TP
+.B \-\-verify=\fIcmd\fR
+Run \fIcmd\fR against what the rewrite built, before the compare\-and\-swap
+applies it \(em by default at the primary commit the mode authored (a fold's
+amended commit, an edit's) and at the new tip, each checked out in the
+operation's isolated worktree, with
+.B GIT_EDIT_VERIFY_COMMIT
+naming the commit under test. A failure pauses the operation unapplied:
+.B \-\-continue
+re\-verifies,
+.B "\-\-no\-verify \-\-continue"
+applies the result anyway, and
+.B \-\-abort
+cancels with nothing consumed. Overrides
+.BR edit.verifyCmd .
+The plumbing modes \(em a reword, a pathspec split \(em reuse existing
+trees byte\-for\-byte and run no verification; so does
+.BR \-\-exec ,
+whose command is the caller's own.
+.TP
+.B \-\-verify\-span
+Verify every rebuilt commit instead of just the primary one and the tip \(em
+a green tip proves nothing about the span, so this is the tier for a
+span\-wide rewrite. Needs a command from
+.B \-\-verify
+or
+.BR edit.verifyCmd .
+.TP
+.B \-\-no\-verify
+Skip a configured verification for this run \(em or, on
+.BR \-\-continue ,
+apply a rewrite whose verification failed.
+.TP
 .B \-y, \-\-yes
 Auto\-confirm the drop/squash confirmation prompt.
 .TP
@@ -349,6 +381,7 @@ git\-edit: ok \(en refs/heads/main unchanged
 git\-edit: error \(en <reason>
 git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+git\-edit: paused \(en verify failed at <sha> in <worktree>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
 .RE
 .fi
 .SH "CONFLICT RESOLUTION"
@@ -426,6 +459,10 @@ both parents. \(lqNo markers left\(rq is not validation \(em
 refuses staged
 .B <<<<<<<
 blocks on its own, but semantically wrong content passes every marker check.
+.B \-\-verify
+runs this class of check for you, against the whole built result before it
+applies (see
+.BR OPTIONS ).
 .IP 3. 4
 Stage each file singly
 .RB ( "git \-C <worktree> add <file>" ),
@@ -540,6 +577,13 @@ rather than
 .IR data )
 \(em nested values work, and their parent directories are created in the
 worktree.
+.TP
+.B edit.verifyCmd
+Standing verification command, applied as if every operation passed
+.B \-\-verify=\fIcmd\fR
+\(em the check a rewrite must pass before it lands. Pair it with
+.B edit.worktreeLink
+so the isolated worktree holds what the check needs to run.
 .SH ENVIRONMENT
 .TP
 .B GIT_EDIT_WORKTREE_LINK
@@ -578,6 +622,9 @@ Split an icons change out of a mixed commit:
 .TP
 Split a refactor out of a commit that mixed it into one file (\fB\-\-text\fR names the lower commit):
 .B git edit \-\-split=abc1234 \-\-text="Refactor: Rename helpers"
+.TP
+Fold with the test suite as the gate:
+.B git edit \-\-amend\-into=abc1234 \-\-verify='npm test' \-\- src/foo.js
 .TP
 Undo the last operation:
 .B git edit \-\-undo

@@ -41,6 +41,7 @@ git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>
 git-edit: ok – refs/heads/main unchanged
 git-edit: error – exit code <N>
 git-edit: paused – edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+git-edit: paused – verify failed at <sha> in <worktree>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
 git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
@@ -249,6 +250,18 @@ Conflicts can cascade — resolving one may surface another when the rebase cont
 Recorded resolutions persist once the operation completes. An abort or an error that leaves fresh ones behind says so and names them — they would pre-fill a retry's conflicts marker-free, which is what retrying wants, but not what abandoning a distrusted rewrite wants. With `rerere.enabled` explicitly `false`, the recording still runs — the within-run carry is the point — but is scoped to the operation: the run's records are forgotten when it ends, completed and aborted alike, honoring the opt-out.
 
 State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
+
+### Verifying What a Rewrite Built (`--verify` / `edit.verifyCmd`)
+
+An `ok` trailer says the branch moved — not that the result works. A conflict resolution can be semantically wrong with no marker left behind, and a fold can break a later commit that built on the old content. `--verify=<cmd>` — or a standing `git config edit.verifyCmd <cmd>` — runs your own check over what the rewrite built, **before** the CAS applies it:
+
+```
+git edit --amend-into=<sha> --verify='npm test' -- src/foo.js
+```
+
+By default the command runs at the primary commit the operation authored (a fold's amended commit, an edit's) and at the new tip; `--verify-span` upgrades to every rebuilt commit, since a green tip proves nothing about the span. Each run happens in the operation's isolated worktree checked out at that commit — with `edit.worktreeLink` links already in place, so `node_modules` and friends are there — and `GIT_EDIT_VERIFY_COMMIT` names the commit under test.
+
+A failure pauses the operation with nothing applied and nothing consumed: the built result stays in the worktree, the failing commit is named with an inspect hint, `git edit --continue` re-verifies, `git edit --no-verify --continue` applies the result anyway, and `git edit --abort` cancels — for a fold, the staged changes are simply still staged. The plumbing modes (`-M`, pathspec `--split`) reuse existing trees byte-for-byte and run no verification; so does `--exec`, whose command is your own.
 
 ### Splitting a Commit (`--split`)
 
