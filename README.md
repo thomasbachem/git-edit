@@ -348,6 +348,8 @@ Every temporary worktree then gets them symlinked in from the checkout (repeatab
 
 One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it. Such a link would land *untracked* where the directory was ignored, and the amend at `--continue` stages the worktree wholesale — so `git edit` doesn't create it, and says why. Not linking is the whole remedy: an ignored link can never be staged, so nothing has to be cleaned up afterwards and `git edit` never removes a file you might own. Dropping the trailing slash gets you the link.
 
+Link only what is regenerable — never the root of irreplaceable shared data. A symlinked root is followed by anything that walks it: on BSD/macOS, `rm -rf <link>/` with a trailing slash resolves *through* it and deletes the shared tree behind it. For a corpus or fixtures tree, name the specific subdirectory (`data/corpus` rather than `data`) — nested values work, and their parent directories are created in the worktree.
+
 ### Pushed-Commit Guard
 
 Every rewriting mode refuses to touch a commit that already exists on a remote-tracking ref — rewriting pushed history disrupts collaborators, and in shared or public repos it should never happen by accident:

@@ -504,6 +504,17 @@ untracked where the directory was ignored \(em and the amend at
 stages the worktree wholesale. That link is therefore not created, and the
 reason is reported. Not creating it is the whole remedy: an ignored link can
 never be staged, so nothing has to be removed afterwards.
+.IP
+Link only what is regenerable \(em never the root of irreplaceable shared
+data. A symlinked root is followed by anything that walks it: on BSD/macOS,
+.B "rm \-rf <link>/"
+with a trailing slash resolves through it and deletes the shared tree
+behind it. For a corpus or fixtures tree, name the specific subdirectory
+.RI ( data/corpus
+rather than
+.IR data )
+\(em nested values work, and their parent directories are created in the
+worktree.
 .SH ENVIRONMENT
 .TP
 .B GIT_EDIT_WORKTREE_LINK
