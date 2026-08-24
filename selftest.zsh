@@ -2299,6 +2299,10 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "the failing commit is named" 'Verification failed at'
 	_ST_EQ "the branch has not moved" "$(git rev-parse HEAD)" "$VF_TIP"
 	_ST_CHECK "the staged change is untouched" sh -c "! git diff --cached --quiet -- vf.txt"
+	# --status reports the verify pause as what it is, not as a bare conflict
+	_ST_RUN --status
+	_ST_OUT_HAS "status names the verify pause" 'paused – verify failed at'
+	_ST_OUT_LACKS "and reports no empty conflict" 'git-edit: conflict'
 	# Plain --continue re-verifies and pauses again
 	_ST_RUN --continue
 	_ST_EQ "a plain continue re-verifies and pauses" "$RC" "2"

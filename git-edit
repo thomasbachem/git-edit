@@ -419,6 +419,12 @@ EMIT_PAUSED () {
 # survives the verdict whichever way the caller decides
 EMIT_VERIFY_PAUSED () {
 	# args: <failing-sha> <worktree-path>
+	# Also marks the state file, so a later --status can tell this pause from
+	# a conflict – every verify pause has state on disk by the time this runs
+	local SF=$(_STATE_FILE_PATH)
+	if [ -n "$SF" ] && [ -f "$SF" ] && [ "$STATE_VERIFY_FAILED" != "$1" ]; then
+		echo "verify_failed=$1" >> "$SF"
+	fi
 	echo "git-edit: paused – verify failed at ${1:0:7} in $2; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
@@ -779,36 +785,41 @@ GIT_UNDO () {
 	_STATUS_EMITTED=true
 }
 
-# Reports the in-flight operation (if any) in the same format as the original
-# conflict pause, so an agent landing mid-operation – after a context reset or
-# from another session – can re-enter without reading any state files. Falls
-# back to the last completed operation from the journal.
+# Reports the in-flight operation in the same format as the original pause, so a caller
+# landing mid-operation – after a context reset or from another session – can re-enter
+# without reading state files, falling back to the journal's last completed operation
 GIT_STATUS_REPORT () {
 	if _STATE_EXISTS; then
 		_LOAD_STATE
 		PRINT_TEXT "In-flight operation: %s (target %s, branch %s)" 33 "$STATE_OPERATION" "${STATE_TARGET:0:7}" "$STATE_BRANCH"
 		if [ -d "$STATE_WORKTREE" ]; then
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			# Hand the pre-op tip over for a reorder so the step-kind guidance
-			# matches the original pause – this report exists for the caller who
-			# no longer has it. The other operations change the tree by design,
-			# so no such resolution is determined for them.
+			# Hand the pre-op tip over for a reorder so the step-kind guidance matches the
+			# original pause – the other operations change the tree by design, so no
+			# resolution is determined for them
 			local STATUS_PREOP=""
 			[ "$STATE_OPERATION" = "reorder" ] && STATUS_PREOP=$STATE_ORIG_HEAD
 			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
-			# A paused edit or split with no rebase running is in its authoring
-			# phase – there is nothing to resolve yet, just changes to make, so
+			# A paused edit or split with no rebase running is authoring, not resolving, so
 			# it reports as the pause it is rather than as a conflict
 			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
 			local STATUS_AUTHORING=false
-			if [ "$STATE_OPERATION" = "split" ]; then
+			local STATUS_VERIFY=false
+			# A verify pause holds a finished rebuild the gate refused – with no rebase
+			# running and nothing unmerged, the conflict report would show no files
+			if [ -n "$STATE_VERIFY_FAILED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+				STATUS_VERIFY=true
+				PRINT_TEXT "Verification failed at %s – the result is built in the worktree, not applied." 33 "${STATE_VERIFY_FAILED:0:7}"
+			elif [ "$STATE_OPERATION" = "split" ]; then
 				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit the worktree back to what the %s commit should leave behind." 33 "first"
 			elif [ "$STATE_OPERATION" = "edit" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
 				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit files in the worktree (add %s to also reword)." 33 '--text "…"'
 			fi
-			if [ "$STATUS_AUTHORING" = "true" ]; then
+			if [ "$STATUS_VERIFY" = "true" ]; then
+				EMIT_VERIFY_PAUSED "$STATE_VERIFY_FAILED" "$STATE_WORKTREE"
+			elif [ "$STATUS_AUTHORING" = "true" ]; then
 				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 				EMIT_PAUSED "$STATE_OPERATION" "$STATE_TARGET" "$STATE_WORKTREE"
 			else
@@ -3131,6 +3142,7 @@ _LOAD_STATE () {
 	STATE_FORK=""
 	STATE_RRPRE=""
 	STATE_RRPRE_SET=""
+	STATE_VERIFY_FAILED=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3153,6 +3165,7 @@ _LOAD_STATE () {
 			span)            STATE_SPAN=$VAL ;;
 			fork)            STATE_FORK=$VAL ;;
 			rrpre)           STATE_RRPRE=$VAL; STATE_RRPRE_SET=1 ;;
+			verify_failed)   STATE_VERIFY_FAILED=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
