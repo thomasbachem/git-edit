@@ -126,6 +126,9 @@ _GLOBAL_EXIT_TRAP () {
 		rm -f "${_TEMP_FILES[@]}" 2>/dev/null
 		_TEMP_FILES=()
 	fi
+	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
+		_RERERE_SCOPE_END $CODE
+	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
 		if [ -n "$_LAST_ERROR" ]; then
 			echo "git-edit: error — $_LAST_ERROR"
@@ -981,6 +984,7 @@ GIT_UNSTASH () {
 
 GIT_RUN_AND_HANDLE_CONFLICTS () {
 	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
+	_RERERE_SCOPE_BEGIN
 	OUTPUT=$(eval "$*" 2>&1 | tee /dev/stderr)
 	STATUS=$?
 
@@ -1459,20 +1463,17 @@ GIT_AMEND_INTO () {
 		REBASE_BASE="--root"
 	fi
 
-	# Step 3: autosquash. GIT_SEQUENCE_EDITOR=true accepts the auto-arranged
-	# TODO without prompting. GIT_EDITOR=true ensures no message editor opens
-	# (we use fixup semantics, so this is just defensive).
-	# `rerere` here (and on every conflict-capable rebase): a cascade
-	# re-conflict of an already-resolved hunk replays the recorded resolution,
-	# and the shared `rr-cache` carries it across retries of the whole operation
+	# Step 3 – autosquash, where `GIT_SEQUENCE_EDITOR=true` accepts the auto-arranged todo and
+	# `GIT_EDITOR=true` keeps any message editor shut, defensive under fixup semantics
+	# `rerere` replays an already-resolved hunk, and `rr-cache` carries that across retries
 	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
+	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
 	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$STAGED_TREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$WT" "staged" }; then
-		# Conflict during autosquash. Save state, leave the worktree alive,
-		# and let the user/agent resolve via `git edit --continue` (or
-		# `git edit --abort` to cancel – the branch was never moved, and the
-		# staged changes are still staged in main).
+		# Conflict during autosquash – save state and leave the worktree alive for `git edit
+		# --continue`, or `git edit --abort` to cancel, since the branch never moved and the
+		# staged changes are still staged in main
 		_SAVE_STATE \
 			"operation=amend-into" \
 			"worktree=$WT" \
@@ -2161,6 +2162,7 @@ SEQEOF
 
 	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
+	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
 	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$WT" "pre-op" }; then
 		rm -f "$SEQ"
@@ -2384,6 +2386,7 @@ GIT_ONTO () {
 	# stay checked out in whatever worktree the caller is using
 	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --onto $UPSTREAM_FULL $FORK"
 	PRINT_CMD "$REBASE_CMD" 90
+	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
 		# The upstream's name and the span size are only known here – without
 		# them the resumed run reports the replant against a bare SHA and a
@@ -2831,6 +2834,7 @@ _EDIT_START_REPLAY () {
 	fi
 	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
+	_RERERE_SCOPE_BEGIN
 	if ! eval "$CMD" >/dev/null 2>&1; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Conflict while replaying descendants – resolve in worktree, then 'git edit --continue'"
@@ -2986,6 +2990,9 @@ _SAVE_STATE () {
 	local KV
 	{
 		for KV in "$@"; do echo "$KV"; done
+		# The rerere scope's baseline rides along uninvited – every pause must
+		# carry it for the resuming invocation to adopt (see _RERERE_SCOPE_BEGIN)
+		if [ -n "$_RERERE_SCOPE_OWNED" ]; then echo "rrpre=$_RERERE_PRE"; fi
 	} > "$SF"
 }
 
@@ -3013,6 +3020,8 @@ _LOAD_STATE () {
 	STATE_UPSTREAM=""
 	STATE_SPAN=""
 	STATE_FORK=""
+	STATE_RRPRE=""
+	STATE_RRPRE_SET=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3034,11 +3043,18 @@ _LOAD_STATE () {
 			upstream)        STATE_UPSTREAM=$VAL ;;
 			span)            STATE_SPAN=$VAL ;;
 			fork)            STATE_FORK=$VAL ;;
+			rrpre)           STATE_RRPRE=$VAL; STATE_RRPRE_SET=1 ;;
 		esac
 	done < "$SF"
+	# Adopt the paused run's rerere scope, so the finalizer diffs against the
+	# baseline from before the operation began – a state without one predates
+	# the scope, and an unknown baseline must never forget anything
+	if [ -n "$STATE_RRPRE_SET" ]; then
+		_RERERE_SCOPE_BEGIN "$STATE_RRPRE"
+	fi
 }
 
-# Sidecar carrying a paused --text across the exit, alongside the state file –
+# Names the sidecar carrying a paused `--text` across the exit, alongside the state file –
 # the state file's own key=value lines can't hold a multi-line message
 _TEXT_MSG_PATH () {
 	local SF
@@ -3054,6 +3070,56 @@ _CLEAR_STATE () {
 _STATE_EXISTS () {
 	local SF=$(_STATE_FILE_PATH)
 	[ -n "$SF" ] && [ -f "$SF" ]
+}
+
+# Scopes rerere to the operation when the caller has explicitly opted out – every
+# conflict-capable rebase force-enables it so a cascade or retry replays a resolution,
+# but `rerere.enabled` false asks for no durable memory, so the run's records go
+_RERERE_SCOPE_BEGIN () {
+	# Args: [<baseline>] – with a baseline (even an empty one), adopt a paused
+	# run's scope instead of snapshotting a fresh one
+	[ -n "$_RERERE_SCOPE_OWNED" ] && return 0
+	local DIR=$(git rev-parse --path-format=absolute --git-path rr-cache 2>/dev/null)
+	[ -z "$DIR" ] && return 0
+	_RERERE_DIR=$DIR
+	_RERERE_STATE_FILE=$(_STATE_FILE_PATH)
+	_RERERE_OPTOUT=false
+	[ "$(git config --type=bool --get rerere.enabled 2>/dev/null)" = "false" ] && _RERERE_OPTOUT=true
+	if [ $# -gt 0 ]; then
+		_RERERE_PRE=$1
+	else
+		local -a PRE
+		PRE=("$DIR"/*(N/:t))
+		_RERERE_PRE="${PRE[*]}"
+	fi
+	_RERERE_SCOPE_OWNED=1
+}
+
+# Finalizes the rerere scope, called from the exit trap once no operation is in flight, using
+# only the absolute paths captured at begin or adopt time – new entries are found by
+# name, so nothing pre-existing is touched, and only a postimage counts as a resolution
+_RERERE_SCOPE_END () {
+	local CODE=$1
+	[ -n "$_RERERE_DIR" ] && [ -d "$_RERERE_DIR" ] || return 0
+	local -a NEW RESOLVED POSTIMAGES
+	local E
+	for E in "$_RERERE_DIR"/*(N/:t); do
+		if [[ " $_RERERE_PRE " != *" $E "* ]]; then
+			NEW+=("$E")
+			POSTIMAGES=("$_RERERE_DIR/$E"/postimage*(N))
+			[ ${#POSTIMAGES[@]} -gt 0 ] && RESOLVED+=("$E")
+		fi
+	done
+	[ ${#NEW[@]} -eq 0 ] && return 0
+	if [ "$_RERERE_OPTOUT" = "true" ]; then
+		for E in "${NEW[@]}"; do rm -rf "$_RERERE_DIR/$E"; done
+		if [ ${#RESOLVED[@]} -gt 0 ]; then
+			PRINT_TEXT "Forgot %s resolution(s) rerere recorded during this run – it runs enabled so a cascade replays, and rerere.enabled=false keeps none of it." 90 "${#RESOLVED[@]}" >&2
+		fi
+	elif [ ${#RESOLVED[@]} -gt 0 ] && { [ ${#OPT_ABORT} -gt 0 ] || [ $CODE -ne 0 ]; }; then
+		PRINT_TEXT "%s resolution(s) recorded by rerere outlive this run – a later conflict over the same lines arrives pre-filled, marker-free." 33 "${#RESOLVED[@]}" >&2
+		PRINT_TEXT "If a resolution was wrong, remove: %s" 33 "${(j: :)${(@)RESOLVED/#/$_RERERE_DIR/}}" >&2
+	fi
 }
 
 # Refuses to resume while a staged file still carries conflict markers. The

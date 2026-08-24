@@ -244,6 +244,8 @@ git edit --abort
 
 Conflicts can cascade — resolving one may surface another when the rebase continues. Each `git edit --continue` either succeeds (and emits the `ok` trailer) or stops at the next conflict (and emits a fresh `conflict` trailer). The agent loops until either successful or an `--abort` resets everything.
 
+Recorded resolutions persist once the operation completes. An abort or an error that leaves fresh ones behind says so and names them — they would pre-fill a retry's conflicts marker-free, which is what retrying wants, but not what abandoning a distrusted rewrite wants. With `rerere.enabled` explicitly `false`, the recording still runs — the within-run carry is the point — but is scoped to the operation: the run's records are forgotten when it ends, completed and aborted alike, honoring the opt-out.
+
 State (worktree path, branch, target SHA, etc.) is persisted to `.git/git-edit-state` between invocations. Only one operation can be paused at a time; starting a new `--amend-into` while one is in flight errors out clearly.
 
 ### Splitting a Commit (`--split`)

@@ -367,6 +367,17 @@ unset globally. A later re\-conflict of the same hunk \(em a cascade, a retry,
 or a second rewrite over the same lines \(em still pauses, but the file arrives
 carrying the recorded resolution instead of markers, so it only has to be
 staged, never worked out a second time.
+.PP
+Recorded resolutions persist once the operation completes. An abort or an
+error that leaves fresh ones behind says so and names them \(em they would
+pre\-fill a retry's conflicts marker\-free, which is what retrying wants,
+but not what abandoning a distrusted rewrite wants. With
+.B rerere.enabled
+explicitly
+.BR false ,
+the recording still runs \(em the within\-run carry above is the point \(em
+but is scoped to the operation: the run's records are forgotten when it
+ends, completed and aborted alike, honoring the opt\-out.
 .SH SCRIPTING
 Notes for driving
 .B git edit
