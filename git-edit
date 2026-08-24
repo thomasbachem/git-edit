@@ -505,10 +505,22 @@ _PRINT_CONFLICT_DETAIL () {
 	echo "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
 }
 
-# Best-effort detection of the canonical ref name to report. Uses ORIG_BRANCH
-# if set (e.g., -C mode captures it before cd-ing into a detached worktree),
-# otherwise resolves the current symbolic ref. Falls back to "HEAD" for
-# truly-detached state.
+# Names the file-mode changes a rewrite landed, tip vs pre-op tip – a diffstat shows line
+# counts only, so a changed executable bit rides invisibly and resurfaces as a phantom
+# mode-only diff, and `--onto` is exempt since its tip diff carries the upstream's changes
+_PRINT_MODE_CHANGES () {
+	# Args: <old-tip> <new-tip>
+	# Not `LINES` – that name is zsh's tied terminal-height integer, which
+	# rejects the assignment as a math error
+	local MODE_LINES
+	MODE_LINES=$(git diff --summary "$1" "$2" 2>/dev/null | grep '^ mode change')
+	[ -z "$MODE_LINES" ] && return 0
+	PRINT_TEXT "Mode changes landed:" 33
+	print -r -- "$MODE_LINES" | sed "s/^ /  /;s/^/${_DIM}/;s/\$/${_OFF}/"
+}
+
+# Resolves the canonical ref name to report – `$ORIG_BRANCH` when set, since `-C` mode
+# captures it before entering a detached worktree, else the symbolic ref, else "HEAD"
 _CURRENT_REF () {
 	if [ -n "$ORIG_BRANCH" ]; then
 		echo "refs/heads/$ORIG_BRANCH"
@@ -1704,6 +1716,7 @@ _PRINT_AMENDED_SUMMARY () {
 	fi
 	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_LEFTOVER_STATE "$4"
+	[ -n "$6" ] && _PRINT_MODE_CHANGES "$6" "$1"
 	# Names the commit that received the fold below the stat block, never above
 	# it – that block grows with the target, and a caller reading this back
 	# through a `tail -3` would otherwise see only a diffstat and `ok`
@@ -2316,6 +2329,7 @@ _PRINT_REORDER_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
 	fi
+	_PRINT_MODE_CHANGES "$1" "$2"
 	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
 		PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
@@ -2854,6 +2868,7 @@ _CONTINUE_REBASE () {
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_ACTION ${STATE_TARGET:0:7}"
+	_PRINT_MODE_CHANGES "$STATE_ORIG_HEAD" "$NEW_HEAD"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -3021,6 +3036,7 @@ _CONTINUE_EDIT () {
 	# my edit?" verification the caller would otherwise run
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
 	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
+	_PRINT_MODE_CHANGES "$BASE" "$NEW_HEAD"
 	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
 	# A pause outlives the run that opened it, so the name in its trailer is long
 	# gone by now – and both blocks above grow with the edit, which would bury a
@@ -5195,6 +5211,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 		fi
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
 		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION"
+		_PRINT_MODE_CHANGES "$ORIG_HEAD" "$NEW_HEAD"
 		# Named from what the caller selected, never located in the replayed range:
 		# a replay drops a commit that went empty and a fold consumes commits from
 		# either side of its target, so no offset from the base or the tip survives
