@@ -2374,7 +2374,9 @@ GIT_SELFTEST () {
 		return 0
 	else
 		PRINT_TEXT "%s" 31 "Selftest: $FAIL of $TOTAL checks FAILED."
-		# A failing run keeps both – that tree is the evidence
+		# A failing run keeps both, that tree being the evidence – the keep is disarming the cleanup
+		# hook registered at the start, or the exit trap would remove it right after this promise
+		_CLEANUP_HOOK=""
 		PRINT_TEXT "Scratch repo kept for inspection: %s" 33 "$TMP"
 		echo "git-edit: error – selftest $FAIL/$TOTAL failed"
 		_STATUS_EMITTED=true
