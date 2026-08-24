@@ -363,7 +363,7 @@ A pause hands you an isolated worktree so the commit can be verified clean of an
 git config --add edit.worktreeLink node_modules
 ```
 
-Every temporary worktree then gets them symlinked in from the checkout (repeatable for more than one path; `GIT_EDIT_WORKTREE_LINK=a:b` does the same ad hoc). Links, not copies — they cost nothing, and a check running against a copy could quietly diverge from what's actually installed.
+Every temporary worktree then gets them symlinked in from the checkout (repeatable for more than one path; `GIT_EDIT_WORKTREE_LINK=a:b` does the same ad hoc), and a value added while an operation is paused reaches the existing worktree on `--continue`. Links, not copies — they cost nothing, and a check running against a copy could quietly diverge from what's actually installed.
 
 One wrinkle worth knowing: a `.gitignore` pattern written for a directory (`node_modules/`, with the trailing slash) does **not** match the symlink standing in for it. Such a link would land *untracked* where the directory was ignored, and the amend at `--continue` stages the worktree wholesale — so `git edit` doesn't create it, and says why. Not linking is the whole remedy: an ignored link can never be staged, so nothing has to be cleaned up afterwards and `git edit` never removes a file you might own. Dropping the trailing slash gets you the link.
 

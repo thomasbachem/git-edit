@@ -587,7 +587,8 @@ behind it. For a corpus or fixtures tree, name the specific subdirectory
 rather than
 .IR data )
 \(em nested values work, and their parent directories are created in the
-worktree.
+worktree. A value added while an operation is paused reaches the existing
+worktree on \fB\-\-continue\fR.
 .TP
 .B edit.verifyCmd
 Standing verification command, applied as if every operation passed

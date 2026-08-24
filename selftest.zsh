@@ -1465,6 +1465,20 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "and reports no failure" 'Could not link'
 	_ST_RUN --abort
 
+	# A value added mid-pause reaches the already-created worktree on resume –
+	# links are made at worktree setup, so --continue re-ensures them
+	mkdir -p node_modules/dep && printf 'installed\n' > node_modules/dep/index.js
+	_ST_RUN HEAD
+	local WL_WT4=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
+	_ST_CHECK "the later addition is not linked at setup" sh -c "test ! -e '$WL_WT4/node_modules'"
+	git config --add edit.worktreeLink node_modules
+	printf 'wl relinked\n' > "$WL_WT4/wl.txt"
+	_ST_RUN --continue
+	_ST_OUT_HAS "the mid-pause addition is linked on resume" 'Linked into the worktree: node_modules'
+	_ST_CHECK "and stays out of the amended commit" \
+		sh -c "! git show HEAD --stat --format= | grep -q node_modules"
+	_ST_CHECK "while the edit landed" sh -c "git show HEAD:wl.txt | grep -qx 'wl relinked'"
+	_ST_RUN --undo
 	rm -rf vendor
 
 	git config --unset-all edit.worktreeLink

@@ -4370,6 +4370,10 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		exit 1
 	fi
 	if [ -n "$STATE_WORKTREE" ] && [ -d "$STATE_WORKTREE" ]; then
+		# Config added mid-pause reaches the existing worktree here – links are
+		# created only at worktree setup, and re-ensuring is idempotent; a mode
+		# that saved no maindir falls back to the worktree's own registration
+		_LINK_WORKTREE_EXTRAS "$STATE_WORKTREE" "${STATE_MAINDIR:-$(git -C "$STATE_WORKTREE" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')}"
 		# After a verify pause the built result is recorded – put the worktree
 		# back on it before any handler reads its HEAD as the result to apply:
 		# the pause's inspect hint checks out the failing commit, and a continue
