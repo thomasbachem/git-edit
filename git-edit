@@ -1733,34 +1733,10 @@ _PRINT_AMENDED_SUMMARY () {
 	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_LEFTOVER_STATE "$4"
 	[ -n "$6" ] && _PRINT_MODE_CHANGES "$6" "$1"
-	# Names the commit that received the fold below the stat block, never above
-	# it – that block grows with the target, and a caller reading this back
-	# through a `tail -3` would otherwise see only a diffstat and `ok`
-	_PRINT_COMMIT_LINE "$AMENDED" '  amended: %h %s'
-	# Same reasoning: a fold that also reworded replaced a subject, and a
-	# symbolic target can make that the wrong one
-	if [ -n "$AMEND_OLD_SHA" ]; then
-		_PRINT_COMMIT_LINE "$AMEND_OLD_SHA" '  replaced: %s'
-	fi
-
 	# Same count check as a reorder's summary: a resolution that reproduces its
 	# predecessor's content leaves that commit empty and the rebase drops it,
 	# which a clean diffstat and an `ok` trailer would otherwise wave through
-	if [ -n "$6" ] && [ -n "$5" ]; then
-		local BEFORE
-		local AFTER
-		if [ "$5" = "--root" ]; then
-			BEFORE=$(git rev-list --count "$6" 2>/dev/null)
-			AFTER=$(git rev-list --count "$1" 2>/dev/null)
-		else
-			BEFORE=$(git rev-list --count "$5..$6" 2>/dev/null)
-			AFTER=$(git rev-list --count "$5..$1" 2>/dev/null)
-		fi
-		if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
-			PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
-				"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
-		fi
-	fi
+	[ -n "$6" ] && _PRINT_DROPPED_COMMITS "$6" "$1"
 	# The fold's correct tip is knowable up front – the pre-op tip plus the
 	# staged changes – so a tip that differs means content beyond the fold
 	# moved: a staged hunk dissolved against a later commit's content, or a
@@ -1772,10 +1748,20 @@ _PRINT_AMENDED_SUMMARY () {
 			PRINT_TEXT "Note: tip tree differs from the staged result – part of the fold dissolved against a later commit's content (compare: %s)" 33 "git diff ${7:0:12} ${1:0:12}"
 		fi
 	fi
+
+	# Names the commit that received the fold below every block that grows with the operation,
+	# as the drop list and the notes above both do, so a caller reading back through a
+	# `tail -3` still finds this line
+	_PRINT_COMMIT_LINE "$AMENDED" '  amended: %h %s'
+	# Same reasoning – a fold that also reworded replaced a subject, which a symbolic target can
+	# resolve to the wrong one entirely
+	if [ -n "$AMEND_OLD_SHA" ]; then
+		_PRINT_COMMIT_LINE "$AMEND_OLD_SHA" '  replaced: %s'
+	fi
 }
 
-# Joins newline-separated paths onto one line, capping the tail so a large leftover
-# set can't swamp the summary – the exact list is one `git diff --cached --name-only` away
+# Joins newline-separated paths onto one line, capping the tail so a large leftover set
+# cannot swamp the summary – the exact list is one `git diff --cached --name-only` away
 _JOIN_PATHS () {
 	local -a NAMES=(${(f)1})
 	local MORE=$(( ${#NAMES[@]} - 4 ))
@@ -2347,19 +2333,12 @@ _PRINT_REORDER_SUMMARY () {
 	fi
 	_PRINT_MODE_CHANGES "$1" "$2"
 	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]; then
-		PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
-			"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
-	fi
+	_PRINT_DROPPED_COMMITS "$1" "$2"
 }
 
-# Resolves where `$1` (a branch tip) left `$2` (the upstream). A rewritten
-# upstream orphans the commit the branch actually forked from, and plain
-# `merge-base` then answers with a far older ancestor – replaying from there
-# would re-apply commits the upstream already carries. `--fork-point` reads
-# the upstream's reflog, which still holds the pre-rewrite tip, so it finds
-# the real fork. It has nothing to work from on a freshly cloned or expired
-# reflog, hence the fallback.
+# Resolves where `$1`, a branch tip, left `$2`, the upstream – a rewritten upstream orphans
+# the fork commit and plain `merge-base` then answers a far older ancestor, so
+# `--fork-point` reads the reflog, falling back where a fresh clone leaves it nothing
 _ONTO_FORK_POINT () {
 	local BRANCH_TIP=$1
 	local UPSTREAM=$2
@@ -3053,6 +3032,7 @@ _CONTINUE_EDIT () {
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
 	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
 	_PRINT_MODE_CHANGES "$BASE" "$NEW_HEAD"
+	_PRINT_DROPPED_COMMITS "$BASE" "$NEW_HEAD"
 	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
 	# A pause outlives the run that opened it, so the name in its trailer is long
 	# gone by now – and both blocks above grow with the edit, which would bury a
@@ -3261,13 +3241,53 @@ _RERERE_SCOPE_END () {
 	fi
 }
 
-# Refuses to resume while a staged file still carries conflict markers. The
-# failure mode this catches: a resolver script dies silently (a shell variable
-# that never reached it, say), a blanket `git add` in the same command stages
-# the file markers and all, and `rebase --continue` accepts that as the
-# resolution – baking `<<<<<<<` into history and advancing to the next step.
-# Reads the staged blob rather than the working file, since that is what would
-# be committed.
+# Prints the commits a replay dropped as empty – the count proves something
+# vanished, the names say what, sparing the caller a log hunt. Subjects are
+# the identity (a rewrite changes every SHA); duplicate subjects cancel by
+# count. Deliberate removals (a drop, a squash target) never route here.
+_PRINT_DROPPED_COMMITS () {
+	# args: <old-tip> <new-tip>
+	local MB=$(git merge-base "$1" "$2" 2>/dev/null)
+	local BEFORE
+	local AFTER
+	BEFORE=$(git rev-list --count ${MB:+$MB..}$1 2>/dev/null)
+	AFTER=$(git rev-list --count ${MB:+$MB..}$2 2>/dev/null)
+	if [ -z "$BEFORE" ] || [ -z "$AFTER" ] || [ "$AFTER" -ge "$BEFORE" ]; then
+		return 0
+	fi
+	PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
+		"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
+	# Which ones, by subject multiset – a rewrite changes every SHA, so subjects
+	# are the only surviving identity. Keys take an `s:` prefix (an empty subject
+	# is legal, an empty subscript is not) and count through assignments, never
+	# `(( key++ ))` – arithmetic re-parses the subscript, executing backticks
+	local -A SURVIVING
+	local SUBJECT
+	while IFS= read -r SUBJECT; do
+		SURVIVING[s:$SUBJECT]=$(( ${SURVIVING[s:$SUBJECT]:-0} + 1 ))
+	done <<< "$(git log --format=%s ${MB:+$MB..}$2 2>/dev/null)"
+	local -a DROPPED
+	local LINE
+	while IFS= read -r LINE; do
+		SUBJECT=${LINE#* }
+		if (( ${SURVIVING[s:$SUBJECT]:-0} > 0 )); then
+			SURVIVING[s:$SUBJECT]=$(( ${SURVIVING[s:$SUBJECT]:-0} - 1 ))
+		else
+			DROPPED+=("$LINE")
+		fi
+	done <<< "$(git log --format='%h %s' ${MB:+$MB..}$1 2>/dev/null)"
+	# Naming only where the arithmetic agrees: an op that also reworded left a
+	# subject with no counterpart, and that commit is not a drop – the count
+	# above stays authoritative either way
+	[ ${#DROPPED[@]} -ne $((BEFORE - AFTER)) ] && return 0
+	printf '%s\n' "${DROPPED[@]:0:12}" | sed "s/^/  dropped: /;s/^/${_DIM}/;s/\$/${_OFF}/"
+	[ ${#DROPPED[@]} -gt 12 ] && PRINT_TEXT "  +%s more" 90 "$(( ${#DROPPED[@]} - 12 ))"
+	return 0
+}
+
+# Refuses to resume while a staged file still carries conflict markers – the failure mode is
+# a resolver dying silently, a blanket `git add` staging the file markers and all, and
+# `rebase --continue` accepting that, so read the staged blob, which is what gets committed
 _GUARD_RESOLUTION_CLEAN () {
 	local WT=$1
 	local -a BAD

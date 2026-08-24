@@ -490,7 +490,7 @@ The editor is resolved from git's full cascade — `$GIT_EDITOR`, `git config co
 
 The sections above assume someone reading the output; this is the contract for a caller that doesn't. Three rules, then the loop:
 
-**Dispatch on the trailer, not the exit code.** A pipeline reports its last command's status, but the last stdout line is always the trailer. Under `| tail -3` two lines are guaranteed: the trailer and, above it, the line naming the commit the run touched. Nothing above those holds its position — and that's where a rewrite reports what it did to the *rest* of history (an edit's net history change, a fold's count of commits a resolution left empty, a tip differing from the staged result). A wrapper that forwards only the last line drops exactly those findings, so pass the lines above the trailer through to whatever decides what happens next.
+**Dispatch on the trailer, not the exit code.** A pipeline reports its last command's status, but the last stdout line is always the trailer. Under `| tail -3` two lines are guaranteed: the trailer and, above it, the line naming the commit the run touched. Nothing above those holds its position — and that's where a rewrite reports what it did to the *rest* of history (an edit's net history change, the commits a replay dropped as empty, counted and named, a tip differing from the staged result). A wrapper that forwards only the last line drops exactly those findings, so pass the lines above the trailer through to whatever decides what happens next.
 
 **Judge a pause by its unmerged index entries, never by grepping for markers.** A marker grep conflates three states that need three different responses:
 
