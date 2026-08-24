@@ -465,6 +465,47 @@ Whenever a worktree is in use (both the auto-managed default and an explicit `-C
 
 The editor is resolved from git's full cascade — `$GIT_EDITOR`, `git config core.editor`, `$VISUAL`, then `$EDITOR` — so a Sublime setup like `git config --global core.editor "subl -n -w"` is detected even when `$VISUAL`/`$EDITOR` are unset. Terminal editors (vim, nano, etc.) are intentionally ignored, since "open a directory" doesn't apply to them.
 
+### Driving It From a Script or Agent
+
+The sections above assume someone reading the output; this is the contract for a caller that doesn't. Three rules, then the loop:
+
+**Dispatch on the trailer, not the exit code.** A pipeline reports its last command's status, but the last stdout line is always the trailer. Under `| tail -3` two lines are guaranteed: the trailer and, above it, the line naming the commit the run touched. Nothing above those holds its position — and that's where a rewrite reports what it did to the *rest* of history (an edit's net history change, a fold's count of commits a resolution left empty, a tip differing from the staged result). A wrapper that forwards only the last line drops exactly those findings, so pass the lines above the trailer through to whatever decides what happens next.
+
+**Judge a pause by its unmerged index entries, never by grepping for markers.** A marker grep conflates three states that need three different responses:
+
+- **No unmerged files at all** — the current step became empty (its changes are already upstream): skip it, nothing to resolve.
+- **Unmerged, no markers** — an add/add or modify/delete places one side's file whole (or none at all), with no textual merge to mark. The file reads as finished and is not.
+- **Pre-filled by `rerere`** — a recorded resolution replayed into the file, which merely needs staging. Validate it like your own resolution first: a wrong resolution, recorded once, replays wrong every time after, and nothing flags it.
+
+**Validate before staging.** "No markers left" is not validation — `--continue` refuses staged `<<<<<<<` blocks on its own, but semantically wrong content passes every marker check. Parse the file, run the test that covers it, compare row or line counts against both parents.
+
+The loop those rules produce:
+
+```
+git edit --amend-into=<sha> -- <paths>       # exit 2 → conflict trailer names the worktree
+git -C <worktree> diff --name-only --diff-filter=U
+# resolve one file, validate it, then stage it singly:
+git -C <worktree> add <file>                 # never a blanket `add -A` chained into --continue
+git edit --continue                          # dispatch on the fresh trailer; cascades repeat the loop
+```
+
+**Span campaigns.** A mechanical change to many commits — a format migration, a normalizer sweep — should not run as one fold or edit per commit: each replays every descendant as a diff and re-derives the same conflicts. Map snapshots instead, inside `--exec`:
+
+```
+git edit --exec -- zsh -c '
+  NEW=<base>
+  for C in $(git rev-list --reverse <base>..HEAD); do
+    git checkout -qf $C && git clean -qfd
+    transform .          # the pure per-snapshot rewrite
+    git add -A
+    NEW=$(git commit-tree $(git write-tree) -p $NEW \
+          -m "$(git log -1 --format=%B $C)")
+  done
+  git reset -q --hard $NEW'
+```
+
+The transform applies to each commit's *snapshot*, so no step can conflict — and because the script ends with HEAD moved, `--exec` supplies the compare-and-swap, the pushed guard, and the journal entry around it. It's a sketch: a real loop also carries each commit's author and dates onto `commit-tree` (`GIT_AUTHOR_NAME`/`EMAIL`/`DATE`), and stops at merge commits rather than flattening them. Conflict-freedom cuts the other way too: a buggy transform lands on every commit uniformly and silently, so sweep the result before trusting it — run the tests per rebuilt commit, or diff each rebuilt tree against its source. A hand-authored point fix stays on the normal modes; the snapshot map is for changes that are a pure function of each commit's content.
+
 ## Screenshot
 
 ![Screenshot](/screenshot.png?raw=true)

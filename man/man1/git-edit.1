@@ -1,7 +1,7 @@
 .\" Man page for git-edit. Kept in sync with the script's USAGE() and README.
 .\" Auto-found via man's PATH derivation (<repo>/man/man1) once the repo is on
 .\" PATH, so `git edit --help` / `man git-edit` work with no install step.
-.TH GIT-EDIT 1 "2026-08-06" "git-edit" "Git Extensions"
+.TH GIT-EDIT 1 "2026-08-24" "git-edit" "Git Extensions"
 .SH NAME
 git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 .PP
@@ -367,6 +367,112 @@ unset globally. A later re\-conflict of the same hunk \(em a cascade, a retry,
 or a second rewrite over the same lines \(em still pauses, but the file arrives
 carrying the recorded resolution instead of markers, so it only has to be
 staged, never worked out a second time.
+.SH SCRIPTING
+Notes for driving
+.B git edit
+from a script or an agent loop \(em what the machine\-readable surface
+guarantees, and the loop that consumes it safely.
+.SS Reading a run
+Dispatch on the trailer (see
+.BR "OUTCOME TRAILER" ),
+not on an exit status a pipeline may have replaced with its last command's.
+And keep more than the trailer: under
+.B "| tail \-3"
+only the trailer and the touched\-commit line above it hold their positions
+\(em the summary lines above those (an edit's net history change, a fold's
+count of commits a resolution left empty, a tip differing from the staged
+result) grow with the commit, and they are where a rewrite reports what it
+did to the rest of history. A wrapper that forwards only the last line
+drops exactly those findings.
+.SS The resolve loop
+The safe shape for resolving a
+.B conflict
+pause externally:
+.IP 1. 4
+Take the worktree path from the trailer, and list what needs resolving from
+the index \(em
+.B "git \-C <worktree> diff \-\-name\-only \-\-diff\-filter=U"
+\(em never by grepping for markers (see the pause states below).
+.IP 2. 4
+Resolve one file at a time, and validate each result before staging it:
+parse it, run the test that covers it, compare its row or line count against
+both parents. \(lqNo markers left\(rq is not validation \(em
+.B \-\-continue
+refuses staged
+.B <<<<<<<
+blocks on its own, but semantically wrong content passes every marker check.
+.IP 3. 4
+Stage each file singly
+.RB ( "git \-C <worktree> add <file>" ),
+never a blanket
+.B "add \-A"
+chained into
+.B \-\-continue
+in one command \(em that stages whatever a broken resolver left behind
+before anything could look at it.
+.IP 4. 4
+.B "git edit \-\-continue"
+and dispatch on the fresh trailer; a cascade repeats the loop.
+.SS Pauses without markers
+A marker grep conflates three pause states that need three different
+responses \(em the unmerged list from step 1 tells them apart:
+.IP \(bu 3
+No unmerged files at all: the current step became empty \(em the skip case
+under
+.BR "CONFLICT RESOLUTION" ,
+nothing to resolve.
+.IP \(bu 3
+An unmerged add/add or modify/delete: git may place one side's file whole
+(or none at all), with no textual merge to mark \(em the file reads as
+finished and is not.
+.IP \(bu 3
+A recorded resolution replayed by
+.BR rerere :
+the file arrives pre\-filled and merely needs staging \(em but validate it
+first (below).
+.SS Recorded resolutions
+.B rerere
+replays a recorded resolution into every later conflict with the same
+preimage \(em a cascade step, a retry, an unrelated future rewrite over the
+same lines \(em marker\-free. Step 2's validation applies to a pre\-filled
+file exactly as to a fresh resolution: a wrong resolution, recorded once,
+replays wrong every time after, and nothing flags it.
+.SS Span campaigns
+A mechanical change to many commits \(em a format migration, a normalizer
+sweep \(em should not run as one fold or edit per commit: each replays every
+descendant as a diff and re\-derives the same conflicts. Map snapshots
+instead, inside
+.BR \-\-exec :
+.PP
+.nf
+.RS
+git edit \-\-exec \-\- zsh \-c '
+  NEW=<base>
+  for C in $(git rev\-list \-\-reverse <base>..HEAD); do
+    git checkout \-qf $C && git clean \-qfd
+    transform .          # the pure per\-snapshot rewrite
+    git add \-A
+    NEW=$(git commit\-tree $(git write\-tree) \-p $NEW \\
+          \-m "$(git log \-1 \-\-format=%B $C)")
+  done
+  git reset \-q \-\-hard $NEW'
+.RE
+.fi
+.PP
+The transform applies to each commit's snapshot, so no step can conflict,
+and because the script ends with HEAD moved,
+.B \-\-exec
+supplies the compare\-and\-swap, the pushed guard, and the journal entry
+around it. This is a sketch: a real loop also carries each commit's author
+and dates onto
+.B commit\-tree
+.RB ( GIT_AUTHOR_NAME / EMAIL / DATE ),
+and stops at merge commits rather than flattening them. Conflict\-freedom
+cuts the other way too: a buggy transform lands on every commit uniformly
+and silently, so sweep the result before trusting it \(em run the tests per
+rebuilt commit, or diff each rebuilt tree against its source. A
+hand\-authored point fix stays on the normal modes; the snapshot map is for
+changes that are a pure function of each commit's content.
 .SH "EXIT STATUS"
 .TP
 .B 0
