@@ -2267,6 +2267,42 @@ GIT_SELFTEST () {
 	for RR58_E in "$RR58_DIR"/*(N/); do rm -rf "$RR58_E"; done
 	git reset -q --hard
 
+	# --- 59. a fold refuses a path its target predates ---
+	# Folding a staged path into a commit older than the path's introduction
+	# replays the introducing commit as an add/add conflict – refused up
+	# front with the introducer named, --allow-new-path opens it through,
+	# and a path new to the whole span backfills without any override
+	ECHO_E "\e[1;96m[59] --amend-into refuses a path the target predates\e[0m"
+	git reset -q --hard
+	printf 'np one\n' > np1.txt && git add np1.txt && git commit -qm "NP base"
+	local NP_BASE=$(git rev-parse HEAD)
+	printf 'np two\n' > np2.txt && git add np2.txt && git commit -qm "NP adds second"
+	local NP_INTRO=$(git rev-parse HEAD)
+	printf 'np one more\n' >> np1.txt && git add np1.txt && git commit -qm "NP top"
+	local NP_TOP=$(git rev-parse HEAD)
+	printf 'np two edited\n' > np2.txt && git add np2.txt
+	_ST_RUN --amend-into="$NP_BASE" -- np2.txt
+	_ST_EQ "the fold is refused" "$RC" "1"
+	_ST_OUT_HAS "the refusal names the introducing commit" "arrives in ${NP_INTRO:0:7}"
+	_ST_OUT_HAS "the refusal names the override" 'allow-new-path'
+	_ST_EQ "history is untouched" "$(git rev-parse HEAD)" "$NP_TOP"
+	_ST_CHECK "the staged change is untouched" sh -c "! git diff --cached --quiet -- np2.txt"
+	# The override opens the path through – straight into the predicted
+	# add/add pause on the introducing commit's replay
+	_ST_RUN --allow-new-path --amend-into="$NP_BASE" -- np2.txt
+	_ST_EQ "the override reaches the replay conflict" "$RC" "2"
+	_ST_RUN --abort
+	_ST_EQ "the aborted override rolls back clean" "$RC" "0"
+	git reset -q --hard
+	# A path new to the whole span backfills cleanly – no descendant re-adds
+	# it, so no replay can conflict on it
+	printf 'np three\n' > np3.txt && git add np3.txt
+	_ST_RUN --amend-into="$NP_BASE" -- np3.txt
+	_ST_EQ "a span-new path folds without the override" "$RC" "0"
+	_ST_OUT_HAS "and is noted as new to the target" 'does not exist at'
+	_ST_CHECK "the new file landed at the rewritten target" sh -c "git cat-file -e HEAD~2:np3.txt"
+	git reset -q --hard
+
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

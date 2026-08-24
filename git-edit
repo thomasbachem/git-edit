@@ -194,6 +194,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
+	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
@@ -1396,27 +1397,45 @@ GIT_AMEND_INTO () {
 	STAGED_PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
 
-	# Step 1: snapshot the staged index as a commit object. `write-tree` +
-	# `commit-tree` build it without moving any ref or touching the index –
-	# the staged changes stay staged until the CAS lands.
+	# Pre-flight – a staged path the target predates is refused where a later commit introduces
+	# it, since folding beneath that introduction replays it as an add/add conflict of the
+	# whole file, and every descendant touching it re-conflicts in turn
+	if [ ${#OPT_ALLOW_NEW_PATH} -eq 0 ]; then
+		local ABSENT_PATH
+		local ABSENT_INTRODUCER
+		local -a ABSENT_LINES
+		for ABSENT_PATH in "${STAGED_PATHS[@]}"; do
+			if ! git cat-file -e "$TARGET_FULL:$ABSENT_PATH" 2>/dev/null; then
+				ABSENT_INTRODUCER=$(git log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- "$ABSENT_PATH" | head -1)
+				if [ -n "$ABSENT_INTRODUCER" ]; then
+					ABSENT_LINES+=("$ABSENT_PATH – arrives in $ABSENT_INTRODUCER")
+				else
+					PRINT_TEXT "Note: %s does not exist at %s – the fold introduces it there, and every descendant inherits it." 90 "$ABSENT_PATH" "${TARGET_FULL:0:7}"
+				fi
+			fi
+		done
+		if [ ${#ABSENT_LINES[@]} -gt 0 ]; then
+			PRINT_ERR "Staged path(s) do not exist at ${TARGET_FULL:0:7} – replaying the commit that introduces them would raise an add/add conflict"
+			printf '%s\n' "${ABSENT_LINES[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+			ECHO_E "\e[0;31m  Fold into the introducing commit or later – or pass --allow-new-path to override.\e[0m" >&2
+			exit 1
+		fi
+	fi
+
+	# Step 1 – snapshot the staged index as a commit object, `write-tree` plus `commit-tree`
+	# building it without moving a ref or touching the index, so the staging survives to the CAS
 	local TARGET_SUBJECT=$(git log -1 --format='%s' "$TARGET_FULL")
 
-	# A message alongside the fold rewords the target in the same run –
-	# `git commit --amend -m` semantics. It happens here, before the fixup
-	# exists, because rewording afterwards would have to find the amended
-	# commit again: a replay can drop a commit that went empty, so any
-	# offset from the new tip risks naming the wrong one. Rewording up front
-	# is pure plumbing – it cannot conflict – and the autosquash then carries
-	# it, leaving one CAS for both changes
+	# A message alongside the fold rewords the target in the same run, `git commit --amend -m`
+	# semantics – done before the fixup exists, since rewording afterwards must find the
+	# amended commit again, and a dropped empty replay makes any offset risk the wrong one
 	local FIXUP_PARENT=$ORIG_HEAD
 	if [ -n "$TEXT_VALUE" ]; then
 		AMEND_OLD_SHA=$TARGET_FULL
 		_REWORD_AND_REBUILD "$TARGET_FULL" "$TEXT_VALUE"
-		# Hand this step's map over now, not at the CAS: the autosquash below
-		# rebuilds these commits again, so holding it would name intermediates
-		# that never reach the branch – copying notes onto commits nothing can
-		# reach. Applied here, the rebase's own copy carries them the rest of
-		# the way, the same relay git runs between two of its own rebases
+		# Hand this step's map over now rather than at the CAS – the autosquash below rebuilds
+		# these commits again, so holding it would name intermediates that never reach the branch,
+		# and the rebase's own copy relays them the rest of the way as git does between rebases
 		_EMIT_REWRITES
 		# The fixup rides on the rebuilt chain, and `fixup!` matches by subject,
 		# so both must follow the reword
@@ -4057,7 +4076,7 @@ done
 # -F says fail if we find a flag that wasn't defined
 # (the first dash is automatically handled, so long options are -opt, not --opt)
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1

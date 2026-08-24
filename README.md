@@ -182,6 +182,8 @@ A conflict on the fold's **final** step resolves itself, exactly as a reorder's 
 
 The completion summary also verifies what landed. The fold's correct tip is knowable up front — the pre-op tip plus the staged changes — so a tip that falls short of it is called out rather than waved through: a run that would leave history unchanged (every staged hunk already carried by the target, e.g. a staged revert of a later commit's change) is refused with the staged changes intact, a staged hunk that dissolved against a later commit's content lands with a note naming the divergence, and a conflict resolution that left a replayed commit empty gets its drop counted — a clean diffstat and an `ok` trailer would otherwise hide all three.
 
+One class of fold is refused before anything runs: a staged path that doesn't exist at the target, when a later commit introduces it. Folded beneath its introduction, that commit replays as an add/add conflict of the whole file — often marker-free — and every further descendant touching the file re-conflicts in turn; the refusal names the introducing commit, which is where the fold belongs. `--allow-new-path` overrides. A path new to the *entire* span is different — nothing downstream re-adds it, so it backfills cleanly and passes with a note.
+
 #### Automatic target discovery (`--amend-into=auto`)
 
 A fix belongs to whoever wrote the line being fixed, so `auto` resolves the target from the staged **lines** (via `git blame`), not merely the files:

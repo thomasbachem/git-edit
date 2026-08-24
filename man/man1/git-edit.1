@@ -158,6 +158,13 @@ notes a tip that differs from the staged result \(em the pre\-op tip plus
 the staged changes, which a faithful fold must reproduce. A fold that would leave history unchanged
 \(em every staged hunk already carried by the target \(em is refused, with
 the staged changes left intact.
+A staged path that does not exist at \fIsha\fR is refused when a later
+commit introduces it \(em folded beneath its introduction, that commit
+replays as an add/add conflict of the whole file \(em with the introducing
+commit named;
+.B \-\-allow\-new\-path
+overrides. A path new to the entire span backfills cleanly and passes with
+a note.
 .IP
 .B \-\-text
 also rewords \fIsha\fR in the same run \(em
@@ -266,6 +273,13 @@ non\-interactive contexts.
 .B \-\-allow\-pushed
 Permit rewriting a commit that exists on a remote\-tracking ref. Refused by
 default.
+.TP
+.B \-\-allow\-new\-path
+Let
+.B \-\-amend\-into
+fold a staged path into a commit that predates it, against the refusal
+above under
+.BR MODES .
 .TP
 .B \-y, \-\-yes
 Auto\-confirm the drop/squash confirmation prompt.
