@@ -406,24 +406,29 @@ EMIT_CONFLICT () {
 	_STATUS_EMITTED=true
 }
 
-# The pause a mode takes by design (edit, content split) rather than on a
+# Emits the pause a mode takes by design, an edit or content split, rather than on a
 # conflict – nothing is unmerged, there is just authoring left to do
 EMIT_PAUSED () {
-	# args: <operation> <sha> <worktree-path>
+	# Args: <operation> <sha> <worktree-path>
 	echo "git-edit: paused – $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
-# The pause a completed rewrite takes when its verification fails – the result
+# Emits the pause a completed rewrite takes when its verification fails – the result
 # is built but not applied, and the state stays, so the resolution work
 # survives the verdict whichever way the caller decides
 EMIT_VERIFY_PAUSED () {
-	# args: <failing-sha> <worktree-path>
-	# Also marks the state file, so a later --status can tell this pause from
-	# a conflict – every verify pause has state on disk by the time this runs
+	# Args: <failing-sha> <worktree-path> [<result-tip>]
+	# Also marks the state file – `verify_failed` tells a later `--status` this pause from a
+	# conflict, and `verify_result` records what a resume applies, the worktree's `HEAD` being
 	local SF=$(_STATE_FILE_PATH)
-	if [ -n "$SF" ] && [ -f "$SF" ] && [ "$STATE_VERIFY_FAILED" != "$1" ]; then
-		echo "verify_failed=$1" >> "$SF"
+	if [ -n "$SF" ] && [ -f "$SF" ]; then
+		if [ "$STATE_VERIFY_FAILED" != "$1" ]; then
+			echo "verify_failed=$1" >> "$SF"
+		fi
+		if [ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ]; then
+			echo "verify_result=$3" >> "$SF"
+		fi
 	fi
 	echo "git-edit: paused – verify failed at ${1:0:7} in $2; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
@@ -1568,7 +1573,7 @@ GIT_AMEND_INTO () {
 			"files=${(pj:\t:)STAGED_PATHS}"\
 			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2258,7 +2263,7 @@ SEQEOF
 			"orig_head=$ORIG_HEAD" \
 			"target=$OLDEST"
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2502,7 +2507,7 @@ GIT_ONTO () {
 			"fork=$FORK" \
 			"maindir=$MAIN_DIR"
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2713,7 +2718,7 @@ _CONTINUE_ONTO () {
 
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2793,7 +2798,7 @@ _CONTINUE_REORDER () {
 
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2869,7 +2874,7 @@ _CONTINUE_REBASE () {
 
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3030,7 +3035,7 @@ _CONTINUE_EDIT () {
 
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$STATE_AMENDED"; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3143,6 +3148,7 @@ _LOAD_STATE () {
 	STATE_RRPRE=""
 	STATE_RRPRE_SET=""
 	STATE_VERIFY_FAILED=""
+	STATE_VERIFY_RESULT=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3166,6 +3172,7 @@ _LOAD_STATE () {
 			fork)            STATE_FORK=$VAL ;;
 			rrpre)           STATE_RRPRE=$VAL; STATE_RRPRE_SET=1 ;;
 			verify_failed)   STATE_VERIFY_FAILED=$VAL ;;
+			verify_result)   STATE_VERIFY_RESULT=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
@@ -3445,7 +3452,7 @@ _CONTINUE_AMEND_INTO () {
 	fi
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE"
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -4362,6 +4369,26 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		PRINT_ERR "--skip applies to --onto only; '$STATE_OPERATION' has no commit to step over"
 		exit 1
 	fi
+	if [ -n "$STATE_WORKTREE" ] && [ -d "$STATE_WORKTREE" ]; then
+		# After a verify pause the built result is recorded – put the worktree
+		# back on it before any handler reads its HEAD as the result to apply:
+		# the pause's inspect hint checks out the failing commit, and a continue
+		# from there would land it as the tip, dropping every commit above it
+		if [ -n "$STATE_VERIFY_RESULT" ]; then
+			if git -C "$STATE_WORKTREE" rev-parse -q --verify "$STATE_VERIFY_RESULT^{commit}" >/dev/null 2>&1; then
+				if [ "$(git -C "$STATE_WORKTREE" rev-parse HEAD 2>/dev/null)" != "$STATE_VERIFY_RESULT" ]; then
+					PRINT_TEXT "Worktree HEAD is off the built result (an inspect checkout, say) – restoring %s" 33 "${STATE_VERIFY_RESULT:0:7}"
+					git -C "$STATE_WORKTREE" checkout -qf --detach "$STATE_VERIFY_RESULT" 2>/dev/null
+				fi
+			else
+				# Falling back to worktree `HEAD` would reopen the truncation trap
+				# this marker exists to close – refuse instead
+				PRINT_ERR "Recorded result ${STATE_VERIFY_RESULT:0:7} no longer resolves – the pause likely outlived the reflog"
+				ECHO_E "\e[0;31m  Nothing can apply it now – 'git edit --abort' cancels with nothing consumed.\e[0m" >&2
+				exit 1
+			fi
+		fi
+	fi
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		reorder)    _CONTINUE_REORDER ;;
@@ -5239,12 +5266,12 @@ if [ -n "$WORKTREE_DIR" ]; then
 			_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
 				"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
 			_CLEANUP_HOOK=""
-			EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WORKTREE_DIR"
+			EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WORKTREE_DIR" "$NEW_HEAD"
 			exit 2
 		fi
-		# Atomic compare-and-swap: only update if the ref still matches ORIG_HEAD,
-		# so any concurrent commit (e.g., from an editor working in the main checkout)
-		# is not silently overwritten.
+		# Atomic compare-and-swap – only update where the ref still matches `ORIG_HEAD`, so a
+		# concurrent commit, from an editor working in the main checkout say, is never
+		# silently overwritten by this run
 		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" 2>/dev/null; then

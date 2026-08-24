@@ -1464,6 +1464,7 @@ GIT_SELFTEST () {
 		sh -c "test -f '$WL_WT3/vendor/deps/lib.js'"
 	_ST_OUT_LACKS "and reports no failure" 'Could not link'
 	_ST_RUN --abort
+
 	rm -rf vendor
 
 	git config --unset-all edit.worktreeLink
@@ -2312,10 +2313,19 @@ GIT_SELFTEST () {
 	_ST_EQ "the abort left the branch alone" "$(git rev-parse HEAD)" "$VF_TIP"
 	_ST_CHECK "and the staged change is still staged" sh -c "! git diff --cached --quiet -- vf.txt"
 	# The same failing fold pauses again, and --no-verify --continue applies it
+	# – after following the inspect hint, whose checkout moves the worktree off
+	# the built result: the resume must restore it, or the failing commit would
+	# land as the tip, dropping every commit above it
 	_ST_RUN --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
 	_ST_EQ "the retried fold pauses again" "$RC" "2"
+	local VP_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)
+	local VP_BAD=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at \([0-9a-f]*\) in .*/\1/p' | head -1)
+	if [ -n "$VP_WT" ] && [ -n "$VP_BAD" ]; then
+		git -C "$VP_WT" checkout -q "$VP_BAD" 2>/dev/null
+	fi
 	_ST_RUN --no-verify --continue
 	_ST_EQ "the override applies the fold" "$RC" "0"
+	_ST_OUT_HAS "after restoring the inspected-away worktree" 'restoring'
 	_ST_EQ "the whole chain survived" "$(git rev-list --count HEAD)" "$(git rev-list --count $VF_TIP)"
 	_ST_CHECK "the overridden content landed at the base" \
 		sh -c "git show \"\$(git rev-parse ':/VF base'):vf.txt\" | grep -q FORBIDDEN"
@@ -2374,6 +2384,43 @@ GIT_SELFTEST () {
 	local VS_TOTAL=$(git rev-list --count "$(git rev-parse ':/VF base')^..HEAD")
 	local VS_WITH=$(git rev-list --count "$(git rev-parse ':/VS runner')^..HEAD")
 	_ST_OUT_HAS "the span verified only where the runner exists" "Verified $VS_WITH of $VS_TOTAL commit(s)"
+	# The drop/squash dispatch path records the result too – a spanned drop
+	# whose worktree was inspected away still applies whole on the override
+	printf '#!/bin/sh\n! grep -q BAD vd.txt\n' > "$TMP/vdcheck.sh" && chmod +x "$TMP/vdcheck.sh"
+	git config edit.verifyCmd "$TMP/vdcheck.sh"
+	printf 'vd\n' > vd.txt && git add vd.txt && git commit -qm "VD one"
+	printf 'x\n' > vdx.txt && git add vdx.txt && git commit -qm "VD two"
+	printf 'vd\nBAD\n' > vd.txt && git add vd.txt && git commit -qm "VD three"
+	printf 'vd\n' > vd.txt && git add vd.txt && git commit -qm "VD four"
+	local VD_COUNT=$(git rev-list --count HEAD)
+	_ST_RUN -d -y --verify-span "$(git rev-parse ':/VD two')"
+	_ST_EQ "the spanned drop pauses on the mid-span failure" "$RC" "2"
+	local VD_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)
+	local VD_BAD=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at \([0-9a-f]*\) in .*/\1/p' | head -1)
+	if [ -n "$VD_WT" ] && [ -n "$VD_BAD" ]; then
+		git -C "$VD_WT" checkout -q "$VD_BAD" 2>/dev/null
+	fi
+	_ST_RUN --no-verify --continue
+	_ST_EQ "the override applies the drop" "$RC" "0"
+	_ST_OUT_HAS "after restoring this worktree too" 'restoring'
+	_ST_EQ "nothing above the drop was truncated" "$(git rev-list --count HEAD)" "$((VD_COUNT - 1))"
+	_ST_EQ "the tip is the last commit, not the failing one" "$(git log -1 --format=%s)" "VD four"
+	# A recorded result that no longer resolves refuses the resume, since falling back to
+	# worktree `HEAD` would reopen the truncation trap – a tip fold has no replays, so the
+	# pause is guaranteed to be verify's rather than a conflict
+	git config edit.verifyCmd false
+	printf 'vd\nstale\n' > vd.txt && git add vd.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" -- vd.txt
+	_ST_EQ "the doomed tip fold pauses" "$RC" "2"
+	_ST_OUT_HAS "as a verify pause" 'git-edit: paused – verify failed'
+	local VD_SF=$(git rev-parse --git-dir)/git-edit-state
+	sed 's/^verify_result=.*/verify_result=ffffffffffffffffffffffffffffffffffffffff/' "$VD_SF" > "$VD_SF.tmp" && mv "$VD_SF.tmp" "$VD_SF"
+	_ST_RUN --continue
+	_ST_EQ "a vanished recorded result refuses the resume" "$RC" "1"
+	_ST_OUT_HAS "and names what happened" 'no longer resolves'
+	_ST_RUN --abort
+	_ST_EQ "while abort still cancels clean" "$RC" "0"
+	git reset -q -- vd.txt && git checkout -q -- vd.txt
 	git config --unset edit.verifyCmd
 	git reset -q --hard
 

@@ -298,7 +298,9 @@ re\-verifies,
 .B "\-\-no\-verify \-\-continue"
 applies the result anyway, and
 .B \-\-abort
-cancels with nothing consumed. Overrides
+cancels with nothing consumed \(em the built result is recorded, so a
+resume restores the worktree to it if an inspect checkout moved it.
+Overrides
 .BR edit.verifyCmd .
 The plumbing modes \(em a reword, a pathspec split \(em reuse existing
 trees byte\-for\-byte and run no verification; so does
