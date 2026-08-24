@@ -261,6 +261,8 @@ git edit --amend-into=<sha> --verify='npm test' -- src/foo.js
 
 By default the command runs at the primary commit the operation authored (a fold's amended commit, an edit's) and at the new tip; `--verify-span` upgrades to every rebuilt commit, since a green tip proves nothing about the span. Each run happens in the operation's isolated worktree checked out at that commit — with `edit.worktreeLink` links already in place, so `node_modules` and friends are there — and `GIT_EDIT_VERIFY_COMMIT` names the commit under test.
 
+A commit missing a file the command references — any command token naming a path at the *result tip* counts as one — is **skipped with a note** rather than failed: at a deep-history target predating your test runner, the command could only die on a spurious `MODULE_NOT_FOUND`-style error indistinguishable from a regression. The commits that do hold the files still verify, and the tip always runs, since what exists there defines the reference set.
+
 A failure pauses the operation with nothing applied and nothing consumed: the built result stays in the worktree, the failing commit is named with an inspect hint, `git edit --continue` re-verifies, `git edit --no-verify --continue` applies the result anyway, and `git edit --abort` cancels — for a fold, the staged changes are simply still staged. The plumbing modes (`-M`, pathspec `--split`) reuse existing trees byte-for-byte and run no verification; so does `--exec`, whose command is your own.
 
 ### Splitting a Commit (`--split`)

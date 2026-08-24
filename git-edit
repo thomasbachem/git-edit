@@ -3309,10 +3309,36 @@ _VERIFY_REWRITE () {
 		COMMITS+=("$NEW_HEAD")
 	fi
 	[ ${#COMMITS[@]} -eq 0 ] && return 0
+	# Repo files the command references – each token, a leading `-flag=` or `./` stripped, that
+	# names a path at the result tip, since a verified commit missing one can only die on it
+	# spuriously, so it skips with a note and the tip itself always runs
+	local -a CMD_PATHS=()
+	local TOK
+	local P
+	for TOK in ${(z)VERIFY_CMD}; do
+		P=${(Q)TOK}
+		P=${P#-*=}
+		P=${P#./}
+		[ -n "$P" ] && git -C "$WT" cat-file -e "$NEW_HEAD:$P" 2>/dev/null && CMD_PATHS+=("$P")
+	done
 	PRINT_CMD "$VERIFY_CMD  # verify ${#COMMITS[@]} commit(s)" 90
 	local C
 	local OUT
+	local ABSENT
+	local -i SKIPPED=0
 	for C in "${COMMITS[@]}"; do
+		ABSENT=""
+		for P in "${CMD_PATHS[@]}"; do
+			if ! git -C "$WT" cat-file -e "$C:$P" 2>/dev/null; then
+				ABSENT=$P
+				break
+			fi
+		done
+		if [ -n "$ABSENT" ]; then
+			PRINT_TEXT "Verify skipped at %s – \`%s\` doesn't exist at this commit" 90 "${C:0:7}" "$ABSENT"
+			SKIPPED+=1
+			continue
+		fi
 		if ! git -C "$WT" checkout -qf --detach "$C" 2>/dev/null; then
 			PRINT_ERR "Cannot check out ${C:0:7} for verification"
 			_VERIFY_FAILED=$C
@@ -3336,7 +3362,11 @@ _VERIFY_REWRITE () {
 	done
 	# End at the tip, so the worktree a later step or reader sees is the result
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
-	PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "${#COMMITS[@]}" "$VERIFY_CMD"
+	if [ $SKIPPED -gt 0 ]; then
+		PRINT_TEXT "Verified %s of %s commit(s) with \`%s\`" 90 "$(( ${#COMMITS[@]} - SKIPPED ))" "${#COMMITS[@]}" "$VERIFY_CMD"
+	else
+		PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "${#COMMITS[@]}" "$VERIFY_CMD"
+	fi
 	return 0
 }
 

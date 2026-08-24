@@ -2351,10 +2351,29 @@ GIT_SELFTEST () {
 	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
 	_ST_EQ "a reorder passes through verification" "$RC" "0"
 	_ST_OUT_HAS "and verified its result" 'Verified 1 commit(s)'
+	_ST_OUT_LACKS "with no skip note from a repo-pathless command" 'Verify skipped'
 	# Plumbing modes have nothing to verify – a reword must not run the check
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
 	_ST_EQ "a reword still completes" "$RC" "0"
 	_ST_OUT_LACKS "without running verification" 'Verified'
+	# A target predating the verify command's own files skips, not fails – each
+	# command token naming a file at the result tip is required at a verified
+	# commit, so the note replaces a false MODULE_NOT_FOUND-style failure
+	printf '#!/bin/sh\nexit 0\n' > runner.sh && git add runner.sh && git commit -qm "VS runner"
+	git config edit.verifyCmd "sh runner.sh"
+	printf 'vf skip\n' >> vf.txt && git add vf.txt
+	_ST_RUN --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "a fold into a pre-runner commit applies" "$RC" "0"
+	_ST_OUT_HAS "the absent target is skipped, not failed" 'Verify skipped at'
+	_ST_OUT_HAS "the note names what is missing" "doesn't exist at this commit"
+	_ST_OUT_HAS "and the tip still verified" 'Verified 1 of 2 commit(s)'
+	# The span tier verifies what exists and skips the rest
+	printf 'vf skip span\n' >> vf.txt && git add vf.txt
+	_ST_RUN --verify-span --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "the span fold applies across the gap" "$RC" "0"
+	local VS_TOTAL=$(git rev-list --count "$(git rev-parse ':/VF base')^..HEAD")
+	local VS_WITH=$(git rev-list --count "$(git rev-parse ':/VS runner')^..HEAD")
+	_ST_OUT_HAS "the span verified only where the runner exists" "Verified $VS_WITH of $VS_TOTAL commit(s)"
 	git config --unset edit.verifyCmd
 	git reset -q --hard
 
