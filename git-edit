@@ -1733,14 +1733,14 @@ _PRINT_AMENDED_SUMMARY () {
 	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_LEFTOVER_STATE "$4"
 	[ -n "$6" ] && _PRINT_MODE_CHANGES "$6" "$1"
-	# Same count check as a reorder's summary: a resolution that reproduces its
-	# predecessor's content leaves that commit empty and the rebase drops it,
-	# which a clean diffstat and an `ok` trailer would otherwise wave through
+	[ -n "$6" ] && _PRINT_TREE_IDENTITY "$6" "$1"
+	# Same count check as a reorder's summary – a resolution reproducing its predecessor's
+	# content leaves that commit empty and the rebase drops it, which a clean diffstat and an
+	# `ok` trailer would otherwise wave through
 	[ -n "$6" ] && _PRINT_DROPPED_COMMITS "$6" "$1"
-	# The fold's correct tip is knowable up front – the pre-op tip plus the
-	# staged changes – so a tip that differs means content beyond the fold
-	# moved: a staged hunk dissolved against a later commit's content, or a
-	# conflict resolution deliberately diverged
+	# The fold's correct tip is knowable up front, the pre-op tip plus the staged changes, so a
+	# tip that differs means content beyond the fold moved – a staged hunk dissolved against a
+	# later commit's content, or a conflict resolution deliberately diverged
 	if [ -n "$7" ] && [ "$(git rev-parse "$1^{tree}" 2>/dev/null)" != "$7" ]; then
 		if [ -n "$8" ]; then
 			PRINT_TEXT "Note: tip tree differs from the staged result – a resolution changed content beyond the fold (compare: %s)" 33 "git diff ${7:0:12} ${1:0:12}"
@@ -1864,7 +1864,7 @@ _SPLIT_APPLY () {
 	# The remainder keeps the commit's full tree and descendants keep theirs,
 	# so the tip tree is identical by construction – stated so callers don't
 	# re-verify with a diff
-	PRINT_TEXT "%s – split into:" 32 "Tip tree unchanged by construction ✓"
+	PRINT_TEXT "%s – split into:" 32 "Tip tree identical ✓"
 	git show --stat --format='  %h %s' "$C1" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	git show --stat --format='  %h %s' "$C2" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	# Each half's stat has to stay under its own subject to say which files went
@@ -2864,6 +2864,7 @@ _CONTINUE_REBASE () {
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_ACTION ${STATE_TARGET:0:7}"
 	_PRINT_MODE_CHANGES "$STATE_ORIG_HEAD" "$NEW_HEAD"
+	_PRINT_TREE_IDENTITY "$STATE_ORIG_HEAD" "$NEW_HEAD"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -3032,6 +3033,7 @@ _CONTINUE_EDIT () {
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
 	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
 	_PRINT_MODE_CHANGES "$BASE" "$NEW_HEAD"
+	_PRINT_TREE_IDENTITY "$BASE" "$NEW_HEAD"
 	_PRINT_DROPPED_COMMITS "$BASE" "$NEW_HEAD"
 	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
 	# A pause outlives the run that opened it, so the name in its trailer is long
@@ -3241,6 +3243,19 @@ _RERERE_SCOPE_END () {
 	fi
 }
 
+# Prints when a rewrite left the tip tree byte-identical to the pre-op tip – the strongest
+# verification a content-preserving operation can get, free since both tips are at hand
+# Reorders print their own variant beside the new order
+_PRINT_TREE_IDENTITY () {
+	# Args: <old-tip> <new-tip>
+	[ "$1" = "$2" ] && return 0
+	local OLD_TREE=$(git rev-parse "$1^{tree}" 2>/dev/null)
+	[ -z "$OLD_TREE" ] && return 0
+	if [ "$OLD_TREE" = "$(git rev-parse "$2^{tree}" 2>/dev/null)" ]; then
+		PRINT_TEXT "%s – content byte-identical to the pre-op tip." 32 "Tip tree identical ✓"
+	fi
+}
+
 # Prints the commits a replay dropped as empty – the count proves something
 # vanished, the names say what, sparing the caller a log hunt. Subjects are
 # the identity (a rewrite changes every SHA); duplicate subjects cancel by
@@ -3257,10 +3272,9 @@ _PRINT_DROPPED_COMMITS () {
 	fi
 	PRINT_TEXT "%s commit(s) resolved to empty and were dropped – %s before, %s after." 33 \
 		"$((BEFORE - AFTER))" "$BEFORE" "$AFTER"
-	# Which ones, by subject multiset – a rewrite changes every SHA, so subjects
-	# are the only surviving identity. Keys take an `s:` prefix (an empty subject
-	# is legal, an empty subscript is not) and count through assignments, never
-	# `(( key++ ))` – arithmetic re-parses the subscript, executing backticks
+	# Which ones, by subject multiset – a rewrite changes every SHA, so subjects are the only
+	# identity that survives, with an `s:` prefix since an empty subject is a legal message
+	# Assignments, since `(( key++ ))` re-parses the subscript and would execute backticks
 	local -A SURVIVING
 	local SUBJECT
 	while IFS= read -r SUBJECT; do
@@ -4134,7 +4148,7 @@ GIT_RESQUASH () {
 	# The squashed commit takes the newest member's tree and descendants keep
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
-	PRINT_TEXT "%s" 32 "Tip tree unchanged by construction ✓"
+	PRINT_TEXT "%s" 32 "Tip tree identical ✓ – unchanged by construction."
 	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	# Identity below the stat block, for the same reason the fold's is
 	_PRINT_COMMIT_LINE "$NEW_SQUASHED" '  squashed: %h %s'
@@ -5319,12 +5333,10 @@ if [ -n "$WORKTREE_DIR" ]; then
 		_RECORD_REF_MOVE "refs/heads/$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION ${COMMIT:0:7}"
 		_PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD" "$ACTION"
 		_PRINT_MODE_CHANGES "$ORIG_HEAD" "$NEW_HEAD"
-		# Named from what the caller selected, never located in the replayed range:
-		# a replay drops a commit that went empty and a fold consumes commits from
-		# either side of its target, so no offset from the base or the tip survives
-		# both – and on the line meant to catch a mistargeted rewrite, a name
-		# guessed wrong is worse than none. These commits are orphaned by now but
-		# still objects, and they are the SHAs the reflog and preamble both carry
+		_PRINT_TREE_IDENTITY "$ORIG_HEAD" "$NEW_HEAD"
+		# Named from what the caller selected, never located in the replayed range – a replay drops
+		# a commit that went empty and a fold consumes commits from either side of its target,
+		# so no offset survives both, and a wrong guess is worse than none on this line
 		if [ "$ACTION" = "squash" ] && [ -n "$TARGET" ]; then
 			_PRINT_COMMIT_LINE "$TARGET" '  squashed into: %h %s'
 		elif [ "$ACTION" = "drop" ]; then

@@ -247,7 +247,7 @@ GIT_SELFTEST () {
 	local PRE_COUNT=$(git rev-list --count HEAD)
 	_ST_RUN --text="C and D combined" "$(git rev-parse HEAD~1)" "$(git rev-parse HEAD)"
 	_ST_EQ "exits 0" "$RC" "0"
-	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_OUT_HAS "states tree identity" 'Tip tree identical'
 	_ST_EQ "one commit fewer" "$(git rev-list --count HEAD)" "$((PRE_COUNT-1))"
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 	_ST_EQ "combined message" "$(git log --format=%s -1)" "C and D combined"
@@ -335,7 +335,7 @@ GIT_SELFTEST () {
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
 	_ST_RUN --split="$(git rev-parse HEAD)" --text="S extracted" -- s1.txt
 	_ST_EQ "exits 0" "$RC" "0"
-	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_OUT_HAS "states tree identity" 'Tip tree identical'
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 	_ST_EQ "tip keeps original message" "$(git log --format=%s -1)" "S mixed commit"
 	_ST_EQ "extracted commit below it" "$(git log --format=%s -2 | tail -1)" "S extracted"
@@ -756,7 +756,7 @@ GIT_SELFTEST () {
 	OUT=$(cd "$CS_WT" && GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue --text "CS extracted" </dev/null 2>&1)
 	RC=$?
 	_ST_EQ "continue completes the split" "$RC" "0"
-	_ST_OUT_HAS "states tree identity" 'Tip tree unchanged by construction'
+	_ST_OUT_HAS "states tree identity" 'Tip tree identical'
 	_ST_OUT_HAS "trailer anchors on the branch, not the worktree HEAD" "moved $CS_PRE"
 	# The resumed path reaches the same summary as the pathspec one
 	_ST_EQ "names the commit it split within a 'tail -3'" \
@@ -852,6 +852,7 @@ GIT_SELFTEST () {
 	_ST_EQ "the dissolution applies without a pause" "$RC" "0"
 	_ST_OUT_HAS "the emptied husk is counted" 'resolved to empty and were dropped'
 	_ST_OUT_HAS "and named" 'dropped: .*HK husk'
+	_ST_OUT_HAS "with the tip tree proven untouched" 'Tip tree identical'
 	_ST_EQ "the husk is gone from history" "$(git rev-list --count HEAD)" "$((HK_COUNT - 1))"
 	_ST_EQ "and the identity line stays within a 'tail -3'" \
 		"$(echo "$OUT" | tail -3 | grep -c 'edited: ')" "1"
@@ -1641,6 +1642,7 @@ GIT_SELFTEST () {
 	printf 'id s2\n' > id-s2.txt && git add id-s2.txt && git commit -qm "ID squash two"
 	_ST_RUN -s -y HEAD~1 HEAD
 	_ST_EQ "the squash succeeds" "$RC" "0"
+	_ST_OUT_HAS "and proves its tree-preserving invariant" 'Tip tree identical'
 	_ST_EQ "its own summary lands within a 'tail -3' too" \
 		"$(echo "$OUT" | tail -3 | grep -c 'squashed: ')" "1"
 
