@@ -2435,6 +2435,30 @@ GIT_SELFTEST () {
 	_ST_RUN --abort
 	_ST_EQ "while abort still cancels clean" "$RC" "0"
 	git reset -q -- vd.txt && git checkout -q -- vd.txt
+	# A flag-only --verify survives the pause – with no standing config, a
+	# resume that forgot it would apply the result with no verification at all
+	git config --unset edit.verifyCmd
+	printf 'vd\nflagkeep\n' > vd.txt && git add vd.txt
+	_ST_RUN --verify=false --amend-into="$(git rev-parse HEAD)" -- vd.txt
+	_ST_EQ "the flag-only verify pauses" "$RC" "2"
+	_ST_RUN --continue
+	_ST_EQ "the resume still verifies – the flag survived the pause" "$RC" "2"
+	_ST_OUT_HAS "as a verify pause again" 'git-edit: paused – verify failed'
+	_ST_RUN --abort
+	git reset -q -- vd.txt && git checkout -q -- vd.txt
+	# The span tier survives too – a plain continue must re-verify the whole
+	# span, not silently downgrade to primary+tip
+	printf 'vs1\n' > vs.txt && git add vs.txt && git commit -qm "VS span one"
+	printf 'vs1\nmid\n' > vs.txt && git add vs.txt && git commit -qm "VS span two"
+	printf 'vs1\nmid\nend\n' > vs.txt && git add vs.txt && git commit -qm "VS span three"
+	printf 'vd\nspankeep\n' > vd.txt && git add vd.txt
+	_ST_RUN --verify=false --verify-span --amend-into="$(git rev-parse ':/VS span one')" -- vd.txt
+	_ST_EQ "the spanned fold pauses" "$RC" "2"
+	_ST_RUN --continue
+	_ST_EQ "and the resume re-pauses" "$RC" "2"
+	_ST_OUT_HAS "verifying the span, not just primary+tip" '# verify 3 commit(s)'
+	_ST_RUN --abort
+	git reset -q -- vd.txt && git checkout -q -- vd.txt
 	git config --unset edit.verifyCmd
 	git reset -q --hard
 

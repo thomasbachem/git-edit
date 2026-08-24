@@ -3110,14 +3110,20 @@ _STATE_FILE_PATH () {
 }
 
 _SAVE_STATE () {
-	# args: key=value pairs to persist (one per arg)
+	# Args: key=value pairs to persist (one per arg)
 	local SF=$(_STATE_FILE_PATH) || { PRINT_ERR "Not in a git repo"; return 1; }
 	local KV
+	local SAVE_VERIFY_CMD=${VERIFY_VALUE:-$STATE_VERIFY_CMD}
 	{
 		for KV in "$@"; do echo "$KV"; done
 		# The rerere scope's baseline rides along uninvited – every pause must
 		# carry it for the resuming invocation to adopt (see _RERERE_SCOPE_BEGIN)
 		if [ -n "$_RERERE_SCOPE_OWNED" ]; then echo "rrpre=$_RERERE_PRE"; fi
+		# So do a --verify flag and the span tier – flags don't survive into the
+		# resuming invocation, and a continue must re-verify what the original
+		# run asked for, not silently less (or, with no standing config, nothing)
+		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
+		if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then echo "verify_span=1"; fi
 	} > "$SF"
 }
 
@@ -3149,6 +3155,8 @@ _LOAD_STATE () {
 	STATE_RRPRE_SET=""
 	STATE_VERIFY_FAILED=""
 	STATE_VERIFY_RESULT=""
+	STATE_VERIFY_CMD=""
+	STATE_VERIFY_SPAN=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3173,6 +3181,8 @@ _LOAD_STATE () {
 			rrpre)           STATE_RRPRE=$VAL; STATE_RRPRE_SET=1 ;;
 			verify_failed)   STATE_VERIFY_FAILED=$VAL ;;
 			verify_result)   STATE_VERIFY_RESULT=$VAL ;;
+			verify_cmd)      STATE_VERIFY_CMD=$VAL ;;
+			verify_span)     STATE_VERIFY_SPAN=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
@@ -3299,17 +3309,20 @@ _VERIFY_REWRITE () {
 	local PRIMARY=$4
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 0
+	# Flag first, then what the pause recorded – a resume re-verifies what the
+	# original run asked for – then the standing config
 	local VERIFY_CMD=$VERIFY_VALUE
+	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$STATE_VERIFY_CMD
 	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$(git config --get edit.verifyCmd 2>/dev/null)
 	if [ -z "$VERIFY_CMD" ]; then
-		if [ ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+		if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then
 			PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
 			exit 1
 		fi
 		return 0
 	fi
 	local -a COMMITS
-	if [ ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+	if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then
 		COMMITS=("${(@f)$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)}")
 	else
 		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
