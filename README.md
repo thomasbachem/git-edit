@@ -37,11 +37,11 @@ FLAGS:
 Every run ends with a single status line written as natural prose, anchored by `git-edit: <outcome>` for programmatic dispatch:
 
 ```
-git-edit: ok — refs/heads/main moved <old-sha> → <new-sha>
-git-edit: ok — refs/heads/main unchanged
-git-edit: error — exit code <N>
-git-edit: paused — edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
-git-edit: conflict — resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
+git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>
+git-edit: ok – refs/heads/main unchanged
+git-edit: error – exit code <N>
+git-edit: paused – edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
+git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
 Output is padded with blank lines for readability only when stdout is a terminal. Piped or captured — every agent invocation — it comes out tight, so even a `| tail -3` carries the trailer and the line naming the commit the run touched — every mode but `--exec`, whose command is yours and has no single target — instead of blank space. That pair is the guarantee — a stat block or a path list grows with the commit, so nothing above them is within reach of a short tail. Color follows the same rule and also honors `NO_COLOR` and `TERM=dumb`, so a captured run greps as plain text rather than as literal text split by escape sequences.
@@ -228,7 +228,7 @@ Remaining steps (after resolution):
   pick 8b068f4 # modify x
 
 Or abort the operation: git edit --abort
-git-edit: conflict — resolve in /var/folders/…/git-edit-amend-into.XXXXXX (x.txt); then 'git edit --continue' or 'git edit --abort'
+git-edit: conflict – resolve in /var/folders/…/git-edit-amend-into.XXXXXX (x.txt); then 'git edit --continue' or 'git edit --abort'
 ```
 
 The "Remaining steps" list lets the agent predict cascade likelihood: if any of the remaining picks touch the same files as the agent's amendment, another conflict is likely. The trailer line gives the worktree path and conflicted files inline, so an agent can dispatch on `git-edit: conflict` and act on it without parsing the full output.
@@ -264,7 +264,7 @@ When both concerns live in the **same file**, no pathspec can name them apart. D
 
 ```
 git edit --split=<sha> --text="Refactor: Rename the compute helpers"
-git-edit: paused — split 6953784 in /tmp/git-edit-split.wMtUwy; then 'git edit --continue' or 'git edit --abort'
+git-edit: paused – split 6953784 in /tmp/git-edit-split.wMtUwy; then 'git edit --continue' or 'git edit --abort'
 ```
 
 The worktree holds the commit's **own** content. Edit it back to what the first commit should leave behind — undo there whatever belongs in the second — then `git edit --continue` (with `--text` if you didn't pass it up front). Authoring that one intermediate state is the whole description of a hunk-level split, and it's a description a non-interactive caller can give without `git add -p`.
