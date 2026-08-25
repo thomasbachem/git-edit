@@ -310,7 +310,12 @@ Overrides
 A reword reuses every tree byte\-for\-byte and runs no verification; nor
 does
 .BR \-\-exec ,
-whose command is the caller's own. A split does verify \(em its extracted
+whose command is the caller's own \(em an explicit
+.B \-\-verify
+on these refuses rather than promise a gate the run never keeps, while a
+standing
+.B edit.verifyCmd
+stays quietly exempt. A split does verify \(em its extracted
 half is a tree no commit ever carried, whatever the tip is \(em in a
 throwaway worktree, refusing rather than pausing, since a split re\-derives
 its halves from its own worktree.

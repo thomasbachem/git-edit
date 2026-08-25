@@ -4421,10 +4421,18 @@ if [ ${#OPT_VERIFY} -gt 0 ]; then
 		exit 1
 	fi
 fi
+# An explicit `--verify` on a mode with no gate would be silently ignored, a promise the run
+# never keeps, so refuse it up front – `-M`/`-S` preserve every tree by construction and
+# `--exec`'s command is its own gate, while a standing `edit.verifyCmd` stays exempt
+if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 ]; then
+	PRINT_ERR "--verify cannot gate this mode"
+	ECHO_E "\e[0;31m  A reword or -S preserves every tree by construction; --exec's command is its own gate.\e[0m" >&2
+	exit 1
+fi
 
-# --continue / --abort dispatch – resume or cancel an in-flight operation.
-# These mirror `git rebase --continue` / `--abort`. They short-circuit before
-# any of the normal argument validation runs.
+# `--continue` and `--abort` dispatch – resume or cancel an in-flight operation, mirroring
+# `git rebase --continue` and `--abort`, and short-circuiting before any of the normal
+# argument validation gets a chance to run
 if [ ${#OPT_CONTINUE} -gt 0 ] && [ ${#OPT_ABORT} -gt 0 ]; then
 	PRINT_ERR "--continue and --abort cannot be combined"
 	exit 1

@@ -2587,6 +2587,21 @@ GIT_SELFTEST () {
 	git config --unset edit.verifyCmd
 	git reset -q --hard
 
+	# An explicit `--verify` on a mode with no gate refuses up front, since ignoring it would
+	# promise a gate the run never keeps – the standing config stays exempt, so a reword
+	# under `edit.verifyCmd` must land untouched
+	local XM_TIP=$(git rev-parse HEAD)
+	_ST_RUN --verify=false -M "$XM_TIP" --text="XM reworded"
+	_ST_EQ "an explicit --verify on -M refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the reason" 'cannot gate this mode'
+	_ST_EQ "with the branch untouched" "$(git rev-parse HEAD)" "$XM_TIP"
+	_ST_RUN --verify-span --exec -- true
+	_ST_EQ "--verify-span on --exec refuses too" "$RC" "1"
+	git config edit.verifyCmd "false"
+	_ST_RUN -M "$XM_TIP" --text="XM reworded quietly"
+	_ST_EQ "a standing config leaves the reword alone" "$RC" "0"
+	git config --unset edit.verifyCmd
+
 	# --- 61. a rewrite that lands a mode change says so ---
 	# A diffstat shows line counts only, so a dropped executable bit on a
 	# file that also changed content rides invisibly – the completion
