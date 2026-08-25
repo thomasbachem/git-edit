@@ -2446,6 +2446,16 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
 	_ST_EQ "a reword still completes" "$RC" "0"
 	_ST_OUT_LACKS "without running verification" 'Verified'
+	# A command that cannot survive the state file is refused, not truncated
+	printf 'nl\n' > nl.txt && git add nl.txt && git commit -qm "NL base"
+	local NL_TIP=$(git rev-parse HEAD)
+	printf 'nl2\n' > nl.txt && git add nl.txt
+	_ST_RUN --verify=$'echo one\necho two' --amend-into="$NL_TIP" -- nl.txt
+	_ST_EQ "a multi-line verify command is refused" "$RC" "1"
+	_ST_OUT_HAS "naming the reason" 'spans multiple lines'
+	_ST_EQ "with the branch untouched" "$(git rev-parse HEAD)" "$NL_TIP"
+	_ST_CHECK "and the staged change still staged" sh -c "! git diff --cached --quiet -- nl.txt"
+	git reset -q -- nl.txt && git checkout -q -- nl.txt
 	# Completed runs still take their worktrees with them – the interrupt-safety
 	# rule keeps one only while resumable state is on disk
 	_ST_EQ "no worktree outlives a finished run" "$(git worktree list | wc -l | tr -d ' ')" "1"

@@ -3344,6 +3344,13 @@ _VERIFY_REWRITE () {
 	local VERIFY_CMD=$VERIFY_VALUE
 	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$STATE_VERIFY_CMD
 	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	# A pause persists the command as one `key=value` line, and a resume would
+	# read back only its first line – a truncated check that can still exit 0
+	if [ "$VERIFY_CMD" != "${VERIFY_CMD%%$'\n'*}" ]; then
+		PRINT_ERR "The verify command spans multiple lines – a pause could only carry its first"
+		ECHO_E "\e[0;31m  Put it in a script and name that instead.\e[0m" >&2
+		exit 1
+	fi
 	if [ -z "$VERIFY_CMD" ]; then
 		if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then
 			PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
