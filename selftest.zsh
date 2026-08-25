@@ -2602,6 +2602,22 @@ GIT_SELFTEST () {
 	_ST_EQ "a standing config leaves the reword alone" "$RC" "0"
 	git config --unset edit.verifyCmd
 
+	# A split whose verify worktree cannot open fails closed – applying it
+	# unverified under an `ok` trailer would read as gated when nothing ran
+	printf 'vw1\n' > vw1.txt && printf 'vw2\n' > vw2.txt && git add vw1.txt vw2.txt && git commit -qm "VW both"
+	git config edit.verifyCmd "true"
+	local VW_TIP=$(git rev-parse HEAD)
+	mkdir -p "$TMP/shim"
+	printf '#!/bin/zsh\nif [[ "$1" == "worktree" && "$2" == "add" && "$*" == *git-edit-verify* ]]; then exit 1; fi\nexec %s "$@"\n' "$(command -v git)" > "$TMP/shim/git"
+	chmod +x "$TMP/shim/git"
+	PATH="$TMP/shim:$PATH" _ST_RUN --split="$VW_TIP" --text="VW extracted" -- vw1.txt
+	_ST_EQ "a split with no verify worktree refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the failure" 'Could not open a worktree to verify the split'
+	_ST_EQ "with the branch untouched" "$(git rev-parse HEAD)" "$VW_TIP"
+	PATH="$TMP/shim:$PATH" _ST_RUN --no-verify --split="$VW_TIP" --text="VW extracted" -- vw1.txt
+	_ST_EQ "and --no-verify is the stated escape" "$RC" "0"
+	git config --unset edit.verifyCmd
+
 	# --- 61. a rewrite that lands a mode change says so ---
 	# A diffstat shows line counts only, so a dropped executable bit on a
 	# file that also changed content rides invisibly – the completion

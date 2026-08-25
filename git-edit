@@ -1859,15 +1859,23 @@ _SPLIT_APPLY () {
 			git worktree remove --force "$VWT" >/dev/null 2>&1
 			rm -rf "$VWT"
 			if [ "$VERIFY_OK" != "true" ]; then
-				# No pause: a split's halves re-derive from its own worktree, so a
-				# refusal leaves the authoring in place for another --continue
+				# No pause – a split's halves re-derive from its own worktree, so a refusal leaves the
+				# authoring in place for another `--continue`
 				PRINT_ERR "Verification failed at ${_VERIFY_FAILED:0:7} – the split was not applied"
 				[ -n "$STATE_WORKTREE" ] && PRINT_TEXT "Fix it in %s, then 'git edit --continue' – or 'git edit --abort'." 33 "$STATE_WORKTREE"
 				exit 1
 			fi
 		else
 			rm -rf "$VWT"
-			PRINT_TEXT "Could not open a worktree to verify the split – applying unverified." 33
+			# Fail closed – an unverifiable split landing under an `ok` trailer reads as gated when
+			# in fact nothing ever ran at all
+			PRINT_ERR "Could not open a worktree to verify the split – not applied"
+			if [ -n "$STATE_WORKTREE" ]; then
+				PRINT_TEXT "Retry with 'git edit --continue', or apply unverified: %s" 33 "git edit --no-verify --continue"
+			else
+				PRINT_TEXT "Retry, or apply unverified with %s" 33 "--no-verify"
+			fi
+			exit 1
 		fi
 	fi
 
