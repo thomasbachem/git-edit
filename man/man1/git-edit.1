@@ -491,11 +491,24 @@ before anything could look at it.
 .B "git edit \-\-continue"
 and dispatch on the fresh trailer; a cascade repeats the loop.
 .SS Pauses without markers
-A marker grep conflates three pause states that need three different
-responses \(em the unmerged list from step 1 tells them apart:
+A marker grep conflates pause states that need different responses \(em
+dispatch on the trailer first, then on the unmerged list from step 1:
 .IP \(bu 3
-No unmerged files at all: the current step became empty \(em the skip case
-under
+A
+.B paused
+trailer naming a verify failure: nothing is unmerged and nothing is to be
+resolved \(em the result is built and the caller's own check rejected it.
+Editing that worktree is refused rather than folded in; apply the result with
+.B "\-\-no\-verify \-\-continue"
+and repair the named commit with its own
+.B git edit
+pass, or
+.BR \-\-abort .
+.IP \(bu 3
+A
+.B conflict
+trailer with no unmerged files at all: the current step became empty \(em the
+skip case under
 .BR "CONFLICT RESOLUTION" ,
 nothing to resolve.
 .IP \(bu 3
