@@ -2446,6 +2446,9 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
 	_ST_EQ "a reword still completes" "$RC" "0"
 	_ST_OUT_LACKS "without running verification" 'Verified'
+	# Completed runs still take their worktrees with them – the interrupt-safety
+	# rule keeps one only while resumable state is on disk
+	_ST_EQ "no worktree outlives a finished run" "$(git worktree list | wc -l | tr -d ' ')" "1"
 	# A target predating the verify command's own files skips, not fails – each
 	# command token naming a file at the result tip is required at a verified
 	# commit, so the note replaces a false MODULE_NOT_FOUND-style failure

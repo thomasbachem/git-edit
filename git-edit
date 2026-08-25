@@ -90,35 +90,31 @@ ECHO_E () {
 
 ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
 
-# Global cleanup hook (any sub-operation that needs cleanup on exit can set
-# this to a shell command). Runs once on script exit, before the error
-# trailer. Used by GIT_EXEC for temp-worktree cleanup, and by auto-isolation
-# for the per-invocation tmp worktree.
+# Global cleanup hook – a shell command any sub-operation can set, run once on script exit
+# before the error trailer, by `GIT_EXEC` for temp worktrees and by auto-isolation for its own
 _CLEANUP_HOOK=""
 
-# Temp files to remove however the run ends. A conflict exits straight from the
-# handler, past whatever `rm` followed the call that made them – and the pause
-# deliberately clears the hook above to keep its worktree, so these need a list
-# of their own rather than a place in it
+# Temp files to remove however the run ends – a conflict exits straight from the handler,
+# past whatever `rm` followed the call that made them, and the pause clears the hook above
+# to keep its worktree, so these need a list of their own
 _TEMP_FILES=()
 
-# Tracks whether a status trailer was emitted (success, abort, conflict) so
-# the global trap doesn't double-emit an `error …` line on top of an
-# explicit `ok …` or `conflict …` trailer.
+# Tracks whether a status trailer was emitted, so the global trap doesn't put an `error …`
+# line on top of an explicit `ok …` or `conflict …` one
 _STATUS_EMITTED=false
 
-# Captures the last message passed to PRINT_ERR, so the global exit trap can
-# include the actual error reason in the trailer line – saving agents from
-# having to scrape stderr for context when the operation failed.
+# Last message passed to `PRINT_ERR`, so the exit trap can name the actual reason in the
+# trailer rather than leaving agents to scrape stderr
 _LAST_ERROR=""
 
-# Global EXIT trap. Runs the cleanup hook (if any), then emits a stable
-# machine-readable error trailer (matching the format of the success trailer
-# `git-edit: ok …`) so agents can grep `^git-edit:` for either outcome with
-# a single parse rule.
+# Runs the cleanup hook, then emits a machine-readable error trailer matching the success
+# form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
 _GLOBAL_EXIT_TRAP () {
 	local CODE=$?
-	if [ -n "$_CLEANUP_HOOK" ]; then
+	# A resumable operation keeps its worktree: an interrupt mid-verification would otherwise
+	# remove the one the saved state still points at – completions clear their state first
+	local SF=$(_STATE_FILE_PATH)
+	if [ -n "$_CLEANUP_HOOK" ] && { [ $CODE -eq 0 ] || [ -z "$SF" ] || [ ! -f "$SF" ]; }; then
 		eval "$_CLEANUP_HOOK" 2>/dev/null
 		_CLEANUP_HOOK=""
 	fi
