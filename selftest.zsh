@@ -2446,6 +2446,24 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
 	_ST_EQ "a reword still completes" "$RC" "0"
 	_ST_OUT_LACKS "without running verification" 'Verified'
+	# A split authors an intermediate tree no commit carried, so the gate covers
+	# it – here the tip passes by construction while the extracted half does not
+	printf 'sa\n' > sa.txt && printf 'sb\n' > sb.txt && git add sa.txt sb.txt
+	git commit -qm "SP both files"
+	local SP_TIP=$(git rev-parse HEAD)
+	local SP_COUNT=$(git rev-list --count HEAD)
+	# The check lives outside the repo, so it names no path the skip heuristic
+	# could exempt – the absence of sb.txt is the failure, not a missing target
+	printf '#!/bin/sh\ntest -f sb.txt\n' > "$TMP/spcheck.sh" && chmod +x "$TMP/spcheck.sh"
+	git config edit.verifyCmd "$TMP/spcheck.sh"
+	_ST_RUN --split="$SP_TIP" --text "SP extracted sa" -- sa.txt
+	_ST_EQ "the split is refused on its broken intermediate" "$RC" "1"
+	_ST_OUT_HAS "saying nothing was applied" 'the split was not applied'
+	_ST_EQ "and the branch never moved" "$(git rev-parse HEAD)" "$SP_TIP"
+	git config edit.verifyCmd "true"
+	_ST_RUN --split="$SP_TIP" --text "SP extracted sa" -- sa.txt
+	_ST_EQ "a passing check lets the same split through" "$RC" "0"
+	_ST_EQ "and it really split" "$(git rev-list --count HEAD)" "$((SP_COUNT + 1))"
 	# A command that cannot survive the state file is refused, not truncated
 	printf 'nl\n' > nl.txt && git add nl.txt && git commit -qm "NL base"
 	local NL_TIP=$(git rev-parse HEAD)

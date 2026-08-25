@@ -307,10 +307,13 @@ cancels with nothing consumed \(em the built result is recorded, so a
 resume restores the worktree to it if an inspect checkout moved it.
 Overrides
 .BR edit.verifyCmd .
-The plumbing modes \(em a reword, a pathspec split \(em reuse existing
-trees byte\-for\-byte and run no verification; so does
+A reword reuses every tree byte\-for\-byte and runs no verification; nor
+does
 .BR \-\-exec ,
-whose command is the caller's own.
+whose command is the caller's own. A split does verify \(em its extracted
+half is a tree no commit ever carried, whatever the tip is \(em in a
+throwaway worktree, refusing rather than pausing, since a split re\-derives
+its halves from its own worktree.
 .TP
 .B \-\-verify\-span
 Verify every rebuilt commit instead of just the primary one and the tip \(em

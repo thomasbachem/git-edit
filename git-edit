@@ -1847,6 +1847,30 @@ _SPLIT_APPLY () {
 	PREV_NEW=$C2
 	_REBUILD_DESCENDANTS "$X"
 
+	# A split authors an intermediate tree no commit ever carried, so it earns the gate as much
+	# as any replay, even with the tip tree unchanged by construction – always in a throwaway
+	# worktree, since the gate's failure path checks out over whatever it was handed
+	if _VERIFY_CONFIGURED; then
+		local VWT=$(MKTEMP_DIR git-edit-verify)
+		if git worktree add --detach "$VWT" "$PREV_NEW" >/dev/null 2>&1; then
+			_LINK_WORKTREE_EXTRAS "$VWT"
+			local VERIFY_OK=true
+			_VERIFY_REWRITE "$VWT" "$PREV_NEW" "$ORIG_HEAD" "$C1" || VERIFY_OK=false
+			git worktree remove --force "$VWT" >/dev/null 2>&1
+			rm -rf "$VWT"
+			if [ "$VERIFY_OK" != "true" ]; then
+				# No pause: a split's halves re-derive from its own worktree, so a
+				# refusal leaves the authoring in place for another --continue
+				PRINT_ERR "Verification failed at ${_VERIFY_FAILED:0:7} – the split was not applied"
+				[ -n "$STATE_WORKTREE" ] && PRINT_TEXT "Fix it in %s, then 'git edit --continue' – or 'git edit --abort'." 33 "$STATE_WORKTREE"
+				exit 1
+			fi
+		else
+			rm -rf "$VWT"
+			PRINT_TEXT "Could not open a worktree to verify the split – applying unverified." 33
+		fi
+	fi
+
 	# Atomic CAS ref update
 	local CMD="git update-ref -m 'git edit: split ${X:0:7}' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
@@ -3318,21 +3342,19 @@ _GUARD_RESOLUTION_CLEAN () {
 	fi
 }
 
-# Runs the caller's verification over what a rewrite built, before the CAS
-# applies it – the gate for a result that landed semantically wrong yet green,
-# since "ok" says the branch moved, not that the content works. The command
-# comes from --verify=<cmd> (this run) or `edit.verifyCmd` (standing);
-# --no-verify skips both. By default it runs at the primary commit the mode
-# authored (where one is known) and at the new tip; --verify-span runs it at
-# every rebuilt commit instead. Each run happens in the operation's isolated
-# worktree checked out at that commit – gitignored links from
-# `edit.worktreeLink` are already in place – with `GIT_EDIT_VERIFY_COMMIT`
-# naming the commit under test. Returns non-zero on the first failure, leaving
-# the worktree at the failing commit; callers pause the operation with state
-# kept, so '--continue' re-verifies, '--no-verify --continue' applies anyway,
-# and '--abort' cancels with nothing consumed.
+# Runs the caller's verification over what a rewrite built, before the CAS applies it – the
+# gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
+# standing `edit.verifyCmd`, at the primary commit and the tip
+_VERIFY_CONFIGURED () {
+	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 1
+	local CMD=$VERIFY_VALUE
+	[ -z "$CMD" ] && CMD=$STATE_VERIFY_CMD
+	[ -z "$CMD" ] && CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -n "$CMD" ]
+}
+
 _VERIFY_REWRITE () {
-	# args: <worktree> <new_head> <orig_head> [<primary-commit>]
+	# Args: <worktree> <new_head> <orig_head> [<primary-commit>]
 	local WT=$1
 	local NEW_HEAD=$2
 	local ORIG_HEAD=$3
