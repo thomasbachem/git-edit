@@ -263,6 +263,8 @@ By default the command runs at the primary commit the operation authored (a fold
 
 A commit missing a file the command references — any command token naming a path at the *result tip* counts as one — is **skipped with a note** rather than failed: at a deep-history target predating your test runner, the command could only die on a spurious `MODULE_NOT_FOUND`-style error indistinguishable from a regression. The commits that do hold the files still verify, and the tip always runs, since what exists there defines the reference set.
 
+A verify pause is **not** a content-edit pause, and the two want opposite things from you: the result is already built, so nothing you author in that worktree can join it — a resume would check out over it, and refuses while any edit is present instead, naming the repair — apply with `--no-verify --continue`, then fix the commit itself with a `git edit <sha>` pass.
+
 A failure pauses the operation with nothing applied and nothing consumed: the built result stays in the worktree, the failing commit is named with an inspect hint (the resume puts the worktree back on the built result if that checkout moved it), `git edit --continue` re-verifies — with the pause's own command and tier, however the resume is invoked — `git edit --no-verify --continue` applies the result anyway, and `git edit --abort` cancels — for a fold, the staged changes are simply still staged. The plumbing modes (`-M`, pathspec `--split`) reuse existing trees byte-for-byte and run no verification; so does `--exec`, whose command is your own.
 
 ### Splitting a Commit (`--split`)

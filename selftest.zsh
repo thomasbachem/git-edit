@@ -2501,6 +2501,34 @@ GIT_SELFTEST () {
 	_ST_RUN --abort
 	_ST_EQ "while abort still cancels clean" "$RC" "0"
 	git reset -q -- vd.txt && git checkout -q -- vd.txt
+	# A verify pause discards worktree edits, so a continue refuses while any are present rather
+	# than swallowing them – the content-edit pause invites exactly the opposite instinct,
+	# and a tip fold has no replays, so the pause is verify's for certain
+	printf 'vd\ndirty\n' > vd.txt && git add vd.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" -- vd.txt
+	_ST_EQ "the tip fold pauses on verification" "$RC" "2"
+	_ST_OUT_HAS "and warns that editing there is not the repair" 'not the repair'
+	local VE_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)
+	_ST_CHECK "the pause named a worktree" sh -c "[ -d '$VE_WT' ]"
+	# Untracked files are the command's own litter and the linked deps – only
+	# tracked edits are work the caller would lose
+	printf 'log\n' > "$VE_WT/verify-run.log"
+	_ST_RUN --continue
+	_ST_EQ "untracked litter does not block the resume" "$RC" "2"
+	_ST_OUT_HAS "which re-verifies as usual" 'git-edit: paused – verify failed'
+	rm -f "$VE_WT/verify-run.log"
+	printf 'hand-edited\n' >> "$VE_WT/vd.txt"
+	_ST_RUN --continue
+	_ST_EQ "a continue over worktree edits refuses" "$RC" "1"
+	_ST_OUT_HAS "naming what would have been lost" 'carries edits'
+	_ST_OUT_HAS "and the repair path" 'no-verify --continue'
+	_ST_RUN --no-verify --continue
+	_ST_EQ "the override refuses too, while they are still there" "$RC" "1"
+	git -C "$VE_WT" checkout -- . 2>/dev/null
+	_ST_RUN --no-verify --continue
+	_ST_EQ "and applies once they are gone" "$RC" "0"
+	git reset -q -- vd.txt && git checkout -q -- vd.txt
+
 	# A flag-only --verify survives the pause – with no standing config, a
 	# resume that forgot it would apply the result with no verification at all
 	git config --unset edit.verifyCmd
