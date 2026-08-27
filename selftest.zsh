@@ -397,6 +397,17 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_LACKS "no warning for safe tag" 'points into the rewritten span'
 	git tag -d marker >/dev/null 2>&1
+	# Two tags in the span warn independently, and a tag on a non-commit
+	# object is neither flagged nor trips the --merged walks
+	git tag markerA "$(git rev-parse HEAD~1)"
+	git tag markerB
+	git tag blobmark "$(echo blob | git hash-object -w --stdin)"
+	_ST_RUN -M --text="T1 reworded again" "$(git rev-parse HEAD~1)"
+	_ST_EQ "exits 0 with a blob tag present" "$RC" "0"
+	_ST_OUT_HAS "warns about the lower tag" 'Tag markerA points into'
+	_ST_OUT_HAS "and the upper tag" 'Tag markerB points into'
+	_ST_OUT_LACKS "blob tag never flagged" 'blobmark'
+	git tag -d markerA markerB blobmark >/dev/null 2>&1
 
 	# --- 21. auto-target resolves from a subdirectory ---
 	ECHO_E "\e[1;96m[21] auto-target from subdirectory\e[0m"
@@ -2638,6 +2649,23 @@ GIT_SELFTEST () {
 	_ST_EQ "the mode-neutral fold lands" "$RC" "0"
 	_ST_OUT_LACKS "with no mode note" 'Mode changes landed'
 	git reset -q --hard
+
+
+	# --- 62. --exec's result guard refuses to orphan a remote ref ---
+	# --exec can't know its targets up front, so the pushed guard runs on
+	# the result – a remote ref reachable from the old tip but not the new
+	# one refuses the apply
+	ECHO_E "\e[1;96m[62] exec result guard\e[0m"
+	echo "xg" > xg.txt && git add xg.txt && git commit -qm "XG commit"
+	git update-ref refs/remotes/guard/main HEAD
+	local XG_TIP=$(git rev-parse HEAD)
+	_ST_RUN --exec -- git commit --amend -m "XG amended"
+	_ST_EQ "exec orphaning a remote ref refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the ref" 'rewrote pushed history.*guard/main'
+	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$XG_TIP"
+	_ST_RUN --allow-pushed --exec -- git commit --amend -m "XG amended"
+	_ST_EQ "--allow-pushed overrides" "$RC" "0"
+	git update-ref -d refs/remotes/guard/main
 
 
 	# --- Summary ---

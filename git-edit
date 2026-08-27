@@ -691,35 +691,30 @@ _JOURNAL_FILE_PATH () {
 	echo "$DIR/git-edit-journal"
 }
 
-# Records a completed CAS ref move: appends a journal entry and prints the
-# one-line inverse command, so recovery never requires understanding this
-# script – the undo is plain git, also reachable via `git edit --undo`.
-# Also warns about tags left pointing into the rewritten span – they'd
-# silently stay on pre-rewrite history and surface only at release time.
+# Records a completed CAS ref move – appends a journal entry and prints the inverse command,
+# so recovery is plain git rather than knowledge of this script, also via `git edit --undo`
+# Warns about tags left pointing into the rewritten span, which surface only at release time
 _RECORD_REF_MOVE () {
-	# args: <ref> <old> <new> <label>
+	# Args: <ref> <old> <new> <label>
 	local JF=$(_JOURNAL_FILE_PATH)
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
 	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
 
-	# A tag is orphaned if it was reachable from the old tip but isn't from
-	# the new one. Suggest the counterpart commit when its subject matches
-	# exactly one commit in the rewritten span; tags on shared (pushed) base
-	# history are ancestors of both tips and never flagged.
+	# A tag is orphaned where it was reachable from the old tip but not the new one, and its
+	# counterpart is suggested when one commit in the span shares its subject – tags on pushed
+	# base history are ancestors of both tips, so two `--merged` walks beat a per-tag loop
+	local ORPHANED_TAGS=$(comm -23 <(git tag --merged "$2" 2>/dev/null | sort) <(git tag --merged "$3" 2>/dev/null | sort))
 	local TAG TAGSHA TSUBJ CAND
-	for TAG in $(git for-each-ref refs/tags --format='%(refname:short)'); do
+	for TAG in ${(f)ORPHANED_TAGS}; do
 		TAGSHA=$(git rev-parse "$TAG^{commit}" 2>/dev/null)
 		[ -z "$TAGSHA" ] && continue
-		if git merge-base --is-ancestor "$TAGSHA" "$2" 2>/dev/null && \
-		   ! git merge-base --is-ancestor "$TAGSHA" "$3" 2>/dev/null; then
-			TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
-			CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
-			PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
-			if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
-				ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
-			else
-				ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
-			fi
+		TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
+		CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
+		PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
+		if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
+			ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
+		else
+			ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
 		fi
 	done
 
@@ -1299,31 +1294,27 @@ GIT_EXEC () {
 		exit $STATUS
 	fi
 
-	# Did the command move HEAD? If so, apply the new tip to the original ref.
+	# Did the command move `HEAD`? If so, apply the new tip to the original ref
 	local NEW_HEAD=$(git rev-parse HEAD)
 	if [ "$NEW_HEAD" = "$ORIG_HEAD" ]; then
 		PRINT_TEXT "HEAD unchanged – nothing to apply." 33
 		return 0
 	fi
 
-	# Pushed guard: refuse if the rewrite would orphan a commit that exists on
-	# a remote (any remote ref that was an ancestor of the old tip must still
-	# be one of the new tip). --exec can't know its targets up front, so this
-	# is checked on the result, before anything is applied.
+	# Pushed guard – any remote ref that was an ancestor of the old tip must still be one of
+	# the new tip, checked on the result since `--exec` cannot know its targets up front,
+	# with two `--merged` walks in place of a per-ref `merge-base` loop
 	if [ ${#OPT_ALLOW_PUSHED} -eq 0 ]; then
-		local R
-		for R in $(git for-each-ref refs/remotes --format='%(refname)'); do
-			if git merge-base --is-ancestor "$R" "$ORIG_HEAD" 2>/dev/null && \
-			   ! git merge-base --is-ancestor "$R" "$NEW_HEAD" 2>/dev/null; then
-				PRINT_ERR "Command rewrote pushed history ($R would be orphaned) – not applied"
-				ECHO_E "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
-				exit 1
-			fi
-		done
+		local R=$(comm -23 <(git for-each-ref refs/remotes --format='%(refname)' --merged "$ORIG_HEAD" | sort) <(git for-each-ref refs/remotes --format='%(refname)' --merged "$NEW_HEAD" | sort) | head -1)
+		if [ -n "$R" ]; then
+			PRINT_ERR "Command rewrote pushed history ($R would be orphaned) – not applied"
+			ECHO_E "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
+			exit 1
+		fi
 	fi
 
-	# Atomic compare-and-swap. If the branch moved during command execution
-	# (e.g., a concurrent commit from another session), refuse.
+	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
+	# concurrent commit from another session
 	local UPDATE="git update-ref -m 'git edit: exec' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE"
 	if ! eval "$UPDATE" 2>/dev/null; then
