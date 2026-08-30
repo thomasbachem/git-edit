@@ -287,12 +287,22 @@ applies it \(em by default at the primary commit the mode authored (a fold's
 amended commit, an edit's) and at the new tip, each checked out in the
 operation's isolated worktree, with
 .B GIT_EDIT_VERIFY_COMMIT
-naming the commit under test. A commit missing a file the command
+naming the commit under test. The check runs against the linked
+environment \(em the checkout's current dependencies \(em at every commit
+alike, so each verdict compares like with like. A commit missing a file the command
 references \(em any command token that names a path at the result tip
 \(em is skipped with a note rather than failed, since the command could
 only die there spuriously; a deep target predating the test runner thus
 verifies what exists, and the tip always runs. A failure pauses the
-operation unapplied. The result is already built, so this is not a
+operation unapplied, reporting what it can establish about it: the commit
+the failing one replaces runs the same check, and where that fails too the
+operation is cleared \(em the failure predates the rewrite, or the check
+cannot run in that worktree at all; where it does not, the check climbs the commits above the failure
+to the first one that passes \(em for a fold, the commit carrying what the
+folded code now needs earlier. The climb is budgeted off the failing run's
+own duration, which
+.B edit.verifyBudget
+overrides in seconds. The result is already built, so this is not a
 content\-edit pause: nothing authored in that worktree can join the result,
 so a resume refuses while any edit is present rather than check out over it
 \(em repair the commit itself with a
@@ -326,7 +336,11 @@ a green tip proves nothing about the span, so this is the tier for a
 span\-wide rewrite. Needs a command from
 .B \-\-verify
 or
-.BR edit.verifyCmd .
+.BR edit.verifyCmd ,
+and can stand for a repo through
+.BR edit.verifySpan .
+The default tier states how many commits in between it left unchecked, so
+the gap is visible where it matters rather than only in this page.
 .TP
 .B \-\-no\-verify
 Skip a configured verification for this run \(em or, on
@@ -625,6 +639,20 @@ Standing verification command, applied as if every operation passed
 \(em the check a rewrite must pass before it lands. Pair it with
 .B edit.worktreeLink
 so the isolated worktree holds what the check needs to run.
+.TP
+.B edit.verifySpan
+Boolean. Runs every verification at the span tier, as if each operation
+passed
+.BR \-\-verify\-span .
+For a repo whose history is kept green commit by commit \(em where it is
+not, the tier reports breakage the rewrite never caused. It names a tier and
+not a check, so with no command configured it raises nothing rather than
+refusing the run.
+.TP
+.B edit.verifyBudget
+Seconds the post\-failure climb for the first passing commit may spend, zero
+to skip it altogether. Unset, it is five times the failing run's own duration
+(at least 30s), so a slow check stops early on its own.
 .SH ENVIRONMENT
 .TP
 .B GIT_EDIT_WORKTREE_LINK

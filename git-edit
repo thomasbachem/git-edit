@@ -192,7 +192,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
 	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
 	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
-	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip\e[0m"
+	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
@@ -3173,7 +3173,7 @@ _SAVE_STATE () {
 		# resuming invocation, and a continue must re-verify what the original
 		# run asked for, not silently less (or, with no standing config, nothing)
 		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
-		if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then echo "verify_span=1"; fi
+		if _VERIFY_SPAN_ON; then echo "verify_span=1"; fi
 	} > "$SF"
 }
 
@@ -3401,6 +3401,129 @@ _VERIFY_CONFIGURED () {
 	[ -n "$CMD" ]
 }
 
+# Answers whether the span tier is in force – the flag, the tier a pause recorded, or the standing
+# `edit.verifySpan`, whose config is only read where the gate runs, so it stays exempt
+# on the modes an explicit flag is refused on, and names a tier rather than a check
+_VERIFY_SPAN_ON () {
+	[ ${#OPT_VERIFY_SPAN} -gt 0 ] && return 0
+	[ "$STATE_VERIFY_SPAN" = "1" ] && return 0
+	[ "$(git config --type=bool --get edit.verifySpan 2>/dev/null)" = "true" ] || return 1
+	_VERIFY_CONFIGURED
+}
+
+# Finds the pre-op commit a rebuilt one replaces – the tip's is known outright, and below it the
+# subject carries across the rebuild where the SHA does not, equal spans pairing
+# positionally, while an ambiguous match answers nothing, being worse than none
+_VERIFY_COUNTERPART () {
+	# Args: <commit> <orig_head> <new_head>
+	local C=$1
+	local ORIG=$2
+	local NEW=$3
+	if [ "$C" = "$NEW" ]; then
+		print -r -- "$ORIG"
+		return 0
+	fi
+	local BASE=$(git merge-base "$ORIG" "$NEW" 2>/dev/null)
+	[ -z "$BASE" ] && return 1
+	local SUBJECT=$(git log -1 --format=%s "$C" 2>/dev/null)
+	local -a MATCHES
+	local LINE
+	if [ -n "$SUBJECT" ]; then
+		for LINE in ${(f)"$(git log --format="%H%x00%s" "$BASE..$ORIG" 2>/dev/null)"}; do
+			[ "${LINE#*$'\0'}" = "$SUBJECT" ] && MATCHES+=("${LINE%%$'\0'*}")
+		done
+	fi
+	if [ ${#MATCHES[@]} -eq 1 ]; then
+		print -r -- "${MATCHES[1]}"
+		return 0
+	fi
+	local -a OLD_SPAN NEW_SPAN
+	OLD_SPAN=("${(@f)$(git rev-list --reverse "$BASE..$ORIG" 2>/dev/null)}")
+	NEW_SPAN=("${(@f)$(git rev-list --reverse "$BASE..$NEW" 2>/dev/null)}")
+	[ ${#OLD_SPAN[@]} -ne ${#NEW_SPAN[@]} ] && return 1
+	local -i I
+	for I in {1..${#NEW_SPAN[@]}}; do
+		if [ "${NEW_SPAN[$I]}" = "$C" ]; then
+			# Position alone would pair a reorder's commits with whatever now
+			# sits where they used to – the subject has to agree there too
+			[ "$(git log -1 --format=%s "${OLD_SPAN[$I]}" 2>/dev/null)" = "$SUBJECT" ] || return 1
+			print -r -- "${OLD_SPAN[$I]}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Says who broke the check and where it heals, the two questions a failure raises – the
+# counterpart run attributes it, since a check already failing at the commit this one
+# replaces was failing before the rewrite, and otherwise the walk climbs the span
+_VERIFY_DIAGNOSE () {
+	# Args: <worktree> <cmd> <failed> <orig_head> <new_head> <secs> `--` [<path>...]
+	local WT=$1
+	local CMD=$2
+	local FAILED=$3
+	local ORIG=$4
+	local NEW=$5
+	local SECS=$6
+	shift 6
+	[ "$1" = "--" ] && shift
+	local -a PATHS=("$@")
+
+	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
+	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
+		if ! (cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$CP eval "$CMD" </dev/null) >/dev/null 2>&1; then
+			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
+			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
+			return 0
+		fi
+	fi
+
+	# An explicit zero (or less) turns the climb off – unset, it is five times
+	# the failing run's own duration, floored so a fast check still walks
+	local BUDGET_CFG=$(git config --type=int --get edit.verifyBudget 2>/dev/null)
+	local -i BUDGET
+	if [ -n "$BUDGET_CFG" ]; then
+		BUDGET=$BUDGET_CFG
+		[ $BUDGET -le 0 ] && return 0
+	else
+		BUDGET=$(( SECS * 5 ))
+		[ $BUDGET -lt 30 ] && BUDGET=30
+	fi
+	local -a SPAN
+	SPAN=("${(@f)$(git rev-list --reverse "$ORIG..$NEW" 2>/dev/null)}")
+	# Spent against the wall clock, not summed per run – whole-second deltas
+	# round a sub-second check down to nothing, and the budget would never bind
+	local -i WALK_T0=$SECONDS CHECKED=0 ABOVE=0
+	local X P FOUND="" PAST=false SKIP
+	for X in "${SPAN[@]}"; do
+		if [ "$X" = "$FAILED" ]; then
+			PAST=true
+			continue
+		fi
+		[ "$PAST" = "true" ] || continue
+		ABOVE+=1
+		[ -n "$FOUND" ] && continue
+		[ $(( SECONDS - WALK_T0 )) -ge $BUDGET ] && continue
+		SKIP=false
+		for P in "${PATHS[@]}"; do
+			git -C "$WT" cat-file -e "$X:$P" 2>/dev/null || SKIP=true
+		done
+		[ "$SKIP" = "true" ] && continue
+		git -C "$WT" checkout -qf --detach "$X" 2>/dev/null || continue
+		CHECKED+=1
+		if (cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$X eval "$CMD" </dev/null) >/dev/null 2>&1; then
+			FOUND=$X
+		fi
+	done
+	if [ -n "$FOUND" ]; then
+		PRINT_TEXT "The check passes again above it – that commit carries what the failing one now needs:" 33
+		_PRINT_COMMIT_LINE "$FOUND" '  first green: %h %s'
+	elif [ $CHECKED -gt 0 ]; then
+		PRINT_TEXT "No commit above it passes either – %s of %s checked within the walk budget" 33 "$CHECKED" "$ABOVE"
+	fi
+	return 0
+}
+
 _VERIFY_REWRITE () {
 	# Args: <worktree> <new_head> <orig_head> [<primary-commit>]
 	local WT=$1
@@ -3422,6 +3545,9 @@ _VERIFY_REWRITE () {
 		exit 1
 	fi
 	if [ -z "$VERIFY_CMD" ]; then
+		# Only an explicit ask is an error here – a standing `edit.verifySpan`
+		# names a tier, not a check, so with no command it stays inert rather
+		# than refusing every operation in the repo that set it
 		if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then
 			PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
 			exit 1
@@ -3429,7 +3555,7 @@ _VERIFY_REWRITE () {
 		return 0
 	fi
 	local -a COMMITS
-	if [ ${#OPT_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "1" ]; then
+	if _VERIFY_SPAN_ON; then
 		COMMITS=("${(@f)$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)}")
 	else
 		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
@@ -3452,6 +3578,7 @@ _VERIFY_REWRITE () {
 	local C
 	local OUT
 	local ABSENT
+	local RUN_T0
 	local -i SKIPPED=0
 	for C in "${COMMITS[@]}"; do
 		ABSENT=""
@@ -3472,16 +3599,19 @@ _VERIFY_REWRITE () {
 			return 1
 		fi
 		# The subshell contains both the cd and the env naming the commit
+		RUN_T0=$SECONDS
 		if ! OUT=$(cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$C eval "$VERIFY_CMD" </dev/null 2>&1); then
-			# Back to the result tip before anything else – every resume path
-			# reads the worktree's HEAD as the result to apply, so a worktree
-			# left at the failing commit would make '--no-verify --continue'
-			# land that commit as the new tip, dropping everything above it
-			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 			PRINT_ERR "Verification failed at ${C:0:7} – nothing was applied"
 			_PRINT_COMMIT_LINE "$C" '  failing: %h %s'
 			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
 			PRINT_TEXT "Command: %s" 33 "$VERIFY_CMD"
+			# Attribution and the healing point, run in the worktree the gate
+			# already owns – then back to the result tip, since every resume
+			# path reads the worktree's HEAD as the result to apply, and one
+			# left at a walked commit would make '--no-verify --continue' land
+			# that commit as the new tip, dropping everything above it
+			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$(( SECONDS - RUN_T0 ))" -- "${CMD_PATHS[@]}"
+			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 			PRINT_TEXT "Inspect the failing state: %s" 33 "git -C $WT checkout ${C:0:7}"
 			# The content-edit pause invites exactly the opposite instinct, so say
 			# which one this is: the result is built, and a resume checks out over
@@ -3498,6 +3628,15 @@ _VERIFY_REWRITE () {
 		PRINT_TEXT "Verified %s of %s commit(s) with \`%s\`" 90 "$(( ${#COMMITS[@]} - SKIPPED ))" "${#COMMITS[@]}" "$VERIFY_CMD"
 	else
 		PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "${#COMMITS[@]}" "$VERIFY_CMD"
+	fi
+	# What the default tier left out – a bare "Verified 2 commit(s)" over a span of seven reads
+	# as verified when it was sampled, and the tier that closes the gap helps nobody who
+	# never learns that it exists at all
+	if ! _VERIFY_SPAN_ON; then
+		local REBUILT=$(git rev-list --count "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)
+		if [ -n "$REBUILT" ] && [ $REBUILT -gt ${#COMMITS[@]} ]; then
+			PRINT_TEXT "%s rebuilt commit(s) in between went unverified – \`--verify-span\` covers the span (also: edit.verifySpan)" 90 "$(( REBUILT - ${#COMMITS[@]} ))"
+		fi
 	fi
 	return 0
 }
