@@ -409,7 +409,10 @@ When a rebase\- or autosquash\-based mode hits a conflict it pauses (exit
 status 2), prints the temporary worktree, the conflicted files, the failing
 step, and the steps that remain, and emits a
 .B conflict
-trailer. Resolve the files in that worktree, stage them, and run
+trailer. Every remaining step that touches a conflicted file is named under
+that file: each reapplies its own change on top, so the resolution is the
+content before they replay, never their result folded in early.
+Resolve the files in that worktree, stage them, and run
 .B git edit \-\-continue
 (repeat if the conflict cascades), or
 .B git edit \-\-abort

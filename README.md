@@ -228,11 +228,15 @@ Remaining steps (after resolution):
   pick ec00775 # add y
   pick 8b068f4 # modify x
 
+Remaining steps also touch a conflicted file – resolve to the state before they replay:
+  x.txt
+    8b068f4 modify x
+
 Or abort the operation: git edit --abort
 git-edit: conflict – resolve in /var/folders/…/git-edit-amend-into.XXXXXX (x.txt); then 'git edit --continue' or 'git edit --abort'
 ```
 
-The "Remaining steps" list lets the agent predict cascade likelihood: if any of the remaining picks touch the same files as the agent's amendment, another conflict is likely. The trailer line gives the worktree path and conflicted files inline, so an agent can dispatch on `git-edit: conflict` and act on it without parsing the full output.
+The "Remaining steps" list lets the agent predict cascade likelihood, and the block under it does that intersection itself: every remaining step touching a conflicted file is named there, since each reapplies its own change on top — the resolution is the content before they replay, never their result folded in early. The trailer line gives the worktree path and conflicted files inline, so an agent can dispatch on `git-edit: conflict` and act on it without parsing the full output.
 
 The worktree is preserved with the conflict markers in the files. The agent (or human) resolves the conflicts there:
 

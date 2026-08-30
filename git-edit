@@ -470,8 +470,8 @@ _PRINT_CONFLICT_DETAIL () {
 	fi
 
 	# Remaining rebase steps (after the conflict resolves)
+	local REMAINING=""
 	if [ -f "$GITDIR/rebase-merge/git-rebase-todo" ]; then
-		local REMAINING
 		REMAINING=$(grep -vE '^(#|$)' "$GITDIR/rebase-merge/git-rebase-todo" 2>/dev/null)
 		if [ -n "$REMAINING" ]; then
 			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
@@ -479,6 +479,55 @@ _PRINT_CONFLICT_DETAIL () {
 			while IFS= read -r STEP; do
 				ECHO_E "\e[0;33m  $STEP\e[0m" >&2
 			done <<< "$REMAINING"
+		fi
+	fi
+
+	# Which remaining steps touch a conflicted file – each reapplies its own change on top, so
+	# the resolution is the content before they replay, never their result folded in early
+	# Todo commands are read textually and walked in one `git log`, so replay length is free
+	if [ -n "$UNMERGED" ] && [ -n "$REMAINING" ]; then
+		local -a TODO_SHAS TODO_WORDS
+		local TODO WORD
+		for TODO in ${(f)REMAINING}; do
+			TODO_WORDS=(${(z)TODO})
+			case ${TODO_WORDS[1]} in
+				pick|p|reword|r|edit|e|fixup|f|squash|s) ;;
+				*) continue ;;
+			esac
+			# The object is not always the second word – `amend!` autosquashes
+			# into `fixup -C <sha>`, and one bad rev would take the whole walk
+			# down with it
+			for WORD in "${TODO_WORDS[@]:1}"; do
+				if [[ "$WORD" =~ '^[0-9a-f]{7,}$' ]]; then
+					TODO_SHAS+=("$WORD")
+					break
+				fi
+			done
+		done
+		if [ ${#TODO_SHAS[@]} -gt 0 ]; then
+			# `%h %s` records are marked with a byte no path can start with, so
+			# the walk's own output separates the headers from the file lines
+			local WALKED=$(git -C "$WT" log --no-walk=unsorted --root --ignore-missing --format=$'\1%h %s' --name-only "${TODO_SHAS[@]}" 2>/dev/null)
+			local -A TOUCHED_BY
+			local SUBJECT="" LINE
+			for LINE in ${(f)WALKED}; do
+				if [[ "$LINE" == $'\1'* ]]; then
+					SUBJECT=${LINE#$'\1'}
+				elif [[ $'\n'"$UNMERGED"$'\n' == *$'\n'"$LINE"$'\n'* ]]; then
+					TOUCHED_BY[$LINE]+="$SUBJECT"$'\n'
+				fi
+			done
+			if [ ${#TOUCHED_BY[@]} -gt 0 ]; then
+				PRINT_TEXT "Remaining steps also touch a conflicted file – resolve to the state before they replay:" 33 >&2
+				local FILE_KEY TOUCHER
+				while IFS= read -r FILE_KEY; do
+					[ -z "${TOUCHED_BY[$FILE_KEY]}" ] && continue
+					ECHO_E "\e[0;33m  $FILE_KEY\e[0m" >&2
+					for TOUCHER in ${(f)TOUCHED_BY[$FILE_KEY]}; do
+						ECHO_E "\e[0;33m    $TOUCHER\e[0m" >&2
+					done
+				done <<< "$UNMERGED"
+			fi
 		fi
 	fi
 
