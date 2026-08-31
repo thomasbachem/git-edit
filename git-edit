@@ -5492,6 +5492,10 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		fi
 	fi
 
+	# Same links every other worktree path gets – before the cd, so the
+	# origin fallback still resolves to the main checkout
+	_LINK_WORKTREE_EXTRAS "$WORKTREE_DIR"
+
 	cd "$WORKTREE_DIR" || ABORT
 fi
 

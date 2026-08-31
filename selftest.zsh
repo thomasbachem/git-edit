@@ -1559,6 +1559,34 @@ GIT_SELFTEST () {
 	_ST_RUN --undo
 	rm -rf vendor
 
+	# The auto-isolated worktree (non-interactive drop/squash/edit) links too –
+	# proven through a verify command needing the linked path, since the check
+	# runs in that worktree before anything applies
+	git config edit.verifyCmd 'test -e node_modules/dep/index.js'
+	printf 'wl3\n' > wl3.txt && git add wl3.txt && git commit -qm "WL three"
+	printf 'wl4\n' > wl4.txt && git add wl4.txt && git commit -qm "WL four"
+	_ST_RUN -d HEAD~1 -y
+	_ST_EQ "the drop applies with the gate on" "$RC" "0"
+	_ST_OUT_HAS "after linking into the auto-isolated worktree" 'Linked into the worktree: node_modules'
+	_ST_OUT_HAS "and verifying there" 'Verified 1 commit'
+
+	# The reused --dir branch (reset --hard sync) must link too – one run to
+	# create the worktree, strip the link, and the next has to restore it
+	local WL_DIR=$TMP/wl-reuse
+	# Disposable targets, so neither drop consumes the commit carrying the
+	# bare ignore pattern the link depends on
+	printf 'wl5\n' > wl5.txt && git add wl5.txt && git commit -qm "WL five"
+	printf 'wl6\n' > wl6.txt && git add wl6.txt && git commit -qm "WL six"
+	_ST_RUN -d HEAD~1 -y --dir="$WL_DIR"
+	_ST_EQ "an explicit-dir drop applies" "$RC" "0"
+	rm "$WL_DIR/node_modules"
+	_ST_RUN -d HEAD~1 -y --dir="$WL_DIR"
+	_ST_EQ "the reused-worktree drop applies" "$RC" "0"
+	_ST_OUT_HAS "relinking what was removed on the reuse branch" 'Linked into the worktree: node_modules'
+	_ST_OUT_HAS "and verifying in the reused worktree" 'Verified 1 commit'
+	git worktree remove --force "$WL_DIR" 2>/dev/null
+	git config --unset edit.verifyCmd
+
 	git config --unset-all edit.worktreeLink
 	rm -rf node_modules
 	git reset -q --hard
