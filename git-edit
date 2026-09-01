@@ -2352,7 +2352,7 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	local SOURCE=$2
 	local GUARD_EMPTY=$3
 	[ -z "$SOURCE" ] && return 1
-	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
+	local GITDIR=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
 	[ -z "$GITDIR" ] && return 1
 	local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
 	local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
@@ -2369,7 +2369,29 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	local -a UNMERGED
 	UNMERGED=("${(@f)$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)}")
 	[ -z "${UNMERGED[1]}" ] && return 1
-	local P
+	# Prove the identity on a scratch copy of the index first – staging the
+	# restores before knowing left a declined pause spoofing an empty step
+	# (conflict cleared, source blobs staged) with the real markers destroyed
+	local PROBE=$GITDIR/git-edit-probe-index
+	cp "$GITDIR/index" "$PROBE" 2>/dev/null || return 1
+	local P ENTRY
+	local -a FIELDS
+	for P in "${UNMERGED[@]}"; do
+		ENTRY=$(git -C "$WT" ls-tree "$SOURCE" -- "$P" 2>/dev/null)
+		FIELDS=(${=ENTRY})
+		# Absent in the result (e.g. resolved by deletion) – not reproducible here
+		if [ "${FIELDS[2]}" != "blob" ] || \
+		   ! GIT_INDEX_FILE=$PROBE git -C "$WT" update-index --cacheinfo "${FIELDS[1]}" "${FIELDS[3]}" "$P" >/dev/null 2>&1; then
+			rm -f "$PROBE"
+			return 1
+		fi
+	done
+	local CANDIDATE_TREE=$(GIT_INDEX_FILE=$PROBE git -C "$WT" write-tree 2>/dev/null)
+	rm -f "$PROBE"
+	if [ -z "$CANDIDATE_TREE" ] || [ "$CANDIDATE_TREE" != "$(git rev-parse "$SOURCE^{tree}" 2>/dev/null)" ]; then
+		return 1
+	fi
+	# Proven – stage for real
 	for P in "${UNMERGED[@]}"; do
 		git -C "$WT" checkout "$SOURCE" -- "$P" >/dev/null 2>&1 || return 1
 		git -C "$WT" add -- "$P" >/dev/null 2>&1 || return 1
