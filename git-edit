@@ -2383,17 +2383,25 @@ _AUTO_RESOLVE_FINAL_STEP () {
 _FINISH_AUTO_RESOLVED_STEP () {
 	# args: <worktree> <blob source name – "pre-op" or "staged">
 	local WT=$1
-	PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
-	GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue >/dev/null 2>&1
+	local OUTPUT RC # Needs to be separate for `$?` to work properly
+	OUTPUT=$(GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue 2>&1)
+	RC=$?
+	if [ $RC -eq 0 ]; then
+		PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
+	else
+		# The success line waits for the continue – and a failure surfaces the
+		# discarded evidence instead of masquerading as one more conflict
+		PRINT_TEXT "%s – restored the %s blobs, yet its continue failed:" 31 "Final step auto-resolved (staged tree proven identical)" "$2"
+		print -r -- "$OUTPUT" | tail -5 | sed 's/^/  /' >&2
+	fi
+	return $RC
 }
 
-# Completion summary for both reorder paths: tree identity, the span in its new
-# order (oldest-first, matching how `--reorder` takes its arguments), and a
-# count check. That last one matters most after a hand-resolved conflict –
-# resolving a step to its predecessor's content leaves that commit empty, and
-# the rebase drops it, which "tip tree identical" would otherwise wave through.
+# Prints the completion summary for both reorder paths – tree identity, the span in its new order
+# oldest-first as `--reorder` takes its arguments, and a count check that matters most
+# after a hand-resolved conflict, since an emptied commit is dropped silently otherwise
 _PRINT_REORDER_SUMMARY () {
-	# args: <orig-head> <new-head>
+	# Args: <orig-head> <new-head>
 	local BASE=$(git merge-base "$1" "$2" 2>/dev/null)
 	local BEFORE=$(git rev-list --count "$BASE..$1" 2>/dev/null)
 	local AFTER=$(git rev-list --count "$BASE..$2" 2>/dev/null)
