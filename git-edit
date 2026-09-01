@@ -437,6 +437,9 @@ _PRINT_CONFLICT_DETAIL () {
 	local WT=$1
 	# Pre-op tip, passed by the reorder paths only – see the final-step hint below
 	local PREOP=$2
+	# The failed continue's captured output, passed by the resume paths – shown
+	# where no unmerged file explains the failure
+	local CONTINUE_OUTPUT=$3
 	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
 
 	# Unmerged paths (files with conflict markers)
@@ -548,13 +551,27 @@ _PRINT_CONFLICT_DETAIL () {
 		fi
 	fi
 
-	# No conflicted files + a paused rebase = the current step went empty –
-	# either its changes are already upstream or a resolution replayed within
-	# the run produced them, and neither is provable from here
+	# No conflicted files under a paused rebase means nothing left to resolve – a staged tree
+	# matching `HEAD` proves the step went empty, where staged content instead means the
+	# continue failed some other way and the skip hint would throw it away
 	if [ -z "$UNMERGED" ] && [ -d "$GITDIR/rebase-merge" ]; then
-		PRINT_TEXT "No conflicted files – the current step became empty: its changes are already upstream, or a resolution replayed within this run produced them. Skipping drops that commit. Then continue:" 33 >&2
-		ECHO_E "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
-		ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
+		if git -C "$WT" diff --cached --quiet HEAD 2>/dev/null; then
+			PRINT_TEXT "No conflicted files – the current step became empty: its changes are already upstream, or a resolution replayed within this run produced them. Skipping drops that commit. Then continue:" 33 >&2
+			ECHO_E "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
+			ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
+		else
+			PRINT_TEXT "No conflicted files, yet staged changes remain – the continue failed without leaving a conflict. Retry: git edit --continue" 33 >&2
+			# Which bookkeeping files the paused rebase holds – a continue that
+			# refuses over staged changes means `message` went missing at the
+			# stop, and the present-vs-absent pattern names where that failed
+			PRINT_TEXT "Rebase bookkeeping present: %s" 33 "$(ls "$GITDIR/rebase-merge" 2>/dev/null | tr '\n' ' ')" >&2
+		fi
+		if [ -n "$CONTINUE_OUTPUT" ]; then
+			# -15: git's refusals put the error above a multi-paragraph advice
+			# block, which a short tail would show instead of the cause
+			PRINT_TEXT "The continue itself said:" 33 >&2
+			print -r -- "$CONTINUE_OUTPUT" | tail -15 | sed 's/^/  /' >&2
+		fi
 	fi
 
 	# Emit comma-separated unmerged list on stdout for the trailer
@@ -2403,10 +2420,12 @@ _AUTO_RESOLVE_FINAL_STEP () {
 
 # Finishes a rebase whose final step `_AUTO_RESOLVE_FINAL_STEP()` just staged
 _FINISH_AUTO_RESOLVED_STEP () {
-	# args: <worktree> <blob source name – "pre-op" or "staged">
+	# Args: <worktree> <blob source name – "pre-op" or "staged">
 	local WT=$1
 	local OUTPUT RC # Needs to be separate for `$?` to work properly
-	OUTPUT=$(GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue 2>&1)
+	# C locale – the captured evidence should read in English, not the
+	# machine's language (homebrew git localizes on an empty locale env)
+	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue 2>&1 )
 	RC=$?
 	if [ $RC -eq 0 ]; then
 		PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
@@ -2782,11 +2801,12 @@ _CONTINUE_ONTO () {
 			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1; then
+		local CONTINUE_OUTPUT
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "" "$CONTINUE_OUTPUT")
 			_PRINT_ONTO_SKIP_HINT "$STATE_WORKTREE" "$STATE_TARGET"
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
@@ -2862,12 +2882,13 @@ _CONTINUE_REORDER () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1 && \
+		local CONTINUE_OUTPUT
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
 		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "pre-op" }; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATE_ORIG_HEAD")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$CONTINUE_OUTPUT")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			exit 2
@@ -2939,11 +2960,12 @@ _CONTINUE_REBASE () {
 		fi
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true rebase --continue" >/dev/null 2>&1; then
+		local CONTINUE_OUTPUT
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true rebase --continue" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "" "$CONTINUE_OUTPUT")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			exit 2
@@ -3069,11 +3091,12 @@ _CONTINUE_EDIT () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1; then
+		local CONTINUE_OUTPUT
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "" "$CONTINUE_OUTPUT")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			exit 2
@@ -3764,13 +3787,14 @@ _CONTINUE_AMEND_INTO () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" >/dev/null 2>&1 && \
+		local CONTINUE_OUTPUT
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
 		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_STAGEDTREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "staged" }; then
 			# Another conflict downstream – keep state, keep worktree, exit
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "" "$CONTINUE_OUTPUT")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			exit 2
