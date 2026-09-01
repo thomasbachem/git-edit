@@ -75,6 +75,17 @@ GIT_SELFTEST () {
 			echo "$OUT" | tail -5 | sed 's/^/       | /'
 		fi
 	}
+	# Fallout containment: an operation a scenario left paused would cascade
+	# "in flight" errors through every scenario after it – abort it loudly so
+	# one flake reads as one scenario's failure, not fifteen
+	_ST_SCENARIO () {
+		local GCD=$(git rev-parse --git-common-dir 2>/dev/null)
+		if [ -n "$GCD" ] && [ -f "$GCD/git-edit-state" ]; then
+			ECHO_E "  \e[1;33mNOTE\e[0m stray in-flight operation left behind – aborting it"
+			"$SELF" --abort >/dev/null 2>&1 </dev/null
+		fi
+		ECHO_E "$@"
+	}
 	_ST_OUT_HAS () {
 		local DESC=$1
 		local PATTERN=$2
@@ -126,7 +137,7 @@ GIT_SELFTEST () {
 	local SHA_C=$(git rev-parse HEAD~2)
 
 	# --- 1. Reword (-M --text): plumbing, tree-identical, trailer ---
-	ECHO_E "\e[1;96m[1] reword (-M --text)\e[0m"
+	_ST_SCENARIO "\e[1;96m[1] reword (-M --text)\e[0m"
 	local PRE_HEAD=$(git rev-parse HEAD)
 	local PRE_TREE=$(git rev-parse 'HEAD^{tree}')
 	_ST_RUN -M --text="C reworded" "$SHA_C"
@@ -142,13 +153,13 @@ GIT_SELFTEST () {
 	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
 
 	# --- 2. Undo: reverts the reword, CAS-guarded ---
-	ECHO_E "\e[1;96m[2] undo\e[0m"
+	_ST_SCENARIO "\e[1;96m[2] undo\e[0m"
 	_ST_RUN --undo
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "HEAD restored" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 3. Pushed guard: refuse B, allow with --allow-pushed ---
-	ECHO_E "\e[1;96m[3] pushed guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[3] pushed guard\e[0m"
 	_ST_RUN -M --text="B reworded" "$SHA_B"
 	_ST_CHECK "refuses pushed commit" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'already pushed'
@@ -158,7 +169,7 @@ GIT_SELFTEST () {
 	_ST_EQ "undo restores" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 4. Fold (--amend-into) clean: a.txt change into C ---
-	ECHO_E "\e[1;96m[4] amend-into (clean)\e[0m"
+	_ST_SCENARIO "\e[1;96m[4] amend-into (clean)\e[0m"
 	echo "alpha folded" > a.txt
 	git add a.txt
 	_ST_RUN --amend-into="$SHA_C"
@@ -171,7 +182,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "no fixup commit on branch" test -z "$(git log --format=%s | grep '^fixup!')"
 
 	# --- 5. Fold conflict -> status -> abort: branch + staged intact ---
-	ECHO_E "\e[1;96m[5] amend-into conflict + abort\e[0m"
+	_ST_SCENARIO "\e[1;96m[5] amend-into conflict + abort\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	local SHA_C2=$(git rev-parse HEAD~2)
 	echo "line1-conflict" > c.txt
@@ -194,7 +205,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "staged change preserved" sh -c "git diff --cached --name-only | grep -q c.txt"
 
 	# --- 6. Fold conflict -> resolve -> continue (with cascade) ---
-	ECHO_E "\e[1;96m[6] amend-into conflict + continue\e[0m"
+	_ST_SCENARIO "\e[1;96m[6] amend-into conflict + continue\e[0m"
 	_ST_RUN --amend-into="$SHA_C2"
 	_ST_EQ "pauses with exit 2" "$RC" "2"
 	local ROUNDS=0
@@ -220,7 +231,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- 6b. Conflict resolved manually in the worktree, staged WIP survives ---
-	ECHO_E "\e[1;96m[6b] manual worktree completion + parallel staged WIP\e[0m"
+	_ST_SCENARIO "\e[1;96m[6b] manual worktree completion + parallel staged WIP\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	local SHA_C3=$(git rev-parse HEAD~2)
 	echo "line1-again" > c.txt
@@ -250,19 +261,19 @@ GIT_SELFTEST () {
 	git reset -q -- w.txt && rm -f w.txt
 
 	# --- 6c. Standalone commands refuse stray arguments ---
-	ECHO_E "\e[1;96m[6c] stray-argument refusal\e[0m"
+	_ST_SCENARIO "\e[1;96m[6c] stray-argument refusal\e[0m"
 	_ST_RUN --undo "$(git rev-parse HEAD)"
 	_ST_CHECK "refuses" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'take no arguments'
 
 	# --- 7. Drop (auto-isolated, non-TTY) ---
-	ECHO_E "\e[1;96m[7] drop\e[0m"
+	_ST_SCENARIO "\e[1;96m[7] drop\e[0m"
 	_ST_RUN -d "$(git rev-parse HEAD)"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_CHECK "dropped commit's file gone" sh -c "! git cat-file -e 'HEAD:e.txt'"
 
 	# --- 8. Squash (implicit, plumbing route) ---
-	ECHO_E "\e[1;96m[8] squash (plumbing)\e[0m"
+	_ST_SCENARIO "\e[1;96m[8] squash (plumbing)\e[0m"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
 	local PRE_COUNT=$(git rev-list --count HEAD)
 	_ST_RUN --text="C and D combined" "$(git rev-parse HEAD~1)" "$(git rev-parse HEAD)"
@@ -273,7 +284,7 @@ GIT_SELFTEST () {
 	_ST_EQ "combined message" "$(git log --format=%s -1)" "C and D combined"
 
 	# --- 9. Reorder: swap two independent tip commits ---
-	ECHO_E "\e[1;96m[9] reorder\e[0m"
+	_ST_SCENARIO "\e[1;96m[9] reorder\e[0m"
 	echo "ex" > x.txt && git add x.txt && git commit -qm "X commit"
 	echo "why" > y.txt && git add y.txt && git commit -qm "Y commit"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
@@ -285,7 +296,7 @@ GIT_SELFTEST () {
 	_ST_EQ "tip tree identical" "$(git rev-parse 'HEAD^{tree}')" "$PRE_TREE"
 
 	# --- 10. Edit mode pauses in non-TTY instead of prompting ---
-	ECHO_E "\e[1;96m[10] edit-mode non-TTY pause\e[0m"
+	_ST_SCENARIO "\e[1;96m[10] edit-mode non-TTY pause\e[0m"
 	_ST_RUN "$(git rev-parse HEAD)"
 	_ST_EQ "pauses (exit 2)" "$RC" "2"
 	_ST_OUT_HAS "paused trailer names the worktree" 'git-edit: paused'
@@ -293,13 +304,13 @@ GIT_SELFTEST () {
 	_ST_EQ "abort clears it" "$RC" "0"
 
 	# --- 11. Exec: amend via isolated worktree ---
-	ECHO_E "\e[1;96m[11] exec\e[0m"
+	_ST_SCENARIO "\e[1;96m[11] exec\e[0m"
 	_ST_RUN --exec -- git commit --amend -m "amended via exec"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "amend applied" "$(git log --format=%s -1)" "amended via exec"
 
 	# --- 12. Exec pushed-orphan guard ---
-	ECHO_E "\e[1;96m[12] exec pushed-orphan guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[12] exec pushed-orphan guard\e[0m"
 	PRE_HEAD=$(git rev-parse HEAD)
 	_ST_RUN --exec -- git reset --hard "$SHA_A"
 	_ST_CHECK "refuses" test "$RC" != "0"
@@ -307,20 +318,20 @@ GIT_SELFTEST () {
 	_ST_EQ "branch unchanged" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 13. Undo refuses after the branch moved on ---
-	ECHO_E "\e[1;96m[13] undo CAS guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[13] undo CAS guard\e[0m"
 	echo "zeta" > z.txt && git add z.txt && git commit -qm "Z commit"
 	_ST_RUN --undo
 	_ST_CHECK "refuses" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'has moved since'
 
 	# --- 14. Status: idle report ---
-	ECHO_E "\e[1;96m[14] status (idle)\e[0m"
+	_ST_SCENARIO "\e[1;96m[14] status (idle)\e[0m"
 	_ST_RUN --status
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "reports idle" '^git-edit: ok – no operation in flight'
 
 	# --- 15. amend-into=auto: consensus target, new file follows ---
-	ECHO_E "\e[1;96m[15] amend-into=auto\e[0m"
+	_ST_SCENARIO "\e[1;96m[15] amend-into=auto\e[0m"
 	echo "em" > m.txt && git add m.txt && git commit -qm "M commit"
 	echo "en" > n.txt && git add n.txt && git commit -qm "N commit"
 	echo "em2" > m.txt && git add m.txt
@@ -332,7 +343,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "new file followed consensus" git cat-file -e 'HEAD~1:p.txt'
 
 	# --- 16. auto refuses ambiguous targets ---
-	ECHO_E "\e[1;96m[16] auto ambiguity refusal\e[0m"
+	_ST_SCENARIO "\e[1;96m[16] auto ambiguity refusal\e[0m"
 	echo "em3" > m.txt && echo "en3" > n.txt
 	git add m.txt n.txt
 	_ST_RUN --amend-into=auto
@@ -341,7 +352,7 @@ GIT_SELFTEST () {
 	git reset -q && git checkout -q -- m.txt n.txt
 
 	# --- 17. auto refuses pushed-only history ---
-	ECHO_E "\e[1;96m[17] auto pushed-history refusal\e[0m"
+	_ST_SCENARIO "\e[1;96m[17] auto pushed-history refusal\e[0m"
 	echo "beta2" > b.txt && git add b.txt
 	_ST_RUN --amend-into=auto
 	_ST_CHECK "refuses" test "$RC" != "0"
@@ -349,7 +360,7 @@ GIT_SELFTEST () {
 	git reset -q && git checkout -q -- b.txt
 
 	# --- 18. split by pathspec ---
-	ECHO_E "\e[1;96m[18] split\e[0m"
+	_ST_SCENARIO "\e[1;96m[18] split\e[0m"
 	echo "s1" > s1.txt && echo "s2" > s2.txt
 	git add s1.txt s2.txt && git commit -qm "S mixed commit"
 	PRE_TREE=$(git rev-parse 'HEAD^{tree}')
@@ -369,7 +380,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "single-file split points at the content form" 'drop the pathspec and split by content'
 
 	# --- 19. empty-step pause: guidance + skip, plus graceful no-op continue ---
-	ECHO_E "\e[1;96m[19] empty-step guidance\e[0m"
+	_ST_SCENARIO "\e[1;96m[19] empty-step guidance\e[0m"
 	echo "f1" > f1.txt && echo "v1" > f2.txt && git add f1.txt f2.txt && git commit -qm "R0 base"
 	echo "f1x" > f1.txt && echo "v2" > f2.txt && git add f1.txt f2.txt && git commit -qm "R1 commit"
 	echo "v1" > f2.txt && git add f2.txt && git commit -qm "R2 revert"
@@ -401,7 +412,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- 20. tag-orphan warning on rewrites beneath a tag ---
-	ECHO_E "\e[1;96m[20] tag-orphan warning\e[0m"
+	_ST_SCENARIO "\e[1;96m[20] tag-orphan warning\e[0m"
 	echo "t1" > t1.txt && git add t1.txt && git commit -qm "T1 commit"
 	echo "t2" > t2.txt && git add t2.txt && git commit -qm "T2 commit"
 	git tag marker
@@ -430,7 +441,7 @@ GIT_SELFTEST () {
 	git tag -d markerA markerB blobmark >/dev/null 2>&1
 
 	# --- 21. auto-target resolves from a subdirectory ---
-	ECHO_E "\e[1;96m[21] auto-target from subdirectory\e[0m"
+	_ST_SCENARIO "\e[1;96m[21] auto-target from subdirectory\e[0m"
 	mkdir -p subd
 	echo "sd" > subd/sd.txt && git add subd/sd.txt && git commit -qm "SD commit"
 	cd subd
@@ -442,7 +453,7 @@ GIT_SELFTEST () {
 	_ST_EQ "fold landed in SD" "$(git show 'HEAD:subd/sd.txt')" "sd2"
 
 	# --- 22. man page exists and documents every mode (drift guard vs. USAGE) ---
-	ECHO_E "\e[1;96m[22] man page coverage\e[0m"
+	_ST_SCENARIO "\e[1;96m[22] man page coverage\e[0m"
 	local MANPAGE="$(dirname "$SELF")/man/man1/git-edit.1"
 	local READMEFILE="$(dirname "$SELF")/README.md"
 	_ST_CHECK "man page present" test -f "$MANPAGE"
@@ -484,7 +495,7 @@ GIT_SELFTEST () {
 	fi
 
 	# --- 23. stale (rewritten) SHAs are refused, never silently no-op'd ---
-	ECHO_E "\e[1;96m[23] stale SHA handling\e[0m"
+	_ST_SCENARIO "\e[1;96m[23] stale SHA handling\e[0m"
 	echo "stale" > stale.txt && git add stale.txt && git commit -qm "Stale target"
 	local STALE_SHA=$(git rev-parse HEAD)
 	# Fold into it: the SHA changes, the subject survives for the counterpart hint
@@ -546,7 +557,7 @@ GIT_SELFTEST () {
 	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$TWIN_HEAD"
 
 	# --- 24. merge topology: plumbing rebuilds preserve it, rebase modes refuse ---
-	ECHO_E "\e[1;96m[24] merge topology\e[0m"
+	_ST_SCENARIO "\e[1;96m[24] merge topology\e[0m"
 	echo "l1" > l1.txt && git add l1.txt && git commit -qm "Low one"
 	local LOW1=$(git rev-parse HEAD)
 	echo "l2" > l2.txt && git add l2.txt && git commit -qm "Low two"
@@ -581,7 +592,7 @@ GIT_SELFTEST () {
 	git branch -q -D d-side
 
 	# --- 25. move mode: reposition one commit via derived span reorder ---
-	ECHO_E "\e[1;96m[25] move mode\e[0m"
+	_ST_SCENARIO "\e[1;96m[25] move mode\e[0m"
 	for MC in m1 m2 m3 m4; do
 		echo "$MC" > "$MC.txt" && git add "$MC.txt" && git commit -qm "Move $MC"
 	done
@@ -627,9 +638,9 @@ GIT_SELFTEST () {
 
 	# --- 26. explicit-target squash: same-second span, short SHAs ---
 	# The rebuilt-commit case: descendants of one rewrite all share a committer
-	# second, so timestamp sorts tie – the span must sort from HEAD's history,
+	# second, so timestamp sorts tie – the span must sort from `HEAD`'s history,
 	# and short SHAs must normalize for that sort's exact match to hit
-	ECHO_E "\e[1;96m[26] explicit-target squash ordering\e[0m"
+	_ST_SCENARIO "\e[1;96m[26] explicit-target squash ordering\e[0m"
 	local QN
 	for QN in q1 q2 q3 q4; do
 		echo "$QN" > q.txt && git add q.txt
@@ -655,7 +666,7 @@ GIT_SELFTEST () {
 	# --- 27. rebase-path conflicts pause into --continue/--abort ---
 	# Dropping a commit whose successor edits the same line conflicts, and the
 	# isolated rebase must pause like the plumbing modes rather than bail
-	ECHO_E "\e[1;96m[27] rebase-path conflict pause\e[0m"
+	_ST_SCENARIO "\e[1;96m[27] rebase-path conflict pause\e[0m"
 	printf 'x\nb\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ base"
 	printf 'x\nMID\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ mid"
 	printf 'x\nTIP\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ tip"
@@ -681,7 +692,7 @@ GIT_SELFTEST () {
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$PZ_TIP2"
 
 	# --- 28. auto-target follows the edited lines, not the file ---
-	ECHO_E "\e[1;96m[28] blame-aware auto-target\e[0m"
+	_ST_SCENARIO "\e[1;96m[28] blame-aware auto-target\e[0m"
 	printf 'bl1\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
 	git add bl.txt && git commit -qm "BL base"
 	printf 'bl1\nBL-A original\nbl2\nbl3\nbl4\nbl5\nbl6\nbl7\nbl8\n' > bl.txt
@@ -708,8 +719,9 @@ GIT_SELFTEST () {
 	git reset -q --hard HEAD
 
 	# --- 29. non-interactive edit mode: pause, author, continue ---
-	ECHO_E "\e[1;96m[29] edit mode (agent flow)\e[0m"
-	git reset -q --hard   # reconcile the scratch checkout so later commits carry no phantom reverts
+	_ST_SCENARIO "\e[1;96m[29] edit mode (agent flow)\e[0m"
+	# Reconcile the scratch checkout so later commits carry no phantom reverts
+	git reset -q --hard
 	printf 'e1\nEDIT-ME\ne2\n' > ed.txt && git add ed.txt && git commit -qm "ED target"
 	local ED_TARGET=$(git rev-parse HEAD)
 	echo "ed-later" > ed2.txt && git add ed2.txt && git commit -qm "ED later"
@@ -745,7 +757,7 @@ GIT_SELFTEST () {
 	_ST_EQ "abort leaves the branch untouched" "$(git rev-parse HEAD)" "$ED_TIP2"
 
 	# --- 30. content split: pause, author the split point, continue ---
-	ECHO_E "\e[1;96m[30] content split (same-file halves)\e[0m"
+	_ST_SCENARIO "\e[1;96m[30] content split (same-file halves)\e[0m"
 	git reset -q --hard
 	printf 'first\nsecond\n' > cs.txt && git add cs.txt && git commit -qm "CS base"
 	printf 'FIRST\nsecond\nthird\n' > cs.txt && git add cs.txt && git commit -qm "CS mixed commit"
@@ -805,7 +817,7 @@ GIT_SELFTEST () {
 	_ST_EQ "pre-split tip tree preserved" "$(git rev-parse 'HEAD~1^{tree}')" "$CS_TIP_TREE"
 
 	# --- 31. argument mistakes name the right form instead of dead-ending ---
-	ECHO_E "\e[1;96m[31] argument-error guidance\e[0m"
+	_ST_SCENARIO "\e[1;96m[31] argument-error guidance\e[0m"
 	_ST_RUN -M "Some prose that is a message, not a commit"
 	_ST_EQ "prose in the <commit> slot refused" "$RC" "1"
 	_ST_OUT_HAS "points at --text" 'pass it as --text'
@@ -824,7 +836,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "bare invocation still shows usage" 'usage: git edit'
 
 	# --- 32. scoped fold: a pathspec keeps the rest of the index out ---
-	ECHO_E "\e[1;96m[32] scoped --amend-into\e[0m"
+	_ST_SCENARIO "\e[1;96m[32] scoped --amend-into\e[0m"
 	git reset -q --hard
 	echo "sc1" > sc.txt && echo "other" > sc-other.txt && git add sc.txt sc-other.txt && git commit -qm "SC base"
 	local SC_TARGET=$(git rev-parse HEAD)
@@ -850,7 +862,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the empty match" 'No staged changes under'
 	git reset -q --hard
 	# --- 33. a reorder step resolved to empty must not vanish under an `ok` ---
-	ECHO_E "\e[1;96m[33] dropped-commit reporting\e[0m"
+	_ST_SCENARIO "\e[1;96m[33] dropped-commit reporting\e[0m"
 	git reset -q --hard
 	printf 'd1\nd2\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR base"
 	printf 'd1\nDX\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR one"
@@ -931,7 +943,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 34. a staged resolution with conflict markers must not continue ---
-	ECHO_E "\e[1;96m[34] conflict-marker guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[34] conflict-marker guard\e[0m"
 	git reset -q --hard
 	printf 'm1\nm2\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK base"
 	printf 'm1\nMT\nm3\n' > mk.txt && git add mk.txt && git commit -qm "MK target"
@@ -957,7 +969,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 35. the final-step auto-resolve must refuse when it can't prove itself ---
-	ECHO_E "\e[1;96m[35] auto-resolve proof\e[0m"
+	_ST_SCENARIO "\e[1;96m[35] auto-resolve proof\e[0m"
 	git reset -q --hard
 	printf 'p1\n' > pa.txt && printf 'q1\n' > pb.txt && git add pa.txt pb.txt && git commit -qm "PR base"
 	printf 'p1\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR A"
@@ -981,7 +993,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 36. reporting must survive the shapes that break naive derivation ---
-	ECHO_E "\e[1;96m[36] reporting under merges + scoped conflicts\e[0m"
+	_ST_SCENARIO "\e[1;96m[36] reporting under merges + scoped conflicts\e[0m"
 	git reset -q --hard
 	# (a) a merge in the reword span: commit count includes the side branch,
 	# but `~N` walks first parents – deriving the commit by offset misses
@@ -1024,7 +1036,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 37. edit mode must report the stale checkout it leaves behind ---
-	ECHO_E "\e[1;96m[37] edit-mode checkout staleness\e[0m"
+	_ST_SCENARIO "\e[1;96m[37] edit-mode checkout staleness\e[0m"
 	git reset -q --hard
 	printf 'ed1\nSTALE-ME\ned3\n' > stale.js && git add stale.js && git commit -qm "STALE target"
 	local STALE_T=$(git rev-parse HEAD)
@@ -1050,7 +1062,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 38. a tree-changing rewrite reconciles per path, never by stashing ---
-	ECHO_E "\e[1;96m[38] targeted checkout reconcile\e[0m"
+	_ST_SCENARIO "\e[1;96m[38] targeted checkout reconcile\e[0m"
 	git reset -q --hard
 	echo "tc-keep" > tc-keep.txt && git add tc-keep.txt && git commit -qm "TC base"
 	echo "tc-drop" > tc-drop.txt && git add tc-drop.txt && git commit -qm "TC to drop"
@@ -1085,7 +1097,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 39. --exec names the branch it moved, and reaches the reconcile hint ---
-	ECHO_E "\e[1;96m[39] exec reports the branch it rewrote\e[0m"
+	_ST_SCENARIO "\e[1;96m[39] exec reports the branch it rewrote\e[0m"
 	git reset -q --hard
 	echo "xa" > xa.txt && git add xa.txt && git commit -qm "XA base"
 	echo "xb" > xb.txt && git add xb.txt && git commit -qm "XB to reword"
@@ -1106,7 +1118,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 40. a continue names the untracked files it absorbs ---
-	ECHO_E "\e[1;96m[40] untracked absorption is named\e[0m"
+	_ST_SCENARIO "\e[1;96m[40] untracked absorption is named\e[0m"
 	git reset -q --hard
 	echo "ua" > ua.txt && git add ua.txt && git commit -qm "UA base"
 	echo "ub" > ub.txt && git add ub.txt && git commit -qm "UB target"
@@ -1134,7 +1146,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 41. a conflict resolution is recorded for rerere to replay ---
-	ECHO_E "\e[1;96m[41] conflict resolutions reach rr-cache\e[0m"
+	_ST_SCENARIO "\e[1;96m[41] conflict resolutions reach rr-cache\e[0m"
 	git reset -q --hard
 	# Pinned: with rerere.enabled explicitly false the records are forgotten
 	# at completion by design (scenario 58) – this scenario asserts the
@@ -1192,7 +1204,7 @@ GIT_SELFTEST () {
 		sh -c "! grep -qE '^[[:space:]]*local CMD=\\(rebase' '$SELF'"
 
 	# --- 42. a CAS refusal keeps the resolution instead of deleting it ---
-	ECHO_E "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
+	_ST_SCENARIO "\e[1;96m[42] CAS refusal preserves the worktree\e[0m"
 	git reset -q --hard
 	printf 'cas one\ncas two\n' > cas.txt && git add cas.txt && git commit -qm "CAS base"
 	local CAS_TARGET=$(git rev-parse HEAD)
@@ -1244,7 +1256,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 43. the orphan sweep takes debris and nothing else ---
-	ECHO_E "\e[1;96m[43] orphan worktree sweep\e[0m"
+	_ST_SCENARIO "\e[1;96m[43] orphan worktree sweep\e[0m"
 	git reset -q --hard
 	local GCBASE=${TMPDIR:-/tmp}
 	GCBASE=${GCBASE%/}
@@ -1270,7 +1282,7 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 44. marker-free conflicts must still pause, with history intact ---
-	ECHO_E "\e[1;96m[44] marker-free conflicts still pause\e[0m"
+	_ST_SCENARIO "\e[1;96m[44] marker-free conflicts still pause\e[0m"
 	git reset -q --hard
 	# Neither of these carries conflict markers, so any attempt to decide a
 	# conflict by inspecting the file auto-resolves them the wrong way – which
@@ -1301,7 +1313,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "no commit was dropped" sh -c "git log --format=%s | grep -qx 'BIN top'"
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[45] fold and reword in one run\e[0m"
+	_ST_SCENARIO "\e[1;96m[45] fold and reword in one run\e[0m"
 	git reset -q --hard
 	printf 'at one\n' > at.txt && git add at.txt && git commit -qm "AT base"
 	printf 'at two\n' > at.txt && git add at.txt && git commit -qm "AT target"
@@ -1367,7 +1379,7 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "not the one below it" 'amended: .*AE base'
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[46] replanting a branch onto a moved upstream\e[0m"
+	_ST_SCENARIO "\e[1;96m[46] replanting a branch onto a moved upstream\e[0m"
 	git reset -q --hard
 	git checkout -q -B onto-main
 	printf 'om base\n' > om.txt && git add om.txt && git commit -qm "OM base"
@@ -1504,7 +1516,7 @@ GIT_SELFTEST () {
 	git checkout -q main
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[47] linking gitignored paths into a pause worktree\e[0m"
+	_ST_SCENARIO "\e[1;96m[47] linking gitignored paths into a pause worktree\e[0m"
 	git reset -q --hard
 	printf 'wl one\n' > wl.txt && git add wl.txt && git commit -qm "WL one"
 	printf 'wl two\n' > wl.txt && git add wl.txt && git commit -qm "WL two"
@@ -1605,7 +1617,7 @@ GIT_SELFTEST () {
 	rm -rf node_modules
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[48] documented guarantees that had no assertion\e[0m"
+	_ST_SCENARIO "\e[1;96m[48] documented guarantees that had no assertion\e[0m"
 	git reset -q --hard
 	printf 'dg one\n' > dg.txt && git add dg.txt && git commit -qm "DG one"
 	printf 'dg two\n' > dg.txt && git add dg.txt && git commit -qm "DG two"
@@ -1682,7 +1694,7 @@ GIT_SELFTEST () {
 	git branch -q -D dg-side 2>/dev/null
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[49] which commit an operation landed in survives a short tail\e[0m"
+	_ST_SCENARIO "\e[1;96m[49] which commit an operation landed in survives a short tail\e[0m"
 	git reset -q --hard
 	printf 'id base\n' > id.txt && git add id.txt && git commit -qm "ID base"
 	# A target wide enough that its own stat block would bury a line printed
@@ -1769,7 +1781,7 @@ GIT_SELFTEST () {
 		"$(print -r -- "$OUT" | tail -3 | grep -c 'edited: ')" "1"
 	git reset -q --hard
 
-	ECHO_E "\e[1;96m[50] SHA-keyed metadata across a plumbing rewrite\e[0m"
+	_ST_SCENARIO "\e[1;96m[50] SHA-keyed metadata across a plumbing rewrite\e[0m"
 	git reset -q --hard
 	git config notes.rewriteRef 'refs/notes/*'
 	printf 'nt one\n' > nt.txt && git add nt.txt && git commit -qm "NT one"
@@ -1829,7 +1841,7 @@ GIT_SELFTEST () {
 	# The override applying it lasts one rebase invocation, so every `--continue`
 	# spawned its own process without it and the fold silently kept git's default
 	# combined message – a wrong result the run still reported as ok
-	ECHO_E "\e[1;96m[51] --text survives a squash's conflict pauses\e[0m"
+	_ST_SCENARIO "\e[1;96m[51] --text survives a squash's conflict pauses\e[0m"
 	git reset -q --hard
 	local N
 	for N in 1 2 3 4; do
@@ -1928,7 +1940,7 @@ GIT_SELFTEST () {
 	# `-m` needs a TTY this suite can never present, so its guarantee is asserted
 	# on the discriminator both message modes route through – driven directly,
 	# the way git invokes an editor, against a fabricated rebase state
-	ECHO_E "\e[1;96m[52] a resume's editor reaches the fold alone\e[0m"
+	_ST_SCENARIO "\e[1;96m[52] a resume's editor reaches the fold alone\e[0m"
 	local FE=$TMP/fold-editor
 	rm -rf "$FE" && mkdir -p "$FE" && git -C "$FE" init -q
 	local FE_REB=$(git -C "$FE" rev-parse --absolute-git-dir)/rebase-merge
@@ -2078,7 +2090,7 @@ GIT_SELFTEST () {
 	# template with. Nothing seeds --text, so a `#` line there is the caller's
 	# content – an issue reference, a Markdown heading, a shell snippet – and
 	# dropping it rewrote the message silently, on every route
-	ECHO_E "\e[1;96m[53] --text keeps the caller's own '#' lines\e[0m"
+	_ST_SCENARIO "\e[1;96m[53] --text keeps the caller's own '#' lines\e[0m"
 	git reset -q --hard
 	local HM_BODY
 
@@ -2116,12 +2128,10 @@ GIT_SELFTEST () {
 		sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"
 
 	# --- 54. a fold that lands nothing, or less than was staged, says so ---
-	# The fold's correct tip is knowable up front – the pre-op tip plus the
-	# staged changes – so a run that falls short of it must not read as ok:
-	# nothing landed is refused with staging intact, a hunk that dissolved
-	# against a later commit's content lands with a note naming the divergence,
-	# and a resolution that empties a replayed commit gets its drop counted
-	ECHO_E "\e[1;96m[54] fold landing guards\e[0m"
+	# The fold's correct tip is knowable up front, the pre-op tip plus the staged changes, so
+	# a run falling short of it must not read as ok – nothing landed is refused with staging
+	# intact, a dissolved hunk lands with a note, and an emptied replay gets its drop counted
+	_ST_SCENARIO "\e[1;96m[54] fold landing guards\e[0m"
 	local R54="$TMP/fold54"
 	git init -q -b main "$R54"
 	git -C "$R54" config user.email selftest@git-edit
@@ -2201,7 +2211,7 @@ GIT_SELFTEST () {
 	# The finished tip is the pre-op tip plus the staged changes, so the final
 	# step's resolution is provable (staged-tree identity) before anything is
 	# committed – earlier steps have no such answer and must keep pausing
-	ECHO_E "\e[1;96m[55] fold final-step auto-resolve\e[0m"
+	_ST_SCENARIO "\e[1;96m[55] fold final-step auto-resolve\e[0m"
 	local R55="$TMP/fold55"
 	git init -q -b main "$R55"
 	git -C "$R55" config user.email selftest@git-edit
@@ -2240,7 +2250,7 @@ GIT_SELFTEST () {
 	cd "$TMP/repo"
 
 	# --- 56. batch reword rewrites many messages in one pass from stdin records ---
-	ECHO_E "\e[1;96m[56] batch reword (-M --text - records)\e[0m"
+	_ST_SCENARIO "\e[1;96m[56] batch reword (-M --text - records)\e[0m"
 	cd "$TMP/repo"
 	# Self-contained commits so an earlier fixture can't collide
 	local _bw
@@ -2314,8 +2324,8 @@ GIT_SELFTEST () {
 	# --- 57. the one-git-log rebuild walk preserves empty-message and merge commits ---
 	# The walk packs each commit's fields into one NUL-separated `git log`, so an
 	# empty message (a trailing empty field) and a merge (a multi-value parents
-	# field) are the two shapes a format/index drift would corrupt silently.
-	ECHO_E "\e[1;96m[57] rebuild-walk field edges (empty message, merge parents)\e[0m"
+	# field) are the two shapes a format/index drift would corrupt silently
+	_ST_SCENARIO "\e[1;96m[57] rebuild-walk field edges (empty message, merge parents)\e[0m"
 	cd "$TMP/repo"
 	local WE_BELOW=$(git rev-parse HEAD)
 	echo we1 > we1.txt && git add we1.txt && git commit -qm "Walk edge base"
@@ -2339,12 +2349,10 @@ GIT_SELFTEST () {
 	cd "$TMP/repo"
 
 	# --- 58. rerere records are operation-scoped under an explicit opt-out ---
-	# `rerere.enabled` false still records during the run (the cascade carry
-	# is the point of the force-enable), but the run's records are forgotten
-	# once the operation ends – completed and aborted alike. Without the
-	# opt-out they persist, and an abort that leaves fresh resolutions behind
-	# names them.
-	ECHO_E "\e[1;96m[58] rerere honors an explicit opt-out, operation-scoped\e[0m"
+	# `rerere.enabled` false still records during the run, the cascade carry being the point,
+	# but the records are forgotten once the operation ends, completed and aborted alike
+	# Without the opt-out they persist, and an abort leaving fresh resolutions behind names them
+	_ST_SCENARIO "\e[1;96m[58] rerere honors an explicit opt-out, operation-scoped\e[0m"
 	git reset -q --hard
 	git config rerere.enabled false
 	local RR58_DIR="$(git rev-parse --git-common-dir)/rr-cache"
@@ -2417,7 +2425,7 @@ GIT_SELFTEST () {
 	# primary commit + tip by default, every rebuilt commit with --verify-span.
 	# A failure pauses with the state kept, so '--no-verify --continue'
 	# applies anyway and '--abort' cancels with nothing consumed.
-	ECHO_E "\e[1;96m[60] --verify gates the CAS, pausing on failure\e[0m"
+	_ST_SCENARIO "\e[1;96m[60] --verify gates the CAS, pausing on failure\e[0m"
 	git reset -q --hard
 	printf '#!/bin/sh\n! grep -q FORBIDDEN vf.txt\n' > "$TMP/verify.sh" && chmod +x "$TMP/verify.sh"
 	git config edit.verifyCmd "$TMP/verify.sh"
@@ -2772,7 +2780,7 @@ GIT_SELFTEST () {
 	# A diffstat shows line counts only, so a dropped executable bit on a
 	# file that also changed content rides invisibly – the completion
 	# summary names it, tip vs pre-op tip
-	ECHO_E "\e[1;96m[61] mode changes land with a note\e[0m"
+	_ST_SCENARIO "\e[1;96m[61] mode changes land with a note\e[0m"
 	git reset -q --hard
 	printf '#!/bin/sh\necho mc\n' > mc.sh && chmod +x mc.sh && git add mc.sh && git commit -qm "MC base"
 	local MC_BASE=$(git rev-parse HEAD)
@@ -2794,7 +2802,7 @@ GIT_SELFTEST () {
 	# --exec can't know its targets up front, so the pushed guard runs on
 	# the result – a remote ref reachable from the old tip but not the new
 	# one refuses the apply
-	ECHO_E "\e[1;96m[62] exec result guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[62] exec result guard\e[0m"
 	echo "xg" > xg.txt && git add xg.txt && git commit -qm "XG commit"
 	git update-ref refs/remotes/guard/main HEAD
 	local XG_TIP=$(git rev-parse HEAD)
@@ -2811,7 +2819,7 @@ GIT_SELFTEST () {
 	# `amend!` autosquashes into `fixup -C <sha>`, whose second word is a flag –
 	# read as the object it drops that step from the hint, and hands `git log`
 	# its own copy-detection flag on the way
-	ECHO_E "\e[1;96m[63] conflict hint parses every todo command\e[0m"
+	_ST_SCENARIO "\e[1;96m[63] conflict hint parses every todo command\e[0m"
 	git reset -q --hard
 	printf 'ah\n' > ah.txt && git add ah.txt && git commit -qm "AH base"
 	local AH_BASE=$(git rev-parse HEAD)
@@ -2830,10 +2838,10 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 64. a reword names what it discarded: message body, signature ---
-	# Both summary lines above are subjects, so a caller comparing those reads a
-	# body-dropping `--text` as clean – and a rebuild mints new objects, so a
-	# signature cannot come along either. Neither shows in a tree or a subject
-	ECHO_E "\e[1;96m[64] a reword names the body and the signature it drops\e[0m"
+	# Both summary lines above are subjects, so a caller comparing those reads a body-dropping
+	# `--text` as clean – and a rebuild mints new objects, so a signature cannot come along
+	# either, with neither showing in a tree or a subject
+	_ST_SCENARIO "\e[1;96m[64] a reword names the body and the signature it drops\e[0m"
 	git reset -q --hard
 	printf 'nb\n' > nb.txt && git add nb.txt
 	git commit -q -F - <<-'NBMSG'
@@ -2885,7 +2893,7 @@ GIT_SELFTEST () {
 	# --- 65. a rewrite names the notes git's policy left behind ---
 	# Copying is git's own call, so the tool reports rather than overrides – the
 	# same posture as an orphaned tag, which it names but never re-points
-	ECHO_E "\e[1;96m[65] a rewrite names the notes left behind\e[0m"
+	_ST_SCENARIO "\e[1;96m[65] a rewrite names the notes left behind\e[0m"
 	git reset -q --hard
 	# Scenario 50 turned the config on and left it there, so the unconfigured
 	# half has to clear it rather than assume a fresh repo
@@ -2920,11 +2928,10 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 66. a re-signing rebase draws no signature notice ---
-	# The plumbing modes cannot sign, so the notice fires for them – but a rebase
-	# re-signs under `commit.gpgsign`, and a mode that drops a commit takes its
-	# signature along, so a shortfall alone would cry wolf. Only a real key can
-	# prove the quiet half, so this self-skips wherever gpg cannot make one
-	ECHO_E "\e[1;96m[66] a re-signing rebase draws no signature notice\e[0m"
+	# The plumbing modes cannot sign, so the notice fires for them – but a rebase re-signs
+	# under `commit.gpgsign` and a mode that drops a commit takes its signature along, so a
+	# shortfall alone would cry wolf, and only a real key proves the quiet half
+	_ST_SCENARIO "\e[1;96m[66] a re-signing rebase draws no signature notice\e[0m"
 	git reset -q --hard
 	local GPG_HOME=$TMP/gnupg
 	local GPG_OK=false
