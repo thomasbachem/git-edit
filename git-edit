@@ -38,32 +38,38 @@
 
 
 # Make a pipeline fail if any element fails
-# (required for `$?` to work in conjunction with `tee` below)
+# (required for `$?` to work with `tee` below)
 set -o pipefail
 
-# Most commits a stale SHA's resolution will compute a patch id for. The author
-# date filter ahead of it normally leaves a handful, so this only bites where a
-# batch shares one second – imported or scripted history. Past it a match can no
-# longer be called unique, and resolution degrades to a suggestion.
+# Suspend background maintenance for this process and every git it spawns – from git 2.54
+# `rerere gc` runs detached per commit, and its `MERGE_RR.lock` kills a rebase reaching its
+# next conflict, wedging every later continue on "you have staged changes"
+if [ -z "$GIT_CONFIG_COUNT" ]; then
+	export GIT_CONFIG_COUNT=2
+	export GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false
+	export GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+fi
+
+# Cap on the commits a stale SHA's resolution computes a patch id for – the author date
+# filter ahead of it normally leaves a handful, so this only bites on imported or scripted
+# history sharing one second, where a match stops being unique and degrades to a suggestion
 RESOLVE_SCAN_MAX=100
 
-# Blank-line padding between narrative lines reads well in a terminal, but a
-# caller piping through `| tail -N` – how most agent invocations consume this
-# – loses a line of summary to every one of them. Pad only for a real
-# terminal; a pipe or a captured run gets the same lines, tight.
+# Blank-line padding reads well in a terminal, but a caller piping through `| tail -N` – how
+# most agent runs consume this – loses a line of summary to each, so pad only for a terminal
 _PAD=""
 [ -t 1 ] && _PAD="\n"
 
-# Same reasoning for color: escapes read as emphasis in a terminal but as
-# noise in a captured run, where they also split literal text a caller greps
-# for. Honors NO_COLOR and TERM=dumb alongside the pipe check.
+# Same reasoning for color: escapes read as emphasis in a terminal but as noise in a
+# captured run, where they also split literal text a caller greps for – honors `NO_COLOR`
+# and `TERM=dumb` alongside the pipe check
 _COLOR=true
 if [ ! -t 1 ] || [ -n "$NO_COLOR" ] || [ "$TERM" = "dumb" ]; then
 	_COLOR=false
 fi
 
 # Gutter colors for the excerpt streams (`git show`/`git log` output piped
-# through `sed`, which can't route through ECHO_E) – empty when color is off,
+# through `sed`, which can't route through `ECHO_E`) – empty when color is off,
 # so one `sed` script serves both cases
 _DIM=$'\e[0;90m'
 _RED=$'\e[0;31m'

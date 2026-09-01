@@ -135,6 +135,12 @@ GIT_SELFTEST () {
 	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
 	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
+	# Hermetic maintenance – from git 2.54 every commit's auto-maintenance runs `rerere gc`
+	# detached, and its `MERGE_RR.lock` kills an op's rebase reaching its next conflict, so
+	# the continue wedges on "staged changes" with the stop's bookkeeping never written
+	export GIT_CONFIG_GLOBAL=$TMP/gitconfig
+	printf '[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n' > "$GIT_CONFIG_GLOBAL"
+
 	# --- Scratch repo: A, B pushed to a bare origin; C, D, E unpushed ---
 	git init -q -b main "$TMP/repo" || { PRINT_ERR "Cannot init scratch repo"; exit 1; }
 	cd "$TMP/repo" || exit 1
