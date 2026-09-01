@@ -548,11 +548,11 @@ _PRINT_CONFLICT_DETAIL () {
 		fi
 	fi
 
-	# No conflicted files + a paused rebase = the current step produced an
-	# empty commit (its changes are already upstream). Nothing to resolve –
-	# the escape is skipping that step
+	# No conflicted files + a paused rebase = the current step went empty –
+	# either its changes are already upstream or a resolution replayed within
+	# the run produced them, and neither is provable from here
 	if [ -z "$UNMERGED" ] && [ -d "$GITDIR/rebase-merge" ]; then
-		PRINT_TEXT "No conflicted files – the current step became empty (its changes are already upstream). Skip it, then continue:" 33 >&2
+		PRINT_TEXT "No conflicted files – the current step became empty: its changes are already upstream, or a resolution replayed within this run produced them. Skipping drops that commit. Then continue:" 33 >&2
 		ECHO_E "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
 		ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 	fi
