@@ -72,10 +72,10 @@ GIT_SELFTEST () {
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
-			echo "$OUT" | tail -5 | sed 's/^/       | /'
+			echo "$OUT" | tail -16 | sed 's/^/       | /'
 		fi
 	}
-	# Fallout containment: an operation a scenario left paused would cascade
+	# Contains fallout – an operation a scenario left paused would cascade
 	# "in flight" errors through every scenario after it – abort it loudly so
 	# one flake reads as one scenario's failure, not fifteen
 	_ST_SCENARIO () {
@@ -93,7 +93,7 @@ GIT_SELFTEST () {
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
-			echo "$OUT" | tail -5 | sed 's/^/       | /'
+			echo "$OUT" | tail -16 | sed 's/^/       | /'
 		fi
 	}
 	_ST_OUT_LACKS () {
@@ -112,6 +112,23 @@ GIT_SELFTEST () {
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC ('$2' != '$3')"
+			echo "$OUT" | tail -16 | sed 's/^/       | /'
+		fi
+	}
+	# Writes a conflict resolution and stages it, verifying the stage took – the dance once
+	# failed silently under `2>/dev/null` and resurfaced two continues later as a
+	# mis-narrated empty step, while a missing worktree stays quiet since its pause already failed
+	_ST_RESOLVE () {
+		# Args: <worktree> <file> <content>
+		[ -d "$1" ] || return 1
+		local ERR
+		if ! ERR=$( { print -r -- "$3" > "$1/$2" && git -C "$1" add -- "$2" } 2>&1 ); then
+			ECHO_E "  \e[1;33mNOTE\e[0m resolving $2 failed: $ERR"
+			return 1
+		fi
+		if [ -n "$(git -C "$1" ls-files -u -- "$2" 2>/dev/null)" ]; then
+			ECHO_E "  \e[1;33mNOTE\e[0m staging $2 left it unmerged"
+			return 1
 		fi
 	}
 
@@ -243,14 +260,12 @@ GIT_SELFTEST () {
 	git add w.txt
 	# The agent resolves and drives the rebase manually inside the worktree
 	local MANUAL_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	echo "line1-again" > "${MANUAL_WT:-$ST_NO_WT}/c.txt"
-	git -C "$MANUAL_WT" add c.txt
+	_ST_RESOLVE "$MANUAL_WT" c.txt "line1-again"
 	local MROUNDS=0
 	while [ $MROUNDS -lt 4 ]; do
 		MROUNDS=$((MROUNDS+1))
 		GIT_EDIT_NO_AUTO_OPEN=1 git -C "$MANUAL_WT" -c core.editor=true rebase --continue >/dev/null 2>&1 && break
-		echo "line2" > "${MANUAL_WT:-$ST_NO_WT}/c.txt"
-		git -C "$MANUAL_WT" add c.txt
+		_ST_RESOLVE "$MANUAL_WT" c.txt "line2"
 	done
 	_ST_RUN --continue
 	_ST_EQ "continue applies the manual result" "$RC" "0"
@@ -1022,13 +1037,14 @@ GIT_SELFTEST () {
 	_ST_RUN --amend-into="$SF_TARGET" -- sf.txt
 	_ST_EQ "scoped fold conflicts as set up" "$RC" "2"
 	local SF_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	printf 'sc1\nSFS\nsc3\n' > "${SF_WT:-$ST_NO_WT}/sf.txt" && git -C "$SF_WT" add sf.txt
+	_ST_RESOLVE "$SF_WT" sf.txt $'sc1\nSFS\nsc3'
 	_ST_RUN --continue
 	# The final pick's staged-tree resolution would empty "SF later" – the
 	# auto-resolve must decline that and leave the call with the resolver
 	_ST_EQ "final step that would empty its commit still pauses" "$RC" "2"
 	_ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
-	printf 'sc1\nSFL\nsc3\n' > "${SF_WT:-$ST_NO_WT}/sf.txt" 2>/dev/null && git -C "$SF_WT" add sf.txt 2>/dev/null
+	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
+	_ST_RESOLVE "$SF_WT" sf.txt $'sc1\nSFL\nsc3'
 	_ST_RUN --continue
 	_ST_OUT_HAS "scope survives the conflict pause" 'outside the pathspec'
 	_ST_OUT_LACKS "no bogus not-folded warning" 'not folded'
@@ -1224,8 +1240,7 @@ GIT_SELFTEST () {
 			break
 		fi
 		CAS_WT=$CAS_WT_NOW
-		printf 'cas one\ncas RESOLVED\n' > "${CAS_WT:-$ST_NO_WT}/cas.txt"
-		git -C "$CAS_WT" add cas.txt
+		_ST_RESOLVE "$CAS_WT" cas.txt $'cas one\ncas RESOLVED'
 		_ST_RUN --continue
 	done
 	_ST_EQ "the CAS refuses the write" "$RC" "1"
@@ -1852,9 +1867,10 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$TX_TARGET" -y --text="$(printf 'TX folded subject\n\n• TX folded body')" "$TX_VICTIM"
 	_ST_EQ "the squash pauses on a conflict" "$RC" "2"
 	local TX_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tx4" > "${TX_WT:-$ST_NO_WT}/tx.txt" && git -C "$TX_WT" add tx.txt
+	_ST_RESOLVE "$TX_WT" tx.txt "tx4"
 	_ST_RUN --continue
-	echo "tx3" > "${TX_WT:-$ST_NO_WT}/tx.txt" && git -C "$TX_WT" add tx.txt
+	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
+	_ST_RESOLVE "$TX_WT" tx.txt "tx3"
 	_ST_RUN --continue
 	_ST_EQ "the resumed squash settles" "$RC" "0"
 	_ST_EQ "the fold carries --text, not the combined default" \
@@ -1877,9 +1893,10 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$TF_TARGET" -y --text="TF folded subject" "$TF_VICTIM"
 	_ST_EQ "folding forward pauses before reaching the fold" "$RC" "2"
 	local TF_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tf3" > "${TF_WT:-$ST_NO_WT}/tf.txt" && git -C "$TF_WT" add tf.txt
+	_ST_RESOLVE "$TF_WT" tf.txt "tf3"
 	_ST_RUN --continue
-	echo "tf2" > "${TF_WT:-$ST_NO_WT}/tf.txt" && git -C "$TF_WT" add tf.txt
+	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
+	_ST_RESOLVE "$TF_WT" tf.txt "tf2"
 	_ST_RUN --continue
 	_ST_EQ "the forward fold settles" "$RC" "0"
 	_ST_EQ "the fold still takes --text" "$(git log --format=%s -1)" "TF folded subject"
@@ -1904,9 +1921,10 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$(git log --format=%H --grep='^TR 2 target$' -1)" -y --text="TR folded subject" \
 		"$(git log --format=%H --grep='^TR 4 victim$' -1)"
 	local TR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tr4" > "${TR_WT:-$ST_NO_WT}/tr.txt" && git -C "$TR_WT" add tr.txt
+	_ST_RESOLVE "$TR_WT" tr.txt "tr4"
 	_ST_RUN --continue
-	echo "tr3" > "${TR_WT:-$ST_NO_WT}/tr.txt" && git -C "$TR_WT" add tr.txt
+	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
+	_ST_RESOLVE "$TR_WT" tr.txt "tr3"
 	_ST_RUN --continue
 	_ST_EQ "the replay settles" "$RC" "0"
 	_ST_EQ "a replayed commit's message survives byte for byte" \
@@ -2025,9 +2043,10 @@ GIT_SELFTEST () {
 		"$(git log --format=%H --grep='^QR 4$' -1)"
 	_ST_EQ "a repo under an apostrophe still pauses, not errors" "$RC" "2"
 	local QR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "qr4" > "${QR_WT:-$ST_NO_WT}/qr.txt" && git -C "$QR_WT" add qr.txt
+	_ST_RESOLVE "$QR_WT" qr.txt "qr4"
 	_ST_RUN --continue
-	echo "qr3" > "${QR_WT:-$ST_NO_WT}/qr.txt" && git -C "$QR_WT" add qr.txt
+	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
+	_ST_RESOLVE "$QR_WT" qr.txt "qr3"
 	_ST_RUN --continue
 	_ST_EQ "its resume settles" "$RC" "0"
 	_ST_EQ "and the fold carries --text" "$(git log --format=%s --skip=1 -1)" "QR folded subject"
