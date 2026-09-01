@@ -27,6 +27,15 @@ GIT_SELFTEST () {
 	# missed pause fails the scenario's assertions and nothing else
 	local ST_NO_WT=/nonexistent/git-edit-selftest
 
+	# Deterministic clock – every git call takes a unique ascending timestamp via the `:-`
+	# fallbacks, since real-time fixtures landed up to 8 commits per wall-clock second and
+	# those ties swung stock runs between 35 and 65 failures where pinned runs were identical
+	local ST_TICK=1112911993
+	git () {
+		ST_TICK=$((ST_TICK+60))
+		GIT_AUTHOR_DATE="${GIT_AUTHOR_DATE:-@$ST_TICK +0000}" GIT_COMMITTER_DATE="${GIT_COMMITTER_DATE:-@$ST_TICK +0000}" command git "$@"
+	}
+
 	# Sub-invocations run non-TTY (stdin </dev/null) for deterministic agent
 	# behavior even when the selftest itself runs from a terminal
 	_ST_RUN () {
@@ -2658,7 +2667,9 @@ GIT_SELFTEST () {
 	git config edit.verifyCmd "true"
 	local VW_TIP=$(git rev-parse HEAD)
 	mkdir -p "$TMP/shim"
-	printf '#!/bin/zsh\nif [[ "$1" == "worktree" && "$2" == "add" && "$*" == *git-edit-verify* ]]; then exit 1; fi\nexec %s "$@"\n' "$(command -v git)" > "$TMP/shim/git"
+	# `whence -p` resolves the real binary – the tick wrapper shadows `git`, so
+	# `command -v` names the function and the shim would exec itself forever
+	printf '#!/bin/zsh\nif [[ "$1" == "worktree" && "$2" == "add" && "$*" == *git-edit-verify* ]]; then exit 1; fi\nexec %s "$@"\n' "$(whence -p git)" > "$TMP/shim/git"
 	chmod +x "$TMP/shim/git"
 	PATH="$TMP/shim:$PATH" _ST_RUN --split="$VW_TIP" --text="VW extracted" -- vw1.txt
 	_ST_EQ "a split with no verify worktree refuses" "$RC" "1"
