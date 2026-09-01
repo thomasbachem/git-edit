@@ -106,6 +106,10 @@ the amend.
 .B \-M, \-\-reword
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
 or worktree; the working tree is untouched and the tip tree is unchanged.
+Descendants of a linear history are rebuilt in one \fBgit replay\fR pass (git
+2.44+), kept only once every rebuilt commit is proven to carry its original's
+tree, author and message \(em otherwise, as under a merge, one
+\fBcommit\-tree\fR per commit.
 .IP
 Drop \fIcommit\fR and pass \fB\-\-text \-\fR to reword many commits at once,
 reading \fB\-\-\-\fR \fIcommit\fR records from stdin \(em a header naming a
@@ -678,6 +682,10 @@ If set, disables the non\-interactive auto\-isolation into a temp worktree.
 .B GIT_EDIT_NO_AUTO_OPEN
 If set, does not auto\-open the worktree in a detected GUI editor at
 interactive pauses.
+.TP
+.B GIT_EDIT_NO_REPLAY
+If set, the plumbing modes rebuild descendants one \fBcommit\-tree\fR at a time
+instead of in one proven \fBgit replay\fR pass.
 .SH EXAMPLES
 .TP
 Fold staged changes into the commit that introduced the code:

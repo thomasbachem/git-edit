@@ -209,6 +209,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
 	ECHO_E "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
 	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
+	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
+	ECHO_E "\e[0;94m       proven identical commit for commit. GIT_EDIT_NO_REPLAY=1 keeps the commit-by-commit walk.\e[0m"
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – refs/heads/main unchanged\e[0m"
@@ -3943,15 +3945,88 @@ _READ_MESSAGE_FROM_EDITOR () {
 	git stripspace --strip-comments < "$MSG_FILE"
 }
 
-# Rebuild each commit in `$1..HEAD` with every rewritten parent substituted,
-# carrying an old->new map across the walk – a single PREV_OLD/PREV_NEW chain
-# silently breaks on merge topologies, where the second leg's parent no longer
-# matches by the time the walk reaches it. Commits with no rewritten parent
-# (side legs that merge in without descending from the rewrite) are kept as-is
-# rather than rebuilt. The final PREV_NEW is the new tip for update-ref;
-# `--topo-order` guards the parents-before-children walk against clock skew.
+# Whether `git replay` can rebuild a span, probed once per run – absent before git 2.44,
+# and from 2.55 it updates refs by default, where `--ref-action=print` keeps it a pure
+# computation, the flag traveling in `_REPLAY_FLAGS`
+_REPLAY_PROBED=""
+_REPLAY_FLAGS=()
+_REBUILT_VIA_REPLAY=false
+_REPLAY_AVAILABLE () {
+	if [ -z "$_REPLAY_PROBED" ]; then
+		_REPLAY_PROBED=no
+		local USAGE=$( export LC_ALL=C; git replay -h 2>&1 )
+		if [[ "$USAGE" == *"--advance"* ]]; then
+			[[ "$USAGE" == *"--ref-action"* ]] && _REPLAY_FLAGS=(--ref-action=print)
+			_REPLAY_PROBED=yes
+		fi
+	fi
+	[ "$_REPLAY_PROBED" = yes ]
+}
+
+# Rebuilds a linear `$1..HEAD` in one `git replay` pass where the walk below spawns two
+# gits per commit – a 250-deep reword drops from ~3s to ~0.3s, and the result is taken
+# only once every replayed commit carries its original's tree, author and message
+_REPLAY_REBUILD () {
+	local FROM=$1
+	[ -n "$GIT_EDIT_NO_REPLAY" ] && return 1
+	# The span with each commit's parents – a second parent anywhere is a merge
+	# Under five commits the walk's two spawns each undercut this path's probe
+	# and proof
+	local -a OLD FIELDS
+	OLD=("${(@f)$(git rev-list --reverse --parents "$FROM..HEAD" 2>/dev/null)}")
+	[ ${#OLD[@]} -lt 5 ] && return 1
+	local LINE BASE=""
+	for LINE in "${OLD[@]}"; do
+		FIELDS=(${=LINE})
+		[ ${#FIELDS[@]} -ne 2 ] && return 1
+		[ -z "$BASE" ] && BASE=${FIELDS[2]}
+	done
+	OLD=("${OLD[@]%% *}")
+	# The walk seeds its map at PREV_OLD, so the span has to rise from there
+	[ "$BASE" = "$(git rev-parse "$PREV_OLD" 2>/dev/null)" ] || return 1
+	_REPLAY_AVAILABLE || return 1
+	# Replayed onto a transient ref of its own, so the branch is never named to a command that
+	# could move it, whatever a later git makes the default – a ref an interrupted run left
+	# behind is swept once its process is gone
+	local STALE
+	for STALE in ${(f)"$(git for-each-ref --format='%(refname)' 'refs/git-edit/replay-*' 2>/dev/null)"}; do
+		kill -0 "${STALE##*-}" 2>/dev/null || git update-ref -d "$STALE" 2>/dev/null
+	done
+	local TMPREF="refs/git-edit/replay-$$"
+	git update-ref "$TMPREF" "$PREV_NEW" 2>/dev/null || return 1
+	local OUT
+	OUT=$( export LC_ALL=C; git replay "${_REPLAY_FLAGS[@]}" --advance "$TMPREF" "$FROM..HEAD" 2>/dev/null )
+	git update-ref -d "$TMPREF" 2>/dev/null
+	# "update <ref> <new> <old>" – the third field is the rebuilt tip
+	local FIRST=${OUT%%$'\n'*}
+	FIELDS=(${=FIRST})
+	local NEW_TIP=${FIELDS[3]}
+	[ -z "$NEW_TIP" ] && return 1
+	# The proof: both spans dump identical, commit for commit
+	local FMT='%T%x00%an%x00%ae%x00%aI%x00%B%x00'
+	cmp -s <(git log --reverse --format="$FMT" "$FROM..HEAD" 2>/dev/null) \
+	       <(git log --reverse --format="$FMT" "$PREV_NEW..$NEW_TIP" 2>/dev/null) || return 1
+	local -a NEW
+	NEW=("${(@f)$(git rev-list --reverse "$PREV_NEW..$NEW_TIP" 2>/dev/null)}")
+	[ ${#NEW[@]} -ne ${#OLD[@]} ] && return 1
+	PRINT_CMD "git replay --advance ${TMPREF#refs/git-edit/} ${FROM:0:7}..HEAD -> ${NEW_TIP:0:7}  # replayed ${#OLD[@]} commit(s) in one pass"
+	local i
+	for (( i=1; i<=${#OLD[@]}; i++ )); do
+		_RECORD_REWRITE "${OLD[$i]}" "${NEW[$i]}"
+	done
+	PREV_OLD=${OLD[-1]}
+	PREV_NEW=$NEW_TIP
+	_REBUILT_VIA_REPLAY=true
+	return 0
+}
+
+# Rebuilds each commit in `$1..HEAD` with every rewritten parent substituted, carrying an
+# old->new map across the walk, since a single `PREV_OLD`/`PREV_NEW` chain breaks on merge
+# topologies – `--topo-order` guards the parents-before-children walk against clock skew
 _REBUILD_DESCENDANTS () {
 	local FROM=$1
+	# One replay where the span is linear and its result proves out – else the walk
+	_REPLAY_REBUILD "$FROM" && return 0
 	local DESC P D_NEW D_TOUCHED
 	local -a D_PARENTS_ARGS NF
 	local -A REWRITTEN
@@ -4112,28 +4187,26 @@ GIT_REWORD () {
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "reword ${TARGET:0:7}"
-	# Plumbing rebuilds reuse every commit's tree object verbatim, so this
-	# holds by construction – stated so callers don't re-verify with a diff,
-	# and claiming nothing beyond the tree, since a rebuild mints new objects
-	# and drops any header the walk does not carry
-	PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
-	# The message is the entire point of the mode, so show the one that landed –
-	# otherwise the caller reads it back with `git log` to be sure it took
-	# `$NEW_TARGET` is the rebuilt commit itself, captured when it was created.
-	# Deriving it by offset instead walks first parents, so a merge in the span
-	# – whose commit count includes the side branch – named the wrong commit.
+	# The walk reuses every commit's tree object verbatim, so this holds by construction, and a
+	# replay's result was proven against the originals before it was taken – stated so callers
+	# do not re-verify with a diff, and claiming nothing beyond the tree
+	if [ "$_REBUILT_VIA_REPLAY" = "true" ]; then
+		PRINT_TEXT "%s – proven commit for commit, rebuilt in one replay as new objects." 32 "Trees unchanged ✓"
+	else
+		PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
+	fi
+	# The message is the entire point of the mode, so show the one that landed, or the caller
+	# reads it back with `git log` to be sure it took – `$NEW_TARGET` is the rebuilt commit
+	# itself, since deriving it by offset walks first parents and a merge names the wrong one
 	if [ -n "$NEW_TARGET" ]; then
 		_PRINT_COMMIT_LINE "$NEW_TARGET" '  %h %s'
 		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
 			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
 		fi
-		# Name the subject that was replaced. A symbolic target resolves once,
-		# at invocation, so a commit landing between the caller's read and this
-		# call is silently reworded instead – and the CAS cannot catch it, since
-		# that guard covers the ref moving mid-run, not the wrong commit being
-		# named. Showing the old subject puts the mistake in the output a caller
-		# actually reads back, rather than only in the line that scrolled past.
+		# Name the subject that was replaced – a symbolic target resolves once at invocation, so a
+		# commit landing between the caller's read and this call is silently reworded instead,
+		# which the CAS cannot catch, and the old subject puts that in the output they read back
 		local OLD_SUBJECT=$(git log -1 --format='%s' "$TARGET" 2>/dev/null)
 		if [ -n "$OLD_SUBJECT" ]; then
 			_PRINT_COMMIT_LINE "$TARGET" '  replaced: %s'

@@ -107,6 +107,8 @@ git edit -M 0123456789abcdef0123456789abcdef01234567
 
 This opens your `$EDITOR` on the current message, then rebuilds just the affected commit (and any descendants) using `git commit-tree` + `git update-ref` — no checkout, no stash, no rebase, no temporary worktree. The working tree is physically untouched (file inodes and mtimes preserved); the operation is atomic from your perspective: a single ref update at the end. Safe to run while another tool (e.g., an AI coding assistant) is editing files in your checkout.
 
+Where the history above the commit is linear, the descendants are rebuilt in a single `git replay` pass (git 2.44+) and kept only if every rebuilt commit carries its original's tree, author and message — otherwise, as under a merge, they are rebuilt one by one with `commit-tree`. `GIT_EDIT_NO_REPLAY=1` forces the commit-by-commit walk.
+
 ### Rewording Many Commits at Once
 
 To reword **many** commits in one pass, drop the positional commit and feed `--- <commit>` records on stdin (via `--text -`). Each record is a header naming a commit followed by its new message — exactly the shape `git log` emits, so the flow is dump -> edit -> feed back:
