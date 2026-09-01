@@ -22,6 +22,11 @@ GIT_SELFTEST () {
 	local FAIL=0
 	local OUT RC
 
+	# A pause that never came leaves its worktree path empty, and a write through
+	# it would land at the filesystem root – this sends it nowhere instead, so a
+	# missed pause fails the scenario's assertions and nothing else
+	local ST_NO_WT=/nonexistent/git-edit-selftest
+
 	# Sub-invocations run non-TTY (stdin </dev/null) for deterministic agent
 	# behavior even when the selftest itself runs from a terminal
 	_ST_RUN () {
@@ -191,9 +196,9 @@ GIT_SELFTEST () {
 			break
 		fi
 		if [ $ROUNDS -eq 1 ]; then
-			echo "line1-resolved" > "$CONFLICT_WT/c.txt"
+			echo "line1-resolved" > "${CONFLICT_WT:-$ST_NO_WT}/c.txt"
 		else
-			echo "line2" > "$CONFLICT_WT/c.txt"
+			echo "line2" > "${CONFLICT_WT:-$ST_NO_WT}/c.txt"
 		fi
 		git -C "$CONFLICT_WT" add c.txt
 		_ST_RUN --continue
@@ -218,13 +223,13 @@ GIT_SELFTEST () {
 	git add w.txt
 	# The agent resolves and drives the rebase manually inside the worktree
 	local MANUAL_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	echo "line1-again" > "$MANUAL_WT/c.txt"
+	echo "line1-again" > "${MANUAL_WT:-$ST_NO_WT}/c.txt"
 	git -C "$MANUAL_WT" add c.txt
 	local MROUNDS=0
 	while [ $MROUNDS -lt 4 ]; do
 		MROUNDS=$((MROUNDS+1))
 		GIT_EDIT_NO_AUTO_OPEN=1 git -C "$MANUAL_WT" -c core.editor=true rebase --continue >/dev/null 2>&1 && break
-		echo "line2" > "$MANUAL_WT/c.txt"
+		echo "line2" > "${MANUAL_WT:-$ST_NO_WT}/c.txt"
 		git -C "$MANUAL_WT" add c.txt
 	done
 	_ST_RUN --continue
@@ -600,7 +605,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "intermediate step says author it" 'rebuilds a state that never existed'
 	_ST_OUT_HAS "intermediate step rules out --3way" 'cannot work here'
 	local MV_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	printf 'mv-base\nmv-B\n' > "$MV_WT/mv.txt" && git -C "$MV_WT" add mv.txt
+	printf 'mv-base\nmv-B\n' > "${MV_WT:-$ST_NO_WT}/mv.txt" && git -C "$MV_WT" add mv.txt
 	# The final step is fully determined, so it resolves itself rather than
 	# handing back a command the tool already derived
 	_ST_RUN --continue
@@ -651,7 +656,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the action" 'Conflict during drop'
 	_ST_EQ "branch untouched while paused" "$(git rev-parse HEAD)" "$PZ_TIP"
 	local PZ_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	printf 'x\nTIP\nz\n' > "$PZ_WT/pz.txt" && git -C "$PZ_WT" add pz.txt
+	printf 'x\nTIP\nz\n' > "${PZ_WT:-$ST_NO_WT}/pz.txt" && git -C "$PZ_WT" add pz.txt
 	_ST_RUN --continue
 	_ST_EQ "continue completes the drop" "$RC" "0"
 	_ST_EQ "dropped commit is gone" "$(git log --format=%s -2 | tr '\n' ' ')" "PZ tip PZ base "
@@ -711,7 +716,7 @@ GIT_SELFTEST () {
 	_ST_RUN --continue
 	_ST_EQ "empty continue refused" "$RC" "1"
 	_ST_OUT_HAS "explains nothing to amend" 'Nothing to amend'
-	printf 'e1\nEDITED\ne2\n' > "$ED_WT/ed.txt"
+	printf 'e1\nEDITED\ne2\n' > "${ED_WT:-$ST_NO_WT}/ed.txt"
 	# A commit landing on the branch during authoring must be absorbed
 	echo "mid" > ed-mid.txt && git add ed-mid.txt && git commit -qm "ED mid-pause"
 	_ST_RUN --continue --text "ED target, edited"
@@ -754,20 +759,20 @@ GIT_SELFTEST () {
 	_ST_RUN --continue --text "CS extracted"
 	_ST_EQ "unedited worktree refused" "$RC" "1"
 	_ST_OUT_HAS "names the empty remainder" 'remainder commit would be empty'
-	echo "debris" > "$CS_WT/cs-stray.txt"
+	echo "debris" > "${CS_WT:-$ST_NO_WT}/cs-stray.txt"
 	_ST_RUN --continue --text "CS extracted"
 	_ST_EQ "stray path refused" "$RC" "1"
 	_ST_OUT_HAS "names the stray path" 'cs-stray.txt'
 	rm -f "$CS_WT/cs-stray.txt"
-	printf 'first\nsecond\n' > "$CS_WT/cs.txt"
+	printf 'first\nsecond\n' > "${CS_WT:-$ST_NO_WT}/cs.txt"
 	_ST_RUN --continue --text "CS extracted"
 	_ST_EQ "worktree back at the parent refused" "$RC" "1"
 	_ST_OUT_HAS "names the empty extraction" 'extracted commit would be empty'
 	# The real split point: the uppercase half only, third line left for the remainder
-	printf 'FIRST\nsecond\n' > "$CS_WT/cs.txt"
+	printf 'FIRST\nsecond\n' > "${CS_WT:-$ST_NO_WT}/cs.txt"
 	# A commit landing on the branch during authoring must be absorbed
 	echo "cs-mid" > cs-mid.txt && git add cs-mid.txt && git commit -qm "CS mid-pause"
-	# Run the final continue from inside the worktree – its detached HEAD must
+	# Run the final continue from inside the worktree – its detached `HEAD` must
 	# not stand in for the branch as the trailer's "before"
 	local CS_PRE=$(git rev-parse HEAD)
 	OUT=$(cd "$CS_WT" && GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue --text "CS extracted" </dev/null 2>&1)
@@ -845,7 +850,7 @@ GIT_SELFTEST () {
 	_ST_RUN --reorder "$DR_TIP" "$(git rev-parse HEAD~1)"
 	_ST_EQ "reordering abutting edits conflicts" "$RC" "2"
 	local DR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	printf 'd1\nDY\nd3\n' > "$DR_WT/dr.txt" && git -C "$DR_WT" add dr.txt
+	printf 'd1\nDY\nd3\n' > "${DR_WT:-$ST_NO_WT}/dr.txt" && git -C "$DR_WT" add dr.txt
 	# The final step restores the pre-op blobs by itself, which leaves the
 	# replayed commit empty and the rebase drops it
 	_ST_RUN --continue
@@ -864,7 +869,7 @@ GIT_SELFTEST () {
 	local HK_COUNT=$(git rev-list --count HEAD)
 	_ST_RUN "$(git rev-parse HEAD~1)"
 	local HK_WT=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
-	printf 'h1\nh2\n' > "$HK_WT/hk.txt"
+	printf 'h1\nh2\n' > "${HK_WT:-$ST_NO_WT}/hk.txt"
 	_ST_RUN --continue
 	_ST_EQ "the dissolution applies without a pause" "$RC" "0"
 	_ST_OUT_HAS "the emptied husk is counted" 'resolved to empty and were dropped'
@@ -882,7 +887,7 @@ GIT_SELFTEST () {
 	local DP_HUSK=$(git rev-parse --short HEAD~1)
 	_ST_RUN "$(git rev-parse HEAD~2)"
 	local DP_WT=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
-	printf 'p1\np2\n' > "$DP_WT/dp.txt"
+	printf 'p1\np2\n' > "${DP_WT:-$ST_NO_WT}/dp.txt"
 	_ST_RUN --continue
 	_ST_EQ "the twin-subject dissolution applies" "$RC" "0"
 	_ST_EQ "exactly one commit is named" "$(print -r -- "$OUT" | grep -c 'dropped: ')" "1"
@@ -896,7 +901,7 @@ GIT_SELFTEST () {
 	printf 'r1\nr2\n' > rw.txt && git add rw.txt && git commit -qm "RW husk"
 	_ST_RUN "$(git rev-parse HEAD~1)"
 	local RW_WT=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
-	printf 'r1\nr2\n' > "$RW_WT/rw.txt"
+	printf 'r1\nr2\n' > "${RW_WT:-$ST_NO_WT}/rw.txt"
 	_ST_RUN --continue --text "RW origin reworded"
 	_ST_EQ "the reworded dissolution applies" "$RC" "0"
 	_ST_OUT_HAS "the drop is still counted" 'resolved to empty and were dropped'
@@ -909,7 +914,7 @@ GIT_SELFTEST () {
 	printf 'b1\nb2\n' > bt.txt && git add bt.txt && git commit -qm 'BT `rules` husk $(echo PWNED)'
 	_ST_RUN "$(git rev-parse HEAD~1)"
 	local BT_WT=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
-	printf 'b1\nb2\n' > "$BT_WT/bt.txt"
+	printf 'b1\nb2\n' > "${BT_WT:-$ST_NO_WT}/bt.txt"
 	_ST_RUN --continue
 	_ST_EQ "a backticked subject dissolves cleanly" "$RC" "0"
 	_ST_OUT_HAS "and is named verbatim" 'dropped: .*BT `rules` husk'
@@ -935,7 +940,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "names the marker problem" 'still contains conflict markers'
 	_ST_CHECK "markers never reached history" sh -c "! git log -p --all | grep -q '^+<<<<<<< '"
 	# A marker-free resolution is not blocked
-	printf 'm1\nMS\nm3\n' > "$MK_WT/mk.txt" && git -C "$MK_WT" add mk.txt
+	printf 'm1\nMS\nm3\n' > "${MK_WT:-$ST_NO_WT}/mk.txt" && git -C "$MK_WT" add mk.txt
 	_ST_RUN --continue
 	_ST_OUT_LACKS "clean resolution passes the guard" 'still contains conflict markers'
 	_ST_RUN --abort
@@ -956,8 +961,8 @@ GIT_SELFTEST () {
 	# Resolve step 1, but also touch a file neither commit changes – the final
 	# step's pre-op blobs then cannot reproduce the pre-op tree, so the proof
 	# fails and it must hand back rather than apply a resolution it can't verify
-	printf 'p1\npB\n' > "$PR_WT/pa.txt"
-	printf 'STRAY\n' > "$PR_WT/pb.txt"
+	printf 'p1\npB\n' > "${PR_WT:-$ST_NO_WT}/pa.txt"
+	printf 'STRAY\n' > "${PR_WT:-$ST_NO_WT}/pb.txt"
 	git -C "$PR_WT" add pa.txt pb.txt
 	_ST_RUN --continue
 	_ST_EQ "unprovable final step still pauses" "$RC" "2"
@@ -996,13 +1001,13 @@ GIT_SELFTEST () {
 	_ST_RUN --amend-into="$SF_TARGET" -- sf.txt
 	_ST_EQ "scoped fold conflicts as set up" "$RC" "2"
 	local SF_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	printf 'sc1\nSFS\nsc3\n' > "$SF_WT/sf.txt" && git -C "$SF_WT" add sf.txt
+	printf 'sc1\nSFS\nsc3\n' > "${SF_WT:-$ST_NO_WT}/sf.txt" && git -C "$SF_WT" add sf.txt
 	_ST_RUN --continue
 	# The final pick's staged-tree resolution would empty "SF later" – the
 	# auto-resolve must decline that and leave the call with the resolver
 	_ST_EQ "final step that would empty its commit still pauses" "$RC" "2"
 	_ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
-	printf 'sc1\nSFL\nsc3\n' > "$SF_WT/sf.txt" 2>/dev/null && git -C "$SF_WT" add sf.txt 2>/dev/null
+	printf 'sc1\nSFL\nsc3\n' > "${SF_WT:-$ST_NO_WT}/sf.txt" 2>/dev/null && git -C "$SF_WT" add sf.txt 2>/dev/null
 	_ST_RUN --continue
 	_ST_OUT_HAS "scope survives the conflict pause" 'outside the pathspec'
 	_ST_OUT_LACKS "no bogus not-folded warning" 'not folded'
@@ -1018,7 +1023,7 @@ GIT_SELFTEST () {
 	_ST_EQ "target has a descendant to replay" "$(git rev-list --count ${STALE_T}..HEAD)" "1"
 	_ST_RUN "$STALE_T"
 	local STALE_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused – edit [0-9a-f]* in \(.*\); then.*/\1/p')
-	printf 'ed1\nEDITED\ned3\n' > "$STALE_WT/stale.js"
+	printf 'ed1\nEDITED\ned3\n' > "${STALE_WT:-$ST_NO_WT}/stale.js"
 	_ST_RUN --continue
 	_ST_EQ "edit applies" "$RC" "0"
 	# The trap: content was authored in the isolated worktree, so the main
@@ -1100,8 +1105,8 @@ GIT_SELFTEST () {
 	echo "uc" > uc.txt && git add uc.txt && git commit -qm "UC later"
 	_ST_RUN "$UA_TGT"
 	local UA_WT=$(echo "$OUT" | sed $'s/\e\\[[0-9;]*m//g' | grep -oE '/[^ ]*git-edit-edit\.[A-Za-z0-9]+' | head -1)
-	echo "edited" >> "$UA_WT/ub.txt"
-	echo "scratch" > "$UA_WT/ua-stray.txt"
+	echo "edited" >> "${UA_WT:-$ST_NO_WT}/ub.txt"
+	echo "scratch" > "${UA_WT:-$ST_NO_WT}/ua-stray.txt"
 	_ST_RUN --continue
 	_ST_EQ "continue exits 0" "$RC" "0"
 	_ST_OUT_HAS "names untracked files it absorbs" 'Absorbing.*untracked file'
@@ -1113,7 +1118,7 @@ GIT_SELFTEST () {
 	echo "ud" > ud.txt && git add ud.txt && git commit -qm "UD target"
 	_ST_RUN "$(git rev-parse HEAD)"
 	local UA_WT2=$(echo "$OUT" | sed $'s/\e\\[[0-9;]*m//g' | grep -oE '/[^ ]*git-edit-edit\.[A-Za-z0-9]+' | head -1)
-	echo "edited" >> "$UA_WT2/ud.txt"
+	echo "edited" >> "${UA_WT2:-$ST_NO_WT}/ud.txt"
 	_ST_RUN --continue
 	_ST_EQ "clean continue exits 0" "$RC" "0"
 	_ST_OUT_LACKS "silent when nothing untracked is absorbed" 'Absorbing'
@@ -1137,7 +1142,7 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "a marker conflict gets no marker-free flag" 'No conflict markers'
 	local RR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 	if [ -n "$RR_WT" ] && [ -d "$RR_WT" ]; then
-		printf 'rr line C\n' > "$RR_WT/rr.txt"
+		printf 'rr line C\n' > "${RR_WT:-$ST_NO_WT}/rr.txt"
 		git -C "$RR_WT" add rr.txt
 		_ST_RUN --continue
 		_ST_EQ "resolved drop completes" "$RC" "0"
@@ -1156,11 +1161,11 @@ GIT_SELFTEST () {
 	_ST_RUN "$ED_TARGET"
 	local ED_WT=$(echo "$OUT" | sed -n 's/^git-edit: paused – edit [^ ]* in \([^;]*\);.*/\1/p' | head -1)
 	if [ -n "$ED_WT" ] && [ -d "$ED_WT" ]; then
-		printf 'ed line EDITED\n' > "$ED_WT/ed.txt"
+		printf 'ed line EDITED\n' > "${ED_WT:-$ST_NO_WT}/ed.txt"
 		_ST_RUN --continue
 		local ED_CWT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 		if [ -n "$ED_CWT" ] && [ -d "$ED_CWT" ]; then
-			printf 'ed line B\n' > "$ED_CWT/ed.txt"
+			printf 'ed line B\n' > "${ED_CWT:-$ST_NO_WT}/ed.txt"
 			git -C "$ED_CWT" add ed.txt
 			_ST_RUN --continue
 		fi
@@ -1198,7 +1203,7 @@ GIT_SELFTEST () {
 			break
 		fi
 		CAS_WT=$CAS_WT_NOW
-		printf 'cas one\ncas RESOLVED\n' > "$CAS_WT/cas.txt"
+		printf 'cas one\ncas RESOLVED\n' > "${CAS_WT:-$ST_NO_WT}/cas.txt"
 		git -C "$CAS_WT" add cas.txt
 		_ST_RUN --continue
 	done
@@ -1341,7 +1346,7 @@ GIT_SELFTEST () {
 	local AE_ROUNDS=0
 	while [ -n "$AE_WT" ] && [ -d "$AE_WT" ] && [ $AE_ROUNDS -lt 5 ]; do
 		AE_ROUNDS=$((AE_ROUNDS+1))
-		printf 'ae folded\n' > "$AE_WT/ae.txt"
+		printf 'ae folded\n' > "${AE_WT:-$ST_NO_WT}/ae.txt"
 		git -C "$AE_WT" add ae.txt
 		_ST_RUN --continue
 		AE_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
@@ -1523,7 +1528,7 @@ GIT_SELFTEST () {
 	local WL_WT2=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
 	_ST_CHECK "and no link was created at all" \
 		sh -c "test ! -e '$WL_WT2/node_modules'"
-	printf 'wl edited\n' > "$WL_WT2/wl.txt"
+	printf 'wl edited\n' > "${WL_WT2:-$ST_NO_WT}/wl.txt"
 	_ST_RUN --continue
 	_ST_CHECK "so nothing about it reaches the commit" \
 		sh -c "! git show HEAD --stat --format= | grep -q node_modules"
@@ -1550,7 +1555,7 @@ GIT_SELFTEST () {
 	local WL_WT4=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
 	_ST_CHECK "the later addition is not linked at setup" sh -c "test ! -e '$WL_WT4/node_modules'"
 	git config --add edit.worktreeLink node_modules
-	printf 'wl relinked\n' > "$WL_WT4/wl.txt"
+	printf 'wl relinked\n' > "${WL_WT4:-$ST_NO_WT}/wl.txt"
 	_ST_RUN --continue
 	_ST_OUT_HAS "the mid-pause addition is linked on resume" 'Linked into the worktree: node_modules'
 	_ST_CHECK "and stays out of the amended commit" \
@@ -1747,7 +1752,7 @@ GIT_SELFTEST () {
 	_ST_EQ "the edit pauses" "$RC" "2"
 	local ID_WT=$(print -r -- "$OUT" | sed -n 's/^git-edit: paused – edit [^ ]* in \([^;]*\);.*/\1/p' | head -1)
 	_ST_CHECK "it opened a worktree" test -d "$ID_WT"
-	printf 'id e1 edited\n' > "$ID_WT/id-e1.txt"
+	printf 'id e1 edited\n' > "${ID_WT:-$ST_NO_WT}/id-e1.txt"
 	git -C "$ID_WT" add id-e1.txt
 	_ST_RUN --continue
 	_ST_EQ "the edit settles" "$RC" "0"
@@ -1826,9 +1831,9 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$TX_TARGET" -y --text="$(printf 'TX folded subject\n\n• TX folded body')" "$TX_VICTIM"
 	_ST_EQ "the squash pauses on a conflict" "$RC" "2"
 	local TX_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tx4" > "$TX_WT/tx.txt" && git -C "$TX_WT" add tx.txt
+	echo "tx4" > "${TX_WT:-$ST_NO_WT}/tx.txt" && git -C "$TX_WT" add tx.txt
 	_ST_RUN --continue
-	echo "tx3" > "$TX_WT/tx.txt" && git -C "$TX_WT" add tx.txt
+	echo "tx3" > "${TX_WT:-$ST_NO_WT}/tx.txt" && git -C "$TX_WT" add tx.txt
 	_ST_RUN --continue
 	_ST_EQ "the resumed squash settles" "$RC" "0"
 	_ST_EQ "the fold carries --text, not the combined default" \
@@ -1851,9 +1856,9 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$TF_TARGET" -y --text="TF folded subject" "$TF_VICTIM"
 	_ST_EQ "folding forward pauses before reaching the fold" "$RC" "2"
 	local TF_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tf3" > "$TF_WT/tf.txt" && git -C "$TF_WT" add tf.txt
+	echo "tf3" > "${TF_WT:-$ST_NO_WT}/tf.txt" && git -C "$TF_WT" add tf.txt
 	_ST_RUN --continue
-	echo "tf2" > "$TF_WT/tf.txt" && git -C "$TF_WT" add tf.txt
+	echo "tf2" > "${TF_WT:-$ST_NO_WT}/tf.txt" && git -C "$TF_WT" add tf.txt
 	_ST_RUN --continue
 	_ST_EQ "the forward fold settles" "$RC" "0"
 	_ST_EQ "the fold still takes --text" "$(git log --format=%s -1)" "TF folded subject"
@@ -1878,9 +1883,9 @@ GIT_SELFTEST () {
 	_ST_RUN -s="$(git log --format=%H --grep='^TR 2 target$' -1)" -y --text="TR folded subject" \
 		"$(git log --format=%H --grep='^TR 4 victim$' -1)"
 	local TR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "tr4" > "$TR_WT/tr.txt" && git -C "$TR_WT" add tr.txt
+	echo "tr4" > "${TR_WT:-$ST_NO_WT}/tr.txt" && git -C "$TR_WT" add tr.txt
 	_ST_RUN --continue
-	echo "tr3" > "$TR_WT/tr.txt" && git -C "$TR_WT" add tr.txt
+	echo "tr3" > "${TR_WT:-$ST_NO_WT}/tr.txt" && git -C "$TR_WT" add tr.txt
 	_ST_RUN --continue
 	_ST_EQ "the replay settles" "$RC" "0"
 	_ST_EQ "a replayed commit's message survives byte for byte" \
@@ -1999,9 +2004,9 @@ GIT_SELFTEST () {
 		"$(git log --format=%H --grep='^QR 4$' -1)"
 	_ST_EQ "a repo under an apostrophe still pauses, not errors" "$RC" "2"
 	local QR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	echo "qr4" > "$QR_WT/qr.txt" && git -C "$QR_WT" add qr.txt
+	echo "qr4" > "${QR_WT:-$ST_NO_WT}/qr.txt" && git -C "$QR_WT" add qr.txt
 	_ST_RUN --continue
-	echo "qr3" > "$QR_WT/qr.txt" && git -C "$QR_WT" add qr.txt
+	echo "qr3" > "${QR_WT:-$ST_NO_WT}/qr.txt" && git -C "$QR_WT" add qr.txt
 	_ST_RUN --continue
 	_ST_EQ "its resume settles" "$RC" "0"
 	_ST_EQ "and the fold carries --text" "$(git log --format=%s --skip=1 -1)" "QR folded subject"
@@ -2346,7 +2351,7 @@ GIT_SELFTEST () {
 		sh -c "[ $(ls "$RR58_DIR" 2>/dev/null | wc -l | tr -d ' ') -gt $RR58_BEFORE ]"
 	local SC_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 	if [ -n "$SC_WT" ] && [ -d "$SC_WT" ]; then
-		printf 'sc line C\n' > "$SC_WT/sc.txt"
+		printf 'sc line C\n' > "${SC_WT:-$ST_NO_WT}/sc.txt"
 		git -C "$SC_WT" add sc.txt
 		_ST_RUN --continue
 		_ST_EQ "the resolved opt-out drop completes" "$RC" "0"
@@ -2382,7 +2387,7 @@ GIT_SELFTEST () {
 	_ST_EQ "the keep rig conflicts on the first file" "$RC" "2"
 	local K_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 	if [ -n "$K_WT" ] && [ -d "$K_WT" ]; then
-		printf 'k1 C\n' > "$K_WT/k1.txt"
+		printf 'k1 C\n' > "${K_WT:-$ST_NO_WT}/k1.txt"
 		git -C "$K_WT" add k1.txt
 		_ST_RUN --continue
 		_ST_EQ "the second file conflicts next" "$RC" "2"
@@ -2588,12 +2593,12 @@ GIT_SELFTEST () {
 	_ST_CHECK "the pause named a worktree" sh -c "[ -d '$VE_WT' ]"
 	# Untracked files are the command's own litter and the linked deps – only
 	# tracked edits are work the caller would lose
-	printf 'log\n' > "$VE_WT/verify-run.log"
+	printf 'log\n' > "${VE_WT:-$ST_NO_WT}/verify-run.log"
 	_ST_RUN --continue
 	_ST_EQ "untracked litter does not block the resume" "$RC" "2"
 	_ST_OUT_HAS "which re-verifies as usual" 'git-edit: paused – verify failed'
 	rm -f "$VE_WT/verify-run.log"
-	printf 'hand-edited\n' >> "$VE_WT/vd.txt"
+	printf 'hand-edited\n' >> "${VE_WT:-$ST_NO_WT}/vd.txt"
 	_ST_RUN --continue
 	_ST_EQ "a continue over worktree edits refuses" "$RC" "1"
 	_ST_OUT_HAS "naming what would have been lost" 'carries edits'
@@ -2722,7 +2727,7 @@ GIT_SELFTEST () {
 		NV_ROUNDS=$((NV_ROUNDS+1))
 		local NV_WT=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ (;]*\).*/\1/p' | head -1)
 		[ -z "$NV_WT" ] && break
-		printf 'boot\nNEEDED\n' > "$NV_WT/nv_boot.txt"
+		printf 'boot\nNEEDED\n' > "${NV_WT:-$ST_NO_WT}/nv_boot.txt"
 		git -C "$NV_WT" add nv_boot.txt
 		_ST_RUN --continue
 	done
