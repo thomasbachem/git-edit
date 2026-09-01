@@ -1066,7 +1066,9 @@ GIT_UNSTASH () {
 GIT_RUN_AND_HANDLE_CONFLICTS () {
 	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
 	_RERERE_SCOPE_BEGIN
-	OUTPUT=$(eval "$*" 2>&1 | tee /dev/stderr)
+	# Pin C locale: the conflict branches below match git's English wording, and
+	# homebrew git localizes its output whenever the locale environment is empty
+	OUTPUT=$( export LC_ALL=C; eval "$*" 2>&1 | tee /dev/stderr )
 	STATUS=$?
 
 	if [[ $STATUS -ne 0 ]]; then
@@ -5512,19 +5514,18 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 			rm -rf "$WT_GITDIR/rebase-merge" "$WT_GITDIR/rebase-apply"
 		fi
 
-		# Sync existing worktree to current HEAD
+		# Sync existing worktree to current `HEAD`
 		CMD="git -C '$WORKTREE_DIR' reset --hard $ORIG_HEAD"
 		PRINT_CMD "$CMD"
 		eval "$CMD" >/dev/null || ABORT
 	else
-		# Create new detached worktree. Auto-recover from a stale
-		# registration – git refuses if the path is listed by
-		# `git worktree list` but missing on disk, which happens when
-		# a previous worktree was removed with `rm -rf` instead of
-		# `git worktree remove`.
+		# Create a new detached worktree, auto-recovering from a stale registration – git refuses
+		# where the path is listed by `git worktree list` but missing on disk, which happens when
+		# a previous one was removed with `rm -rf` instead of `git worktree remove`
 		CMD="git worktree add --detach '$WORKTREE_DIR' $ORIG_HEAD"
 		PRINT_CMD "$CMD"
-		WT_OUT=$(eval "$CMD" 2>&1)
+		# C locale – the stale-registration retry below matches git's English wording
+		WT_OUT=$( export LC_ALL=C; eval "$CMD" 2>&1 )
 		WT_STATUS=$?
 		if [ $WT_STATUS -ne 0 ]; then
 			if [[ "$WT_OUT" == *"missing but already registered"* ]]; then
