@@ -768,15 +768,16 @@ _RECORD_REF_MOVE () {
 	done
 
 	_EMIT_REWRITES
+	# Both run after the copy above, so they report only what the rewrite
+	# actually failed to carry rather than everything it touched – and here
+	# rather than per-mode, since every landing passes through this call
+	_PRINT_LEFT_NOTES "$2" "$3"
+	_PRINT_LOST_SIGNATURES "$2" "$3"
 }
 
-# The plumbing modes compose commits with `commit-tree`, which runs none of the
-# machinery a real rebase does – so anything keyed to a SHA is silently orphaned
-# by them while surviving `-d` or `--move`, an inconsistency worse than uniformly
-# not supporting it. Every rebuild records its old->new pair here, and the CAS
-# hands the map to the two interfaces git itself uses for a rewrite. Policy stays
-# git's: `notes copy` honors `notes.rewriteRef`/`notes.rewriteMode` and no-ops
-# when unconfigured, and a repo with no hook simply has nothing to run.
+# The plumbing modes compose commits with `commit-tree`, which runs none of a rebase's
+# machinery, so anything keyed to a SHA is orphaned by them while surviving `-d` or `--move`
+# Every rebuild records its old->new pair here for the CAS to hand git's own two interfaces
 _REWRITE_PAIRS=()
 
 _RECORD_REWRITE () {
@@ -3324,12 +3325,50 @@ _PRINT_TREE_IDENTITY () {
 	fi
 }
 
-# Prints the commits a replay dropped as empty – the count proves something
-# vanished, the names say what, sparing the caller a log hunt. Subjects are
-# the identity (a rewrite changes every SHA); duplicate subjects cancel by
-# count. Deliberate removals (a drop, a squash target) never route here.
+# Names the notes a rewrite left behind on the pre-rewrite commits – whether they are copied
+# is git's own policy, `notes copy` no-opping unless `notes.rewriteRef` is set, so this
+# reports what that policy left, and a copy keeps the original, so both sides are counted
+_PRINT_LEFT_NOTES () {
+	# Args: <orig-tip> <new-tip>
+	# Every notes ref, not just the default one – `notes.rewriteRef` is a glob,
+	# so a repo carrying `refs/notes/review` is the case this exists for
+	local NREF
+	local ANNOTATED=$(
+		for NREF in ${(f)"$(git for-each-ref --format='%(refname)' refs/notes 2>/dev/null)"}; do
+			git notes --ref="$NREF" list 2>/dev/null
+		done | awk '{ print $2 }' | sort -u
+	)
+	[ -z "$ANNOTATED" ] && return 0
+	local OLD_N NEW_N
+	OLD_N=$(git rev-list "$1" --not "$2" 2>/dev/null | grep -Fxc -f <(printf '%s\n' "$ANNOTATED") 2>/dev/null) || OLD_N=0
+	NEW_N=$(git rev-list "$2" --not "$1" 2>/dev/null | grep -Fxc -f <(printf '%s\n' "$ANNOTATED") 2>/dev/null) || NEW_N=0
+	[ "${OLD_N:-0}" -le "${NEW_N:-0}" ] && return 0
+	# Annotated commits, not note blobs – several refs can annotate one commit,
+	# and the count is of what was replaced
+	PRINT_TEXT "Notes stayed on %s replaced commit(s) – git copies notes only with notes.rewriteRef set:" 33 "$((OLD_N - NEW_N))"
+	ECHO_E "\e[0;33m  git config notes.rewriteRef 'refs/notes/*'  # then re-run, or carry one over with git notes copy <old> <new>\e[0m"
+}
+
+# Names the signatures a rebuild could not carry – a rewritten commit is a new object, so
+# its signature is invalid by construction and never re-created, and the header is read
+# raw rather than through `%G?`, which needs gpg present and answers 'N' without it
+_PRINT_LOST_SIGNATURES () {
+	# Args: <orig-tip> <new-tip> – the replaced commits are those the new tip no longer reaches
+	# A shortfall proves nothing alone, since a rebase re-signs under `commit.gpgsign` and
+	# `-d`/`-s` carry one off deliberately, so the line states what both sides hold
+	local OLD_S NEW_S
+	OLD_S=$(git rev-list "$1" --not "$2" 2>/dev/null | git cat-file --batch 2>/dev/null | grep -c '^gpgsig ') || OLD_S=0
+	[ "${OLD_S:-0}" -eq 0 ] && return 0
+	NEW_S=$(git rev-list "$2" --not "$1" 2>/dev/null | git cat-file --batch 2>/dev/null | grep -c '^gpgsig ') || NEW_S=0
+	[ "${NEW_S:-0}" -gt 0 ] && return 0
+	PRINT_TEXT "The replaced commit(s) carried %s signature(s), and the rewritten history carries none." 33 "$OLD_S"
+}
+
+# Prints the commits a replay dropped as empty – the count proves something vanished and the
+# names say what, sparing the caller a log hunt, with subjects as the identity since a
+# rewrite changes every SHA, and deliberate removals never route here
 _PRINT_DROPPED_COMMITS () {
-	# args: <old-tip> <new-tip>
+	# Args: <old-tip> <new-tip>
 	local MB=$(git merge-base "$1" "$2" 2>/dev/null)
 	local BEFORE
 	local AFTER
@@ -4012,8 +4051,10 @@ GIT_REWORD () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "reword ${TARGET:0:7}"
 	# Plumbing rebuilds reuse every commit's tree object verbatim, so this
-	# holds by construction – stated so callers don't re-verify with a diff
-	PRINT_TEXT "%s – only messages were rewritten." 32 "Trees unchanged by construction ✓"
+	# holds by construction – stated so callers don't re-verify with a diff,
+	# and claiming nothing beyond the tree, since a rebuild mints new objects
+	# and drops any header the walk does not carry
+	PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
 	# The message is the entire point of the mode, so show the one that landed –
 	# otherwise the caller reads it back with `git log` to be sure it took
 	# `$NEW_TARGET` is the rebuilt commit itself, captured when it was created.
@@ -4034,6 +4075,13 @@ GIT_REWORD () {
 		local OLD_SUBJECT=$(git log -1 --format='%s' "$TARGET" 2>/dev/null)
 		if [ -n "$OLD_SUBJECT" ]; then
 			_PRINT_COMMIT_LINE "$TARGET" '  replaced: %s'
+		fi
+		# `--text` replaces the whole message, not just the subject, so a body
+		# the caller did not restate is gone – both lines above are subjects,
+		# so a caller comparing those reads the reword as clean
+		local OLD_BODY_LINES=$(git log -1 --format='%b' "$TARGET" 2>/dev/null | grep -c .)
+		if [ "$OLD_BODY_LINES" -gt 0 ] && [ "$BODY_LINES" -eq 0 ]; then
+			PRINT_TEXT "The replaced message carried a %s-line body the new one drops – it is still readable at %s" 33 "$OLD_BODY_LINES" "${TARGET:0:12}"
 		fi
 	fi
 }
@@ -4219,7 +4267,7 @@ GIT_REWORD_BATCH () {
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reword ${#TARGETS[@]} commits"
-	PRINT_TEXT "%s – only messages were rewritten." 32 "Trees unchanged by construction ✓"
+	PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
 	PRINT_TEXT "Reworded %s commits:" 32 "${#TARGETS[@]}"
 	for sha in "${TARGETS[@]}"; do
 		_PRINT_COMMIT_LINE "${REWRITTEN[$sha]}" '  %h %s'

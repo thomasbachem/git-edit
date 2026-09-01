@@ -2818,6 +2818,153 @@ GIT_SELFTEST () {
 	_ST_RUN --abort
 	git reset -q --hard
 
+	# --- 64. a reword names what it discarded: message body, signature ---
+	# Both summary lines above are subjects, so a caller comparing those reads a
+	# body-dropping `--text` as clean – and a rebuild mints new objects, so a
+	# signature cannot come along either. Neither shows in a tree or a subject
+	ECHO_E "\e[1;96m[64] a reword names the body and the signature it drops\e[0m"
+	git reset -q --hard
+	printf 'nb\n' > nb.txt && git add nb.txt
+	git commit -q -F - <<-'NBMSG'
+		NB subject
+
+		• first body line
+		• second body line
+	NBMSG
+	local NB_TARGET=$(git rev-parse HEAD)
+	_ST_RUN -M --text="NB subject reworded" "$NB_TARGET"
+	_ST_EQ "the body-dropping reword applies" "$RC" "0"
+	_ST_OUT_HAS "names the dropped body, with its length" 'carried a 2-line body'
+	_ST_OUT_HAS "and where it stays readable" 'still readable at [0-9a-f]\{12\}'
+	# Neighbor: a `--text` that restates the body discards nothing
+	_ST_RUN -M --text="$(printf 'NB kept\n\n• first body line')" HEAD
+	_ST_EQ "a body-preserving reword applies" "$RC" "0"
+	_ST_OUT_LACKS "a restated body draws no notice" 'carried a .*-line body'
+	# Negative: a subject-only message has no body to lose
+	printf 'nb2\n' > nb2.txt && git add nb2.txt && git commit -qm "NB plain"
+	_ST_RUN -M --text="NB plain reworded" HEAD
+	_ST_OUT_LACKS "nor does a subject-only message" 'carried a .*-line body'
+	# The signature header is read raw, not through `%G?`, so this holds on a
+	# machine with no gpg at all – which is why the fixture can forge one
+	printf 'ns\n' > ns.txt && git add ns.txt && git commit -qm "NS target"
+	local NS_TARGET=$(git rev-parse HEAD)
+	printf 'ns2\n' > ns2.txt && git add ns2.txt && git commit -qm "NS signed descendant"
+	local NS_RAW=$TMP/ns-raw
+	git cat-file commit HEAD | awk '{ print } /^committer /{ print "gpgsig -----BEGIN PGP SIGNATURE-----"; print " selftest-only, never verified"; print " -----END PGP SIGNATURE-----" }' > "$NS_RAW"
+	git update-ref refs/heads/main "$(git hash-object -w -t commit "$NS_RAW")"
+	_ST_RUN -M --text="NS target reworded" "$NS_TARGET"
+	_ST_EQ "a reword under a signed descendant applies" "$RC" "0"
+	_ST_OUT_HAS "names the signature the rebuild could not carry" 'carried [0-9]* signature'
+	# The notice sits on the shared ref-move path, so it covers every mode –
+	# pin a second, non-reword one rather than trusting that by construction
+	printf 'nr\n' > nr.txt && git add nr.txt && git commit -qm "NR first"
+	printf 'nr2\n' > nr2.txt && git add nr2.txt && git commit -qm "NR second"
+	printf 'nr3\n' > nr3.txt && git add nr3.txt && git commit -qm "NR signed tip"
+	local NR_RAW=$TMP/nr-raw
+	git cat-file commit HEAD | awk '{ print } /^committer /{ print "gpgsig -----BEGIN PGP SIGNATURE-----"; print " selftest-only, never verified"; print " -----END PGP SIGNATURE-----" }' > "$NR_RAW"
+	git update-ref refs/heads/main "$(git hash-object -w -t commit "$NR_RAW")"
+	_ST_RUN -S HEAD~2 HEAD~1
+	_ST_EQ "a resquash under a signed tip applies" "$RC" "0"
+	_ST_OUT_HAS "and a non-reword mode names the signature too" 'carried [0-9]* signature'
+	# Negative: unsigned history says nothing about signatures
+	_ST_RUN -M --text="NS reworded again" HEAD~1
+	_ST_OUT_LACKS "unsigned history draws no signature notice" 'carried [0-9]* signature'
+	git reset -q --hard
+
+	# --- 65. a rewrite names the notes git's policy left behind ---
+	# Copying is git's own call, so the tool reports rather than overrides – the
+	# same posture as an orphaned tag, which it names but never re-points
+	ECHO_E "\e[1;96m[65] a rewrite names the notes left behind\e[0m"
+	git reset -q --hard
+	# Scenario 50 turned the config on and left it there, so the unconfigured
+	# half has to clear it rather than assume a fresh repo
+	git config --unset notes.rewriteRef 2>/dev/null
+	printf 'nn\n' > nn.txt && git add nn.txt && git commit -qm "NN target"
+	local NN_TARGET=$(git rev-parse HEAD)
+	printf 'nn2\n' > nn2.txt && git add nn2.txt && git commit -qm "NN annotated descendant"
+	# A non-default ref on purpose: `notes.rewriteRef` is a glob, so the check
+	# has to look past `refs/notes/commits`
+	git notes --ref=ge-left add -m "a note worth not losing quietly" HEAD >/dev/null 2>&1
+	_ST_RUN -M --text="NN target reworded" "$NN_TARGET"
+	_ST_EQ "the reword over an annotated descendant applies" "$RC" "0"
+	_ST_OUT_HAS "names the notes left on the replaced commits" 'Notes stayed on [0-9]* replaced commit'
+	_ST_OUT_HAS "and points at the config that would carry them" 'notes\.rewriteRef'
+	# Configured, git carries them itself and the notice stays quiet
+	git config notes.rewriteRef 'refs/notes/*'
+	printf 'nc\n' > nc.txt && git add nc.txt && git commit -qm "NC target"
+	local NC_TARGET=$(git rev-parse HEAD)
+	printf 'nc2\n' > nc2.txt && git add nc2.txt && git commit -qm "NC annotated descendant"
+	git notes --ref=ge-left add -m "carried by config" HEAD >/dev/null 2>&1
+	_ST_RUN -M --text="NC target reworded" "$NC_TARGET"
+	_ST_OUT_LACKS "a carried note draws no notice" 'Notes stayed on [0-9]* replaced commit'
+	_ST_CHECK "and the note reached the rebuilt commit" \
+		sh -c "git notes --ref=ge-left show HEAD >/dev/null 2>&1"
+	# Negative: a rewrite touching no annotated commit says nothing
+	git config --unset notes.rewriteRef 2>/dev/null
+	printf 'nq\n' > nq.txt && git add nq.txt && git commit -qm "NQ target"
+	local NQ_TARGET=$(git rev-parse HEAD)
+	printf 'nq2\n' > nq2.txt && git add nq2.txt && git commit -qm "NQ plain descendant"
+	_ST_RUN -M --text="NQ target reworded" "$NQ_TARGET"
+	_ST_OUT_LACKS "an unannotated span draws no notice" 'Notes stayed on [0-9]* replaced commit'
+	git reset -q --hard
+
+	# --- 66. a re-signing rebase draws no signature notice ---
+	# The plumbing modes cannot sign, so the notice fires for them – but a rebase
+	# re-signs under `commit.gpgsign`, and a mode that drops a commit takes its
+	# signature along, so a shortfall alone would cry wolf. Only a real key can
+	# prove the quiet half, so this self-skips wherever gpg cannot make one
+	ECHO_E "\e[1;96m[66] a re-signing rebase draws no signature notice\e[0m"
+	git reset -q --hard
+	local GPG_HOME=$TMP/gnupg
+	local GPG_OK=false
+	if command -v gpg >/dev/null 2>&1; then
+		mkdir -p "$GPG_HOME" && chmod 700 "$GPG_HOME"
+		print -r -- 'pinentry-mode loopback' > "$GPG_HOME/gpg.conf"
+		print -r -- 'allow-loopback-pinentry' > "$GPG_HOME/gpg-agent.conf"
+		# A long `$TMPDIR` can push the agent socket past the ~104-char sun_path
+		# limit, so a failure here is "no usable gpg" rather than a test failure
+		GNUPGHOME=$GPG_HOME gpg --batch --yes --passphrase '' --quick-generate-key \
+			"git-edit selftest <selftest@example.invalid>" default default never \
+			>/dev/null 2>&1 && GPG_OK=true
+	fi
+	if [ "$GPG_OK" != "true" ]; then
+		ECHO_E "\e[0;90m  skipped – no usable gpg on this machine\e[0m"
+	else
+		local GPG_KEY=$(GNUPGHOME=$GPG_HOME gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
+		local SR=$TMP/signed
+		git init -q -b main "$SR"
+		git -C "$SR" config user.email selftest@example.invalid
+		git -C "$SR" config user.name "git-edit selftest"
+		git -C "$SR" config user.signingkey "$GPG_KEY"
+		git -C "$SR" config commit.gpgsign true
+		git -C "$SR" config gpg.program gpg
+		export GNUPGHOME=$GPG_HOME
+		cd "$SR"
+		local SN
+		for SN in 1 2 3; do
+			print -r -- "s$SN" > "s$SN.txt"
+			git add "s$SN.txt" && git commit -qm "SG $SN"
+		done
+		_ST_CHECK "the fixture really produced signed commits" \
+			sh -c "[ \"\$(git -C '$SR' log -1 --format='%G?')\" != 'N' ]"
+		# A reorder replays through rebase, which re-signs under the config above
+		_ST_RUN --reorder HEAD~1 HEAD
+		_ST_EQ "the reorder applies" "$RC" "0"
+		_ST_CHECK "its tip is still signed" \
+			sh -c "[ \"\$(git -C '$SR' log -1 --format='%G?')\" != 'N' ]"
+		_ST_OUT_LACKS "and no signature notice is printed" 'carried [0-9]* signature'
+		# The plumbing counterpart, against a real signature rather than a forged
+		# header: `commit-tree` takes no key, so this one must speak up
+		_ST_RUN -M --text="SG 1 reworded" HEAD~2
+		_ST_EQ "the reword applies" "$RC" "0"
+		_ST_OUT_HAS "while a plumbing rewrite names the lost signatures" 'carried [0-9]* signature'
+		_ST_CHECK "and its tip really did lose the signature" \
+			sh -c "[ \"\$(git -C '$SR' log -1 --format='%G?')\" = 'N' ]"
+		gpgconf --homedir "$GPG_HOME" --kill all >/dev/null 2>&1
+		unset GNUPGHOME
+		cd "$TMP/repo"
+	fi
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
