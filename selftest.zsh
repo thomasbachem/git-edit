@@ -1965,6 +1965,9 @@ GIT_SELFTEST () {
 	# on the discriminator both message modes route through – driven directly,
 	# the way git invokes an editor, against a fabricated rebase state
 	_ST_SCENARIO "\e[1;96m[52] a resume's editor reaches the fold alone\e[0m"
+	# Stand-ins built here would otherwise wait in `_TEMP_FILES` for the suite's
+	# own exit – a killed run leaves them behind, so each goes with its last check
+	local FE_ED_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-fold-editor.*' 2>/dev/null | grep -c .)
 	local FE=$TMP/fold-editor
 	rm -rf "$FE" && mkdir -p "$FE" && git -C "$FE" init -q
 	local FE_REB=$(git -C "$FE" rev-parse --absolute-git-dir)/rebase-merge
@@ -1973,7 +1976,6 @@ GIT_SELFTEST () {
 	local FE_DEST=$FE/COMMIT_EDITMSG
 	print -r -- "FE folded subject" > "$FE_MSG"
 	local FE_CMD=$(_FOLD_EDITOR_CMD "cp '$FE_MSG'" "$FE")
-	_TEMP_FILES+=("$FE_CMD")
 
 	# The step that conflicted is committed by the same resume, and its message
 	# is already right – a stand-in reaching it rewords an untouched commit
@@ -1999,7 +2001,6 @@ GIT_SELFTEST () {
 	{ echo '#!/bin/sh'; echo "echo opened >> '$FE_LOG'" } > "$FE_STUB"
 	chmod +x "$FE_STUB"
 	local FE_ED=$(_FOLD_EDITOR_CMD "$FE_STUB" "$FE")
-	_TEMP_FILES+=("$FE_ED")
 	: > "$FE_LOG"
 	print -r -- "pick 4444444" > "$FE_REB/done"
 	sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
@@ -2023,13 +2024,13 @@ GIT_SELFTEST () {
 	print -r -- "FE quoted-path subject" > "$FE2_MSG"
 	print -r -- "FE untouched" > "$FE2_DEST"
 	local FE2_ED=$(_FOLD_EDITOR_CMD "cp ${(qq)FE2_MSG}" "$FE2")
-	_TEMP_FILES+=("$FE2_ED")
 	sh -c "$FE2_ED \"\$@\"" ge-editor "$FE2_DEST"
 	local FE2_RC=$?
 	_ST_EQ "a path with an apostrophe still applies the message" \
 		"$(cat "$FE2_DEST")" "FE quoted-path subject"
 	_ST_EQ "and parses cleanly rather than failing the editor" "$FE2_RC" "0"
 	rm -rf "$FE" "$FE2"
+	rm -f "$FE_CMD" "$FE_ED" "$FE2_ED"
 
 	# The case above quotes the message path itself, so it pins the helper alone –
 	# drive a real resume for the caller, which has to quote it just the same
@@ -2059,11 +2060,12 @@ GIT_SELFTEST () {
 	cd "$TMP/repo"
 	rm -rf "$QR"
 
-	# `-m` wants a TTY no sub-invocation here can present, so drive the branch
-	# that carried the bug in-process: stub the runner and read back the editor
-	# and cleanup each mode installs. Nothing is executed, so no editor can open
+	# `-m` wants a TTY no sub-invocation here can present, so drive the branch that carried the
+	# bug in-process – stub the runner and read back the editor and cleanup each mode
+	# installs, with nothing executed so no editor can open
 	local FE_SAVED=$(functions GIT_RUN_AND_HANDLE_CONFLICTS)
-	GIT_RUN_AND_HANDLE_CONFLICTS () { _FE_CMD=$1; _FE_ED=$GIT_EDITOR }
+	GIT_RUN_AND_HANDLE_CONFLICTS () { _FE_CMD=$1; _FE_ED=$GIT_EDITOR; _FE_EDS+=("$GIT_EDITOR") }
+	local -a _FE_EDS
 	local FE_KEEP_ACTION=$ACTION
 	local FE_KEEP_TEXT=$TEXT_VALUE
 	local -a FE_KEEP_OPTM=("${OPT_MESSAGE[@]}")
@@ -2109,12 +2111,19 @@ GIT_SELFTEST () {
 	TEXT_VALUE=$FE_KEEP_TEXT
 	OPT_MESSAGE=("${FE_KEEP_OPTM[@]}")
 	unset _REAL_EDITOR _FE_CMD _FE_ED
+	# A silenced resume records `true`, which names no file to remove
+	local FE_INSTALLED
+	for FE_INSTALLED in "${_FE_EDS[@]}"; do
+		[[ "$FE_INSTALLED" == */git-edit-fold-editor.* ]] && rm -f "$FE_INSTALLED"
+	done
+	unset _FE_EDS
+	local FE_ED_AFTER=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-fold-editor.*' 2>/dev/null | grep -c .)
+	_ST_EQ "and the scenario leaves no stand-in behind" "$FE_ED_AFTER" "$FE_ED_BEFORE"
 
 	# --- 53. --text keeps the caller's own `#` lines ---
-	# Comment stripping exists to drop the instructions git seeds an editor
-	# template with. Nothing seeds --text, so a `#` line there is the caller's
-	# content – an issue reference, a Markdown heading, a shell snippet – and
-	# dropping it rewrote the message silently, on every route
+	# Comment stripping exists to drop the instructions git seeds an editor template with,
+	# and nothing seeds `--text`, so a `#` line there is the caller's content – an issue
+	# reference, a Markdown heading, a shell snippet – silently rewritten on every route
 	_ST_SCENARIO "\e[1;96m[53] --text keeps the caller's own '#' lines\e[0m"
 	git reset -q --hard
 	local HM_BODY
