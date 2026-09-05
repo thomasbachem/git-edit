@@ -2453,15 +2453,12 @@ GIT_SELFTEST () {
 	git reset -q --hard
 
 	# --- 60. --verify gates the CAS on the caller's own check ---
-	# A rewrite can land semantically wrong yet green – a bad resolution, a
-	# fold that breaks a later commit – so --verify=<cmd> / edit.verifyCmd run
-	# the caller's check over the built result before the CAS applies it:
-	# primary commit + tip by default, every rebuilt commit with --verify-span.
-	# A failure pauses with the state kept, so '--no-verify --continue'
-	# applies anyway and '--abort' cancels with nothing consumed.
+	# A rewrite can land semantically wrong yet green – a bad resolution, a fold that breaks a
+	# later commit – so `--verify=<cmd>` or `edit.verifyCmd` runs the caller's check over the
+	# built result before the CAS, primary plus tip by default, all of it under `--verify-span`
 	_ST_SCENARIO "\e[1;96m[60] --verify gates the CAS, pausing on failure\e[0m"
 	git reset -q --hard
-	printf '#!/bin/sh\n! grep -q FORBIDDEN vf.txt\n' > "$TMP/verify.sh" && chmod +x "$TMP/verify.sh"
+	printf '#!/bin/sh\nif grep -q FORBIDDEN vf.txt; then echo VERIFY_SAW_FORBIDDEN; exit 1; fi\nexit 0\n' > "$TMP/verify.sh" && chmod +x "$TMP/verify.sh"
 	git config edit.verifyCmd "$TMP/verify.sh"
 	printf 'vf one\n' > vf.txt && git add vf.txt && git commit -qm "VF base"
 	local VF_BASE=$(git rev-parse HEAD)
@@ -2479,24 +2476,32 @@ GIT_SELFTEST () {
 	_ST_EQ "a failing fold pauses" "$RC" "2"
 	_ST_OUT_HAS "the pause is a verify pause" 'git-edit: paused – verify failed'
 	_ST_OUT_HAS "the failing commit is named" 'Verification failed at'
+	_ST_OUT_HAS "the run's exit status and duration are printed" 'exit 1,'
+	_ST_OUT_HAS "the trailer names the saved output" '; output in '
+	local VF_LOG=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in [^;]*; output in \([^;]*\);.*/\1/p' | head -1)
+	_ST_CHECK "the named file is there" test -f "$VF_LOG"
+	_ST_CHECK "it holds the failing run's own output" sh -c "grep -q VERIFY_SAW_FORBIDDEN '$VF_LOG'"
+	_ST_CHECK "headed by the exit status" sh -c "grep -q '^exit: 1' '$VF_LOG'"
+	_ST_CHECK "and by the command that produced it" sh -c "grep -q '^command: ' '$VF_LOG'"
 	_ST_EQ "the branch has not moved" "$(git rev-parse HEAD)" "$VF_TIP"
 	_ST_CHECK "the staged change is untouched" sh -c "! git diff --cached --quiet -- vf.txt"
 	# --status reports the verify pause as what it is, not as a bare conflict
 	_ST_RUN --status
 	_ST_OUT_HAS "status names the verify pause" 'paused – verify failed at'
 	_ST_OUT_LACKS "and reports no empty conflict" 'git-edit: conflict'
+	_ST_OUT_HAS "and still names the saved output" '; output in '
 	# Plain --continue re-verifies and pauses again
 	_ST_RUN --continue
 	_ST_EQ "a plain continue re-verifies and pauses" "$RC" "2"
 	# --abort cancels the paused verdict with nothing consumed
 	_ST_RUN --abort
 	_ST_EQ "the verify pause aborts clean" "$RC" "0"
+	_ST_CHECK "the saved output goes with the state" sh -c "[ ! -f '$VF_LOG' ]"
 	_ST_EQ "the abort left the branch alone" "$(git rev-parse HEAD)" "$VF_TIP"
 	_ST_CHECK "and the staged change is still staged" sh -c "! git diff --cached --quiet -- vf.txt"
-	# The same failing fold pauses again, and --no-verify --continue applies it
-	# – after following the inspect hint, whose checkout moves the worktree off
-	# the built result: the resume must restore it, or the failing commit would
-	# land as the tip, dropping every commit above it
+	# The same failing fold pauses again, and `--no-verify --continue` applies it – after
+	# following the inspect hint, whose checkout moves the worktree off the built result, so
+	# the resume must restore it or the failing commit lands as the tip
 	_ST_RUN --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
 	_ST_EQ "the retried fold pauses again" "$RC" "2"
 	local VP_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)

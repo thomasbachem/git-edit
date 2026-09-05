@@ -434,7 +434,12 @@ EMIT_VERIFY_PAUSED () {
 			echo "verify_result=$3" >> "$SF"
 		fi
 	fi
-	echo "git-edit: paused – verify failed at ${1:0:7} in $2; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
+	# A driver greps the trailer, commonly through a `| tail -N` that cuts off
+	# the run's own output printed above it – so the trailer carries the path
+	local VLOG=$(_VERIFY_LOG_PATH)
+	local LOGNOTE=""
+	[ -n "$VLOG" ] && [ -f "$VLOG" ] && LOGNOTE="; output in $VLOG"
+	echo "git-edit: paused – verify failed at ${1:0:7} in $2$LOGNOTE; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -3315,9 +3320,36 @@ _TEXT_MSG_PATH () {
 	echo "$SF-msg"
 }
 
+# Names the sidecar holding the failing verify run's output, alongside the state file – the pause
+# prints only the last 15 lines and a driver reading the trailer through `| tail -N` cuts
+# off even those, so the evidence has to outlive the invocation
+_VERIFY_LOG_PATH () {
+	local SF
+	SF=$(_STATE_FILE_PATH) || return 1
+	echo "$SF-verify"
+}
+
+# Writes that sidecar and names it, header first, so a truncated or huge output still
+# answers what ran, how it ended and how long it took – the check's own text is what
+# tells a timeout from a red run
+_VERIFY_SAVE_LOG () {
+	# Args: <commit> <cmd> <exit-status> <seconds> <output>
+	local LF
+	LF=$(_VERIFY_LOG_PATH) || return 0
+	{
+		echo "commit: $1"
+		echo "command: $2"
+		echo "exit: $3"
+		echo "seconds: $4"
+		echo
+		print -r -- "$5"
+	} > "$LF" 2>/dev/null || return 0
+	PRINT_TEXT "Full output: %s" 33 "$LF"
+}
+
 _CLEAR_STATE () {
 	local SF=$(_STATE_FILE_PATH)
-	[ -n "$SF" ] && rm -f "$SF" "$SF-msg"
+	[ -n "$SF" ] && rm -f "$SF" "$SF-msg" "$SF-verify"
 }
 
 _STATE_EXISTS () {
@@ -3682,6 +3714,7 @@ _VERIFY_REWRITE () {
 	local ABSENT
 	local RUN_T0
 	local -i SKIPPED=0
+	local -i RC=0 RUN_SECS=0
 	for C in "${COMMITS[@]}"; do
 		ABSENT=""
 		for P in "${CMD_PATHS[@]}"; do
@@ -3702,17 +3735,21 @@ _VERIFY_REWRITE () {
 		fi
 		# The subshell contains both the cd and the env naming the commit
 		RUN_T0=$SECONDS
-		if ! OUT=$(cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$C eval "$VERIFY_CMD" </dev/null 2>&1); then
+		OUT=$(cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$C eval "$VERIFY_CMD" </dev/null 2>&1)
+		RC=$?
+		# Taken here rather than at the diagnosis below, which the printing in
+		# between would pad – the walk budget is the failing run's own duration
+		RUN_SECS=$(( SECONDS - RUN_T0 ))
+		if [ $RC -ne 0 ]; then
 			PRINT_ERR "Verification failed at ${C:0:7} – nothing was applied"
 			_PRINT_COMMIT_LINE "$C" '  failing: %h %s'
 			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
-			PRINT_TEXT "Command: %s" 33 "$VERIFY_CMD"
-			# Attribution and the healing point, run in the worktree the gate
-			# already owns – then back to the result tip, since every resume
-			# path reads the worktree's HEAD as the result to apply, and one
-			# left at a walked commit would make '--no-verify --continue' land
-			# that commit as the new tip, dropping everything above it
-			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$(( SECONDS - RUN_T0 ))" -- "${CMD_PATHS[@]}"
+			PRINT_TEXT "Command: %s (exit %s, %ss)" 33 "$VERIFY_CMD" "$RC" "$RUN_SECS"
+			_VERIFY_SAVE_LOG "$C" "$VERIFY_CMD" "$RC" "$RUN_SECS" "$OUT"
+			# Attribution and the healing point, run in the worktree the gate already owns – then back
+			# to the result tip, since every resume path reads the worktree's `HEAD` as the result,
+			# and one left at a walked commit would land that commit as the new tip
+			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$RUN_SECS" -- "${CMD_PATHS[@]}"
 			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 			PRINT_TEXT "Inspect the failing state: %s" 33 "git -C $WT checkout ${C:0:7}"
 			# The content-edit pause invites exactly the opposite instinct, so say

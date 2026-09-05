@@ -41,7 +41,7 @@ git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>
 git-edit: ok – refs/heads/main unchanged
 git-edit: error – exit code <N>
 git-edit: paused – edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
-git-edit: paused – verify failed at <sha> in <worktree>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
+git-edit: paused – verify failed at <sha> in <worktree>; output in <path>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
 git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
@@ -272,6 +272,8 @@ A commit missing a file the command references — any command token naming a pa
 A verify pause is **not** a content-edit pause, and the two want opposite things from you: the result is already built, so nothing you author in that worktree can join it — a resume would check out over it, and refuses while any edit is present instead, naming the repair — apply with `--no-verify --continue`, then fix the commit itself with a `git edit <sha>` pass.
 
 A failure answers the two questions it raises. Whether the rewrite caused it: the commit the failing one replaces runs the same check, and where it fails too, the operation is cleared — the failure predates the rewrite, or the check cannot run in that worktree at all (a dependency the links don't cover dies at every commit alike). And where the span heals: the check climbs the commits above the failure to the first one that passes — for a fold, the commit carrying what the folded code now needs earlier, which is the piece that has to move down. The climb is budgeted off the failing run's own duration (`edit.verifyBudget` overrides, in seconds — zero skips it), so a slow check stops early rather than multiplying the wait, and it is skipped entirely when the failure was already there.
+
+The failing run's whole output is written beside the state file and named in the pause trailer, headed by the command, its exit status and its duration. The pause itself prints only the last 15 lines, and the trailer is routinely read through a `| tail -N` that cuts even those off, so the trailer — the one line such a read is guaranteed to carry — points at the file instead of leaving you to reproduce the failure. It lives as long as the pause: `--continue`, `--no-verify --continue` and `--abort` all clear it with the rest of the state.
 
 A failure pauses the operation with nothing applied and nothing consumed: the built result stays in the worktree, the failing commit is named with an inspect hint (the resume puts the worktree back on the built result if that checkout moved it), `git edit --continue` re-verifies — with the pause's own command and tier, however the resume is invoked — `git edit --no-verify --continue` applies the result anyway, and `git edit --abort` cancels — for a fold, the staged changes are simply still staged. A reword reuses every tree byte-for-byte and runs no verification, and neither does `--exec`, whose command is your own — an explicit `--verify` on these refuses rather than promise a gate the run never keeps, while a standing `edit.verifyCmd` stays quietly exempt. A **split does** get verified — its extracted half is a tree no commit ever carried, however unchanged the tip is by construction — and it refuses rather than pauses, since a split re-derives its halves from its own worktree, so fixing that worktree and running `--continue` again is the loop.
 
