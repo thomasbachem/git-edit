@@ -353,7 +353,9 @@ Skip a configured verification for this run \(em or, on
 apply a rewrite whose verification failed.
 .TP
 .B \-y, \-\-yes
-Auto\-confirm the drop/squash confirmation prompt.
+Auto\-confirm the drop/squash confirmation prompt. A squash asks on either
+route, plumbing or rebase, and only a terminal run asks at all \(em without a
+TTY there is nobody to answer, so nothing prompts.
 .TP
 .B \-\-skip
 With

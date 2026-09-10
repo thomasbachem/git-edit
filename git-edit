@@ -4752,6 +4752,15 @@ CONTINUE_OR_ABORT () {
 	trap - INT TERM QUIT HUP
 }
 
+# Confirms a drop or squash before anything is rewritten, on either squash route alike, since
+# auto-routing promises the rebase path's observable outcome – `-y` answers it up front, and a
+# run with no TTY has nobody to ask, so it proceeds instead of printing a prompt it can't read
+_CONFIRM_REWRITE () {
+	_IS_NON_INTERACTIVE && return 0
+	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
+	CONTINUE_OR_ABORT "" skip
+}
+
 ABORT () {
 	# Unregister traps immediately to prevent recursive execution on repeated signals
 	trap - INT TERM QUIT HUP
@@ -5603,6 +5612,7 @@ fi
 if [[ "$ACTION" == "resquash" ]]; then
 	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "${COMMITS[1]}")
 	PRINT_ACTION "Resquashing %s into ${COMMITS[1]:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#${COMMITS[1]}}"
+	_CONFIRM_REWRITE
 	GIT_RESQUASH
 	PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
 	exit 0
@@ -5745,8 +5755,7 @@ GIT_STASH
 if [[ "$ACTION" == "drop" ]]; then
 	PRINT_ACTION "Dropping %s" "${COMMITS[@]}"
 
-	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
-	CONTINUE_OR_ABORT "" skip
+	_CONFIRM_REWRITE
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
@@ -5755,8 +5764,7 @@ elif [[ "$ACTION" == "squash" ]]; then
 	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "$TARGET")
 	PRINT_ACTION "Merging %s -> ${TARGET:0:7}\e[22m (${TARGET_SUBJECT//\\/\\\\})" "${COMMITS[@]:#$TARGET}"
 
-	PRINT_TEXT "Press %s to confirm, or cancel with %s." 35 "Enter" "Escape"
-	CONTINUE_OR_ABORT "" skip
+	_CONFIRM_REWRITE
 
 	GIT_REBASE_SQUASH
 else
