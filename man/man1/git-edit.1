@@ -71,7 +71,14 @@ split maps the original onto the remainder, which keeps its message and tree.
 .IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
-its likely counterpart named \(em so a stale SHA never silently no\-ops.
+its likely counterpart named \(em so a stale SHA never silently no\-ops. A match
+that is itself pushed is named but never substituted, not even under
+.BR \-\-allow\-pushed ,
+which consents to rewriting the commit you named rather than one inferred on
+your behalf. Candidates are pruned by author date, which every rewrite
+preserves, and where a single timestamp holds more than 100 commits,
+uniqueness cannot be established from that partial view \(em resolution then
+degrades to naming a suggestion rather than acting on one.
 .IP \(bu 3
 Merge topology is preserved: the plumbing modes rebuild merge commits with
 their parents faithfully substituted, and the rebase\-based modes refuse a
@@ -183,6 +190,9 @@ Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
 extracted into their own commit (message from
 .BR \-\-text ),
 the rest keep the original message. Plumbing only \(em no conflicts possible.
+The \fIpathspec\fR has to match a nonempty, proper subset of the commit's
+changes: matching none of them, or all of them, is refused rather than
+composing an empty half.
 .IP
 With no \fIpathspec\fR \(em for halves that share a file, which no pathspec can
 name apart \(em the split pauses instead, with an isolated worktree holding the
@@ -248,6 +258,13 @@ Run any \fIcommand\fR (e.g. a raw
 inside a fresh temporary worktree; the branch ref is CAS\-updated only if
 \fIcommand\fR moved HEAD. The escape hatch for cases the other modes do not
 cover.
+.IP
+The pushed guard runs on the result here, since a wrapped \fIcommand\fR's
+targets are its own: a remote\-tracking ref that was an ancestor of the old tip
+and is not one of the new tip refuses the apply, naming that ref and the SHA
+the rewritten history sits at \(em so the refused result stays addressable by
+that SHA, to apply deliberately or to inspect before re\-running under
+.BR \-\-allow\-pushed .
 .SH OPTIONS
 .TP
 .B \-m, \-\-message
@@ -689,6 +706,32 @@ interactive pauses.
 .B GIT_EDIT_NO_REPLAY
 If set, the plumbing modes rebuild descendants one \fBcommit\-tree\fR at a time
 instead of in one proven \fBgit replay\fR pass.
+.SH FILES
+All three sit in the repository's common git directory, so every worktree
+shares them.
+.TP
+.I <git dir>/git\-edit\-state
+The paused operation \(em its worktree, branch, target and phase. Only one can
+be paused at a time: while this file exists every mutating mode refuses rather
+than move the branch under a resolution that has not applied yet, whose own
+compare\-and\-swap would then fail at the end.
+.B \-\-continue
+and
+.B \-\-abort
+clear it.
+.TP
+.I <git dir>/git\-edit\-state\-verify
+The failing verification's whole output, headed by the command, its exit status
+and its duration \(em the pause itself prints only the last 15 lines, and the
+trailer names this path for a driver reading through a
+.BR "| tail -N" .
+It lives as long as the pause.
+.TP
+.I <git dir>/git\-edit\-journal
+One line per completed ref move (\fB<epoch> <ref> <old> <new>\fR), behind
+.B \-\-undo
+and the last\-operation report of
+.BR \-\-status .
 .SH EXAMPLES
 .TP
 Fold staged changes into the commit that introduced the code:
