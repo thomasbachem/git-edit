@@ -94,7 +94,10 @@ ECHO_E () {
 	fi
 }
 
-ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m"
+# Name the repo every run acts on – it is the cwd's, never an argument, so a caller working
+# across repos has no other signal that a rewrite is aimed where they meant
+_BANNER_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO}\e[0m}"
 
 # Global cleanup hook – a shell command any sub-operation can set, run once on script exit
 # before the error trailer, by `GIT_EXEC` for temp worktrees and by auto-isolation for its own
