@@ -148,7 +148,7 @@ trap '_GLOBAL_EXIT_TRAP' EXIT
 # ------------------------------------------- FUNCTIONS --------------------------------------------
 
 USAGE () {
-	ECHO_E "\e[0;94musage: git edit <commit>                                    # edit a commit (default)\e[0m"
+	ECHO_E "\e[0;94musage: git edit [-e | --edit] <commit>                      # edit a commit (default)\e[0m"
 	ECHO_E "\e[0;94m       (non-TTY: pauses with a worktree at the commit – edit files there, then --continue [--text \"…\"])\e[0m"
 	ECHO_E "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
 	ECHO_E "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
@@ -167,6 +167,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
 	ECHO_E ""
+	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
 	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
 	ECHO_E "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
 	ECHO_E "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges\e[0m"
@@ -4780,7 +4781,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5071,6 +5072,13 @@ fi
 if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
 	USAGE
 	PRINT_ERR "--after/--before only apply to --move"
+	exit 1
+fi
+# `-e` names the default mode rather than adding one, so it pairs with `-m` and `-C` as the
+# bare form does – every other mode contradicts it
+if [ ${#OPT_EDIT} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o ${#OPT_ONTO} -gt 0 ]; then
+	USAGE
+	PRINT_ERR "Option -e/--edit cannot be combined with another mode (it names the default one: edit a single commit's content)"
 	exit 1
 fi
 # `--text` is incompatible with `-d` and `--exec` – the full check against the resolved
@@ -5486,6 +5494,16 @@ elif [ ${#OPT_SQUASH} -gt 0 ]; then
 	fi
 	# Use newest commit for logs if needed, but logic uses `COMMITS` array
 	COMMIT=${COMMITS[-1]}
+
+elif [ ${#OPT_EDIT} -gt 0 ]; then
+	# Edit (`-e` / `--edit`) – the default mode named outright, so a second <commit> is refused
+	# rather than read as the implicit squash below
+	ACTION="edit"
+	if [ ${#COMMITS[@]} -gt 1 ]; then
+		PRINT_ERR "-e/--edit takes exactly one <commit> – to squash them, pass -s"
+		exit 1
+	fi
+	COMMIT=${COMMITS[1]}
 
 elif [ ${#COMMITS[@]} -gt 1 ]; then
 	# Implicit Squash (no flags, but multiple commits provided)

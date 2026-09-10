@@ -12,7 +12,7 @@ reaches this page through
 which then emits backspace\-overstruck text.
 .SH SYNOPSIS
 .nf
-\fBgit edit\fR \fIcommit\fR                          # edit a commit (default)
+\fBgit edit\fR [\fB\-e\fR | \fB\-\-edit\fR] \fIcommit\fR               # edit a commit (default)
 \fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR] \fIcommit\fR
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
@@ -87,7 +87,8 @@ about tags left pointing into the rewritten span.
 .TP
 .B \-e, \-\-edit
 Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
-replays the descendants. Without a TTY the pause becomes a
+replays the descendants. Naming the mode refuses a second \fIcommit\fR, which
+the bare form reads as a squash. Without a TTY the pause becomes a
 .B paused
 trailer naming an isolated worktree checked out at the commit \(em edit files
 there (clean of any main\-checkout WIP), then
