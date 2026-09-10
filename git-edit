@@ -97,7 +97,7 @@ ECHO_E () {
 # Name the repo every run acts on – it is the cwd's, never an argument, so a caller working
 # across repos has no other signal that a rewrite is aimed where they meant
 _BANNER_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
-ECHO_E "\e[1;94mgit edit – Edit, reword, drop, or squash git commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO}\e[0m}"
+ECHO_E "\e[1;94mgit edit – Edit, reword, drop, squash, reorder, split, or fold past commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO}\e[0m}"
 
 # Global cleanup hook – a shell command any sub-operation can set, run once on script exit
 # before the error trailer, by `GIT_EXEC` for temp worktrees and by auto-isolation for its own
@@ -157,9 +157,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --exec -- <command>...\e[0m"
-	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = newest unpushed commit touching them)\e[0m"
+	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = the unpushed commit owning the staged lines)\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
-	ECHO_E "\e[0;94m       git edit --split=<sha>                              # split <sha> by content (same-file halves)\e[0m"
+	ECHO_E "\e[0;94m       git edit --split=<sha>                               # split <sha> by content (same-file halves)\e[0m"
 	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
 	ECHO_E "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
@@ -182,7 +182,8 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
 	ECHO_E "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
 	ECHO_E "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
-	ECHO_E "\e[0;94m                                       auto = newest unpushed commit touching the staged paths\e[0m"
+	ECHO_E "\e[0;94m                                       auto = the unpushed commit that last touched the staged lines\e[0m"
+	ECHO_E "\e[0;94m                                       (per git blame; a purely additive change falls back to the paths)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
 	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
@@ -193,10 +194,10 @@ USAGE () {
 	ECHO_E "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
 	ECHO_E "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
+	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
 	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, deriving the fork point\e[0m"
 	ECHO_E "\e[0;94m                                       (recovers it from the reflog when a rewrite orphaned the old base)\e[0m"
 	ECHO_E "\e[0;94m       --skip                          Resume past the paused commit instead of through it (--onto only)\e[0m"
-	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
 	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since)\e[0m"
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
