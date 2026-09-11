@@ -137,6 +137,10 @@ _GLOBAL_EXIT_TRAP () {
 	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
 		_RERERE_SCOPE_END $CODE
 	fi
+	# A held-back rewrite delivery outlives the run only with the pause it belongs to
+	if [ -n "$_CAPTURE_DIR" ] && ! grep -qxF "capture=$_CAPTURE_DIR" "$SF" 2>/dev/null; then
+		_CAPTURE_REMOVE "$_CAPTURE_DIR"
+	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
 		if [ -n "$_LAST_ERROR" ]; then
 			echo "git-edit: error – $_LAST_ERROR"
@@ -497,7 +501,7 @@ _PRINT_CONFLICT_DETAIL () {
 	# Remaining rebase steps (after the conflict resolves)
 	local REMAINING=""
 	if [ -f "$GITDIR/rebase-merge/git-rebase-todo" ]; then
-		REMAINING=$(grep -vE '^(#|$)' "$GITDIR/rebase-merge/git-rebase-todo" 2>/dev/null)
+		REMAINING=$(_REBASE_TODO_LEFT "$GITDIR")
 		if [ -n "$REMAINING" ]; then
 			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
 			local STEP
@@ -560,8 +564,9 @@ _PRINT_CONFLICT_DETAIL () {
 	# content – while earlier steps rebuild an intermediate that never existed, so their
 	# content is authored rather than derived
 	if [ -n "$PREOP" ] && [ -n "$UNMERGED" ] && [ -s "$GITDIR/rebase-merge/end" ]; then
-		local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
-		local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
+		local -a STEPS=(${=$(_REBASE_STEP "$GITDIR")})
+		local STEP_NOW=${STEPS[1]}
+		local STEP_END=${STEPS[2]}
 		if [ "$STEP_NOW" = "$STEP_END" ]; then
 			PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
 			ECHO_E "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
@@ -790,6 +795,7 @@ _RECORD_REF_MOVE () {
 	local JF=$(_JOURNAL_FILE_PATH)
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
 	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+	_CAPTURE_COLLECT "$2" "$3"
 
 	# A tag is orphaned where it was reachable from the old tip but not the new one, and its
 	# counterpart is suggested when one commit in the span shares its subject – tags on pushed
@@ -860,16 +866,199 @@ _RECORD_REWRITE () {
 }
 
 _EMIT_REWRITES () {
-	[ ${#_REWRITE_PAIRS[@]} -eq 0 ] && return 0
+	# A held-back list that a hand-typed `git rebase --continue` let git deliver is not delivered twice
+	if [ ${#_REWRITE_PAIRS[@]} -eq 0 ] || [ "$_REWRITES_GIT_DELIVERED" = "true" ]; then
+		_REWRITE_PAIRS=()
+		_CAPTURE_DISCARD
+		return 0
+	fi
 	local MAP=${(F)_REWRITE_PAIRS}
 	print -r -- "$MAP" | git notes copy --for-rewrite=rebase 2>/dev/null
-	local HOOK=$(git rev-parse --git-path hooks/post-rewrite 2>/dev/null)
-	if [ -n "$HOOK" ] && [ -x "$HOOK" ]; then
-		print -r -- "$MAP" | "$HOOK" rebase
+	# `git hook run` reaches hooks defined in config as well as the file, as git's own run does –
+	# from 2.40, which gave it `--to-stdin`, while a release that old knows only the file
+	if _HOOK_RUN_AVAILABLE; then
+		local IN=$(MKTEMP_FILE git-edit-rewrites)
+		_TEMP_FILES+=("$IN")
+		print -r -- "$MAP" > "$IN"
+		git hook run --ignore-missing --to-stdin="$IN" post-rewrite -- rebase
+		rm -f "$IN"
+	else
+		# To stderr, as git runs every hook – its output stays out of the stdout a caller parses
+		local HOOK=$(git rev-parse --git-path hooks/post-rewrite 2>/dev/null)
+		if [ -n "$HOOK" ] && [ -x "$HOOK" ]; then
+			print -r -- "$MAP" | "$HOOK" rebase >&2
+		fi
 	fi
 	# One ref move reports one rewrite – a mode that moves twice must not replay
 	# the first move's pairs into the second
 	_REWRITE_PAIRS=()
+	_CAPTURE_DISCARD
+}
+
+# Whether `git hook run` takes `--to-stdin` (git 2.40), probed once per run
+_HOOK_RUN_PROBED=""
+_HOOK_RUN_AVAILABLE () {
+	if [ -z "$_HOOK_RUN_PROBED" ]; then
+		_HOOK_RUN_PROBED=no
+		[[ "$( export LC_ALL=C; git hook run -h 2>&1 )" == *"--to-stdin"* ]] && _HOOK_RUN_PROBED=yes
+	fi
+	[ "$_HOOK_RUN_PROBED" = yes ]
+}
+
+# A rebase route's rewrite delivery, held back for the landing to make – git copies notes and
+# runs `post-rewrite` as its rebase finishes, ahead of the verify and the CAS, so an aborted or
+# refused rewrite used to be announced as one (see `_CAPTURE_BEGIN`)
+_CAPTURE_REWRITES=false
+_CAPTURE_DIR=""
+_CAPTURE_PIN_ARGS=()
+_CAPTURE_PINS=""
+_CAPTURE_EXEC_ARGS=()
+_CAPTURE_EXEC=""
+_REWRITES_GIT_DELIVERED=false
+
+# Whether anything consumes a rewrite's old->new list – a `post-rewrite` hook, a file or one
+# defined in config, or notes told to follow rewrites – since only then is there one to hold back
+_REWRITE_CONSUMED () {
+	[ -n "$GIT_NOTES_REWRITE_REF" ] && return 0
+	[ -n "$(git config --get-all notes.rewriteRef 2>/dev/null)" ] && return 0
+	local HOOK=$(git rev-parse --path-format=absolute --git-path hooks/post-rewrite 2>/dev/null)
+	[ -n "$HOOK" ] && [ -x "$HOOK" ] && return 0
+	git config --get-regexp '^hook\..*\.event$' 2>/dev/null | awk '$2 == "post-rewrite" { found = 1 } END { exit !found }'
+}
+
+# Arms the hold-back for a rebase in an isolated worktree – git's notes copy and `post-rewrite` run
+# are pinned off, and an `--exec` step after every pick saves the list git would have handed them,
+# for `_CAPTURE_COLLECT` to deliver once the CAS has landed
+_CAPTURE_BEGIN () {
+	# Args: [resume <dir>] – a paused run re-arms around the list its dir has already saved
+	local SF
+	SF=$(_STATE_FILE_PATH) || return 0
+	if [ "$1" = "resume" ]; then
+		[[ "$2" == */git-edit-capture.?* ]] || return 0
+		_CAPTURE_DIR=$2
+		mkdir -p "$_CAPTURE_DIR" || return 0
+	else
+		_REWRITE_CONSUMED || return 0
+		# A dir of its own per run – runs overlap in a shared checkout, and under one fixed name a
+		# second run discarded the list the first had saved, which then landed unannounced
+		_CAPTURE_DIR=$(mktemp -d "${SF:h}/git-edit-capture.XXXXXX" 2>/dev/null) || return 0
+	fi
+	_CAPTURE_REWRITES=true
+	# Only the rebase's last step can tell who delivers – run without these pins (a `git rebase
+	# --continue` typed into the pause worktree), git delivers the list itself as that run finishes,
+	# while an earlier step typed in by hand leaves the delivery to whichever run takes the last
+	local LIST=$_CAPTURE_DIR/rewrites
+	local MARK=$_CAPTURE_DIR/delivered
+	local SCRIPT=$_CAPTURE_DIR/step.sh
+	{
+		print -r -- '#!/bin/sh'
+		print -r -- 'D=$(git rev-parse --git-path rebase-merge 2>/dev/null)'
+		print -r -- "[ -f \"\$D/rewritten-list\" ] && cp \"\$D/rewritten-list\" ${(qq)LIST}"
+		print -r -- "if ! grep -qvE '^(#|\$)' \"\$D/git-rebase-todo\" 2>/dev/null; then"
+		print -r -- "	if [ \"\$(git config --get edit.captureRewrites)\" = 1 ]; then rm -f ${(qq)MARK}; else : > ${(qq)MARK}; fi"
+		print -r -- 'fi'
+		print -r -- 'exit 0'
+	} > "$SCRIPT"
+	_CAPTURE_PIN_ARGS=(-c notes.rewrite.rebase=false -c notes.rewrite.amend=false -c hook.post-rewrite.enabled=false -c edit.captureRewrites=1)
+	# That switch holds back hooks defined in config but never a hook file, so a file is held back by
+	# a hooks dir running every other hook from its own path – symlinks followed, as managers link them
+	local HOOKS=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null)
+	local WRAPPERS=$_CAPTURE_DIR/hooks
+	rm -rf "$WRAPPERS"
+	if [ -n "$HOOKS" ] && [ -x "$HOOKS/post-rewrite" ]; then
+		mkdir -p "$WRAPPERS"
+		local H
+		for H in "$HOOKS"/*(N-.x); do
+			[ "${H:t}" = "post-rewrite" ] && continue
+			printf '#!/bin/sh\nexec %s "$@"\n' "${(qq)H}" > "$WRAPPERS/${H:t}"
+			chmod +x "$WRAPPERS/${H:t}"
+		done
+		_CAPTURE_PIN_ARGS+=(-c "core.hooksPath=$WRAPPERS")
+	fi
+	# Both forms – the arrays for a command run as is, the quoted strings for one built up and `eval`d
+	_CAPTURE_PINS=${(j: :)${(q)_CAPTURE_PIN_ARGS[@]}}
+	_CAPTURE_EXEC_ARGS=(--exec "sh ${(qq)SCRIPT}")
+	_CAPTURE_EXEC=${(j: :)${(q)_CAPTURE_EXEC_ARGS[@]}}
+}
+
+# Arms the hold-back for the shared rebase modes, isolated runs only – in the main checkout the
+# rebase moves the branch itself, so git's own delivery there comes exactly at the landing
+_CAPTURE_BEGIN_ISOLATED () {
+	[ -n "$WORKTREE_DIR" ] && _CAPTURE_BEGIN
+	return 0
+}
+
+# Removes a capture dir, and only one named the way `_CAPTURE_BEGIN` names them – the path is
+# read back from the state file too
+_CAPTURE_REMOVE () {
+	# Args: <dir>
+	[[ "$1" == */git-edit-capture.?* ]] && rm -rf "$1"
+	return 0
+}
+
+# Adds a rewrite the run makes outside any rebase – an edit's amend – to the held-back list
+_CAPTURE_RECORD () {
+	# Args: <old> <new>
+	[ "$_CAPTURE_REWRITES" = "true" ] || return 0
+	echo "$1 $2" >> "$_CAPTURE_DIR/extra"
+}
+
+# Moves pairs a plumbing step recorded ahead of the rebase into the held-back list, which persists –
+# a pause in between would lose them from memory, and the landing follows them on through the rebase
+_CAPTURE_HOLD_PAIRS () {
+	if [ ${#_REWRITE_PAIRS[@]} -gt 0 ]; then
+		print -r -- "${(F)_REWRITE_PAIRS}" >> "$_CAPTURE_DIR/extra"
+	fi
+	_REWRITE_PAIRS=()
+}
+
+# Turns the held-back list into the pairs the landing delivers – git's list runs through the run's
+# own steps, so each replaced commit is followed to where it finally landed, and one the run made
+# along the way (a fold's `fixup!`) is left out, as the plumbing routes never list one either
+_CAPTURE_COLLECT () {
+	# Args: <old tip> <new tip>
+	[ "$_CAPTURE_REWRITES" = "true" ] || return 0
+	_REWRITES_GIT_DELIVERED=false
+	[ -f "$_CAPTURE_DIR/delivered" ] && _REWRITES_GIT_DELIVERED=true
+	local -A NEXT
+	local LINE
+	for LINE in "${_REWRITE_PAIRS[@]}" ${(f)"$(cat "$_CAPTURE_DIR/rewrites" "$_CAPTURE_DIR/extra" 2>/dev/null)"}; do
+		[ -n "$LINE" ] && NEXT[${LINE%% *}]=${${LINE#* }%% *}
+	done
+	_REWRITE_PAIRS=()
+	local OLD NEW HOPS
+	for OLD in ${(f)"$(git rev-list --reverse "$1" --not "$2" 2>/dev/null)"}; do
+		NEW=${NEXT[$OLD]}
+		[ -z "$NEW" ] && continue
+		HOPS=0
+		while [ -n "${NEXT[$NEW]}" ] && [ $HOPS -lt 1000 ]; do
+			NEW=${NEXT[$NEW]}
+			HOPS=$((HOPS + 1))
+		done
+		_REWRITE_PAIRS+=("$OLD $NEW")
+	done
+}
+
+# Drops a delivered (or discarded) list, so a later landing in the same run starts clean
+_CAPTURE_DISCARD () {
+	[ "$_CAPTURE_REWRITES" = "true" ] || return 0
+	rm -f "$_CAPTURE_DIR/rewrites" "$_CAPTURE_DIR/extra" "$_CAPTURE_DIR/delivered"
+}
+
+# Prints a stopped rebase's remaining todo, bar comments and the hold-back's capture steps –
+# git-edit's own, run after every pick, and no step a resolver has to reason about
+_REBASE_TODO_LEFT () {
+	# Args: <git dir holding the rebase>
+	grep -vE '^(#|$)' "$1/rebase-merge/git-rebase-todo" 2>/dev/null | sed '/git-edit-capture\..*step\.sh/d'
+}
+
+# Numbers a stopped rebase's current step and its total as `msgnum` and `end` do, but without the
+# capture steps, which would double both and keep the last pick from ever reading as final
+_REBASE_STEP () {
+	# Args: <git dir holding the rebase> – prints "<now> <end>"
+	local NOW=$(sed '/git-edit-capture\..*step\.sh/d' "$1/rebase-merge/done" 2>/dev/null | grep -c .)
+	local LEFT=$(_REBASE_TODO_LEFT "$1" | grep -c .)
+	echo "$NOW $((NOW + LEFT))"
 }
 
 # Reverts the last journaled ref move, CAS-guarded – refuses where the branch has moved
@@ -1256,11 +1445,12 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 }
 
 GIT_REBASE_DROP () {
+	_CAPTURE_BEGIN_ISOLATED
 	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
@@ -1274,6 +1464,7 @@ GIT_REBASE_DROP () {
 }
 
 GIT_REBASE_SQUASH () {
+	_CAPTURE_BEGIN_ISOLATED
 	# `squash` opens `GIT_EDITOR` on the combined message where `fixup` does not, so it is
 	# used when the caller wants to edit the message (`-m`) or supplied one (`--text`)
 	local OP; if [[ -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ]]; then OP=squash; else OP=fixup; fi
@@ -1287,9 +1478,9 @@ GIT_REBASE_SQUASH () {
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
 	if git show -s --pretty=%P "$OLDEST" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$OLDEST~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$OLDEST~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
 	fi
 	# The initial run opens an editor only for the fold, never for a clean pick, so
 	# `--text`'s own `#` lines just need git's cleanup out of the way – with `-m` the
@@ -1334,11 +1525,13 @@ GIT_REBASE_SQUASH () {
 }
 
 GIT_REBASE_BEGIN_EDIT () {
+	_CAPTURE_BEGIN_ISOLATED
 	# Determine if commit has a parent or is the first commit
+	# Run as is below rather than joined and `eval`d, so its capture args go in as the arrays
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
@@ -1583,13 +1776,19 @@ GIT_AMEND_INTO () {
 	# semantics – done before the fixup exists, since rewording afterwards must find the
 	# amended commit again, and a dropped empty replay makes any offset risk the wrong one
 	local FIXUP_PARENT=$ORIG_HEAD
+	# Armed ahead of the reword, whose map the hold-back then carries along with the rebase's
+	_CAPTURE_BEGIN
 	if [ -n "$TEXT_VALUE" ]; then
 		AMEND_OLD_SHA=$TARGET_FULL
 		_REWORD_AND_REBUILD "$TARGET_FULL" "$TEXT_VALUE"
-		# Hand this step's map over now rather than at the CAS – the autosquash below rebuilds
-		# these commits again, so holding it would name intermediates that never reach the branch,
-		# and the rebase's own copy relays them the rest of the way as git does between rebases
-		_EMIT_REWRITES
+		# The autosquash below rebuilds these commits again, so this step's map names intermediates
+		# that never reach the branch – held back, the landing follows each on to its final commit,
+		# and without the hold-back it goes out now, for the rebase's own copy to relay it onward
+		if [ "$_CAPTURE_REWRITES" = "true" ]; then
+			_CAPTURE_HOLD_PAIRS
+		else
+			_EMIT_REWRITES
+		fi
 		# The fixup rides on the rebuilt chain, and `fixup!` matches by subject,
 		# so both must follow the reword
 		FIXUP_PARENT=$_REWORDED_TIP
@@ -1638,7 +1837,7 @@ GIT_AMEND_INTO () {
 	# Step 3 – autosquash, where `GIT_SEQUENCE_EDITOR=true` accepts the auto-arranged todo and
 	# `GIT_EDITOR=true` keeps any message editor shut, defensive under fixup semantics
 	# `rerere` replays an already-resolved hunk, and `rr-cache` carries that across retries
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --autosquash --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -2375,7 +2574,8 @@ awk -v order="$GIT_EDIT_REORDER_ORDER" '
 SEQEOF
 	chmod +x "$SEQ"
 
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive $REBASE_BASE"
+	_CAPTURE_BEGIN
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -2444,9 +2644,8 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	[ -z "$SOURCE" ] && return 1
 	local GITDIR=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
 	[ -z "$GITDIR" ] && return 1
-	local STEP_NOW=$(cat "$GITDIR/rebase-merge/msgnum" 2>/dev/null)
-	local STEP_END=$(cat "$GITDIR/rebase-merge/end" 2>/dev/null)
-	if [ -z "$STEP_NOW" ] || [ "$STEP_NOW" != "$STEP_END" ]; then
+	local -a STEPS=(${=$(_REBASE_STEP "$GITDIR")})
+	if [ "${STEPS[1]:-0}" -eq 0 ] || [ "${STEPS[1]}" != "${STEPS[2]}" ]; then
 		return 1
 	fi
 	# A result tree matching the stopped rebase's `HEAD` leaves the final commit empty and the
@@ -2498,7 +2697,7 @@ _FINISH_AUTO_RESOLVED_STEP () {
 	local OUTPUT RC # Needs to be separate for `$?` to work properly
 	# C locale – the captured evidence should read in English, not the
 	# machine's language (homebrew git localizes on an empty locale env)
-	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue 2>&1 )
+	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase --continue 2>&1 )
 	RC=$?
 	if [ $RC -eq 0 ]; then
 		PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
@@ -2635,9 +2834,10 @@ GIT_ONTO () {
 	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
+	_CAPTURE_BEGIN
 	# Detached, so the branch ref stays put until the CAS – and the branch can
 	# stay checked out in whatever worktree the caller is using
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --onto $UPSTREAM_FULL $FORK"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --onto $UPSTREAM_FULL $FORK"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
@@ -2868,10 +3068,10 @@ _CONTINUE_ONTO () {
 	else
 		local CMD
 		if [ ${#OPT_SKIP} -gt 0 ]; then
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --skip"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --skip"
 		else
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -2953,7 +3153,7 @@ _CONTINUE_REORDER () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -3031,10 +3231,10 @@ _CONTINUE_REBASE () {
 			# Safe because the stand-in writes every replayed message back itself
 			CLEANUP="-c commit.cleanup=whitespace "
 		fi
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false rebase --continue" 2>&1 ); then
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3126,7 +3326,7 @@ _EDIT_START_REPLAY () {
 		git checkout -q "$STATE_AMENDED" 2>/dev/null
 		return 0
 	fi
-	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$CMD" >/dev/null 2>&1; then
@@ -3162,7 +3362,7 @@ _CONTINUE_EDIT () {
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
 		# Mid-replay conflict
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ); then
@@ -3184,16 +3384,21 @@ _CONTINUE_EDIT () {
 		fi
 		_PRINT_UNTRACKED_ABSORB "$STATE_WORKTREE"
 		git add -A >/dev/null 2>&1
+		# The pause ran no rebase, so this is where the hold-back arms – never mid-replay, whose
+		# start carried no `--exec` step to save the list the pins would then keep git from delivering
+		[ "$_CAPTURE_REWRITES" = "true" ] || _CAPTURE_BEGIN
 		if [ -n "$TEXT_VALUE" ]; then
-			git commit --amend -m "$TEXT_VALUE" >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
+			git "${_CAPTURE_PIN_ARGS[@]}" commit --amend -m "$TEXT_VALUE" >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
 		else
-			git commit --amend --no-edit >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
+			git "${_CAPTURE_PIN_ARGS[@]}" commit --amend --no-edit >/dev/null 2>&1 || { _CLEANUP_HOOK=""; PRINT_ERR "Amend failed"; exit 1; }
 		fi
 		STATE_AMENDED=$(git rev-parse HEAD)
+		_CAPTURE_RECORD "$STATE_TARGET" "$STATE_AMENDED"
 		PRINT_CMD "git commit --amend -> ${STATE_AMENDED:0:7}" 90
 		_EDIT_START_REPLAY
 	elif [ -n "$STATE_AMENDED" ] && [ "$HEAD_NOW" = "$STATE_AMENDED" ]; then
 		# Amend landed but the replay never ran (crash between) – run it now
+		[ "$_CAPTURE_REWRITES" = "true" ] || _CAPTURE_BEGIN
 		_EDIT_START_REPLAY
 	fi
 	# Otherwise `HEAD` is beyond the amended commit with no rebase in progress – the replay
@@ -3303,6 +3508,8 @@ _SAVE_STATE () {
 		# run asked for, not silently less (or, with no standing config, nothing)
 		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
 		if _VERIFY_SPAN_ON; then echo "verify_span=1"; fi
+		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
+		if [ "$_CAPTURE_REWRITES" = "true" ]; then echo "capture=$_CAPTURE_DIR"; fi
 	} > "$SF"
 }
 
@@ -3336,6 +3543,7 @@ _LOAD_STATE () {
 	STATE_VERIFY_RESULT=""
 	STATE_VERIFY_CMD=""
 	STATE_VERIFY_SPAN=""
+	STATE_CAPTURE=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3362,6 +3570,7 @@ _LOAD_STATE () {
 			verify_result)   STATE_VERIFY_RESULT=$VAL ;;
 			verify_cmd)      STATE_VERIFY_CMD=$VAL ;;
 			verify_span)     STATE_VERIFY_SPAN=$VAL ;;
+			capture)         STATE_CAPTURE=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
@@ -3409,7 +3618,11 @@ _VERIFY_SAVE_LOG () {
 
 _CLEAR_STATE () {
 	local SF=$(_STATE_FILE_PATH)
-	[ -n "$SF" ] && rm -f "$SF" "$SF-msg" "$SF-verify"
+	[ -n "$SF" ] || return 0
+	# The capture dir a pause recorded goes with its state, as does this run's own
+	_CAPTURE_REMOVE "$(sed -n 's/^capture=//p' "$SF" 2>/dev/null | head -1)"
+	_CAPTURE_REMOVE "$_CAPTURE_DIR"
+	rm -f "$SF" "$SF-msg" "$SF-verify"
 }
 
 _STATE_EXISTS () {
@@ -3890,7 +4103,7 @@ _CONTINUE_AMEND_INTO () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -4674,13 +4887,15 @@ GIT_RESQUASH () {
 
 GIT_COMMIT_AMEND () {
 	if [ ${#OPT_MESSAGE} -gt 0 ]; then
-		local CMD="git commit --all --amend"
+		local CMD="git $_CAPTURE_PINS commit --all --amend"
 	else
-		local CMD="git commit --all --amend --no-edit"
+		local CMD="git $_CAPTURE_PINS commit --all --amend --no-edit"
 	fi
 	PRINT_CMD "$CMD"
 
+	local BEFORE=$(git rev-parse HEAD)
 	eval "$CMD" || ABORT
+	_CAPTURE_RECORD "$BEFORE" "$(git rev-parse HEAD)"
 }
 
 # Writes the editor stand-in a rebase runs in place of a real editor, and echoes its path –
@@ -4742,9 +4957,9 @@ GIT_REBASE_CONTINUE () {
 
 	# The stand-in restores every replayed message itself, so the rebase can run
 	# under the cleanup the fold needs – set only where the stand-in goes in
-	local CMD="git -c rerere.enabled=true -c rebase.updateRefs=false rebase $SUBCMD"
+	local CMD="git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
 	if [[ "$ACTION" == "squash" && ( -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ) ]]; then
-		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true -c rebase.updateRefs=false rebase $SUBCMD"
+		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
 	fi
 	PRINT_CMD "$CMD"
 
@@ -4954,6 +5169,9 @@ fi
 if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	_LOAD_STATE
 	_REANCHOR_INITIAL_HEAD
+	if [ -n "$STATE_CAPTURE" ]; then
+		_CAPTURE_BEGIN resume "$STATE_CAPTURE"
+	fi
 	# Only a replant has commits worth stepping over – elsewhere the paused
 	# commit is the whole point, so skipping it would quietly discard the work
 	if [ ${#OPT_SKIP} -gt 0 ] && [ "$STATE_OPERATION" != "onto" ]; then

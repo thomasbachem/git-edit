@@ -63,8 +63,16 @@ the commit.
 .IP \(bu 3
 Every rewrite reports its old\(->new map the way git does: notes are carried
 across it (honoring \fBnotes.rewriteRef\fR and \fBnotes.rewriteMode\fR, and
-doing nothing when unset), and a \fBpost\-rewrite\fR hook runs with the same
-pairs on stdin. The plumbing modes compose commits with \fBcommit\-tree\fR
+doing nothing when unset), and \fBpost\-rewrite\fR hooks run with the same
+pairs on stdin \(em a hook file and one defined in config alike, through
+.B git hook run
+(git 2.40 and later, where older releases run the file alone). It happens
+once, when the rewrite lands: the rebase\-based modes hold git's own delivery
+back until then, so an aborted or refused rewrite is never announced, and a
+commit the run makes along the way (a fold's \fBfixup!\fR) is never listed. A
+.B git rebase \-\-continue
+typed into a pause worktree that finishes the rebase lets git deliver it
+there, and the landing does not repeat it. The plumbing modes compose commits with \fBcommit\-tree\fR
 rather than replaying them, so without this they would orphan anything keyed
 to a SHA. A squash maps every member onto the commit that absorbed them; a
 split maps the original onto the remainder, which keeps its message and tree.
