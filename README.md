@@ -34,7 +34,7 @@ Or clone the repo and add the folder to your `PATH`, e.g. by adding this line to
 export PATH="$PATH:/your/path/to/git-edit"
 ```
 
-Either way `man git-edit` works right away – the formula installs the page, and on the `PATH` route `man` derives `<dir>/man` from each entry and finds the bundled `man/man1/git-edit.1`. Needs `zsh` and `git` – `git replay` (2.44+) rebuilds linear spans in one pass where it exists, and is never required.
+Either way `man git-edit` works right away – the formula installs the page, and on the `PATH` route `man` derives `<dir>/man` from each entry and finds the bundled `man/man1/git-edit.1`. Needs `zsh` and `git` 2.31+ – `git replay` (2.44+) rebuilds linear spans in one pass where it exists, and is never required.
 
 ## The modes
 

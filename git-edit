@@ -1020,6 +1020,21 @@ _GC_ORPHANED_WORKTREES () {
 	fi
 }
 
+# Refuses a git older than 2.31, the newest feature the script uses without a probe – below it
+# some reads come back empty instead of failing (rerere scoping first, then `config --type` and
+# `--exec`'s pushed guard), so the run would go on with them quietly off
+_REQUIRE_GIT_VERSION () {
+	local LINE=$(git --version 2>/dev/null)
+	# Only a line that parses is judged (`2.50.1 (Apple Git-155)`, `2.39.5.windows.1`) – an
+	# unfamiliar format says nothing about age
+	[[ "$LINE" =~ '^git version ([0-9]+)\.([0-9]+)' ]] || return 0
+	if (( match[1] < 2 || (match[1] == 2 && match[2] < 31) )); then
+		PRINT_ERR "git 2.31 or later is required, found ${LINE#git version }"
+		ECHO_E "\e[0;31m  Update git and re-run – below 2.31 some checks would read as off instead of failing.\e[0m" >&2
+		exit 1
+	fi
+}
+
 # Refuses every mutating mode while another operation is paused, the plumbing ones included –
 # starting a second rewrite moves the branch under the paused one, whose CAS then refuses at
 # apply time, which is safe but strands work that was resolvable a moment earlier
@@ -4812,6 +4827,9 @@ if [ ${#OPT_VERSION} -gt 0 ]; then
 	ECHO_E "\e[0;94mgit-edit ${GIT_EDIT_VERSION}\e[0m"
 	exit 0
 fi
+
+# Past the usage and version answers, which an outdated git should still get
+_REQUIRE_GIT_VERSION
 
 # Capture `HEAD` before any modification, for the status trailer's `old_head` field – stays
 # empty outside a git repo or in an empty one, where the script fails later on commit

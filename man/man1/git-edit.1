@@ -90,6 +90,13 @@ refuses to rewrite commits that already exist on a remote unless
 .B \-\-allow\-pushed
 is given, records its ref move in the branch reflog and a journal, and warns
 about tags left pointing into the rewritten span.
+.PP
+It needs git 2.31 or later and refuses an older one outright, since below
+that some of its checks would read as off rather than fail.
+.B \-h
+and
+.B \-\-version
+answer regardless.
 .SH MODES
 .TP
 .B \-e, \-\-edit
