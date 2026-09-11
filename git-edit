@@ -666,7 +666,9 @@ _PATCH_ID () {
 # id proves the same change and is acted on, while a fold keeps only the subject and is merely
 # suggested, both needing a unique match, with a pushed hit left to the pushed guard
 _RESOLVE_STALE () {
+	# Args: <commit> [<tip>] – the history searched is `HEAD`'s unless a tip is named
 	local C=$1
+	local TIP=${2:-HEAD}
 	local -a MATCHES
 	local HIT
 
@@ -677,7 +679,7 @@ _RESOLVE_STALE () {
 	local WANT=$(_PATCH_ID "$C")
 	if [ -n "$WHEN" ] && [ -n "$WANT" ]; then
 		local -a POOL
-		POOL=($(git log --format='%H %aI' HEAD 2>/dev/null \
+		POOL=($(git log --format='%H %aI' "$TIP" 2>/dev/null \
 			| awk -v w="$WHEN" '$2 == w { print $1 }' | head -$((RESOLVE_SCAN_MAX + 1))))
 		if [ ${#POOL[@]} -gt 0 ] && [ ${#POOL[@]} -le $RESOLVE_SCAN_MAX ]; then
 			MATCHES=()
@@ -695,7 +697,7 @@ _RESOLVE_STALE () {
 	# than by splitting on tabs, so a subject containing one still compares whole
 	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
 	if [ -n "$SUBJECT" ]; then
-		MATCHES=($(git log --format='%H%x09%s' HEAD 2>/dev/null \
+		MATCHES=($(git log --format='%H%x09%s' "$TIP" 2>/dev/null \
 			| awk -v s="$SUBJECT" '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == s) print sha }'))
 		if [ ${#MATCHES[@]} -eq 1 ]; then
 			echo "${MATCHES[1]} subject"
@@ -781,7 +783,8 @@ _JOURNAL_FILE_PATH () {
 
 # Records a completed CAS ref move – appends a journal entry and prints the inverse command,
 # so recovery is plain git rather than knowledge of this script, also via `git edit --undo`
-# Warns about tags left pointing into the rewritten span, which surface only at release time
+# Warns about tags left pointing into the rewritten span, which surface only at release time,
+# and names the branches left there, which it never moves
 _RECORD_REF_MOVE () {
 	# Args: <ref> <old> <new> <label>
 	local JF=$(_JOURNAL_FILE_PATH)
@@ -805,6 +808,39 @@ _RECORD_REF_MOVE () {
 			ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
 		fi
 	done
+
+	# A branch left in the span is named the same way rather than moved – git's `rebase.updateRefs`
+	# moves one as its rebase completes, ahead of the verify and the CAS, so every rebase here pins
+	# it off, or an abort or a refused CAS would leave that branch rewritten
+	local STRANDED=$(comm -23 <(git for-each-ref refs/heads --merged "$2" --format='%(refname) %(worktreepath)' 2>/dev/null | sort) <(git for-each-ref refs/heads --merged "$3" --format='%(refname) %(worktreepath)' 2>/dev/null | sort))
+	local ENTRY BREF BSHA HIT PAIR NAMED=false
+	for ENTRY in ${(f)STRANDED}; do
+		# A branch checked out in a worktree is that worktree's to move, as git's own update leaves it
+		[ -n "${ENTRY#* }" ] && continue
+		BREF=${ENTRY%% *}
+		BSHA=$(git rev-parse "$BREF")
+		# The rebuild's own record is exact – where a rebase kept none, the stale-SHA rule decides
+		HIT=""
+		for PAIR in "${_REWRITE_PAIRS[@]}"; do
+			if [ "${PAIR%% *}" = "$BSHA" ]; then
+				HIT="${PAIR#* } patch-id"
+				break
+			fi
+		done
+		[ -z "$HIT" ] && HIT=$(_RESOLVE_STALE "$BSHA" "$3")
+		PRINT_TEXT "Branch %s points into the rewritten span – if it should follow the rewrite:" 33 "${BREF#refs/heads/}"
+		if [ "${HIT#* }" = "patch-id" ]; then
+			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same change: $(git log -1 --format=%s "$BSHA")\e[0m"
+		elif [ -n "$HIT" ]; then
+			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same subject: $(git log -1 --format=%s "$BSHA")\e[0m"
+		else
+			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} <its counterpart in the new span>\e[0m"
+		fi
+		NAMED=true
+	done
+	if [ "$NAMED" = "true" ] && [ "$(git config --type=bool --get rebase.updateRefs 2>/dev/null)" = "true" ]; then
+		ECHO_E "\e[0;90m  rebase.updateRefs is set, but git edit moves only the branch it rewrites\e[0m"
+	fi
 
 	_EMIT_REWRITES
 	# Both run after the copy above, so they report only what the rewrite
@@ -1222,9 +1258,9 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 GIT_REBASE_DROP () {
 	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
@@ -1251,9 +1287,9 @@ GIT_REBASE_SQUASH () {
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
 	if git show -s --pretty=%P "$OLDEST" | grep -q .; then
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$OLDEST~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$OLDEST~")
 	else
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
 	fi
 	# The initial run opens an editor only for the fold, never for a clean pick, so
 	# `--text`'s own `#` lines just need git's cleanup out of the way – with `-m` the
@@ -1300,9 +1336,9 @@ GIT_REBASE_SQUASH () {
 GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true rebase --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
@@ -1602,7 +1638,7 @@ GIT_AMEND_INTO () {
 	# Step 3 – autosquash, where `GIT_SEQUENCE_EDITOR=true` accepts the auto-arranged todo and
 	# `GIT_EDITOR=true` keeps any message editor shut, defensive under fixup semantics
 	# `rerere` replays an already-resolved hunk, and `rr-cache` carries that across retries
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --autosquash --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -2339,7 +2375,7 @@ awk -v order="$GIT_EDIT_REORDER_ORDER" '
 SEQEOF
 	chmod +x "$SEQ"
 
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -2462,7 +2498,7 @@ _FINISH_AUTO_RESOLVED_STEP () {
 	local OUTPUT RC # Needs to be separate for `$?` to work properly
 	# C locale – the captured evidence should read in English, not the
 	# machine's language (homebrew git localizes on an empty locale env)
-	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true rebase --continue 2>&1 )
+	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue 2>&1 )
 	RC=$?
 	if [ $RC -eq 0 ]; then
 		PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
@@ -2601,7 +2637,7 @@ GIT_ONTO () {
 
 	# Detached, so the branch ref stays put until the CAS – and the branch can
 	# stay checked out in whatever worktree the caller is using
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --no-autostash --onto $UPSTREAM_FULL $FORK"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --no-autostash --onto $UPSTREAM_FULL $FORK"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
@@ -2832,10 +2868,10 @@ _CONTINUE_ONTO () {
 	else
 		local CMD
 		if [ ${#OPT_SKIP} -gt 0 ]; then
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --skip"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --skip"
 		else
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -2917,7 +2953,7 @@ _CONTINUE_REORDER () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -2995,10 +3031,10 @@ _CONTINUE_REBASE () {
 			# Safe because the stand-in writes every replayed message back itself
 			CLEANUP="-c commit.cleanup=whitespace "
 		fi
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true rebase --continue" 2>&1 ); then
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false rebase --continue" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -3090,7 +3126,7 @@ _EDIT_START_REPLAY () {
 		git checkout -q "$STATE_AMENDED" 2>/dev/null
 		return 0
 	fi
-	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$CMD" >/dev/null 2>&1; then
@@ -3126,7 +3162,7 @@ _CONTINUE_EDIT () {
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
 		# Mid-replay conflict
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ); then
@@ -3854,7 +3890,7 @@ _CONTINUE_AMEND_INTO () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -4685,9 +4721,9 @@ GIT_REBASE_CONTINUE () {
 
 	# The stand-in restores every replayed message itself, so the rebase can run
 	# under the cleanup the fold needs – set only where the stand-in goes in
-	local CMD="git -c rerere.enabled=true rebase $SUBCMD"
+	local CMD="git -c rerere.enabled=true -c rebase.updateRefs=false rebase $SUBCMD"
 	if [[ "$ACTION" == "squash" && ( -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ) ]]; then
-		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true rebase $SUBCMD"
+		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true -c rebase.updateRefs=false rebase $SUBCMD"
 	fi
 	PRINT_CMD "$CMD"
 

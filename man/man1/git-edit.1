@@ -69,6 +69,17 @@ rather than replaying them, so without this they would orphan anything keyed
 to a SHA. A squash maps every member onto the commit that absorbed them; a
 split maps the original onto the remainder, which keeps its message and tree.
 .IP \(bu 3
+Only the branch being rewritten moves. Another branch left pointing into the
+rewritten span is named instead, with the command that would re\-point it to
+its counterpart \(em matched the way a stale \fIcommit\fR is, so only a
+commit carrying the same change is offered as one, and a subject match is
+labeled as such.
+.B rebase.updateRefs
+is not applied: git moves such a branch as its rebase completes, before the
+result is verified or lands, so an aborted or refused rewrite would leave the
+branch rewritten. A branch checked out in a worktree is left to that worktree,
+as git leaves it too.
+.IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
 its likely counterpart named \(em so a stale SHA never silently no\-ops. A match
@@ -89,7 +100,7 @@ Every run ends with a machine\-readable status trailer (see
 refuses to rewrite commits that already exist on a remote unless
 .B \-\-allow\-pushed
 is given, records its ref move in the branch reflog and a journal, and warns
-about tags left pointing into the rewritten span.
+about tags and branches left pointing into the rewritten span.
 .PP
 It needs git 2.31 or later and refuses an older one outright, since below
 that some of its checks would read as off rather than fail.
