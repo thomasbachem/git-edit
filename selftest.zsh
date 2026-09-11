@@ -1076,13 +1076,18 @@ GIT_SELFTEST () {
 	_ST_RUN --continue
 	_ST_EQ "edit applies" "$RC" "0"
 	# The trap: content was authored in the isolated worktree, so the main
-	# checkout still has the old file – and staged as a revert of the edit
+	# checkout still has the old file – its index entry, which read as a staged revert of
+	# the edit, is re-synced in place, the worktree named and left to an opt-in restore
 	_ST_CHECK "checkout really is stale" sh -c "test \"\$(sed -n 2p stale.js)\" = STALE-ME"
+	_ST_OUT_HAS "re-syncs the stranded index entry" 'Index entries re-synced to the new tip: stale\.js'
+	_ST_CHECK "index already matches the new tip" sh -c "git diff --cached --quiet -- stale.js"
 	_ST_OUT_HAS "warns the checkout is stale" 'still holds the pre-edit content'
 	_ST_OUT_HAS "names the stale path" 'stale\.js'
-	git restore --source=HEAD --staged --worktree -- stale.js
+	_ST_OUT_HAS "prescribes a worktree-only restore" 'restore --source=HEAD --worktree -- stale\.js'
+	_ST_OUT_LACKS "the restore never names the index" 'restore --source=HEAD --staged'
+	git restore --source=HEAD --worktree -- stale.js
 	_ST_CHECK "the printed reconcile fixes it" sh -c "test \"\$(sed -n 2p stale.js)\" = EDITED"
-	_ST_CHECK "and clears the staged revert" sh -c "git diff --cached --quiet -- stale.js"
+	_ST_CHECK "and the index stays clean" sh -c "git diff --cached --quiet -- stale.js"
 	# A message-only edit changes no content, so it must not cry wolf
 	_ST_RUN "$(git rev-parse HEAD)"
 	_ST_RUN --continue --text "STALE later, reworded"
@@ -1137,13 +1142,29 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "no raw shell error leaks" 'too many arguments'
 	_ST_OUT_LACKS "does not claim a detached HEAD" 'Detached HEAD updated'
 	_ST_OUT_HAS "names the branch it rewrote" 'Branch.*rewritten'
-	# Only a content-changing exec reaches the per-path hint
-	echo "xc" > xc.txt && git add xc.txt && git commit -qm "XC to change"
-	_ST_RUN --exec -- sh -c 'echo changed > xc.txt && git add xc.txt && git commit -q --amend --no-edit'
+	# Only a content-changing exec reaches the per-path hint – and the hint re-syncs the index
+	# entries the ref move stranded, but only those still equal to the pre-rewrite tip: a peer's
+	# staging on a changed path (xd) is left alone and named, a removed path (xe) lingers
+	# untracked and takes a `clean` rather than a restore
+	echo "xc" > xc.txt && echo "xd" > xd.txt && echo "xe" > xe.txt && echo "xg" > xg.txt && git add xc.txt xd.txt xe.txt xg.txt && git commit -qm "XC to change"
+	echo "peer" > xd.txt && git add xd.txt && echo "xd" > xd.txt
+	_ST_RUN --exec -- sh -c 'echo changed > xc.txt && echo changed > xd.txt && git rm -q xe.txt && git mv xg.txt xh.txt && git add xc.txt xd.txt && git commit -q --amend --no-edit'
 	_ST_EQ "content-changing exec exits 0" "$RC" "0"
-	_ST_OUT_HAS "names the path to reconcile" 'xc\.txt'
-	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
-	git reset -q --hard
+	_ST_OUT_HAS "re-syncs the stranded entries" 'Index entries re-synced to the new tip: xc\.txt xe\.txt'
+	# A rename's source would vanish behind `--name-only`'s rename detection, leaving its entry
+	# stranded as a staged re-add of the old path
+	_ST_OUT_HAS "re-syncs both sides of a rename" 'Index entries re-synced to the new tip: .*xg\.txt xh\.txt'
+	_ST_EQ "the rename's old path is gone from the index" "$(git ls-files -- xg.txt)" ""
+	_ST_CHECK "the rename's new path has its entry" sh -c "git ls-files --error-unmatch -- xh.txt >/dev/null 2>&1"
+	_ST_CHECK "stranded entry now matches the new tip" sh -c "git diff --cached --quiet -- xc.txt"
+	_ST_CHECK "removed path is untracked, not a staged re-add" sh -c "test \"\$(git status --porcelain -- xe.txt)\" = '?? xe.txt'"
+	_ST_OUT_HAS "names the entry it left alone" "left alone.*xd\.txt"
+	_ST_EQ "peer staging survives" "$(git show :xd.txt)" "peer"
+	_ST_OUT_HAS "names the paths to reconcile" 'xc\.txt'
+	_ST_OUT_HAS "prescribes a worktree-only restore" 'restore --source=HEAD --worktree -- .*xc\.txt'
+	_ST_OUT_HAS "prescribes a clean for the removed path" 'git clean -f -- xe\.txt'
+	_ST_OUT_LACKS "the restore never names the index" 'restore --source=HEAD --staged'
+	git reset -q --hard && git clean -qf -- xe.txt
 
 	# --- 40. a continue names the untracked files it absorbs ---
 	_ST_SCENARIO "\e[1;96m[40] untracked absorption is named\e[0m"

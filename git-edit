@@ -1153,8 +1153,91 @@ GIT_STATUS_REPORT () {
 	fi
 }
 
-# Names what a worktree-isolated rewrite left stale in the main checkout, which still holds
-# names the paths the rewrite changed and the targeted restore that syncs exactly those
+# Names the checkout that has <ref> checked out – an isolated run reports from its temp
+# worktree, and the index that needs reconciling is the branch's own, wherever that sits
+_BRANCH_CHECKOUT () {
+	# Args: <refname>
+	local LINE WT=""
+	for LINE in "${(@f)$(git worktree list --porcelain 2>/dev/null)}"; do
+		case $LINE in
+			"worktree "*) WT=${LINE#worktree } ;;
+			"branch $1") print -r -- "$WT"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+# Re-syncs the index entries a ref move stranded in <checkout> – an entry still holding the
+# pre-rewrite tip's blob reads as a staged revert of the rewrite, the foreign staging a peer's
+# plain commit sweeps in – guarded per path on exactly that equality, so a peer's staging (or
+# the caller's own) on a changed path stays put and is named instead
+_RESYNC_STRANDED_ENTRIES () {
+	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED and LEFT_ALONE
+	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXENT
+	local -a SYNC
+	RESYNCED=(); LEFT_ALONE=()
+	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+		[ -z "$P" ] && continue
+		OLDENT=$(git ls-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
+		IDXENT=$(git -C "$CO" ls-files -s -- "$P" 2>/dev/null | awk '$3 == 0 {print $1" "$2}')
+		if [ "$OLDENT" = "$IDXENT" ]; then
+			SYNC+=("$P")
+		else
+			LEFT_ALONE+=("$P")
+		fi
+	done
+	if [ ${#SYNC[@]} -gt 0 ]; then
+		if git -C "$CO" reset -q -- "${SYNC[@]}" 2>/dev/null; then
+			RESYNCED=("${SYNC[@]}")
+		else
+			LEFT_ALONE+=("${SYNC[@]}")
+		fi
+	fi
+}
+
+# Reconciles the branch's checkout after a tree-changing rewrite: re-syncs the index entries
+# the ref move stranded, then names what the worktree still holds of the pre-rewrite content –
+# that restore stays an opt-in, since it discards a peer's edits in those files along with the
+# stale content, and it never names `--staged`, which would take a peer's staging too
+_RECONCILE_CHECKOUT () {
+	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>]
+	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 P
+	local -a RESYNCED LEFT_ALONE STALE GONE
+	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
+	if [ ${#RESYNCED[@]} -gt 0 ]; then
+		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
+	fi
+	if [ ${#LEFT_ALONE[@]} -gt 0 ]; then
+		PRINT_TEXT "Index entries left alone – they differ from the pre-rewrite tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
+	fi
+	# A path the rewrite removed lingers untracked once its entry is gone, so it takes a
+	# `clean` where the others take a restore
+	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+		[ -z "$P" ] && continue
+		if git cat-file -e "$NEW:$P" 2>/dev/null; then
+			git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null || STALE+=("$P")
+		elif [ -e "$CO/$P" ]; then
+			GONE+=("$P")
+		fi
+	done
+	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
+		[ -n "$CURRENT_HEADLINE" ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		return 0
+	fi
+	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
+	printf '%s\n' "${STALE[@]}" "${GONE[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+	if [ $(( ${#STALE[@]} + ${#GONE[@]} )) -gt 10 ]; then
+		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} + ${#GONE[@]} - 10 ))"
+	fi
+	local CMD=""
+	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- ${(j: :)${(q-)STALE[@]}}"
+	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- ${(j: :)${(q-)GONE[@]}}"
+	PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 33 "$CMD"
+}
+
+# Reports what a worktree-isolated rewrite left behind in the branch's checkout – re-syncs the
+# index entries it stranded and names the paths whose worktree content is now stale, with a
+# targeted restore for exactly those
 _PRINT_REWRITE_APPLY_HINT () {
 	# Args: <branch-name> [<old-head> <new-head>] [<action>]
 	local BRANCH="$1"
@@ -1168,29 +1251,33 @@ _PRINT_REWRITE_APPLY_HINT () {
 	fi
 	# Reconcile only what the rewrite touched – a blanket `reset --hard` discards unrelated
 	# WIP and a stash dance cycles a checkout parallel sessions share, both risking work the
-	# rewrite took care not to touch, while `--source=HEAD` also removes paths it dropped
+	# rewrite took care not to touch – and both sides of a rename, which `--name-only` would
+	# otherwise fold into its destination
 	local -a CHANGED
 	if [ -n "$2" ] && [ -n "$3" ]; then
-		CHANGED=("${(@f)$(git diff --name-only "$2" "$3" 2>/dev/null)}")
+		CHANGED=("${(@f)$(git diff --name-only --no-renames "$2" "$3" 2>/dev/null)}")
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
 		# A drop is the one rewrite whose leftover paths are the point rather than staleness –
-		# its content lands back as uncommitted work, so the restore is offered as an opt-in
+		# its content lands back as uncommitted work, staged and whole, so the index stays as
+		# it is and the restore is offered as an opt-in, `--source=HEAD` removing what it dropped
 		if [ "$ACTION_NAME" = "drop" ]; then
 			PRINT_TEXT "Branch %s rewritten – the dropped content is now uncommitted in your checkout:" 32 "$BRANCH"
-		else
-			PRINT_TEXT "Branch %s rewritten – your checkout still holds the pre-rewrite content of:" 32 "$BRANCH"
+			printf '%s\n' "${CHANGED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+			if [ ${#CHANGED[@]} -gt 10 ]; then
+				PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
+			fi
+			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
+			return
 		fi
-		printf '%s\n' "${CHANGED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
-		if [ ${#CHANGED[@]} -gt 10 ]; then
-			PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
+		local CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
+		if [ -z "$CO" ]; then
+			PRINT_TEXT "Branch %s rewritten – checked out nowhere, nothing to reconcile." 32 "$BRANCH"
+			return
 		fi
-		local RESTORE="git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
-		if [ "$ACTION_NAME" = "drop" ]; then
-			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "$RESTORE"
-		else
-			PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 32 "$RESTORE"
-		fi
+		_RECONCILE_CHECKOUT "$CO" "$2" "$3" \
+			"Branch $BRANCH rewritten – your checkout still holds the pre-rewrite content of:" \
+			"Branch $BRANCH rewritten – index re-synced, your checkout is current."
 	else
 		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	fi
@@ -3282,34 +3369,18 @@ _ABORT_REBASE () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
-# Names what edit mode left stale – it authors in an isolated worktree, so an apply leaves
-# checkout on the pre-edit content, its index holding that as a staged revert a later
-# commit would carry – name the paths, since a blanket reset takes unrelated WIP
+# Reconciles what edit mode left behind – it authors in an isolated worktree, so an apply
+# leaves the branch's checkout on the pre-edit content, its index holding that as a staged
+# revert a later commit would carry – the index re-synced where nothing else touched it, the
+# paths named either way, since a blanket reset takes unrelated WIP
 _PRINT_EDIT_RECONCILE_HINT () {
 	# Args: <main checkout> <base> <new head>
-	local MAIN=$1
-	if [ -z "$MAIN" ] || [ ! -d "$MAIN" ]; then
+	local CO=$(_BRANCH_CHECKOUT "$STATE_BRANCH")
+	[ -z "$CO" ] && CO=$1
+	if [ -z "$CO" ] || [ ! -d "$CO" ]; then
 		return 0
 	fi
-	local -a STALE
-	local P
-	while IFS= read -r P; do
-		[ -z "$P" ] && continue
-		if ! git -C "$MAIN" diff --quiet HEAD -- "$P" 2>/dev/null || \
-		   ! git -C "$MAIN" diff --cached --quiet HEAD -- "$P" 2>/dev/null; then
-			STALE+=("$P")
-		fi
-	done < <(git diff --name-only "$2" "$3" 2>/dev/null)
-	if [ ${#STALE[@]} -eq 0 ]; then
-		return 0
-	fi
-	PRINT_TEXT "Your checkout still holds the pre-edit content of:" 33
-	printf '%s\n' "${STALE[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
-	if [ ${#STALE[@]} -gt 10 ]; then
-		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} - 10 ))"
-	fi
-	PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 33 \
-		"git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)STALE[@]}}"
+	_RECONCILE_CHECKOUT "$CO" "$2" "$3" "Your checkout still holds the pre-edit content of:" ""
 }
 
 # Replays the edited target's descendants onto the amended commit, from the branch's current
