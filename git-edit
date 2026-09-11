@@ -5494,6 +5494,20 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 		PRINT_ERR "--exec requires a command (use -- to separate it from flags)"
 		exit 1
 	fi
+	# Two shapes seen in the wild that run something other than what was meant: one quoted
+	# shell line, which `"$@"` runs as a program of that name, and a commit ahead of the
+	# command, which runs the SHA – neither exists as a program, so name the shape rather
+	# than leave a bare 127
+	if ! command -v -- "$1" >/dev/null 2>&1; then
+		if [ $# -eq 1 ] && [[ "$1" == *[[:space:]]* ]]; then
+			PRINT_ERR "'$1' is one argument, run as a program of that name – a shell line goes through the shell: --exec -- sh -c '…'"
+			exit 1
+		fi
+		if git rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1; then
+			PRINT_ERR "--exec takes no commit – it runs at the tip; to run at ${1:0:7}, add a worktree there (git worktree add --detach <dir> ${1:0:7})"
+			exit 1
+		fi
+	fi
 	GIT_EXEC "$@"
 	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
 	exit 0
@@ -5712,11 +5726,17 @@ if [ $# -eq 0 ]; then
 	# `<commit>` obvious – but with a mode flag given the caller meant to do something and
 	# only left the target off, so name that rather than printing a screen of usage
 	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o -n "$TEXT_VALUE" ]; then
-		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" HEAD')"
-		# The retry for this is always a bare `HEAD`, so say what that is right now – a parallel
-		# session's commit landing in the gap is exactly how a reword reaches the wrong one, and
-		# the CAS covers the ref moving mid-run, not the wrong commit being named
+		# The records form's one shape mistake seen in the wild: two-dash headers, which read
+		# as records to their author and as nothing to the detector above
+		if [ ${#OPT_REWORD} -gt 0 ] && print -r -- "$RAW_TEXT_VALUE" | grep -q -E '^-- [0-9a-f]{7,}'; then
+			PRINT_ERR "Records start with '--- <commit>' – three dashes, and these headers carry two"
+			exit 1
+		fi
+		# The retry for this is always the tip, so name it by SHA – a parallel session's commit
+		# landing in the gap is exactly how a reword reaches the wrong one, and the CAS covers
+		# the ref moving mid-run, not the wrong commit being named
 		local HEAD_LINE=$(git log -1 --format='%h %s' 2>/dev/null)
+		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" ${${HEAD_LINE%% *}:-HEAD}')"
 		if [ -n "$HEAD_LINE" ]; then
 			ECHO_E "\e[0;31m  HEAD is currently $HEAD_LINE\e[0m" >&2
 		fi

@@ -330,6 +330,16 @@ GIT_SELFTEST () {
 	_ST_RUN --exec -- git commit --amend -m "amended via exec"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "amend applied" "$(git log --format=%s -1)" "amended via exec"
+	# Two shapes that ran the wrong thing in the wild – a quoted shell line as one argument, and
+	# a commit ahead of the command – refuse by name instead of exiting 127
+	_ST_RUN --exec -- 'ls -d nowhere-at-all'
+	_ST_EQ "one quoted shell line refuses" "$RC" "1"
+	_ST_OUT_HAS "and names the shape" 'one argument, run as a program of that name'
+	_ST_OUT_LACKS "before any bare 127" 'status 127'
+	_ST_RUN --exec "$(git rev-parse HEAD)" -- true
+	_ST_EQ "a commit ahead of the command refuses" "$RC" "1"
+	_ST_OUT_HAS "and says exec runs at the tip" 'takes no commit'
+	_ST_EQ "neither moved the branch" "$(git log --format=%s -1)" "amended via exec"
 
 	# --- 12. Exec pushed-orphan guard ---
 	_ST_SCENARIO "\e[1;96m[12] exec pushed-orphan guard\e[0m"
@@ -851,7 +861,9 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="Some subject"
 	_ST_EQ "missing commit refused" "$RC" "1"
 	_ST_OUT_HAS "names the missing argument" 'Missing <commit>'
-	# The retry is always a bare `HEAD`, so the error has to show what that is
+	# The retry is always the tip, so the error has to show what that is – and its example
+	# names it by SHA, the one form a parallel session's landing cannot retarget
+	_ST_OUT_HAS "with an example naming the tip by SHA" "e\.g\. 'git edit -M --text=\"…\" $(git rev-parse --short HEAD)'"
 	_ST_OUT_HAS "and says what HEAD currently is" 'HEAD is currently'
 	_ST_OUT_HAS "with its subject, not just a sha" \
 		"HEAD is currently [0-9a-f]\{7\} ."
@@ -2348,6 +2360,12 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "first target's message applied" "$(git log --format=%s | grep -c '^Batch bw1 reworded$')" "1"
 	_ST_EQ "second target's message applied" "$(git log --format=%s | grep -c '^Batch bw3 reworded$')" "1"
 	_ST_EQ "second target's body applied" "$(git log -1 --format=%b :/'Batch bw3 reworded' | grep -c 'With a body')" "1"
+	# Two-dash headers read as records to their author and as nothing to the detector – every
+	# session that wrote them got the bare missing-commit refusal, so name the shape
+	_ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n' "$BW1")" -M --text -
+	_ST_EQ "two-dash records refuse" "$RC" "1"
+	_ST_OUT_HAS "and name the three-dash shape" "Records start with '--- <commit>'"
+	_ST_OUT_LACKS "instead of the bare missing-commit refusal" 'Missing <commit>'
 	_ST_EQ "untouched neighbour intact" "$(git log --format=%s | grep -c '^Batch bw2$')" "1"
 	_ST_EQ "tip tree preserved (content unchanged)" "$(git rev-parse 'HEAD^{tree}')" "$BW_TREE0"
 	_ST_EQ "commit count unchanged" "$(git rev-list --count HEAD)" "$BW_COUNT0"
