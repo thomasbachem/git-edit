@@ -4506,6 +4506,26 @@ GIT_REWORD_BATCH () {
 	done
 }
 
+# Names the bodies a squash's `--text` drops, as a reword names its own – every summary line is a
+# subject, so a caller comparing those reads a subject-only message as clean
+_PRINT_DROPPED_BODIES () {
+	# Args: <squashed commit>...
+	[ ${#OPT_TEXT} -gt 0 ] || return 0
+	[ "$(print -r -- "$TEXT_VALUE" | sed '1,/^$/d' | grep -c .)" -eq 0 ] || return 0
+	local C LINES
+	local -aU SQUASHED
+	for C in "$@"; do
+		SQUASHED+=("$(git rev-parse "$C^{commit}" 2>/dev/null)")
+	done
+	for C in "${SQUASHED[@]}"; do
+		[ -z "$C" ] && continue
+		LINES=$(git log -1 --format='%b' "$C" | grep -c .)
+		if [ "$LINES" -gt 0 ]; then
+			PRINT_TEXT "A squashed message carried a %s-line body the new one drops – it is still readable at %s" 33 "$LINES" "${C:0:12}"
+		fi
+	done
+}
+
 # Squashes a contiguous range into one commit, plumbing only – like `GIT_REWORD`, no
 # checkout, no stash, no rebase, one atomic ref update, and it refuses non-contiguous
 # selections and merge-holding ranges, which need real 3-way merges and can conflict
@@ -4647,6 +4667,7 @@ GIT_RESQUASH () {
 	# don't re-verify with a diff
 	PRINT_TEXT "%s" 32 "Tip tree identical ✓ – unchanged by construction."
 	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	_PRINT_DROPPED_BODIES "${COMMITS[@]}"
 	# Identity below the stat block, for the same reason the fold's is
 	_PRINT_COMMIT_LINE "$NEW_SQUASHED" '  squashed: %h %s'
 }
@@ -5888,6 +5909,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# a commit that went empty and a fold consumes commits from either side of its target,
 		# so no offset survives both, and a wrong guess is worse than none on this line
 		if [ "$ACTION" = "squash" ] && [ -n "$TARGET" ]; then
+			_PRINT_DROPPED_BODIES "$TARGET" "${COMMITS[@]}"
 			_PRINT_COMMIT_LINE "$TARGET" '  squashed into: %h %s'
 		elif [ "$ACTION" = "drop" ]; then
 			# The hint above lists the restored paths, one per file – unbounded,

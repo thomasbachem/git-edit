@@ -302,7 +302,9 @@ reads the message from standard input. With
 it must be given up front, not on
 .BR \-\-continue :
 the reword happens before the replay starts, so the commits being resolved
-already carry the message.
+already carry the message. It replaces the whole message, not just the
+subject: where a reword or a squash drops a body the new message does not
+restate, the run names it and the commit it is still readable at.
 .TP
 .B \-C, \-\-dir\fR[=\fIpath\fR]
 Run the rebase in a separate worktree (default:

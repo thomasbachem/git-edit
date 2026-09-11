@@ -3284,6 +3284,53 @@ GIT_SELFTEST () {
 	git branch -qD ub-below ub-side ub-live ub-top
 	git reset -q --hard
 
+	# --- 73. a squash names the body its --text drops, as a reword does ---
+	# `--text` replaces every squashed message whole, and each summary line is a subject, so a
+	# subject-only message reads as clean – on either route, and only where a body is really lost
+	_ST_SCENARIO "\e[1;96m[73] a squash names the body its --text drops\e[0m"
+	printf 'sb1\n' > sb1.txt && git add sb1.txt
+	git commit -q -F - <<-'SBMSG'
+		SB first
+
+		• first body line
+		• second body line
+	SBMSG
+	local SB_FIRST=$(git rev-parse HEAD)
+	printf 'sb2\n' > sb2.txt && git add sb2.txt && git commit -qm "SB second"
+	_ST_RUN -s --text="SB squashed" "$SB_FIRST" HEAD
+	_ST_EQ "a plumbing-route squash applies" "$RC" "0"
+	_ST_OUT_HAS "naming the body it drops, with its length" 'carried a 2-line body the new one drops'
+	_ST_OUT_HAS "and where it stays readable" "still readable at ${SB_FIRST:0:12}"
+	# The rebase route, a target with a body taking in a commit that isn't adjacent
+	printf 'sb3\n' > sb3.txt && git add sb3.txt
+	git commit -q -F - <<-'SBMSG'
+		SB third
+
+		• third body line
+	SBMSG
+	local SB_THIRD=$(git rev-parse HEAD)
+	printf 'sb4\n' > sb4.txt && git add sb4.txt && git commit -qm "SB fourth"
+	printf 'sb5\n' > sb5.txt && git add sb5.txt && git commit -qm "SB fifth"
+	_ST_RUN -s="$SB_THIRD" --text="SB third and fifth" HEAD
+	_ST_EQ "a rebase-route squash applies" "$RC" "0"
+	_ST_OUT_HAS "naming the target's body too" "carried a 1-line body the new one drops – it is still readable at ${SB_THIRD:0:12}"
+	# Neighbor: a message that keeps a body discards none
+	printf 'sb6\n' > sb6.txt && git add sb6.txt
+	git commit -q -F - <<-'SBMSG'
+		SB sixth
+
+		• sixth body line
+	SBMSG
+	printf 'sb7\n' > sb7.txt && git add sb7.txt && git commit -qm "SB seventh"
+	_ST_RUN -s --text="$(printf 'SB sixth and seventh\n\n• kept body')" HEAD~1 HEAD
+	_ST_OUT_LACKS "a message keeping a body draws no notice" 'carried a .*-line body'
+	# Negative: subject-only commits have no body to lose
+	printf 'sb8\n' > sb8.txt && git add sb8.txt && git commit -qm "SB eighth"
+	printf 'sb9\n' > sb9.txt && git add sb9.txt && git commit -qm "SB ninth"
+	_ST_RUN -s --text="SB eighth and ninth" HEAD~1 HEAD
+	_ST_OUT_LACKS "nor does squashing subject-only commits" 'carried a .*-line body'
+	git reset -q --hard
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
