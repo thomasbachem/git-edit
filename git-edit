@@ -41,6 +41,9 @@
 # (required for `$?` to work with `tee` below)
 set -o pipefail
 
+# Released version – bumped together with the `v<version>` tag it ships under
+GIT_EDIT_VERSION="1.0.0"
+
 # Suspend background maintenance for this process and every git it spawns – from git 2.54
 # `rerere gc` runs detached per commit, and its `MERGE_RR.lock` kills a rebase reaching its
 # next conflict, wedging every later continue on "you have staged changes"
@@ -165,7 +168,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
 	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
-	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest\e[0m"
+	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest | --version\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
 	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
@@ -209,6 +212,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
 	ECHO_E "\e[0;94m       -h                              Print this usage ('--help' goes to git's man viewer instead)\e[0m"
+	ECHO_E "\e[0;94m       --version                       Print the version this copy ships as\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY), -C is enabled automatically.\e[0m"
 	ECHO_E "\e[0;94m       Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out.\e[0m"
@@ -4791,7 +4795,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -4800,6 +4804,12 @@ fi
 # -h/--help/help
 if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
 	USAGE
+	exit 0
+fi
+
+# --version – answers outside a repo too, since the banner is all that ran before it
+if [ ${#OPT_VERSION} -gt 0 ]; then
+	ECHO_E "\e[0;94mgit-edit ${GIT_EDIT_VERSION}\e[0m"
 	exit 0
 fi
 

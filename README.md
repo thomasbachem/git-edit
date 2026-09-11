@@ -176,6 +176,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `-h` | Print the usage. Prefer it to `--help`, which git routes through `man` – without a terminal that arrives as backspace-overstruck text |
 | `--continue` / `--abort` | Resume or cancel the paused operation |
 | `--undo` / `--status` | Revert the last completed operation, or report the in-flight one |
+| `--version` | Print the released version – it tracks the tag, so a checkout following `main` reports the last one cut |
 | `--selftest` | Run the end-to-end suite in a scratch repo – several hundred assertions driving the installed script as a subprocess, including a check that every flag it declares is documented in the man page and here |
 
 Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_ISOLATE`, `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them.

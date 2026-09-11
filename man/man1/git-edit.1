@@ -22,7 +22,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
-\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR
+\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
 .B git edit
@@ -426,6 +426,15 @@ Independently, each mutating run sweeps temp worktrees left in
 by a killed process, but only where the worktree's gitdir pointer no longer
 resolves and it has sat untouched for 24 hours \(em never one that is still
 registered, which may be a paused resolution.
+.TP
+.B \-\-version
+Print the released version as
+.BR "git\-edit <version>" ,
+on the line below the banner. It tracks the
+.B v<version>
+tag the copy ships under, so a checkout following
+.B main
+reports the last tag cut rather than the commits since it.
 .SH "OUTCOME TRAILER"
 Every run ends with a single line, anchored by
 .BR "git\-edit:" ,
@@ -759,3 +768,7 @@ Undo the last operation:
 Thomas Bachem <mail@thomasbachem.com>
 .SH "REPORTING BUGS"
 https://github.com/thomasbachem/git\-edit
+.PP
+Include the output of
+.B git edit \-\-version
+and the trailer line the failing run ended on.
