@@ -215,10 +215,11 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "emits conflict trailer" '^git-edit: conflict – resolve in'
 	# The resolver's next question is which later steps touch the file, since
 	# the resolution is the state before they replay – so the pause answers it,
-	# naming D (which touches c.txt) and not E (which doesn't)
+	# naming D (which touches c.txt) and not E (which doesn't) – matched on the hint's own
+	# indented lines, as the raw todo above it lists every step (subjects bare before git 2.50)
 	_ST_OUT_HAS "flags the later steps touching a conflicted file" 'Remaining steps also touch a conflicted file'
-	_ST_OUT_HAS "names the step that touches it" '[0-9a-f]\{7\} D commit'
-	_ST_OUT_LACKS "leaves out a step touching other files" '[0-9a-f]\{7\} E commit'
+	_ST_OUT_HAS "names the step that touches it" '^    [0-9a-f]\{7\} D commit$'
+	_ST_OUT_LACKS "leaves out a step touching other files" '^    [0-9a-f]\{7\} E commit$'
 	_ST_EQ "branch untouched during pause" "$(git rev-parse HEAD)" "$PRE_HEAD"
 	_ST_RUN --status
 	_ST_OUT_HAS "status reports the conflict" '^git-edit: conflict – resolve in'
@@ -475,8 +476,13 @@ GIT_SELFTEST () {
 
 	# --- 22. man page exists and documents every mode (drift guard vs. USAGE) ---
 	_ST_SCENARIO "\e[1;96m[22] man page coverage\e[0m"
+	# The suite ships with the script, which sits either in its checkout or in an install prefix
+	# that puts the manual under `../share/man` – take whichever layout this copy was laid out in,
+	# so an installed run checks the docs it actually carries instead of failing on their absence
 	local MANPAGE="$(dirname "$SELF")/man/man1/git-edit.1"
+	[ -f "$MANPAGE" ] || MANPAGE="$(dirname "$SELF")/../share/man/man1/git-edit.1"
 	local READMEFILE="$(dirname "$SELF")/README.md"
+	[ -f "$READMEFILE" ] || READMEFILE="$(dirname "$SELF")/../README.md"
 	_ST_CHECK "man page present" test -f "$MANPAGE"
 	if [ -f "$MANPAGE" ]; then
 		# Derive the flags from the parser itself – a hardcoded list drifts the moment a mode is
@@ -2870,9 +2876,9 @@ GIT_SELFTEST () {
 	_ST_RUN --amend-into="$AH_BASE" -- ah.txt
 	_ST_EQ "the fold conflicts as set up" "$RC" "2"
 	_ST_OUT_HAS "the hint reaches the steps touching the file" 'Remaining steps also touch'
-	_ST_OUT_HAS "naming the one below the amend!" '[0-9a-f]\{7\} AH middle'
-	_ST_OUT_HAS "and the one above it" '[0-9a-f]\{7\} AH tip'
-	_ST_OUT_LACKS "while the amend! step, touching another file, stays out" '[0-9a-f]\{7\} amend! AH middle'
+	_ST_OUT_HAS "naming the one below the amend!" '^    [0-9a-f]\{7\} AH middle$'
+	_ST_OUT_HAS "and the one above it" '^    [0-9a-f]\{7\} AH tip$'
+	_ST_OUT_LACKS "while the amend! step, touching another file, stays out" '^    [0-9a-f]\{7\} amend! AH middle$'
 	_ST_RUN --abort
 	git reset -q --hard
 
@@ -3045,12 +3051,19 @@ GIT_SELFTEST () {
 	local RP_TIP=$(git rev-parse HEAD)
 	local RP_FMT='%T|%an|%ae|%aI|%s|%b'
 	local RP_BEFORE=$(git log --reverse --format="$RP_FMT" "$RP_TARGET..HEAD")
-	# One clock for both engines, so their results can be held to one SHA
+	# One clock for both engines, so their results can be held to one SHA – a git older than
+	# 2.44 has no `replay` and takes the walk throughout, probed the way the tool probes it
+	local RP_HAS_REPLAY=false
+	[[ "$( export LC_ALL=C; git replay -h 2>&1 )" == *"--advance"* ]] && RP_HAS_REPLAY=true
 	GIT_COMMITTER_DATE='@1700000000 +0000' _ST_RUN -M --text="RP target reworded" "$RP_TARGET"
 	_ST_EQ "a reword over a linear span exits 0" "$RC" "0"
-	_ST_OUT_HAS "and rebuilds it in one replay" 'git replay --advance'
-	_ST_OUT_LACKS "not commit by commit" '# rebuilt'
-	_ST_OUT_HAS "stating the proof rather than a construction" 'Trees unchanged ✓ – proven'
+	if [ "$RP_HAS_REPLAY" = "true" ]; then
+		_ST_OUT_HAS "and rebuilds it in one replay" 'git replay --advance'
+		_ST_OUT_LACKS "not commit by commit" '# rebuilt'
+		_ST_OUT_HAS "stating the proof rather than a construction" 'Trees unchanged ✓ – proven'
+	else
+		_ST_OUT_HAS "and, with no replay in this git, rebuilds it commit by commit" '# rebuilt'
+	fi
 	_ST_EQ "the target was reworded" "$(git log -1 --format=%s HEAD~9)" "RP target reworded"
 	_ST_EQ "every descendant mirrors its original – tree, author, message" "$(git log --reverse --format="$RP_FMT" HEAD~9..HEAD)" "$RP_BEFORE"
 	_ST_EQ "the empty message stayed empty, byte for byte" "$(git cat-file commit HEAD~8 | sed '1,/^$/d' | wc -c | tr -d ' ')" "0"
@@ -3099,12 +3112,16 @@ GIT_SELFTEST () {
 	_ST_EQ "the result is still right" "$(git log --reverse --format="$RP_FMT" HEAD~9..HEAD)" "$RP_BEFORE"
 	# Blank lines and a `#` line a verbatim message carries survive the replay
 	# byte for byte – the walk's `-m` would fold the trailing blank lines away
-	git reset -q --hard "$RP_TIP"
-	printf 'RP verbatim\n\n\nbody   \n# kept, not a comment\n\n\n' | git commit -q --allow-empty --cleanup=verbatim -F -
-	local RP_VERBATIM=$(git cat-file commit HEAD | sed '1,/^$/d' | git hash-object --stdin)
-	_ST_RUN -M --text="RP target reworded under a verbatim message" "$RP_TARGET"
-	_ST_EQ "a verbatim message survives the replay byte for byte" "$(git cat-file commit HEAD | sed '1,/^$/d' | git hash-object --stdin)" "$RP_VERBATIM"
-	_ST_OUT_HAS "which was a replay" 'git replay --advance'
+	if [ "$RP_HAS_REPLAY" = "true" ]; then
+		git reset -q --hard "$RP_TIP"
+		printf 'RP verbatim\n\n\nbody   \n# kept, not a comment\n\n\n' | git commit -q --allow-empty --cleanup=verbatim -F -
+		local RP_VERBATIM=$(git cat-file commit HEAD | sed '1,/^$/d' | git hash-object --stdin)
+		_ST_RUN -M --text="RP target reworded under a verbatim message" "$RP_TARGET"
+		_ST_EQ "a verbatim message survives the replay byte for byte" "$(git cat-file commit HEAD | sed '1,/^$/d' | git hash-object --stdin)" "$RP_VERBATIM"
+		_ST_OUT_HAS "which was a replay" 'git replay --advance'
+	else
+		ECHO_E "\e[0;90m  skipped – only a replay carries a verbatim message byte for byte, and this git has none\e[0m"
+	fi
 	git reset -q --hard
 
 	# --- 68. `-e` names the edit mode, refusing what the bare form squashes ---
