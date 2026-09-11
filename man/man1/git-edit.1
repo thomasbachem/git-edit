@@ -133,7 +133,10 @@ CAS\-applies. The branch never moves before the final apply. The edit was
 authored in that worktree, so the main checkout is left holding the pre\-edit
 content; the affected paths and a targeted
 .B git\-restore
-command are printed. The amend stages the worktree wholesale, so a scratch file
+command are printed. That restore is an offer \(em it discards whatever the
+rewrite left in those paths, which for an edit that removed content is the work
+just handed back. A path carrying further uncommitted edits is named as left
+alone and kept out of it. The amend stages the worktree wholesale, so a scratch file
 left there joins the commit \(em any untracked file it absorbs is named before
 the amend.
 .TP

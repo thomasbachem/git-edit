@@ -1172,10 +1172,10 @@ _BRANCH_CHECKOUT () {
 # plain commit sweeps in – guarded per path on exactly that equality, so a peer's staging (or
 # the caller's own) on a changed path stays put and is named instead
 _RESYNC_STRANDED_ENTRIES () {
-	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED and LEFT_ALONE
+	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED, LEFT_ALONE and LOCKED
 	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXENT
 	local -a SYNC
-	RESYNCED=(); LEFT_ALONE=()
+	RESYNCED=(); LEFT_ALONE=(); LOCKED=()
 	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
 		[ -z "$P" ] && continue
 		OLDENT=$(git ls-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
@@ -1186,26 +1186,33 @@ _RESYNC_STRANDED_ENTRIES () {
 			LEFT_ALONE+=("$P")
 		fi
 	done
+	# A peer mid-`add` holds the index lock – its entries stay stranded, named as such rather
+	# than as differing, since they do not
 	if [ ${#SYNC[@]} -gt 0 ]; then
 		if git -C "$CO" reset -q -- "${SYNC[@]}" 2>/dev/null; then
 			RESYNCED=("${SYNC[@]}")
 		else
-			LEFT_ALONE+=("${SYNC[@]}")
+			LOCKED=("${SYNC[@]}")
 		fi
 	fi
 }
 
 # Reconciles the branch's checkout after a tree-changing rewrite: re-syncs the index entries
-# the ref move stranded, then names what the worktree still holds of the pre-rewrite content –
-# that restore stays an opt-in, since it discards a peer's edits in those files along with the
-# stale content, and it never names `--staged`, which would take a peer's staging too
+# the ref move stranded, then names the paths whose worktree still holds the pre-rewrite blob
+# exactly – one carrying edits on top is named as left alone instead, since restoring it would
+# discard a peer's lines or your own, and the restore never names `--staged` either. Even for a
+# stale path it stays an offer, never an instruction: a rewrite that takes content out of history
+# hands it back through exactly that path, so the blob it discards is often the point of the run
 _RECONCILE_CHECKOUT () {
 	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>]
 	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 P
-	local -a RESYNCED LEFT_ALONE STALE GONE
+	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED GONE
 	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
 	if [ ${#RESYNCED[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
+	fi
+	if [ ${#LOCKED[@]} -gt 0 ]; then
+		PRINT_TEXT "Index locked – entries still on the pre-rewrite tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "${(j: :)${(q-)LOCKED[@]}}"
 	fi
 	if [ ${#LEFT_ALONE[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries left alone – they differ from the pre-rewrite tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
@@ -1215,13 +1222,25 @@ _RECONCILE_CHECKOUT () {
 	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
 		[ -z "$P" ] && continue
 		if git cat-file -e "$NEW:$P" 2>/dev/null; then
-			git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null || STALE+=("$P")
+			if ! git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null; then
+				# Only the pre-rewrite blob itself is stale content a restore reclaims – a
+				# worktree matching neither tip carries edits on top, a peer's or your own,
+				# and naming those for reconciling would prescribe discarding them
+				if git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
+					STALE+=("$P")
+				else
+					MODIFIED+=("$P")
+				fi
+			fi
 		elif [ -e "$CO/$P" ]; then
 			GONE+=("$P")
 		fi
 	done
+	if [ ${#MODIFIED[@]} -gt 0 ]; then
+		PRINT_TEXT "Worktree files left alone – uncommitted edits there, not the pre-rewrite content (a peer's, or your own): %s" 33 "${(j: :)${(q-)MODIFIED[@]}}"
+	fi
 	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
-		[ -n "$CURRENT_HEADLINE" ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		[ -n "$CURRENT_HEADLINE" ] && [ ${#MODIFIED[@]} -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
 		return 0
 	fi
 	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
@@ -1232,7 +1251,7 @@ _RECONCILE_CHECKOUT () {
 	local CMD=""
 	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- ${(j: :)${(q-)STALE[@]}}"
 	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- ${(j: :)${(q-)GONE[@]}}"
-	PRINT_TEXT "Reconcile those paths (discards local edits to them): %s" 33 "$CMD"
+	PRINT_TEXT "Reconcile those paths (discards what the rewrite left there): %s" 33 "$CMD"
 }
 
 # Reports what a worktree-isolated rewrite left behind in the branch's checkout – re-syncs the

@@ -1096,6 +1096,9 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "warns the checkout is stale" 'still holds the pre-edit content'
 	_ST_OUT_HAS "names the stale path" 'stale\.js'
 	_ST_OUT_HAS "prescribes a worktree-only restore" 'restore --source=HEAD --worktree -- stale\.js'
+	# The blob it discards is content the rewrite may have handed back on purpose, so the hint has
+	# to read as an offer – a bare "Reconcile those paths" invites destroying an extraction
+	_ST_OUT_HAS "and says what reconciling discards" 'Reconcile those paths (discards what the rewrite left there)'
 	_ST_OUT_LACKS "the restore never names the index" 'restore --source=HEAD --staged'
 	git restore --source=HEAD --worktree -- stale.js
 	_ST_CHECK "the printed reconcile fixes it" sh -c "test \"\$(sed -n 2p stale.js)\" = EDITED"
@@ -1177,6 +1180,49 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "prescribes a clean for the removed path" 'git clean -f -- xe\.txt'
 	_ST_OUT_LACKS "the restore never names the index" 'restore --source=HEAD --staged'
 	git reset -q --hard && git clean -qf -- xe.txt
+	# The route the rules steer every session onto: the change made in the checkout first, then
+	# landed through exec – the re-sync leaves nothing to reconcile, and the hint says so
+	echo "xi" > xi.txt && git add xi.txt && git commit -qm "XI to change"
+	echo "changed" > xi.txt
+	_ST_RUN --exec -- sh -c 'echo changed > xi.txt && git add xi.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec over a checkout already carrying the change exits 0" "$RC" "0"
+	_ST_OUT_HAS "reports the checkout as current" 'index re-synced, your checkout is current'
+	_ST_OUT_LACKS "and offers no restore" 'Reconcile those paths'
+	_ST_CHECK "nothing left staged or modified" sh -c "test -z \"\$(git status --porcelain -- xi.txt)\""
+	# A checkout carrying uncommitted edits in a changed path holds neither tip's content, so
+	# calling it stale is false and the restore would discard those lines – it is named as left
+	# alone instead. The everyday shape here: a shared checkout where the file always has WIP
+	echo "xk" > xk.txt && git add xk.txt && git commit -qm "XK to change"
+	printf 'xk\nlocal wip\n' > xk.txt
+	_ST_RUN --exec -- sh -c 'echo changed > xk.txt && git add xk.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec over a checkout with its own edits exits 0" "$RC" "0"
+	_ST_OUT_LACKS "never calls those edits pre-rewrite content" 'still holds the pre-rewrite content'
+	_ST_OUT_HAS "names the worktree file it left alone" 'Worktree files left alone.*xk\.txt'
+	_ST_OUT_LACKS "and prescribes no restore that would discard them" 'Reconcile those paths'
+	_ST_OUT_LACKS "nor claims the checkout is current" 'your checkout is current'
+	_ST_CHECK "the uncommitted edit survives" sh -c "test \"\$(sed -n 2p xk.txt)\" = 'local wip'"
+	git reset -q --hard
+	# Both kinds in one rewrite: the restore has to name the stale path and leave the edited one
+	# out, or a single reconcile takes work the rewrite never asked about
+	echo "xm" > xm.txt && echo "xn" > xn.txt && git add xm.txt xn.txt && git commit -qm "XM/XN to change"
+	printf 'xm\nlocal wip\n' > xm.txt
+	_ST_RUN --exec -- sh -c 'echo changed > xm.txt && echo changed > xn.txt && git add xm.txt xn.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec touching a stale and an edited path exits 0" "$RC" "0"
+	_ST_OUT_HAS "names the edited path as left alone" 'Worktree files left alone.*xm\.txt'
+	_ST_OUT_HAS "the restore names the stale path" 'Reconcile those paths.*xn\.txt'
+	_ST_OUT_LACKS "and never the edited one" 'Reconcile those paths.*xm\.txt'
+	_ST_CHECK "the edit survives the run" sh -c "test \"\$(sed -n 2p xm.txt)\" = 'local wip'"
+	git reset -q --hard
+	# A peer holding the index lock keeps the entries stranded – named as locked, not as differing
+	echo "xj" > xj.txt && git add xj.txt && git commit -qm "XJ to change"
+	touch .git/index.lock
+	_ST_RUN --exec -- sh -c 'echo changed > xj.txt && git add xj.txt && git commit -q --amend --no-edit'
+	rm -f .git/index.lock
+	_ST_EQ "exec under a locked index still lands" "$RC" "0"
+	_ST_OUT_HAS "names the lock" 'Index locked'
+	_ST_OUT_LACKS "and does not call the entry a differing one" 'Index entries left alone'
+	_ST_CHECK "the entry is still stranded" sh -c "! git diff --cached --quiet -- xj.txt"
+	git reset -q --hard
 
 	# --- 40. a continue names the untracked files it absorbs ---
 	_ST_SCENARIO "\e[1;96m[40] untracked absorption is named\e[0m"
