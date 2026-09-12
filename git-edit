@@ -1199,7 +1199,7 @@ _RESYNC_STRANDED_ENTRIES () {
 
 # Reconciles the branch's checkout after a tree-changing rewrite: re-syncs the index entries
 # the ref move stranded, then names the paths whose worktree still holds the pre-rewrite blob
-# exactly – one carrying edits on top is named as left alone instead, since restoring it would
+# exactly – one carrying edits on top is named as left alone instead, since reconciling it would
 # discard a peer's lines or your own, and the restore never names `--staged` either. Even for a
 # stale path it stays an offer, never an instruction: a rewrite that takes content out of history
 # hands it back through exactly that path, so the blob it discards is often the point of the run
@@ -1233,7 +1233,14 @@ _RECONCILE_CHECKOUT () {
 				fi
 			fi
 		elif [ -e "$CO/$P" ]; then
-			GONE+=("$P")
+			# Same test for a path the rewrite removed, but the re-sync took its index entry
+			# with it – the file is untracked now, so only its hash tells the blob the rewrite
+			# left from work someone put there, and a `clean` on the latter leaves nothing
+			if [ "$(git -C "$CO" hash-object -- "$P" 2>/dev/null)" = "$(git rev-parse "${OLD}:${P}" 2>/dev/null)" ]; then
+				GONE+=("$P")
+			else
+				MODIFIED+=("$P")
+			fi
 		fi
 	done
 	if [ ${#MODIFIED[@]} -gt 0 ]; then

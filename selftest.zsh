@@ -1213,6 +1213,18 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "and never the edited one" 'Reconcile those paths.*xm\.txt'
 	_ST_CHECK "the edit survives the run" sh -c "test \"\$(sed -n 2p xm.txt)\" = 'local wip'"
 	git reset -q --hard
+	# A removed path goes untracked, so its reconcile is a `git clean` – naming one whose worktree
+	# copy carries work deletes it outright, with no blob anywhere to restore it from
+	echo "xp" > xp.txt && echo "xq" > xq.txt && echo "xr" > xr.txt
+	git add xp.txt xq.txt xr.txt && git commit -qm "XP/XQ to remove, XR to keep"
+	printf 'xq\nlocal wip\n' > xq.txt
+	_ST_RUN --exec -- sh -c 'git rm -q xp.txt xq.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec removing a leftover and a worked-on path exits 0" "$RC" "0"
+	_ST_OUT_HAS "the clean names the untouched leftover" 'git clean -f -- .*xp\.txt'
+	_ST_OUT_LACKS "and never the one carrying work" 'git clean -f -- .*xq\.txt'
+	_ST_OUT_HAS "which is named as left alone instead" 'Worktree files left alone.*xq\.txt'
+	_ST_CHECK "that work survives the run" sh -c "test \"\$(sed -n 2p xq.txt)\" = 'local wip'"
+	git reset -q --hard && git clean -qf -- xp.txt xq.txt
 	# A peer holding the index lock keeps the entries stranded – named as locked, not as differing
 	echo "xj" > xj.txt && git add xj.txt && git commit -qm "XJ to change"
 	touch .git/index.lock
