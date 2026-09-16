@@ -164,7 +164,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --exec -- <command>...\e[0m"
-	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto                     # fold staged changes into <sha> (auto = the unpushed commit owning the staged lines)\e[0m"
+	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto [--tree=<tree-ish>] # fold staged changes (or a composed tree) into <sha> (auto = the unpushed commit owning the lines)\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha>                               # split <sha> by content (same-file halves)\e[0m"
 	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
@@ -191,6 +191,8 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       via fixup+autosquash in an isolated worktree (atomic CAS);\e[0m"
 	ECHO_E "\e[0;94m                                       auto = the unpushed commit that last touched the staged lines\e[0m"
 	ECHO_E "\e[0;94m                                       (per git blame; a purely additive change falls back to the paths)\e[0m"
+	ECHO_E "\e[0;94m       --tree=<tree-ish>               With --amend-into: fold <tree-ish>'s diff from HEAD instead of the index's –\e[0m"
+	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
 	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
@@ -1788,8 +1790,9 @@ GIT_EXEC () {
 }
 
 # Builds the tree a scoped fold carries – the base commit's tree with only the
-# pathspec-matched staged entries applied, composed from the index's exact blobs like
-# the split path, so binary files and mode changes come along and nothing else leaks in
+# pathspec-matched entries applied, composed from the source's exact blobs like the split
+# path, so binary files and mode changes come along and nothing else leaks in – the source
+# being the staged index, or the `--tree` a caller composed apart from it
 _STAGED_TREE_FOR () {
 	local BASE=$1
 	local TMPIDX=$(MKTEMP_FILE git-edit-amend-idx)
@@ -1804,24 +1807,34 @@ _STAGED_TREE_FOR () {
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		fi
-	done < <(git diff-index --cached -r "$BASE" -- "${AMEND_PATHSPECS[@]}")
+	done < <(
+		if [ -n "$AMEND_TREE" ]; then
+			git diff-tree -r "$BASE" "$AMEND_TREE" -- "${AMEND_PATHSPECS[@]}"
+		else
+			git diff-index --cached -r "$BASE" -- "${AMEND_PATHSPECS[@]}"
+		fi
+	)
 	GIT_INDEX_FILE=$TMPIDX git write-tree
 	rm -f "$TMPIDX"
 }
 
-# Folds currently-staged changes from the main index into a target commit, leaving unstaged
-# files alone – fixup plus autosquash in one operation, snapshotting the index as a fixup
-# object, running the autosquash isolated, and CAS-updating the ref against the pre-op tip
+# Folds currently-staged changes from the main index (or a `--tree` composed apart from it) into
+# a target commit, leaving unstaged files alone – fixup plus autosquash in one operation,
+# snapshotting the source as a fixup object, running the autosquash isolated, and CAS-updating
+# the ref against the pre-op tip
 GIT_AMEND_INTO () {
 	local TARGET=$AMEND_INTO_TARGET
 
 	# Pre-flight: must not be a stale in-flight operation
 	_REQUIRE_NO_INFLIGHT
 
-	# Pre-flight: must have staged changes – within the pathspec if one narrows
-	# the fold, since "something is staged" says nothing about the named paths
-	if git diff --cached --quiet -- "${AMEND_PATHSPECS[@]}" 2>/dev/null; then
-		if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+	# Pre-flight: must have changes to fold – within the pathspec if one narrows the fold,
+	# since "something is staged" says nothing about the named paths
+	if git diff "${AMEND_SOURCE[@]}" --quiet -- "${AMEND_PATHSPECS[@]}" 2>/dev/null; then
+		if [ -n "$AMEND_TREE" ]; then
+			PRINT_ERR "--tree $AMEND_TREE_GIVEN differs from HEAD in nothing${AMEND_PATHSPECS[1]:+ under ${AMEND_PATHSPECS[*]}} – nothing to fold"
+			ECHO_E "\e[0;31m  Compose it on the current tip with the change in place, then retry.\e[0m" >&2
+		elif [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
 			PRINT_ERR "No staged changes under ${AMEND_PATHSPECS[*]}"
 			ECHO_E "\e[0;31m  Stage them with 'git add <files>', or drop the pathspec to fold everything staged.\e[0m" >&2
 		else
@@ -1857,7 +1870,7 @@ GIT_AMEND_INTO () {
 	# The folded paths (root-relative): shown in the completion summary, and
 	# scoping the success sync to exactly these entries
 	local -a STAGED_PATHS
-	STAGED_PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
+	STAGED_PATHS=("${(@f)$(git diff "${AMEND_SOURCE[@]}" --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
 
 	# Pre-flight – a staged path the target predates is refused where a later commit introduces
@@ -1889,7 +1902,7 @@ GIT_AMEND_INTO () {
 	# cause is a literal mode typed into `update-index --cacheinfo`, stripping an executable
 	# bit, and it would ride into history invisibly, a diffstat counting lines only
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
-		local MODE_FLIPS=$(git diff --cached --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | grep '^ mode change')
+		local MODE_FLIPS=$(git diff "${AMEND_SOURCE[@]}" --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | grep '^ mode change')
 		if [ -n "$MODE_FLIPS" ]; then
 			PRINT_ERR "The fold would change a file mode – a literal mode in 'git update-index --cacheinfo', taking the executable bit with it?"
 			print -r -- "$MODE_FLIPS" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
@@ -1932,6 +1945,8 @@ GIT_AMEND_INTO () {
 		# sits in the shared index cannot ride along into a past commit, a parallel session's
 		# staging included, which can land in the turn between `git add` and this call
 		STAGED_TREE=$(_STAGED_TREE_FOR "$ORIG_HEAD")
+	elif [ -n "$AMEND_TREE" ]; then
+		STAGED_TREE=$AMEND_TREE
 	else
 		STAGED_TREE=$(git write-tree 2>/dev/null)
 	fi
@@ -1986,7 +2001,8 @@ GIT_AMEND_INTO () {
 			"stagedtree=$STAGED_TREE" \
 			"maindir=$MAIN_DIR" \
 			"files=${(pj:\t:)STAGED_PATHS}"\
-			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
+			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}" \
+			"tree=$AMEND_TREE"
 		# Don't auto-cleanup the worktree – it holds the in-progress rebase
 		_CLEANUP_HOOK=""
 
@@ -2029,7 +2045,8 @@ GIT_AMEND_INTO () {
 			"stagedtree=$STAGED_TREE" \
 			"maindir=$MAIN_DIR" \
 			"files=${(pj:\t:)STAGED_PATHS}"\
-			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}"
+			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}" \
+			"tree=$AMEND_TREE"
 		_CLEANUP_HOOK=""
 		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
 		exit 2
@@ -2048,8 +2065,9 @@ GIT_AMEND_INTO () {
 
 	# Re-sync exactly the folded paths' index entries to the new `HEAD`, those staged changes
 	# being history now – path-scoped, so anything a parallel session staged meanwhile keeps
-	# its staged state where a whole-index reset would wipe it
-	git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
+	# its staged state where a whole-index reset would wipe it. A `--tree` fold staged nothing,
+	# so the summary reconciles its entries like any other rewrite's instead
+	[ -z "$AMEND_TREE" ] && git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
 
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE" "$ORIG_HEAD" "$STAGED_TREE" ""
 
@@ -2075,7 +2093,7 @@ _BLAME_AMEND_TARGETS () {
 			[ -z "$COUNT" ] && COUNT=1
 			[ "$COUNT" = "0" ] && continue
 			LARGS+=(-L "$START,+$COUNT")
-		done < <(git -C "$TOPLEVEL" diff --cached -U0 --no-renames -- "$P" 2>/dev/null | grep -E '^@@')
+		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- "$P" 2>/dev/null | grep -E '^@@')
 		[ ${#LARGS[@]} -eq 0 ] && continue
 		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | grep -oE '^[0-9a-f]{40}'
 	done | sort -u
@@ -2088,10 +2106,14 @@ _RESOLVE_AMEND_TARGET () {
 	local -a PATHS
 	# Scoped to the same pathspec the fold will use – inferring a target from paths that will
 	# not be folded answers a question nobody asked
-	PATHS=("${(@f)$(git diff --cached --name-only -- "${AMEND_PATHSPECS[@]}")}")
+	PATHS=("${(@f)$(git diff "${AMEND_SOURCE[@]}" --name-only -- "${AMEND_PATHSPECS[@]}")}")
 	if [ -z "${PATHS[1]}" ]; then
-		PRINT_ERR "No staged changes to amend"
-		ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		if [ -n "$AMEND_TREE" ]; then
+			PRINT_ERR "--tree $AMEND_TREE_GIVEN differs from HEAD in nothing – nothing to fold"
+		else
+			PRINT_ERR "No staged changes to amend"
+			ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+		fi
 		exit 1
 	fi
 
@@ -2189,7 +2211,13 @@ _PRINT_AMENDED_SUMMARY () {
 		PRINT_TEXT "%s" 32 "Amended commit"
 	fi
 	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	_PRINT_LEFTOVER_STATE "$4"
+	if [ -n "$AMEND_TREE" ]; then
+		# The fold's content never sat in the checkout's index, so its entries are stranded like
+		# any other rewrite's – re-synced where they still hold the pre-op tip, named where not
+		[ -n "$4" ] && [ -n "$6" ] && _RECONCILE_CHECKOUT "$4" "$6" "$1" "Your checkout still holds the pre-fold content of:" "Index re-synced, your checkout is current."
+	else
+		_PRINT_LEFTOVER_STATE "$4"
+	fi
 	[ -n "$6" ] && _PRINT_MODE_CHANGES "$6" "$1"
 	[ -n "$6" ] && _PRINT_TREE_IDENTITY "$6" "$1"
 	# Same count check as a reorder's summary – a resolution reproducing its predecessor's
@@ -3663,6 +3691,7 @@ _LOAD_STATE () {
 	STATE_MAINDIR=""
 	STATE_FILES=""
 	STATE_PATHSPECS=""
+	STATE_TREE=""
 	STATE_AMENDED=""
 	STATE_REPLAY_TIP=""
 	STATE_UPSTREAM=""
@@ -3691,6 +3720,7 @@ _LOAD_STATE () {
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
+			tree)            STATE_TREE=$VAL ;;
 			amended)         STATE_AMENDED=$VAL ;;
 			replay_tip)      STATE_REPLAY_TIP=$VAL ;;
 			upstream)        STATE_UPSTREAM=$VAL ;;
@@ -4277,8 +4307,10 @@ _CONTINUE_AMEND_INTO () {
 
 	# Re-sync the folded paths' index entries to the new `HEAD`, those staged changes being
 	# history now – path-scoped so a parallel session's staged work survives, and legacy
-	# states without a file list fall back to a full reset
-	if [ -n "$STATE_MAINDIR" ]; then
+	# states without a file list fall back to a full reset – a `--tree` fold staged nothing, so
+	# the summary reconciles its entries like any other rewrite's instead
+	AMEND_TREE=$STATE_TREE
+	if [ -n "$STATE_MAINDIR" ] && [ -z "$AMEND_TREE" ]; then
 		if [ -n "$STATE_FILES" ]; then
 			local -a SYNC_PATHS
 			SYNC_PATHS=("${(@ps:\t:)STATE_FILES}")
@@ -4324,7 +4356,11 @@ _ABORT_AMEND_INTO () {
 			PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
 		fi
 	else
-		PRINT_TEXT "Branch was never touched – your staged changes are still staged, ready to retry." 32
+		if [ -n "$STATE_TREE" ]; then
+			PRINT_TEXT "Branch was never touched – the tree is intact, ready to retry." 32
+		else
+			PRINT_TEXT "Branch was never touched – your staged changes are still staged, ready to retry." 32
+		fi
 	fi
 
 	_CLEAR_STATE
@@ -5234,7 +5270,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5291,6 +5327,22 @@ if [ ${#OPT_VERIFY} -gt 0 ]; then
 	fi
 	if [ -z "$VERIFY_VALUE" ]; then
 		PRINT_ERR "--verify needs a command (--verify=<cmd>)"
+		exit 1
+	fi
+fi
+# Resolve --tree's value – both `--tree=<tree-ish>` and `--tree <tree-ish>` forms
+AMEND_TREE=""
+if [ ${#OPT_TREE} -gt 0 ]; then
+	if [[ ${#OPT_TREE} -gt 1 ]]; then
+		AMEND_TREE=${OPT_TREE[2]#=}
+	fi
+	if [ -z "$AMEND_TREE" ]; then
+		PRINT_ERR "--tree needs a tree-ish (--tree=<sha>)"
+		exit 1
+	fi
+	if [ ${#OPT_AMEND_INTO} -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--tree only applies to --amend-into"
 		exit 1
 	fi
 fi
@@ -5737,7 +5789,29 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		shift
 	fi
 	AMEND_PATHSPECS=("$@")
-	# `auto` resolves to the newest unpushed commit touching the staged paths
+	# The fold's source, as `git diff` reads it – the staged index, or a `--tree` composed apart
+	# from it against `HEAD`; a commit given there pins the tip it was composed on, so a tip
+	# that moved since is refused rather than have the diff carry a newer commit's reversal
+	AMEND_SOURCE=(--cached)
+	if [ -n "$AMEND_TREE" ]; then
+		# Messages name the value as given – a full SHA shortened, anything else verbatim – where
+		# the plumbing takes the resolved tree, whose SHA the caller never typed
+		AMEND_TREE_GIVEN=$AMEND_TREE
+		[[ "$AMEND_TREE_GIVEN" =~ '^[0-9a-f]{40}$' ]] && AMEND_TREE_GIVEN=${AMEND_TREE_GIVEN:0:7}
+		TREE_BASE=$(git rev-parse --quiet --verify "$AMEND_TREE^{commit}^" 2>/dev/null)
+		TREE_SHA=$(git rev-parse --quiet --verify "$AMEND_TREE^{tree}" 2>/dev/null)
+		if [ -z "$TREE_SHA" ]; then
+			PRINT_ERR "Unknown <tree-ish>: $AMEND_TREE"
+			exit 1
+		fi
+		if [ -n "$TREE_BASE" ] && [ "$TREE_BASE" != "$(git rev-parse HEAD)" ]; then
+			PRINT_ERR "--tree $AMEND_TREE_GIVEN was composed on ${TREE_BASE:0:7}, but HEAD is $(git rev-parse --short HEAD) now – compose it on the current tip"
+			exit 1
+		fi
+		AMEND_TREE=$TREE_SHA
+		AMEND_SOURCE=(HEAD "$AMEND_TREE")
+	fi
+	# `auto` resolves to the newest unpushed commit touching the folded paths
 	if [ "$AMEND_INTO_TARGET" = "auto" ]; then
 		_RESOLVE_AMEND_TARGET
 	fi
@@ -5746,7 +5820,11 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		PRINT_ERR "Unknown <sha>: $AMEND_INTO_TARGET"
 		exit 1
 	fi
-	PRINT_ACTION "Amending staged changes into %s..." "$AMEND_INTO_TARGET"
+	if [ -n "$AMEND_TREE" ]; then
+		PRINT_ACTION "Amending --tree $AMEND_TREE_GIVEN into %s..." "$AMEND_INTO_TARGET"
+	else
+		PRINT_ACTION "Amending staged changes into %s..." "$AMEND_INTO_TARGET"
+	fi
 	GIT_AMEND_INTO
 	PRINT_COMPLETED "$AMEND_NEW_HEAD" "$AMEND_REF" true
 	exit 0

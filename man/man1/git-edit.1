@@ -16,7 +16,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR] \fIcommit\fR
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
-\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-\fR \fIpathspec\fR...]
+\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
@@ -175,7 +175,7 @@ contiguous, merge\-free range whose target is the oldest commit.
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
-.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-\fR \fIpathspec\fR...]
+.B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
 isolated worktree. A \fIpathspec\fR narrows the fold to those staged paths and
 leaves the rest staged \(em worth using when the index may hold more than you
@@ -212,6 +212,25 @@ which takes the executable bit with it and would ride into history
 invisibly, a diffstat counting lines only;
 .B \-\-allow\-mode\-change
 overrides.
+.IP
+.B \-\-tree
+takes the fold's content from \fItree\-ish\fR instead of the index \(em for
+the checkout whose shared index is itself the hazard, a parallel session's
+uncommitted edits sitting in the very file. Compose it apart from that index:
+seed a private one from
+.B HEAD
+.RB ( "GIT_INDEX_FILE=... git read\-tree HEAD" ),
+place the blobs at
+.BR HEAD 's
+modes, and
+.BR write\-tree .
+Handed over as a commit on
+.BR HEAD ,
+it pins the tip it was composed on, and a tip that moved since is refused
+rather than have the diff carry a newer commit's reversal; a bare tree
+carries no such pin. The shared index is neither read nor written \(em its
+entries are reconciled afterwards as any rewrite's are, re\-synced where they
+still hold the pre\-op tip and named where they do not.
 .IP
 .B \-\-text
 also rewords \fIsha\fR in the same run \(em
@@ -345,6 +364,15 @@ Let
 .B \-\-amend\-into
 fold a file\-mode change \(em a flipped executable bit \(em against the
 refusal above under
+.BR MODES .
+.TP
+.B \-\-tree=\fItree\-ish\fR
+With
+.BR \-\-amend\-into ,
+fold \fItree\-ish\fR's diff from
+.B HEAD
+instead of the index's \(em composed apart from the shared index, a commit
+pinning the tip it was composed on; see
 .BR MODES .
 .TP
 .B \-\-verify=\fIcmd\fR
