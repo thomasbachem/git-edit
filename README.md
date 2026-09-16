@@ -67,7 +67,7 @@ git edit --amend-into=<sha> --text="Better subject"  # fold and reword under one
 
 `auto` resolves the target from the staged **lines** rather than the files, because a fix belongs to whoever wrote the line being fixed. Take a file where commit A added one rule and B and C later added and refined a second one: editing A's rule makes C the newest commit touching the *file*, while A still owns the *line*. Where those lines point at several commits, or at a pushed one, it refuses and names the candidates instead of picking a winner. A purely additive hunk has no old line to attribute, so it falls back to the newest unpushed commit touching the staged paths – and refuses just the same where the paths disagree, or where every one of them is new.
 
-Only staged changes are folded, and nothing is consumed until the final compare-and-swap – on a conflict or an `--abort` they are simply still staged, ready for the retry. The pathspec form is worth reaching for whenever the index might hold more than you mean to fold: in a shared checkout a parallel session can stage into it between your `git add` and the call. A staged path the target predates is refused where a later commit introduces it, since folding beneath that introduction turns every descendant touching the file into an add/add conflict – `--allow-new-path` overrides.
+Only staged changes are folded, and nothing is consumed until the final compare-and-swap – on a conflict or an `--abort` they are simply still staged, ready for the retry. The pathspec form is worth reaching for whenever the index might hold more than you mean to fold: in a shared checkout a parallel session can stage into it between your `git add` and the call. A staged path the target predates is refused where a later commit introduces it, since folding beneath that introduction turns every descendant touching the file into an add/add conflict – `--allow-new-path` overrides. A flipped file mode is refused as well, unless `--allow-mode-change` says it is meant: a fold rarely means one, and the usual cause is a literal mode typed into `git update-index --cacheinfo`, which takes the executable bit with it and would ride into history invisibly, a diffstat counting lines only.
 
 ## Rewording a whole span in one pass
 
@@ -170,6 +170,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `-C`, `--dir[=<path>]` | Run in a separate worktree (default `<repo>.git-edit`), as non-interactive runs do by themselves |
 | `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref |
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
+| `--allow-mode-change` | Let `--amend-into` fold a file-mode change – a flipped executable bit, which it otherwise refuses |
 | `--verify=<cmd>` / `--verify-span` / `--no-verify` | Gate the rewrite on your own check, at the tip or across the span – or skip a configured one |
 | `--skip` | With `--onto`, resume past the paused commit instead of through it |
 | `-y`, `--yes` | Auto-confirm the drop/squash prompt a terminal run shows |

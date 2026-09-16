@@ -210,6 +210,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
 	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
+	ECHO_E "\e[0;94m       --allow-mode-change             Let --amend-into fold a file-mode change (a flipped executable bit, say)\e[0m"
 	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
 	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
@@ -1880,6 +1881,19 @@ GIT_AMEND_INTO () {
 			PRINT_ERR "Staged path(s) do not exist at ${TARGET_FULL:0:7} – replaying the commit that introduces them would raise an add/add conflict"
 			printf '%s\n' "${ABSENT_LINES[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  Fold into the introducing commit or later – or pass --allow-new-path to override.\e[0m" >&2
+			exit 1
+		fi
+	fi
+
+	# Pre-flight – a flipped file mode is refused, since a fold rarely means one: the usual
+	# cause is a literal mode typed into `update-index --cacheinfo`, stripping an executable
+	# bit, and it would ride into history invisibly, a diffstat counting lines only
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
+		local MODE_FLIPS=$(git diff --cached --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | grep '^ mode change')
+		if [ -n "$MODE_FLIPS" ]; then
+			PRINT_ERR "The fold would change a file mode – a literal mode in 'git update-index --cacheinfo', taking the executable bit with it?"
+			print -r -- "$MODE_FLIPS" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
+			ECHO_E "\e[0;31m  Take the mode from 'git ls-tree HEAD -- <path>' instead – or pass --allow-mode-change to fold it anyway.\e[0m" >&2
 			exit 1
 		fi
 	fi
@@ -5220,7 +5234,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1

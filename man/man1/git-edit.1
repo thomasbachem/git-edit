@@ -205,7 +205,13 @@ replays as an add/add conflict of the whole file \(em with the introducing
 commit named;
 .B \-\-allow\-new\-path
 overrides. A path new to the entire span backfills cleanly and passes with
-a note.
+a note. A flipped file mode is refused as well \(em a fold rarely means one,
+and the usual cause is a literal mode typed into
+.BR "git update\-index \-\-cacheinfo" ,
+which takes the executable bit with it and would ride into history
+invisibly, a diffstat counting lines only;
+.B \-\-allow\-mode\-change
+overrides.
 .IP
 .B \-\-text
 also rewords \fIsha\fR in the same run \(em
@@ -332,6 +338,13 @@ Let
 .B \-\-amend\-into
 fold a staged path into a commit that predates it, against the refusal
 above under
+.BR MODES .
+.TP
+.B \-\-allow\-mode\-change
+Let
+.B \-\-amend\-into
+fold a file\-mode change \(em a flipped executable bit \(em against the
+refusal above under
 .BR MODES .
 .TP
 .B \-\-verify=\fIcmd\fR
