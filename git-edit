@@ -195,7 +195,8 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
 	ECHO_E "\e[0;94m                                       pauses with a worktree at the commit – edit it back to what the\e[0m"
-	ECHO_E "\e[0;94m                                       first commit should leave, then --continue [--text \"…\"]\e[0m"
+	ECHO_E "\e[0;94m                                       first commit should leave, then --continue --text \"…\" (that first\e[0m"
+	ECHO_E "\e[0;94m                                       commit's message – the second keeps the original, body included)\e[0m"
 	ECHO_E "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
 	ECHO_E "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
 	ECHO_E "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
@@ -214,6 +215,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
+	ECHO_E "\e[0;94m                                       (--split: the extracted commit's – the remainder keeps the original)\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
 	ECHO_E "\e[0;94m       -h                              Print this usage ('--help' goes to git's man viewer instead)\e[0m"
 	ECHO_E "\e[0;94m       --version                       Print the version this copy ships as\e[0m"
@@ -1123,6 +1125,7 @@ GIT_STATUS_REPORT () {
 			elif [ "$STATE_OPERATION" = "split" ]; then
 				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit the worktree back to what the %s commit should leave behind." 33 "first"
+				_PRINT_SPLIT_KEEPS "$STATE_TARGET"
 			elif [ "$STATE_OPERATION" = "edit" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
 				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit files in the worktree (add %s to also reword)." 33 '--text "…"'
@@ -2453,11 +2456,23 @@ GIT_SPLIT_PAUSE () {
 	else
 		PRINT_TEXT "Then %s – or cancel via %s." 33 'git edit --continue --text "First subject"' "git edit --abort"
 	fi
-	# The remainder inherits a subject written for the whole change, so it
-	# usually wants a reword the caller would otherwise only notice later
-	PRINT_TEXT "The second commit keeps %s's message – reword it afterwards with %s." 33 "${X:0:7}" "git edit -M"
+	_PRINT_SPLIT_KEEPS "$X"
 	EMIT_PAUSED split "$X" "$WT"
 	exit 2
+}
+
+# Names what a content split's second commit keeps – the remainder inherits a subject written
+# for the whole change, so it usually wants a reword the caller would otherwise only notice
+# later, and `-M --text` replaces the body along with it, so a body is named here, while the
+# caller still reads the pause as "--text is the first commit's subject"
+_PRINT_SPLIT_KEEPS () {
+	# Args: <target>
+	local BODY_LINES=$(git log -1 --format='%b' "$1" 2>/dev/null | grep -c .)
+	if [ "$BODY_LINES" -gt 0 ]; then
+		PRINT_TEXT "The second commit keeps %s's message, its %s-line body included – reword it afterwards with %s, restating the body lines that still hold." 33 "${1:0:7}" "$BODY_LINES" "git edit -M"
+	else
+		PRINT_TEXT "The second commit keeps %s's message – reword it afterwards with %s." 33 "${1:0:7}" "git edit -M"
+	fi
 }
 
 # Resumes a paused content split – snapshot the authored worktree as the extracted commit's
@@ -3535,6 +3550,11 @@ _CONTINUE_EDIT () {
 	_PRINT_TREE_IDENTITY "$BASE" "$NEW_HEAD"
 	_PRINT_DROPPED_COMMITS "$BASE" "$NEW_HEAD"
 	_PRINT_EDIT_RECONCILE_HINT "$STATE_MAINDIR" "$BASE" "$NEW_HEAD"
+	# A `--text` on the continue replaced the whole message at the amend, so name the body
+	# lines it did not restate, as a reword does – every line above is a path or a subject
+	if [ -n "$STATE_AMENDED" ]; then
+		_PRINT_LOST_BODY "The replaced message" "$STATE_TARGET" "$(git log -1 --format='%B' "$STATE_AMENDED" 2>/dev/null)"
+	fi
 	# A pause outlives the run that opened it, so the name in its trailer is long
 	# gone by now – and both blocks above grow with the edit, which would bury a
 	# line printed before them
@@ -4619,12 +4639,9 @@ GIT_REWORD () {
 			_PRINT_COMMIT_LINE "$TARGET" '  replaced: %s'
 		fi
 		# `--text` replaces the whole message, not just the subject, so a body
-		# the caller did not restate is gone – both lines above are subjects,
-		# so a caller comparing those reads the reword as clean
-		local OLD_BODY_LINES=$(git log -1 --format='%b' "$TARGET" 2>/dev/null | grep -c .)
-		if [ "$OLD_BODY_LINES" -gt 0 ] && [ "$BODY_LINES" -eq 0 ]; then
-			PRINT_TEXT "The replaced message carried a %s-line body the new one drops – it is still readable at %s" 33 "$OLD_BODY_LINES" "${TARGET:0:12}"
-		fi
+		# line the caller did not restate is gone – both lines above are
+		# subjects, so a caller comparing those reads the reword as clean
+		_PRINT_LOST_BODY "The replaced message" "$TARGET" "$(git log -1 --format='%B' "$NEW_TARGET")"
 	fi
 }
 
@@ -4814,25 +4831,49 @@ GIT_REWORD_BATCH () {
 	for sha in "${TARGETS[@]}"; do
 		_PRINT_COMMIT_LINE "${REWRITTEN[$sha]}" '  %h %s'
 	done
+	# A record replaces its commit's message whole, as the single form's `--text` does
+	for sha in "${TARGETS[@]}"; do
+		_PRINT_LOST_BODY "A replaced message" "$sha" "${MSG_MAP[$sha]}"
+	done
 }
 
-# Names the bodies a squash's `--text` drops, as a reword names its own – every summary line is a
-# subject, so a caller comparing those reads a subject-only message as clean
+# Names the body lines of <commit> that <new message> no longer carries, and prints them – every
+# summary line is a subject, so a caller comparing those reads a replacing `--text` as clean
+# whether it dropped the body whole or restated only part of it, and a count alone would not say
+# which lines went. Lines compare trimmed, and one moved into the subject counts as kept
+_PRINT_LOST_BODY () {
+	# Args: <noun for the old message> <commit> <new message>
+	local NOUN=$1 C=$2 NEW=$3
+	local TRIM='s/^[[:space:]]*//;s/[[:space:]]*$//'
+	local OLD_BODY=$(git log -1 --format='%b' "$C" 2>/dev/null | sed "$TRIM" | grep .)
+	[ -n "$OLD_BODY" ] || return 0
+	local LOST=$(print -r -- "$OLD_BODY" | grep -Fxv -f <(print -r -- "$NEW" | sed "$TRIM" | grep .))
+	[ -n "$LOST" ] || return 0
+	local OLD_LINES=$(print -r -- "$OLD_BODY" | grep -c .)
+	local LOST_LINES=$(print -r -- "$LOST" | grep -c .)
+	if [ "$LOST_LINES" -eq "$OLD_LINES" ]; then
+		PRINT_TEXT "%s carried a %s-line body the new one drops – it is still readable at %s" 33 "$NOUN" "$OLD_LINES" "${C:0:12}"
+	else
+		PRINT_TEXT "%s carried a %s-line body – the new one lacks %s of its lines, still readable at %s" 33 "$NOUN" "$OLD_LINES" "$LOST_LINES" "${C:0:12}"
+	fi
+	print -r -- "$LOST" | head -8 | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
+	if [ "$LOST_LINES" -gt 8 ]; then
+		print -r -- "${_DIM}    … and $((LOST_LINES - 8)) more${_OFF}"
+	fi
+}
+
+# Names the bodies a squash's `--text` drops, as a reword names its own
 _PRINT_DROPPED_BODIES () {
 	# Args: <squashed commit>...
 	[ ${#OPT_TEXT} -gt 0 ] || return 0
-	[ "$(print -r -- "$TEXT_VALUE" | sed '1,/^$/d' | grep -c .)" -eq 0 ] || return 0
-	local C LINES
+	local C
 	local -aU SQUASHED
 	for C in "$@"; do
 		SQUASHED+=("$(git rev-parse "$C^{commit}" 2>/dev/null)")
 	done
 	for C in "${SQUASHED[@]}"; do
 		[ -z "$C" ] && continue
-		LINES=$(git log -1 --format='%b' "$C" | grep -c .)
-		if [ "$LINES" -gt 0 ]; then
-			PRINT_TEXT "A squashed message carried a %s-line body the new one drops – it is still readable at %s" 33 "$LINES" "${C:0:12}"
-		fi
+		_PRINT_LOST_BODY "A squashed message" "$C" "$TEXT_VALUE"
 	done
 }
 

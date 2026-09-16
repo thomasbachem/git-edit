@@ -91,7 +91,7 @@ git edit --split=<sha> --text="Extracted: the icons" -- src/svg/
 
 Where both halves live in the **same file**, no pathspec can name them apart. Drop it, and the split pauses with a worktree holding the commit's own content: edit it back to what the first commit should leave behind, then `git edit --continue`. Authoring that one intermediate state is the whole description of a hunk-level split, and it is one a non-interactive caller can give without `git add -p`.
 
-Either form inserts the new commit **beneath** the target and leaves the target above it with its own tree, message and identity – so `--text` always names the inserted commit, and the remainder keeps a subject written for the whole change. Reword it afterwards with `git edit -M`.
+Either form inserts the new commit **beneath** the target and leaves the target above it with its own tree, message and identity – so `--text` always names the inserted commit, and the remainder keeps a subject written for the whole change, body included. Reword it afterwards with `git edit -M`, whose `--text` replaces the whole message – restate the body lines that still hold, and the run names any it finds missing.
 
 ## Replanting onto a moved upstream
 
@@ -166,7 +166,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | | |
 | --- | --- |
 | `-m`, `--message` | Also edit the commit message after applying the changes |
-| `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` and `--amend-into`, skipping the editor – `-` reads it from stdin |
+| `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` (the extracted commit's – the remainder keeps the original) and `--amend-into`, skipping the editor – `-` reads it from stdin |
 | `-C`, `--dir[=<path>]` | Run in a separate worktree (default `<repo>.git-edit`), as non-interactive runs do by themselves |
 | `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref |
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
