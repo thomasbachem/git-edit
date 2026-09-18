@@ -92,7 +92,7 @@ Name one half by pathspec, and the split is pure plumbing – the trees are comp
 git edit --split=<sha> --text="Extracted: the icons" -- src/svg/
 ```
 
-Where both halves live in the **same file**, no pathspec can name them apart. Drop it, and the split pauses with a worktree holding the commit's own content: edit it back to what the first commit should leave behind, then `git edit --continue`. Authoring that one intermediate state is the whole description of a hunk-level split, and it is one a non-interactive caller can give without `git add -p`.
+Where both halves live in the **same file**, no pathspec can name them apart. Drop it, and the split pauses with a worktree holding the commit's own content: edit it back to what the first commit should leave behind, then `git edit --continue`. Authoring that one intermediate state is the whole description of a hunk-level split, and it is one a non-interactive caller can give without `git add -p`. A file mode neither the commit nor its parent carries is refused the way a path the commit never touched is – a file written anew into the worktree comes back without its executable bit, and the remainder would flip it straight back; `--allow-mode-change` keeps it.
 
 Either form inserts the new commit **beneath** the target and leaves the target above it with its own tree, message and identity – so `--text` always names the inserted commit, and the remainder keeps a subject written for the whole change, body included. Reword it afterwards with `git edit -M`, whose `--text` replaces the whole message – restate the body lines that still hold, and the run names any it finds missing.
 

@@ -2617,6 +2617,29 @@ _CONTINUE_SPLIT () {
 		exit 1
 	fi
 
+	# So is a mode neither the target nor its parent carries – a file written anew into the
+	# worktree comes back without its executable bit, and the remainder would flip it straight
+	# back, a stray pair no diffstat shows; `--allow-mode-change` keeps it
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
+		local -a MODE_STRAYS
+		local MP M1 MB MX
+		for MP in ${(0)"$(git diff-tree -r -z --name-only "$X^^{tree}" "$TREE1")"}; do
+			[ -z "$MP" ] && continue
+			M1=$(git ls-tree "$TREE1" -- "$MP" 2>/dev/null | cut -d' ' -f1)
+			MB=$(git ls-tree "$X^" -- "$MP" 2>/dev/null | cut -d' ' -f1)
+			MX=$(git ls-tree "$X" -- "$MP" 2>/dev/null | cut -d' ' -f1)
+			if [ -n "$M1" ] && [ "$M1" != "$MB" ] && [ "$M1" != "$MX" ]; then
+				MODE_STRAYS+=("$MP: authored $M1, ${X:0:7} carries ${MX:-none}, its parent ${MB:-none}")
+			fi
+		done
+		if [ ${#MODE_STRAYS[@]} -gt 0 ]; then
+			PRINT_ERR "Worktree changes a file mode neither ${X:0:7} nor its parent carries – a file written anew, without its executable bit?"
+			printf '%s\n' "${MODE_STRAYS[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+			ECHO_E "\e[0;31m  chmod it in $STATE_WORKTREE to the mode a half should carry, then retry – or pass --allow-mode-change to keep it.\e[0m" >&2
+			exit 1
+		fi
+	fi
+
 	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
 
 	_SPLIT_APPLY "$X" "$TREE1" "$STATE_BRANCH" "$(git rev-parse "$STATE_BRANCH")" "$MSG"

@@ -270,7 +270,11 @@ behind, then
 if it was not given up front) commits that tree, re\-commits \fIsha\fR's tree on
 top, and replays the descendants. It refuses rather than committing nonsense
 when either half would be empty, when the worktree touches a path \fIsha\fR
-never did, or when \fIsha\fR was rewritten mid\-pause.
+never did, when it carries a file mode neither \fIsha\fR nor its parent does
+(a file written anew into the worktree comes back without its executable bit,
+and the remainder would flip it straight back \(em
+.B \-\-allow\-mode\-change
+keeps it), or when \fIsha\fR was rewritten mid\-pause.
 .IP
 Both forms insert a new commit beneath \fIsha\fR and leave \fIsha\fR itself
 above it, keeping its tree, message and identity \(em so
