@@ -212,7 +212,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
 	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
-	ECHO_E "\e[0;94m       --allow-mode-change             Let --amend-into fold a file-mode change (a flipped executable bit, say)\e[0m"
+	ECHO_E "\e[0;94m       --allow-mode-change             Let --amend-into fold a file-mode change (a flipped executable bit, say),\e[0m"
+	ECHO_E "\e[0;94m                                       or a --continue keep one a resolution staged or the landing found unasked\e[0m"
 	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
 	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
@@ -459,6 +460,26 @@ EMIT_VERIFY_PAUSED () {
 	[ -n "$VLOG" ] && [ -f "$VLOG" ] && LOGNOTE="; output in $VLOG"
 	echo "git-edit: paused – verify failed at ${1:0:7} in $2$LOGNOTE; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
+}
+
+# Emits the pause a completed rewrite takes when its tip carries a file mode nothing asked for –
+# built, not applied, the state kept, as a verify pause is; `mode_stray` marks it for `--status`
+EMIT_MODE_PAUSED () {
+	# Args: <commit-sha> <worktree-path> [<result-tip>]
+	[ "$STATE_MODE_STRAY" != "$1" ] && _STATE_NOTE "mode_stray=$1"
+	[ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ] && _STATE_NOTE "verify_result=$3"
+	echo "git-edit: paused – mode change at ${1:0:7} in $2; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'"
+	_STATUS_EMITTED=true
+}
+
+# Emits whichever gate refused a built result – the mode guard's pause, else the verify's
+EMIT_GATE_PAUSED () {
+	# Args: <worktree-path> [<result-tip>]
+	if [ -n "$_MODE_STRAY_AT" ]; then
+		EMIT_MODE_PAUSED "$_MODE_STRAY_AT" "$1" "$2"
+	else
+		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$1" "$2"
+	fi
 }
 
 # Prints the conflict context – unmerged files, the step we paused on, and what remains, so
@@ -1120,9 +1141,13 @@ GIT_STATUS_REPORT () {
 			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
 			local STATUS_AUTHORING=false
 			local STATUS_VERIFY=false
-			# A verify pause holds a finished rebuild the gate refused – with no rebase
-			# running and nothing unmerged, the conflict report would show no files
-			if [ -n "$STATE_VERIFY_FAILED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+			local STATUS_MODE=false
+			# A gate pause holds a finished rebuild it refused – with no rebase running and
+			# nothing unmerged, the conflict report would show no files
+			if [ -n "$STATE_MODE_STRAY" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
+				STATUS_MODE=true
+				PRINT_TEXT "A file mode changed at %s that nothing asked for – the result is built in the worktree, not applied." 33 "${STATE_MODE_STRAY:0:7}"
+			elif [ -n "$STATE_VERIFY_FAILED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
 				STATUS_VERIFY=true
 				PRINT_TEXT "Verification failed at %s – the result is built in the worktree, not applied." 33 "${STATE_VERIFY_FAILED:0:7}"
 			elif [ "$STATE_OPERATION" = "split" ]; then
@@ -1133,7 +1158,9 @@ GIT_STATUS_REPORT () {
 				STATUS_AUTHORING=true
 				PRINT_TEXT "Authoring phase – edit files in the worktree (add %s to also reword)." 33 '--text "…"'
 			fi
-			if [ "$STATUS_VERIFY" = "true" ]; then
+			if [ "$STATUS_MODE" = "true" ]; then
+				EMIT_MODE_PAUSED "$STATE_MODE_STRAY" "$STATE_WORKTREE"
+			elif [ "$STATUS_VERIFY" = "true" ]; then
 				EMIT_VERIFY_PAUSED "$STATE_VERIFY_FAILED" "$STATE_WORKTREE"
 			elif [ "$STATUS_AUTHORING" = "true" ]; then
 				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
@@ -1482,7 +1509,7 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 						print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
 					fi
 					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
-						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
+						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 					_CLEANUP_HOOK=""
 					PRINT_ERR "Conflict during $ACTION – resolve in worktree, then 'git edit --continue'"
 					PRINT_TEXT "Worktree: %s" 33 "$WORKTREE_DIR"
@@ -2033,7 +2060,7 @@ GIT_AMEND_INTO () {
 	else
 		VERIFY_PRIMARY=$(git rev-list --reverse "$REBASE_BASE..$NEW_HEAD" 2>/dev/null | head -1)
 	fi
-	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$VERIFY_PRIMARY"; then
+	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$(_MODE_LINES "$WT" "$ORIG_HEAD" "$STAGED_TREE")" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_SAVE_STATE \
 			"operation=amend-into" \
 			"worktree=$WT" \
@@ -2048,7 +2075,7 @@ GIT_AMEND_INTO () {
 			"pathspecs=${(pj:\t:)AMEND_PATHSPECS}" \
 			"tree=$AMEND_TREE"
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$WT" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -2772,7 +2799,7 @@ SEQEOF
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
 		_SAVE_STATE \
 			"operation=reorder" \
 			"worktree=$WT" \
@@ -2780,7 +2807,7 @@ SEQEOF
 			"orig_head=$ORIG_HEAD" \
 			"target=$OLDEST"
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WT" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$WT" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3241,6 +3268,7 @@ _CONTINUE_ONTO () {
 			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --skip"
 		else
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+			_GUARD_STOP_MODES "$STATE_WORKTREE"
 			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
@@ -3323,6 +3351,7 @@ _CONTINUE_REORDER () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -3340,9 +3369,9 @@ _CONTINUE_REORDER () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3388,6 +3417,7 @@ _CONTINUE_REBASE () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		# Re-establish the --text override the paused invocation took down with it
 		# The command is too long to trace literally, so the display elides it
 		local FOLD_EDITOR="true"
@@ -3417,9 +3447,16 @@ _CONTINUE_REBASE () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+	# A drop undoes its commits' own mode changes at the tip, the one rebase action that means one –
+	# a TTY edit's amend is the person's own and stays unguarded, the landing's mode note theirs to read
+	local MEANT_MODES=""
+	local T
+	if [ "$STATE_ACTION" = "drop" ]; then
+		for T in ${=STATE_TARGETS}; do MEANT_MODES+="$(_MODE_LINES "$STATE_WORKTREE" "$T" "$T^")"$'\n'; done
+	fi
+	if { [ "$STATE_ACTION" != "edit" ] && ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$MEANT_MODES"; } || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3516,6 +3553,7 @@ _CONTINUE_EDIT () {
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
 		# Mid-replay conflict
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -3569,9 +3607,10 @@ _CONTINUE_EDIT () {
 		BASE=$STATE_REPLAY_TIP
 	fi
 
-	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$STATE_AMENDED"; then
+	# The pause's own flips are meant – the amended commit against the one it replaced
+	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$BASE" "$(_MODE_LINES "$STATE_WORKTREE" "$STATE_TARGET" "$STATE_AMENDED")" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$STATE_AMENDED"; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -3667,6 +3706,8 @@ _SAVE_STATE () {
 		# run asked for, not silently less (or, with no standing config, nothing)
 		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
 		if _VERIFY_SPAN_ON; then echo "verify_span=1"; fi
+		# And a mode change a continue let through – the landing must not refuse what a stop allowed
+		if [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then echo "allow_mode_change=1"; fi
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
 		if [ "$_CAPTURE_REWRITES" = "true" ]; then echo "capture=$_CAPTURE_DIR"; fi
 	} > "$SF"
@@ -3704,6 +3745,9 @@ _LOAD_STATE () {
 	STATE_VERIFY_CMD=""
 	STATE_VERIFY_SPAN=""
 	STATE_CAPTURE=""
+	STATE_TARGETS=""
+	STATE_ALLOW_MODE_CHANGE=""
+	STATE_MODE_STRAY=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -3732,6 +3776,9 @@ _LOAD_STATE () {
 			verify_cmd)      STATE_VERIFY_CMD=$VAL ;;
 			verify_span)     STATE_VERIFY_SPAN=$VAL ;;
 			capture)         STATE_CAPTURE=$VAL ;;
+			targets)         STATE_TARGETS=$VAL ;;
+			allow_mode_change) STATE_ALLOW_MODE_CHANGE=$VAL ;;
+			mode_stray)      STATE_MODE_STRAY=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
@@ -3956,6 +4003,156 @@ _GUARD_RESOLUTION_CLEAN () {
 		EMIT_CONFLICT "$WT" "${(j:,:)BAD}"
 		exit 2
 	fi
+}
+
+# Appends a key=value line to an in-flight operation's state file – the loader takes a key's last
+# line, so a later value replaces an earlier one and an empty one clears it
+_STATE_NOTE () {
+	local SF=$(_STATE_FILE_PATH)
+	[ -n "$SF" ] && [ -f "$SF" ] && echo "$1" >> "$SF"
+	return 0
+}
+
+# The ` mode change` lines of a diff, as the landing's mode note reads them – paths unquoted,
+# so the commit search can look one up as it stands
+_MODE_LINES () {
+	# Args: <worktree> <from> <to>
+	git -C "$1" -c core.quotePath=false diff --summary "$2" "$3" 2>/dev/null | grep '^ mode change'
+	return 0
+}
+
+# The mode git's own merge gives a path at a stop: the replayed commit's where that commit
+# changed it, else the new parent's – and none where both changed it (the resolver's call) or
+# the commit removed the path
+_MERGED_MODE () {
+	# Args: <base> <theirs> <ours>
+	[ -z "$2" ] && return 0
+	if [ "$2" != "$1" ]; then
+		[ -n "$3" ] && [ "$3" != "$1" ] && [ "$3" != "$2" ] && return 0
+		echo "$2"
+	else
+		echo "${3:-$2}"
+	fi
+}
+
+# Prints a tree's mode for each given path as "<path>\0<mode>\0" pairs, in one read – NUL-separated
+# throughout, so a path with a space or an umlaut arrives unquoted
+_TREE_MODES () {
+	# Args: <worktree> <tree-ish> <path>...
+	local E
+	for E in ${(0)"$(git -C "$1" ls-tree -r -z "$2" -- "${@:3}" 2>/dev/null)"}; do
+		[ -n "$E" ] && printf '%s\0%s\0' "${E#*$'\t'}" "${E%% *}"
+	done
+}
+
+# Refuses a stop's staged resolution that leaves a path at a mode neither the replayed commit
+# nor its new parent carries – a file written anew into the worktree and staged comes back
+# without its executable bit, which every commit above then inherits, surfacing only in the
+# landing's mode note; `--allow-mode-change` on the continue keeps it, for the landing too
+_GUARD_STOP_MODES () {
+	local WT=$1
+	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
+	local STOPPED=$(cat "$GITDIR/rebase-merge/stopped-sha" 2>/dev/null)
+	[ -z "$STOPPED" ] && return 0
+	local -a PATHS
+	PATHS=( ${(0)"$(git -C "$WT" diff --cached --name-only -z 2>/dev/null)"} )
+	[ ${#PATHS[@]} -eq 0 ] && return 0
+	# One index read and three tree reads for every staged path – a large commit's stop stages
+	# hundreds, and a read per path would take seconds
+	local -A STAGED BASE THEIRS OURS
+	local E MODES
+	for E in ${(0)"$(git -C "$WT" ls-files -s -z -- "${PATHS[@]}" 2>/dev/null)"}; do
+		# "<mode> <blob> <stage>\t<path>" – stage 0 only, an unmerged path holds no resolution yet
+		[[ "${E%%$'\t'*}" == *" 0" ]] && STAGED[${E#*$'\t'}]=${E%% *}
+	done
+	MODES=$(_TREE_MODES "$WT" "$STOPPED^" "${PATHS[@]}"); [ -n "$MODES" ] && BASE=( ${(0)MODES} )
+	MODES=$(_TREE_MODES "$WT" "$STOPPED" "${PATHS[@]}"); [ -n "$MODES" ] && THEIRS=( ${(0)MODES} )
+	MODES=$(_TREE_MODES "$WT" HEAD "${PATHS[@]}"); [ -n "$MODES" ] && OURS=( ${(0)MODES} )
+	local -a BAD BADPATHS FIX
+	local P WANTED
+	for P in "${PATHS[@]}"; do
+		[ -z "${STAGED[$P]}" ] && continue
+		WANTED=$(_MERGED_MODE "${BASE[$P]}" "${THEIRS[$P]}" "${OURS[$P]}")
+		if [ -n "$WANTED" ] && [ "${STAGED[$P]}" != "$WANTED" ]; then
+			BAD+=("$P: staged ${STAGED[$P]}, the replay carries $WANTED")
+			BADPATHS+=("$P")
+			# Worktree and index both – an index set on its own leaves an unstaged mode change,
+			# which `git rebase --continue` reads as conflicts still to resolve, and `git add`'s
+			# own `--chmod` holds where `core.fileMode` is off
+			case "$WANTED" in
+				100755) FIX+=("chmod +x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=+x -- ${(q-)P}") ;;
+				100644) FIX+=("chmod -x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=-x -- ${(q-)P}") ;;
+				*) FIX+=("git -C ${(q-)WT} update-index --cacheinfo $WANTED,$(git -C "$WT" rev-parse ":$P" 2>/dev/null),${(q-)P}") ;;
+			esac
+		fi
+	done
+	[ ${#BAD[@]} -eq 0 ] && return 0
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -gt 0 ]; then
+		# The landing's guard must not refuse what this one let through
+		STATE_ALLOW_MODE_CHANGE=1
+		_STATE_NOTE "allow_mode_change=1"
+		return 0
+	fi
+	_CLEANUP_HOOK=""
+	PRINT_ERR "The staged resolution changes a file mode the replayed commit does not – a file written anew and staged without its executable bit?"
+	printf '%s\n' "${BAD[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	ECHO_E "\e[0;31m  Restore it, then 'git edit --continue' – or pass --allow-mode-change to keep it:\e[0m" >&2
+	printf '%s\n' "${FIX[@]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	EMIT_CONFLICT "$WT" "${(j:,:)BADPATHS}"
+	exit 2
+}
+
+# The commit the tip guard last named, for the gate pause's trailer
+_MODE_STRAY_AT=""
+
+# Refuses a landing whose tip changed a file mode the operation never asked for – beyond a fold's
+# staged flip, an edit's, or the ones a dropped commit undoes – naming the rebuilt commit that
+# brought it in, since a resolution at a stop is where one enters unasked; `--allow-mode-change`
+# on the continue applies it anyway, as it does for a stop it let through
+_GUARD_TIP_MODES () {
+	# Args: <worktree> <new_head> <orig_head> [<meant mode lines>]
+	local WT=$1
+	local NEW=$2
+	local ORIG=$3
+	local MEANT=$4
+	_MODE_STRAY_AT=""
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -gt 0 ] || [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then
+		# Given on a continue, the flag carries to the next – a verify pause in between must not
+		# bring the refusal back
+		if [ ${#OPT_CONTINUE} -gt 0 ] && [ "$STATE_ALLOW_MODE_CHANGE" != "1" ]; then
+			STATE_ALLOW_MODE_CHANGE=1
+			_STATE_NOTE "allow_mode_change=1"
+		fi
+		[ -n "$STATE_MODE_STRAY" ] && _STATE_NOTE "mode_stray="
+		return 0
+	fi
+	local -a STRAY
+	local LINE
+	for LINE in ${(f)"$(_MODE_LINES "$WT" "$ORIG" "$NEW")"}; do
+		[ -z "$LINE" ] && continue
+		print -r -- "$MEANT" | grep -qxF -- "$LINE" || STRAY+=("$LINE")
+	done
+	[ ${#STRAY[@]} -eq 0 ] && return 0
+	PRINT_ERR "The rewrite changed a file mode nothing asked for – nothing was applied"
+	local C TO P
+	for LINE in "${STRAY[@]}"; do
+		print -r -- "$LINE" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
+		# The first rebuilt commit carrying the path at the landed mode – the stop where a
+		# resolution staged the file at it, or the rebuilt commit that introduced the file at it
+		TO=${${LINE#* mode change * => }%% *}
+		P=${LINE#* mode change * => * }
+		for C in ${(f)"$(git -C "$WT" rev-list --reverse "$ORIG..$NEW" 2>/dev/null)"}; do
+			[ -z "$C" ] && continue
+			if [ "$(git -C "$WT" ls-tree "$C" -- "$P" 2>/dev/null | cut -d' ' -f1)" = "$TO" ]; then
+				_PRINT_COMMIT_LINE "$C" '    brought in by %h %s'
+				[ -z "$_MODE_STRAY_AT" ] && _MODE_STRAY_AT=$C
+				break
+			fi
+		done
+	done
+	[ -z "$_MODE_STRAY_AT" ] && _MODE_STRAY_AT=$NEW
+	PRINT_TEXT "Apply it anyway with %s, then fix that commit with %s – or 'git edit --abort'." 33 "--allow-mode-change --continue" "git edit ${_MODE_STRAY_AT:0:7}"
+	return 1
 }
 
 # Runs the caller's verification over what a rewrite built, before the CAS applies it – the
@@ -4264,6 +4461,7 @@ _CONTINUE_AMEND_INTO () {
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
+		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -4288,9 +4486,9 @@ _CONTINUE_AMEND_INTO () {
 	elif [ -n "$STATE_REBASEBASE" ]; then
 		VERIFY_PRIMARY=$(git rev-list --reverse "$STATE_REBASEBASE..$NEW_HEAD" 2>/dev/null | head -1)
 	fi
-	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$VERIFY_PRIMARY"; then
+	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_MODE_LINES "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE")" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_CLEANUP_HOOK=""
-		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
+		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
 	fi
 
@@ -5390,10 +5588,14 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		# A verify pause is not a content-edit pause – the result is already built, and both the
 		# re-verify and the restore below check out with `-f`, so work authored here would vanish
 		# Tracked files only, never a submodule pointer, or an unrelated dirty one refuses forever
-		if [ -n "$STATE_VERIFY_FAILED" ] && [ -n "$(git -C "$STATE_WORKTREE" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null)" ]; then
-			PRINT_ERR "The pause worktree carries edits, but a verify pause has nothing to fold them into – the result is already built"
+		if { [ -n "$STATE_VERIFY_FAILED" ] || [ -n "$STATE_MODE_STRAY" ]; } && [ -n "$(git -C "$STATE_WORKTREE" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null)" ]; then
+			PRINT_ERR "The pause worktree carries edits, but a gate pause has nothing to fold them into – the result is already built"
 			ECHO_E "\e[0;31m  Save anything worth keeping, then discard them: git -C ${(q-)STATE_WORKTREE} checkout -- .\e[0m" >&2
-			ECHO_E "\e[0;31m  Repair the commit itself: 'git edit --no-verify --continue' applies the result, then 'git edit ${STATE_VERIFY_FAILED:0:7}'.\e[0m" >&2
+			if [ -n "$STATE_VERIFY_FAILED" ]; then
+				ECHO_E "\e[0;31m  Repair the commit itself: 'git edit --no-verify --continue' applies the result, then 'git edit ${STATE_VERIFY_FAILED:0:7}'.\e[0m" >&2
+			else
+				ECHO_E "\e[0;31m  Repair the commit itself: 'git edit --allow-mode-change --continue' applies the result, then 'git edit ${STATE_MODE_STRAY:0:7}'.\e[0m" >&2
+			fi
 			exit 1
 		fi
 		# After a verify pause the built result is recorded – put the worktree back on it before any
@@ -6352,11 +6554,18 @@ GIT_UNSTASH
 if [ -n "$WORKTREE_DIR" ]; then
 	NEW_HEAD=$(git rev-parse HEAD)
 	if [ -n "$ORIG_BRANCH" ]; then
-		if ! _VERIFY_REWRITE "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+		# A drop undoes its commits' own mode changes at the tip, the one rebase action that means
+		# one – a TTY edit's amend is the person's own and stays unguarded, the landing's mode note
+		# theirs to read
+		MEANT_MODES=""
+		if [ "$ACTION" = "drop" ]; then
+			for DROPPED in "${COMMITS[@]}"; do MEANT_MODES+="$(_MODE_LINES "$WORKTREE_DIR" "$DROPPED" "$DROPPED^")"$'\n'; done
+		fi
+		if { [ "$ACTION" != "edit" ] && ! _GUARD_TIP_MODES "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" "$MEANT_MODES"; } || ! _VERIFY_REWRITE "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" ""; then
 			_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
-				"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT"
+				"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 			_CLEANUP_HOOK=""
-			EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$WORKTREE_DIR" "$NEW_HEAD"
+			EMIT_GATE_PAUSED "$WORKTREE_DIR" "$NEW_HEAD"
 			exit 2
 		fi
 		# Atomic compare-and-swap – only update where the ref still matches `ORIG_HEAD`, so a

@@ -211,7 +211,19 @@ and the usual cause is a literal mode typed into
 which takes the executable bit with it and would ride into history
 invisibly, a diffstat counting lines only;
 .B \-\-allow\-mode\-change
-overrides.
+overrides. The guard holds through the replay: at a conflict stop,
+.B \-\-continue
+refuses a staged resolution that leaves a path at a mode neither the
+replayed commit nor its new parent carries \(em the way a file written anew
+into the worktree and staged comes back, without its executable bit \(em and
+names the
+.B chmod
+and
+.B git add
+that restore it, worktree and index both; and the landing refuses a tip carrying a mode change
+nothing asked for, naming the rebuilt commit that brought it in.
+.B \-\-allow\-mode\-change
+on the continue keeps either.
 .IP
 .B \-\-tree
 takes the fold's content from \fItree\-ish\fR instead of the index \(em for
@@ -364,7 +376,11 @@ Let
 .B \-\-amend\-into
 fold a file\-mode change \(em a flipped executable bit \(em against the
 refusal above under
-.BR MODES .
+.BR MODES ,
+and on
+.B \-\-continue
+keep one a conflict resolution staged, or one the landing found nothing
+asked for.
 .TP
 .B \-\-tree=\fItree\-ish\fR
 With
@@ -521,6 +537,7 @@ git\-edit: error \(en <reason>
 git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en verify failed at <sha> in <worktree>; output in <path>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
+git\-edit: paused \(en mode change at <sha> in <worktree>; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'
 .RE
 .fi
 .SH "CONFLICT RESOLUTION"
