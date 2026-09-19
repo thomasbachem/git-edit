@@ -42,7 +42,7 @@
 set -o pipefail
 
 # Released version – bumped together with the `v<version>` tag it ships under
-GIT_EDIT_VERSION="1.1.1"
+GIT_EDIT_VERSION="1.1.2"
 
 # Suspend background maintenance for this process and every git it spawns – from git 2.54
 # `rerere gc` runs detached per commit, and its `MERGE_RR.lock` kills a rebase reaching its
