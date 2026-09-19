@@ -2743,6 +2743,22 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "after restoring this worktree too" 'restoring'
 	_ST_EQ "nothing above the drop was truncated" "$(git rev-list --count HEAD)" "$((VD_COUNT - 1))"
 	_ST_EQ "the tip is the last commit, not the failing one" "$(git log -1 --format=%s)" "VD four"
+	# A dropped tip rebuilds nothing, so its span is empty – the tier still checks the tip it
+	# lands, as the default one does, where it once tried to check out a blank commit
+	printf 'y\n' > vdy.txt && git add vdy.txt && git commit -qm "VD five"
+	_ST_RUN -d -y --verify-span "$(git rev-parse HEAD)"
+	_ST_EQ "a spanned tip drop applies" "$RC" "0"
+	_ST_OUT_HAS "verifying the tip it lands" 'Verified 1 commit(s)'
+	_ST_EQ "which is the dropped commit's parent" "$(git log -1 --format=%s)" "VD four"
+	git restore --source=HEAD --staged --worktree -- vdy.txt
+	printf 'vd\nBAD\n' > vd.txt && git commit -qam "VD six"
+	printf 'vd\n' > vd.txt && git commit -qam "VD seven"
+	local VD_SIX=$(git rev-parse --short=7 HEAD^)
+	_ST_RUN -d -y --verify-span "$(git rev-parse HEAD)"
+	_ST_EQ "a spanned tip drop onto a failing commit pauses" "$RC" "2"
+	_ST_OUT_HAS "naming that commit" "paused – verify failed at $VD_SIX"
+	_ST_RUN --abort
+	_ST_EQ "and the abort keeps the tip" "$(git log -1 --format=%s)" "VD seven"
 	# A recorded result that no longer resolves refuses the resume, since falling back to
 	# worktree `HEAD` would reopen the truncation trap – a tip fold has no replays, so the
 	# pause is guaranteed to be verify's rather than a conflict

@@ -4344,12 +4344,15 @@ _VERIFY_REWRITE () {
 	fi
 	local -a COMMITS
 	if _VERIFY_SPAN_ON; then
-		COMMITS=("${(@f)$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)}")
-	else
+		# Unquoted, so an empty span yields no element – the quoted form yields one blank
+		COMMITS=(${(f)"$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"})
+	fi
+	# A span is empty where the result is a commit the branch already had – a dropped tip
+	# rebuilds nothing – and the tip it lands is still checked, as on the default tier
+	if [ ${#COMMITS[@]} -eq 0 ]; then
 		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
 		COMMITS+=("$NEW_HEAD")
 	fi
-	[ ${#COMMITS[@]} -eq 0 ] && return 0
 	# Repo files the command references – each token, a leading `-flag=` or `./` stripped, that
 	# names a path at the result tip, since a verified commit missing one can only die on it
 	# spuriously, so it skips with a note and the tip itself always runs
