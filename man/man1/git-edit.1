@@ -335,6 +335,15 @@ and is not one of the new tip refuses the apply, naming that ref and the SHA
 the rewritten history sits at \(em so the refused result stays addressable by
 that SHA, to apply deliberately or to inspect before re\-running under
 .BR \-\-allow\-pushed .
+.IP
+A standing
+.B edit.verifyCmd
+gates the result too, run in the worktree the \fIcommand\fR worked in: content
+a command authored is content nothing else has checked, where every other
+mode's gate covers a replay of a commit somebody already made. Having no pause
+to offer, a failure refuses outright and names the SHA, and
+.B \-\-no\-verify
+applies it.
 .SH OPTIONS
 .TP
 .B \-m, \-\-message
@@ -431,18 +440,19 @@ cancels with nothing consumed \(em the built result is recorded, so a
 resume restores the worktree to it if an inspect checkout moved it.
 Overrides
 .BR edit.verifyCmd .
-A reword reuses every tree byte\-for\-byte and runs no verification; nor
-does
-.BR \-\-exec ,
-whose command is the caller's own \(em an explicit
+A reword reuses every tree byte\-for\-byte and runs no verification \(em an
+explicit
 .B \-\-verify
-on these refuses rather than promise a gate the run never keeps, while a
-standing
-.B edit.verifyCmd
-stays quietly exempt. A split does verify \(em its extracted
-half is a tree no commit ever carried, whatever the tip is \(em in a
-throwaway worktree, refusing rather than pausing, since a split re\-derives
-its halves from its own worktree.
+on one refuses rather than promise a gate the run never keeps. Every mode
+that can change a tree does verify, including
+.BR \-\-exec ,
+whose command authors content nothing else has checked \(em the case a gate
+is worth most on. A split verifies too \(em its extracted half is a tree no
+commit ever carried, whatever the tip is \(em in a throwaway worktree.
+Neither of those two pauses, so each refuses outright instead: a split
+re\-derives its halves from its own worktree, and
+.B \-\-exec
+leaves its built commits addressable by SHA.
 .TP
 .B \-\-verify\-span
 Verify every rebuilt commit instead of just the primary one and the tip \(em
@@ -704,8 +714,14 @@ git edit \-\-exec \-\- zsh \-c '
 The transform applies to each commit's snapshot, so no step can conflict,
 and because the script ends with HEAD moved,
 .B \-\-exec
-supplies the compare\-and\-swap, the pushed guard, and the journal entry
-around it. This is a sketch: a real loop also carries each commit's author
+supplies the compare\-and\-swap, the pushed guard, the journal entry and the
+gate around it \(em though where
+.B edit.verifySpan
+stands for the repo, that gate runs once per commit the sweep built, so a long
+one wants a cheaper
+.B \-\-verify
+or
+.BR \-\-no\-verify . This is a sketch: a real loop also carries each commit's author
 and dates onto
 .B commit\-tree
 .RB ( GIT_AUTHOR_NAME / EMAIL / DATE ),

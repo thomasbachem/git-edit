@@ -2691,10 +2691,56 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "the split is refused on its broken intermediate" "$RC" "1"
 	_ST_OUT_HAS "saying nothing was applied" 'the split was not applied'
 	_ST_EQ "and the branch never moved" "$(git rev-parse HEAD)" "$SP_TIP"
+	# The gate's own pause hints name a worktree removed the line after it fails, and a
+	# resume that re-derives the halves rather than applying this result
+	_ST_OUT_LACKS "not pointing into the worktree it removed" 'Inspect the failing state'
+	_ST_OUT_LACKS "nor at a resume that would re-derive instead" '--no-verify --continue'
 	git config edit.verifyCmd "true"
 	_ST_RUN --split="$SP_TIP" --text "SP extracted sa" -- sa.txt
 	_ST_EQ "a passing check lets the same split through" "$RC" "0"
 	_ST_EQ "and it really split" "$(git rev-list --count HEAD)" "$((SP_COUNT + 1))"
+	# `--exec` authors its content instead of replaying a commit somebody already made, so the
+	# gate covers it too – the mode where an unchecked tree would otherwise reach the branch
+	printf '#!/bin/sh\nif grep -q EXBAD ex.txt; then exit 1; fi\nexit 0\n' > "$TMP/excheck.sh" && chmod +x "$TMP/excheck.sh"
+	git config edit.verifyCmd "$TMP/excheck.sh"
+	printf 'ex\n' > ex.txt && git add ex.txt && git commit -qm "EX base"
+	local EX_BASE=$(git rev-parse HEAD)
+	_ST_RUN --exec -- sh -c 'printf "ex good\n" > ex.txt && git commit -qam "EX good"'
+	_ST_EQ "an --exec commit passes through verification" "$RC" "0"
+	_ST_OUT_HAS "and its result is verified" 'Verified 1 commit(s)'
+	_ST_EQ "and the branch moved" "$(git rev-parse HEAD~1)" "$EX_BASE"
+	local EX_GOOD=$(git rev-parse HEAD)
+	_ST_RUN --exec -- sh -c 'printf "EXBAD\n" > ex.txt && git commit -qam "EX bad"'
+	_ST_EQ "an --exec commit the gate rejects is refused" "$RC" "1"
+	_ST_OUT_HAS "naming the failure" 'Verification failed at'
+	_ST_OUT_HAS "and where the built history sits" 'Built history is at'
+	_ST_EQ "with the branch left where it was" "$(git rev-parse HEAD)" "$EX_GOOD"
+	# No pause here either, so neither hint the pausing modes print may appear
+	_ST_OUT_LACKS "offering no resume it hasn't got" '--no-verify --continue'
+	_ST_OUT_LACKS "nor a worktree its exit removes" 'Inspect the failing state'
+	_ST_RUN --no-verify --exec -- sh -c 'printf "EXBAD\n" > ex.txt && git commit -qam "EX bad, ungated"'
+	_ST_EQ "--no-verify lets the same --exec through" "$RC" "0"
+	_ST_EQ "and it landed" "$(git rev-parse HEAD~1)" "$EX_GOOD"
+	# The gate sits behind the HEAD-unchanged return, so a command that commits nothing
+	# pays for no check at all
+	_ST_RUN --exec -- true
+	_ST_EQ "an --exec that moves nothing completes" "$RC" "0"
+	_ST_OUT_LACKS "without running the check" 'Verified'
+	# The span tier reaches --exec too, where a command commonly builds a whole run of commits
+	# and only the tip would otherwise be checked
+	printf '#!/bin/sh\necho x >> %s/excount\n' "$TMP" > "$TMP/excount.sh" && chmod +x "$TMP/excount.sh"
+	rm -f "$TMP/excount"
+	local EX_SPAN_BASE=$(git rev-parse HEAD)
+	_ST_RUN --verify="$TMP/excount.sh" --verify-span --exec -- sh -c 'printf "one\n" > exs.txt && git add exs.txt && git commit -qm "EXS one" && printf "two\n" > exs.txt && git commit -qam "EXS two"'
+	_ST_EQ "an --exec span applies" "$RC" "0"
+	_ST_EQ "and every commit it built was verified" "$(wc -l < "$TMP/excount" | tr -d ' ')" "$(git rev-list --count "$EX_SPAN_BASE..HEAD")"
+	_ST_OUT_HAS "as the tier says" 'verify 2 commit(s)'
+	# And an explicit --verify gates --exec rather than being refused as ungatable
+	local EX_TIP=$(git rev-parse HEAD)
+	_ST_RUN --verify=false --exec -- sh -c 'printf "ex again\n" > ex.txt && git commit -qam "EX verify flag"'
+	_ST_EQ "--verify=<cmd> gates --exec instead of refusing" "$RC" "1"
+	_ST_OUT_HAS "as a verification failure" 'Verification failed at'
+	_ST_EQ "leaving the branch alone" "$(git rev-parse HEAD)" "$EX_TIP"
 	# A command that cannot survive the state file is refused, not truncated
 	printf 'nl\n' > nl.txt && git add nl.txt && git commit -qm "NL base"
 	local NL_TIP=$(git rev-parse HEAD)
@@ -2835,15 +2881,17 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	git reset -q --hard
 
 	# An explicit `--verify` on a mode with no gate refuses up front, since ignoring it would
-	# promise a gate the run never keeps – the standing config stays exempt, so a reword
-	# under `edit.verifyCmd` must land untouched
+	# promise a gate the run never keeps – the standing config stays exempt there, so a reword
+	# under `edit.verifyCmd` must land untouched. `--exec` is no such mode: it authors a tree
+	# like any rewrite, so the flag is taken rather than refused
 	local XM_TIP=$(git rev-parse HEAD)
 	_ST_RUN --verify=false -M "$XM_TIP" --text="XM reworded"
 	_ST_EQ "an explicit --verify on -M refuses" "$RC" "1"
 	_ST_OUT_HAS "naming the reason" 'cannot gate this mode'
 	_ST_EQ "with the branch untouched" "$(git rev-parse HEAD)" "$XM_TIP"
 	_ST_RUN --verify-span --exec -- true
-	_ST_EQ "--verify-span on --exec refuses too" "$RC" "1"
+	_ST_EQ "--verify-span on --exec is no longer refused up front" "$RC" "0"
+	_ST_OUT_LACKS "so nothing calls the mode ungatable" 'cannot gate this mode'
 	git config edit.verifyCmd "false"
 	_ST_RUN -M "$XM_TIP" --text="XM reworded quietly"
 	_ST_EQ "a standing config leaves the reword alone" "$RC" "0"

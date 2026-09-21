@@ -106,6 +106,10 @@ ECHO_E "\e[1;94mgit edit – Edit, reword, drop, squash, reorder, split, or fold
 # before the error trailer, by `GIT_EXEC` for temp worktrees and by auto-isolation for its own
 _CLEANUP_HOOK=""
 
+# Set by the modes whose verification has no pause behind it – `--exec` and a split – so the
+# gate prints no hint pointing at a worktree its exit removes, or at a resume there is none of
+_VERIFY_NO_RESUME=false
+
 # Temp files to remove however the run ends – a conflict exits straight from the handler,
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
 # to keep its worktree, so these need a list of their own
@@ -1794,6 +1798,17 @@ GIT_EXEC () {
 		fi
 	fi
 
+	# The command authored this content rather than replaying a commit somebody already made,
+	# so a standing gate is worth more here than anywhere else – and the worktree already sits
+	# at the result. Having no pause to offer, a failure refuses outright: the built commits
+	# stay in the object store, reachable by SHA, and `--no-verify` applies them
+	_VERIFY_NO_RESUME=true
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+		ECHO_E "\e[0;31m  Built history is at $NEW_HEAD; pass --no-verify to apply it.\e[0m" >&2
+		exit 1
+	fi
+	_VERIFY_NO_RESUME=false
+
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
 	local UPDATE="git update-ref -m 'git edit: exec' $REF $NEW_HEAD $ORIG_HEAD"
@@ -2372,7 +2387,12 @@ _SPLIT_APPLY () {
 		if git worktree add --detach "$VWT" "$PREV_NEW" >/dev/null 2>&1; then
 			_LINK_WORKTREE_EXTRAS "$VWT"
 			local VERIFY_OK=true
+			# The gate's own hints name a worktree removed two lines below and a resume that
+			# re-derives the halves rather than applying this result – the refusal below is the
+			# recourse here
+			_VERIFY_NO_RESUME=true
 			_VERIFY_REWRITE "$VWT" "$PREV_NEW" "$ORIG_HEAD" "$C1" || VERIFY_OK=false
+			_VERIFY_NO_RESUME=false
 			git worktree remove --force "$VWT" >/dev/null 2>&1
 			rm -rf "$VWT"
 			if [ "$VERIFY_OK" != "true" ]; then
@@ -4408,12 +4428,16 @@ _VERIFY_REWRITE () {
 			# and one left at a walked commit would land that commit as the new tip
 			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$RUN_SECS" -- "${CMD_PATHS[@]}"
 			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
-			PRINT_TEXT "Inspect the failing state: %s" 33 "git -C $WT checkout ${C:0:7}"
-			# The content-edit pause invites exactly the opposite instinct, so say
-			# which one this is: the result is built, and a resume checks out over
-			# anything authored here
-			PRINT_TEXT "Editing there is not the repair – a resume refuses rather than fold it in. Apply with %s, then fix that commit with %s" 33 \
-				"--no-verify --continue" "git edit ${C:0:7}"
+			# A mode with no pause keeps neither the worktree nor a resume, so both hints
+			# would point at what its exit is about to remove – it names its own recourse
+			if [ "$_VERIFY_NO_RESUME" != true ]; then
+				PRINT_TEXT "Inspect the failing state: %s" 33 "git -C $WT checkout ${C:0:7}"
+				# The content-edit pause invites exactly the opposite instinct, so say
+				# which one this is: the result is built, and a resume checks out over
+				# anything authored here
+				PRINT_TEXT "Editing there is not the repair – a resume refuses rather than fold it in. Apply with %s, then fix that commit with %s" 33 \
+					"--no-verify --continue" "git edit ${C:0:7}"
+			fi
 			_VERIFY_FAILED=$C
 			return 1
 		fi
@@ -5571,11 +5595,10 @@ if [ ${#OPT_TREE} -gt 0 ]; then
 	fi
 fi
 # An explicit `--verify` on a mode with no gate would be silently ignored, a promise the run
-# never keeps, so refuse it up front – `-M`/`-S` preserve every tree by construction and
-# `--exec`'s command is its own gate, while a standing `edit.verifyCmd` stays exempt
-if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 ]; then
+# never keeps, so refuse it up front – `-M`/`-S` preserve every tree by construction
+if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_RESQUASH} -gt 0 ]; then
 	PRINT_ERR "--verify cannot gate this mode"
-	ECHO_E "\e[0;31m  A reword or -S preserves every tree by construction; --exec's command is its own gate.\e[0m" >&2
+	ECHO_E "\e[0;31m  A reword or -S preserves every tree by construction.\e[0m" >&2
 	exit 1
 fi
 
