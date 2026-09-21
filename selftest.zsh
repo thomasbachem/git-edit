@@ -86,10 +86,14 @@ GIT_SELFTEST () {
 		fi
 		ECHO_E "$@"
 	}
+	# `-e` throughout: a pattern of ours often starts with `--`, which grep reads as its own
+	# options otherwise – a LACKS check on one then passes however wrong the output is.
+	# A LACKS is only as good as the proof that the run reached the code that would have
+	# printed it, so pair one with a positive from the same output rather than trusting it alone
 	_ST_OUT_HAS () {
 		local DESC=$1
 		local PATTERN=$2
-		if print -r -- "$OUT" | grep -q "$PATTERN"; then
+		if print -r -- "$OUT" | grep -q -e "$PATTERN"; then
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
@@ -99,9 +103,9 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS () {
 		local DESC=$1
 		local PATTERN=$2
-		if print -r -- "$OUT" | grep -q "$PATTERN"; then
+		if print -r -- "$OUT" | grep -q -e "$PATTERN"; then
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
-			echo "$OUT" | grep "$PATTERN" | head -3 | sed 's/^/       | /'
+			echo "$OUT" | grep -e "$PATTERN" | head -3 | sed 's/^/       | /'
 		else
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		fi
