@@ -4282,6 +4282,12 @@ _VERIFY_DIAGNOSE () {
 		if ! (cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$CP eval "$CMD" </dev/null) >/dev/null 2>&1; then
 			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
 			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
+			# Naming the cause without the remedy leaves the reader to find it in the page. The
+			# commonest one is what a fresh worktree does not have – said only where nothing is
+			# linked at all, so a repo that configured it hears nothing
+			if [ -z "$(git config --get-all edit.worktreeLink 2>/dev/null)" ] && [ -z "$GIT_EDIT_WORKTREE_LINK" ]; then
+				PRINT_TEXT "Nothing is linked into the isolated worktree – a check needing gitignored files fails there on that alone: %s" 33 "git config --add edit.worktreeLink node_modules"
+			fi
 			return 0
 		fi
 	fi

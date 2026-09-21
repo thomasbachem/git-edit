@@ -2939,7 +2939,17 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "the always-failing check pauses too" "$RC" "2"
 	_ST_OUT_HAS "disowning it without overclaiming" 'pre-existing, or the check cannot run'
 	_ST_OUT_HAS "naming the counterpart" 'counterpart: [0-9a-f]* NV base'
+	# The remedy, not just the cause – and only because nothing is linked in this repo
+	_ST_OUT_HAS "and the config that would let a check run there" 'edit.worktreeLink node_modules'
 	_ST_OUT_LACKS "and skipping the walk it would mislead with" 'first green'
+	_ST_RUN --abort
+	# A repo that configured it hears the cause and not a remedy it already has – the positive
+	# beside it is what proves this run reached the branch that would have printed the hint
+	git config --add edit.worktreeLink node_modules
+	_ST_RUN --amend-into="$NV_BASE" -- nv_app.txt
+	_ST_OUT_HAS "the disowning still stands there" 'pre-existing, or the check cannot run'
+	_ST_OUT_LACKS "without the hint it has no use for" 'Nothing is linked'
+	git config --unset-all edit.worktreeLink
 	_ST_RUN --abort
 	# The default tier states what it left out, and the standing config raises
 	# it – a bare "Verified 2 commit(s)" over a span of four reads as verified
