@@ -4450,19 +4450,25 @@ _VERIFY_REWRITE () {
 	done
 	# End at the tip, so the worktree a later step or reader sees is the result
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
-	if [ $SKIPPED -gt 0 ]; then
-		PRINT_TEXT "Verified %s of %s commit(s) with \`%s\`" 90 "$(( ${#COMMITS[@]} - SKIPPED ))" "${#COMMITS[@]}" "$VERIFY_CMD"
-	else
-		PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "${#COMMITS[@]}" "$VERIFY_CMD"
+	# One line for the whole outcome, since that is the line a caller greps: a bare "Verified 2
+	# commit(s)" over a span of seven reads as verified when it was sampled, and a second line
+	# carrying the shortfall is a second line to miss. So the denominator is what the rewrite
+	# built, and every commit short of it is named with its reason – the tier that closes the
+	# gap included, which helps nobody who never learns it exists. A dropped tip rebuilds
+	# nothing while still verifying where it lands, so the built count can be the lower one
+	local RAN=$(( ${#COMMITS[@]} - SKIPPED ))
+	local BUILT=$(git rev-list --count "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)
+	local -i TOTAL=${#COMMITS[@]}
+	if [ -n "$BUILT" ] && [ $BUILT -gt $TOTAL ]; then
+		TOTAL=$BUILT
 	fi
-	# What the default tier left out – a bare "Verified 2 commit(s)" over a span of seven reads
-	# as verified when it was sampled, and the tier that closes the gap helps nobody who
-	# never learns that it exists at all
-	if ! _VERIFY_SPAN_ON; then
-		local REBUILT=$(git rev-list --count "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)
-		if [ -n "$REBUILT" ] && [ $REBUILT -gt ${#COMMITS[@]} ]; then
-			PRINT_TEXT "%s rebuilt commit(s) in between went unverified – \`--verify-span\` covers the span (also: edit.verifySpan)" 90 "$(( REBUILT - ${#COMMITS[@]} ))"
-		fi
+	local -a SHORT=()
+	[ $SKIPPED -gt 0 ] && SHORT+=("$SKIPPED skipped where a path the command names is absent")
+	[ $(( TOTAL - ${#COMMITS[@]} )) -gt 0 ] && SHORT+=("$(( TOTAL - ${#COMMITS[@]} )) unchecked in between, \`--verify-span\` covers them (also: edit.verifySpan)")
+	if [ ${#SHORT[@]} -eq 0 ]; then
+		PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "$RAN" "$VERIFY_CMD"
+	else
+		PRINT_TEXT "Verified %s of %s commit(s) with \`%s\` – %s" 90 "$RAN" "$TOTAL" "$VERIFY_CMD" "${(j:, :)SHORT}"
 	fi
 	return 0
 }

@@ -2671,7 +2671,9 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	printf 'rb\n' > rb.txt && git add rb.txt && git commit -qm "VR two"
 	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
 	_ST_EQ "a reorder passes through verification" "$RC" "0"
-	_ST_OUT_HAS "and verified its result" 'Verified 1 commit(s)'
+	# Both commits are rebuilt while the default tier checks the tip, so the one line says so
+	_ST_OUT_HAS "and verified its result" 'Verified 1 of 2 commit(s)'
+	_ST_OUT_HAS "counting the one it did not reach" '1 unchecked in between'
 	_ST_OUT_LACKS "with no skip note from a repo-pathless command" 'Verify skipped'
 	# Plumbing modes have nothing to verify – a reword must not run the check
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
@@ -2764,7 +2766,10 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a fold into a pre-runner commit applies" "$RC" "0"
 	_ST_OUT_HAS "the absent target is skipped, not failed" 'Verify skipped at'
 	_ST_OUT_HAS "the note names what is missing" "doesn't exist at this commit"
-	_ST_OUT_HAS "and the tip still verified" 'Verified 1 of 2 commit(s)'
+	# The summary counts against what the rewrite built, not against the set the tier picked,
+	# and names every commit short of it – so one grep of this line cannot read as complete
+	_ST_OUT_HAS "and the tip still verified" 'Verified 1 of '
+	_ST_OUT_HAS "the skip named as a shortfall, not just in passing" '1 skipped where a path the command names is absent'
 	# The span tier verifies what exists and skips the rest
 	printf 'vf skip span\n' >> vf.txt && git add vf.txt
 	_ST_RUN --verify-span --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
@@ -2956,14 +2961,15 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	git config edit.verifyCmd "true"
 	_ST_RUN --amend-into="$NV_BASE" -- nv_app.txt
 	_ST_EQ "the passing fold applies" "$RC" "0"
-	_ST_OUT_HAS "naming the unverified middle" 'rebuilt commit(s) in between went unverified'
+	# On the claim's own line, so one `grep '^Verified'` cannot read a sampled run as complete
+	_ST_OUT_HAS "naming the unverified middle" '^Verified .* of .* commit(s) with .* unchecked in between'
 	_ST_OUT_HAS "and the tier that covers it" 'verify-span'
 	git config edit.verifySpan true
 	printf 'USE\nagain\n' > nv_app.txt && git add nv_app.txt
 	_ST_RUN --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
 	_ST_EQ "the config-raised span applies" "$RC" "0"
 	_ST_OUT_HAS "verifying the whole span" 'Verified 3 commit(s)'
-	_ST_OUT_LACKS "so nothing is reported unverified" 'went unverified'
+	_ST_OUT_LACKS "so the line reports nothing short" 'unchecked in between'
 	# The config names a tier, not a check – with no command it has to stay
 	# inert, or setting it would refuse every operation in the repo
 	git config --unset edit.verifyCmd

@@ -59,7 +59,10 @@ captured it comes out tight \(em same lines, no padding \(em so even a
 reaches the trailer and the line naming the commit the run touched \(em every
 mode but \fB\-\-exec\fR, whose command is yours and has no single target.
 Nothing above those two is guaranteed: a stat block or path list grows with
-the commit.
+the commit. Colour goes with the padding, so a captured line starts at column
+zero and a name reaches further than a count \(em
+.B "| grep -E '^(Verified|git-edit:)'"
+answers what landed and what checked it, wherever the gate's summary sits.
 .IP \(bu 3
 Every rewrite reports its old\(->new map the way git does: notes are carried
 across it (honoring \fBnotes.rewriteRef\fR and \fBnotes.rewriteMode\fR, and
