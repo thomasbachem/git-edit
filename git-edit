@@ -37,6 +37,15 @@
 # under the MIT License
 
 
+# zsh sources the caller's `.zshenv` for every invocation, scripts included – a `setopt
+# sh_word_split` or `ksh_arrays` there would run a different script than the selftest proves.
+# Every option that changes parsing goes back to zsh's default here, first, since `pipefail`
+# below is one of them. Its aliases go too – zsh expands them in scripts, and a colored `grep`
+# put an escape into a SHA. Functions stay: a `git ()` wrapper there is deliberate, and passes
+# through
+emulate zsh
+unalias -a
+
 # Make a pipeline fail if any element fails
 # (required for `$?` to work with `tee` below)
 set -o pipefail
@@ -2821,10 +2830,12 @@ GIT_REORDER () {
 
 	# Scripted sequence editor – drop the span's `pick` lines and re-emit them at the first
 	# one's position in the desired order, matching the todo's abbreviated SHAs as prefixes
-	# of our full ones, with the order traveling by env so the script needs no interpolation
+	# of our full ones, with the order traveling by env so the script needs no interpolation.
+	# Under `sh`, like the other editors written for git – as a zsh script it would start a
+	# zsh of its own, which reads the caller's `.zshenv` past the `emulate` at the top
 	local SEQ=$(MKTEMP_FILE git-edit-reorder-seq)
 	cat > "$SEQ" <<'SEQEOF'
-#!/bin/zsh
+#!/bin/sh
 awk -v order="$GIT_EDIT_REORDER_ORDER" '
 	BEGIN { n = split(order, O, " ") }
 	/^pick / {

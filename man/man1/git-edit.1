@@ -418,7 +418,11 @@ applies it \(em by default at the primary commit the mode authored (a fold's
 amended commit, an edit's) and at the new tip, each checked out in the
 operation's isolated worktree, with
 .B GIT_EDIT_VERIFY_COMMIT
-naming the commit under test. The check runs against the linked
+naming the commit under test. The command runs under git\-edit's own zsh,
+which resets the options and aliases a caller's
+.B .zshenv
+sets, so an alias defined there does not resolve in it \(em a function or
+a script does. The check runs against the linked
 environment \(em the checkout's current dependencies \(em at every commit
 alike, so each verdict compares like with like. A commit missing a file the command
 references \(em any command token that names a path at the result tip
