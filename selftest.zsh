@@ -2998,6 +2998,41 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "the config-raised span applies" "$RC" "0"
 	_ST_OUT_HAS "verifying the whole span" 'Verified 3 commit(s)'
 	_ST_OUT_LACKS "so the line reports nothing short" 'unchecked in between'
+	# The span tier states in turn what it ran beyond the default one, with the lever that steps
+	# back down and what the whole check took – a caller picks its flags before running, so the
+	# price that can reach it in time is the previous run's
+	_ST_OUT_HAS "stating what the whole check took" 'Verified 3 commit(s) with `true` in [0-9][0-9]*s'
+	_ST_OUT_HAS "and what it ran beyond the default tier" '1 beyond the default tier'
+	_ST_OUT_HAS "with the lever that steps back down" 'no-verify-span` runs only its 2 (set by edit.verifySpan)'
+	printf 'USE\nnarrowed\n' > nv_app.txt && git add nv_app.txt
+	_ST_RUN --no-verify-span --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
+	_ST_EQ "the flag steps one run down to the default tier" "$RC" "0"
+	_ST_OUT_HAS "verifying the primary commit and the tip alone" 'Verified 2 of 3 commit(s)'
+	_ST_OUT_HAS "naming the shortfall as the default tier does" 'unchecked in between'
+	_ST_OUT_LACKS "and not the step it just took" 'beyond the default tier'
+	# The lever is not named where nothing lies beyond the default tier – a fold at the tip
+	# rebuilds one commit under either. On the tip's own file, so the later folds below still
+	# replay over descendants that leave theirs alone
+	printf 'nv\nat the tip\n' > nv_late.txt && git add nv_late.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" -- nv_late.txt
+	_ST_EQ "a fold at the tip applies under the tier" "$RC" "0"
+	_ST_OUT_HAS "verifying the one commit it built" 'Verified 1 commit(s) with `true` in'
+	_ST_OUT_LACKS "with nothing beyond the default tier to name" 'no-verify-span'
+	# The two tier flags contradict each other
+	_ST_RUN --verify-span --no-verify-span --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
+	_ST_EQ "both tier flags together refuse" "$RC" "1"
+	_ST_OUT_HAS "naming the contradiction" 'verify-span and --no-verify-span cannot be combined'
+	# And the declined tier survives a pause – a resume that fell back to the config would
+	# climb to the whole span the run stepped down from
+	printf 'USE\nstepped\n' > nv_app.txt && git add nv_app.txt
+	_ST_RUN --verify=false --no-verify-span --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
+	_ST_EQ "the stepped-down fold pauses on its failing check" "$RC" "2"
+	_ST_OUT_HAS "at the default tier" '# verify 2 commit(s)'
+	_ST_CHECK "and the pause records the declined tier" sh -c "grep -qx verify_span=0 '$(git rev-parse --git-dir)/git-edit-state'"
+	_ST_RUN --continue
+	_ST_EQ "the resume re-pauses" "$RC" "2"
+	_ST_OUT_HAS "still at the default tier" '# verify 2 commit(s)'
+	_ST_RUN --abort
 	# The config names a tier, not a check – with no command it has to stay
 	# inert, or setting it would refuse every operation in the repo
 	git config --unset edit.verifyCmd

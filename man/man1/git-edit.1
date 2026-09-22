@@ -472,7 +472,23 @@ or
 and can stand for a repo through
 .BR edit.verifySpan .
 The default tier states how many commits in between it left unchecked, so
-the gap is visible where it matters rather than only in this page.
+the gap is visible where it matters rather than only in this page. The span
+tier states in turn what it ran beyond the default one and what the whole
+check took, since a caller picks its flags before a run, and the price that
+reaches it in time is the previous run's.
+.TP
+.B \-\-no\-verify\-span
+Where
+.B edit.verifySpan
+stands for the repo, step this one run back down to the default tier \(em the
+primary commit and the tip. A fold or a move rebuilds every commit above its
+target and the span tier checks each of them, which for a deep one\-line
+change is the run's whole cost; this keeps the check at what the rewrite
+authored, where
+.B \-\-no\-verify
+would skip it altogether. A pause keeps the declined tier for its resume.
+Refused together with
+.BR \-\-verify\-span .
 .TP
 .B \-\-no\-verify
 Skip a configured verification for this run \(em or, on
@@ -726,7 +742,9 @@ supplies the compare\-and\-swap, the pushed guard, the journal entry and the
 gate around it \(em though where
 .B edit.verifySpan
 stands for the repo, that gate runs once per commit the sweep built, so a long
-one wants a cheaper
+one wants
+.BR \-\-no\-verify\-span ,
+a cheaper
 .B \-\-verify
 or
 .BR \-\-no\-verify . This is a sketch: a real loop also carries each commit's author
@@ -797,7 +815,10 @@ passed
 For a repo whose history is kept green commit by commit \(em where it is
 not, the tier reports breakage the rewrite never caused. It names a tier and
 not a check, so with no command configured it raises nothing rather than
-refusing the run.
+refusing the run. Each run then reports what the tier cost beyond the default
+one, and
+.B \-\-no\-verify\-span
+steps a single run back down.
 .TP
 .B edit.verifyBudget
 Seconds the post\-failure climb for the first passing commit may spend, zero

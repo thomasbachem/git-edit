@@ -225,6 +225,7 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       or a --continue keep one a resolution staged or the landing found unasked\e[0m"
 	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
 	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
+	ECHO_E "\e[0;94m       --no-verify-span                Verify the primary commit and the tip alone this run, under a standing edit.verifySpan\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
@@ -3778,7 +3779,8 @@ _SAVE_STATE () {
 		# resuming invocation, and a continue must re-verify what the original
 		# run asked for, not silently less (or, with no standing config, nothing)
 		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
-		if _VERIFY_SPAN_ON; then echo "verify_span=1"; fi
+		if _VERIFY_SPAN_ON; then echo "verify_span=1"
+		elif [ ${#OPT_NO_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "0" ]; then echo "verify_span=0"; fi
 		# And a mode change a continue let through – the landing must not refuse what a stop allowed
 		if [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then echo "allow_mode_change=1"; fi
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
@@ -4254,10 +4256,13 @@ _VERIFY_CONFIGURED () {
 
 # Answers whether the span tier is in force – the flag, the tier a pause recorded, or the standing
 # `edit.verifySpan`, whose config is only read where the gate runs, so it stays exempt
-# on the modes an explicit flag is refused on, and names a tier rather than a check
+# on the modes an explicit flag is refused on, and names a tier rather than a check.
+# `--no-verify-span` declines it for one run, and a pause records the declined tier as `0`,
+# since a resume that fell back to the config would climb to the span the run stepped down from
 _VERIFY_SPAN_ON () {
+	[ ${#OPT_NO_VERIFY_SPAN} -gt 0 ] && return 1
 	[ ${#OPT_VERIFY_SPAN} -gt 0 ] && return 0
-	[ "$STATE_VERIFY_SPAN" = "1" ] && return 0
+	case "$STATE_VERIFY_SPAN" in 1) return 0 ;; 0) return 1 ;; esac
 	[ "$(git config --type=bool --get edit.verifySpan 2>/dev/null)" = "true" ] || return 1
 	_VERIFY_CONFIGURED
 }
@@ -4414,10 +4419,16 @@ _VERIFY_REWRITE () {
 		return 0
 	fi
 	local -a COMMITS
+	local SPANNED=false
 	if _VERIFY_SPAN_ON; then
 		# Unquoted, so an empty span yields no element – the quoted form yields one blank
 		COMMITS=(${(f)"$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"})
+		[ ${#COMMITS[@]} -gt 0 ] && SPANNED=true
 	fi
+	# What the default tier runs – the primary commit and the tip, one where they coincide –
+	# so the span tier can state what it ran beyond that
+	local -i DEFAULT_N=1
+	[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && DEFAULT_N=2
 	# A span is empty where the result is a commit the branch already had – a dropped tip
 	# rebuilds nothing – and the tip it lands is still checked, as on the default tier
 	if [ ${#COMMITS[@]} -eq 0 ]; then
@@ -4443,6 +4454,8 @@ _VERIFY_REWRITE () {
 	local RUN_T0
 	local -i SKIPPED=0
 	local -i RC=0 RUN_SECS=0
+	# The whole gate's clock – the price a caller learns from this run and spends on the next
+	local -i VERIFY_T0=$SECONDS
 	for C in "${COMMITS[@]}"; do
 		ABSENT=""
 		for P in "${CMD_PATHS[@]}"; do
@@ -4494,6 +4507,7 @@ _VERIFY_REWRITE () {
 			return 1
 		fi
 	done
+	local -i VERIFY_SECS=$(( SECONDS - VERIFY_T0 ))
 	# End at the tip, so the worktree a later step or reader sees is the result
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 	# One line for the whole outcome, since that is the line a caller greps: a bare "Verified 2
@@ -4511,11 +4525,27 @@ _VERIFY_REWRITE () {
 	local -a SHORT=()
 	[ $SKIPPED -gt 0 ] && SHORT+=("$SKIPPED skipped where a path the command names is absent")
 	[ $(( TOTAL - ${#COMMITS[@]} )) -gt 0 ] && SHORT+=("$(( TOTAL - ${#COMMITS[@]} )) unchecked in between, \`--verify-span\` covers them (also: edit.verifySpan)")
-	if [ ${#SHORT[@]} -eq 0 ]; then
-		PRINT_TEXT "Verified %s commit(s) with \`%s\`" 90 "$RAN" "$VERIFY_CMD"
-	else
-		PRINT_TEXT "Verified %s of %s commit(s) with \`%s\` – %s" 90 "$RAN" "$TOTAL" "$VERIFY_CMD" "${(j:, :)SHORT}"
+	# The span tier's mirror of that note: what it ran beyond the default tier, with the lever
+	# that steps one run back down – only where the standing config raised the tier, since a
+	# run that passed the flag chose the cost. The elapsed rides on every line, both tiers: a
+	# caller picks its flags before running, so the price that reaches it in time is the
+	# previous run's
+	local -i BEYOND=$(( ${#COMMITS[@]} - DEFAULT_N ))
+	if [ "$SPANNED" = true ] && [ $BEYOND -gt 0 ] && [ ${#OPT_VERIFY_SPAN} -eq 0 ] \
+		&& [ "$(git config --type=bool --get edit.verifySpan 2>/dev/null)" = "true" ]; then
+		SHORT+=("$BEYOND beyond the default tier, \`--no-verify-span\` runs only its $DEFAULT_N (set by edit.verifySpan)")
 	fi
+	local FMT="Verified %s commit(s) with \`%s\` in %ss"
+	local -a ARGS=("$RAN" "$VERIFY_CMD" "$VERIFY_SECS")
+	if [ $RAN -lt $TOTAL ]; then
+		FMT="Verified %s of %s commit(s) with \`%s\` in %ss"
+		ARGS=("$RAN" "$TOTAL" "$VERIFY_CMD" "$VERIFY_SECS")
+	fi
+	if [ ${#SHORT[@]} -gt 0 ]; then
+		FMT+=" – %s"
+		ARGS+=("${(j:, :)SHORT}")
+	fi
+	PRINT_TEXT "$FMT" 90 "${ARGS[@]}"
 	return 0
 }
 
@@ -5576,7 +5606,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5657,6 +5687,10 @@ fi
 if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_RESQUASH} -gt 0 ]; then
 	PRINT_ERR "--verify cannot gate this mode"
 	ECHO_E "\e[0;31m  A reword or -S preserves every tree by construction.\e[0m" >&2
+	exit 1
+fi
+if [ ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_NO_VERIFY_SPAN} -gt 0 ]; then
+	PRINT_ERR "--verify-span and --no-verify-span cannot be combined"
 	exit 1
 fi
 
