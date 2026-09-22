@@ -110,6 +110,11 @@ _CLEANUP_HOOK=""
 # gate prints no hint pointing at a worktree its exit removes, or at a resume there is none of
 _VERIFY_NO_RESUME=false
 
+# The gate command a `--no-verify` run bypassed, printed once above the trailer. A repo with no
+# `edit.verifyCmd` prints nothing either, so without this the two read alike from outside: the
+# run that had a check and declined it looks like the one that never had one
+_VERIFY_BYPASSED=""
+
 # Temp files to remove however the run ends – a conflict exits straight from the handler,
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
 # to keep its worktree, so these need a list of their own
@@ -412,6 +417,13 @@ MKTEMP_FILE () {
 #   "git-edit: paused – edit|split <sha> in <worktree>; then 'git edit --continue' or '… --abort'"
 EMIT_STATUS () {
 	# Args: <new_head_sha> <ref> <changed:true|false>
+	# Directly above the trailer, where a reader after what checked the result already looks, and
+	# named so one `^Verif` reaches it alongside the gate's own lines. Only a run that had a gate
+	# and declined it says anything – an unconfigured repo stays as quiet as it always was
+	if [ -n "$_VERIFY_BYPASSED" ]; then
+		PRINT_TEXT "Verify skipped – %s was passed, so \`%s\` never ran" 90 "--no-verify" "$_VERIFY_BYPASSED"
+		_VERIFY_BYPASSED=""
+	fi
 	# The SHAs are the authority, not the flag – some callers pass a hardcoded `true` where a
 	# no-op rebase leaves `HEAD` put, and reporting a move there is a false success on `ok`
 	if [ "$3" = "true" ] && [ "$1" != "$SCRIPT_INITIAL_HEAD" ]; then
@@ -851,8 +863,6 @@ _RECORD_REF_MOVE () {
 	local STRANDED=$(comm -23 <(git for-each-ref refs/heads --merged "$2" --format='%(refname) %(worktreepath)' 2>/dev/null | sort) <(git for-each-ref refs/heads --merged "$3" --format='%(refname) %(worktreepath)' 2>/dev/null | sort))
 	local ENTRY BREF BSHA HIT PAIR NAMED=false
 	for ENTRY in ${(f)STRANDED}; do
-		# A branch checked out in a worktree is that worktree's to move, as git's own update leaves it
-		[ -n "${ENTRY#* }" ] && continue
 		BREF=${ENTRY%% *}
 		BSHA=$(git rev-parse "$BREF")
 		# The rebuild's own record is exact – where a rebase kept none, the stale-SHA rule decides
@@ -864,6 +874,23 @@ _RECORD_REF_MOVE () {
 			fi
 		done
 		[ -z "$HIT" ] && HIT=$(_RESOLVE_STALE "$BSHA" "$3")
+		# A branch checked out in a worktree is that worktree's to move, as git's own update leaves
+		# it – but skipping it silently reads exactly like no stranded branch at all, while it sits
+		# on pre-rewrite history either way. So name it and its counterpart and stop there: the move
+		# is that checkout's to make, over whatever work is sitting in it, and a command prescribed
+		# from here would be one aimed at someone else's worktree
+		if [ -n "${ENTRY#* }" ]; then
+			PRINT_TEXT "Branch %s points into the rewritten span, checked out in %s – that checkout's to move:" 33 "${BREF#refs/heads/}" "${ENTRY#* }"
+			if [ "${HIT#* }" = "patch-id" ]; then
+				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same change: $(git log -1 --format=%s "$BSHA")\e[0m"
+			elif [ -n "$HIT" ]; then
+				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same subject: $(git log -1 --format=%s "$BSHA")\e[0m"
+			else
+				ECHO_E "\e[0;33m  its counterpart in the new span is unresolved\e[0m"
+			fi
+			NAMED=true
+			continue
+		fi
 		PRINT_TEXT "Branch %s points into the rewritten span – if it should follow the rewrite:" 33 "${BREF#refs/heads/}"
 		if [ "${HIT#* }" = "patch-id" ]; then
 			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same change: $(git log -1 --format=%s "$BSHA")\e[0m"
@@ -2381,7 +2408,10 @@ _SPLIT_APPLY () {
 
 	# A split authors an intermediate tree no commit ever carried, so it earns the gate as much
 	# as any replay, even with the tip tree unchanged by construction – always in a throwaway
-	# worktree, since the gate's failure path checks out over whatever it was handed
+	# worktree, since the gate's failure path checks out over whatever it was handed. A
+	# `--no-verify` split authors that tree too, and the guard below is skipped on exactly that
+	# flag – so record the bypass ahead of it, where every other mode records it from the gate
+	_VERIFY_NOTE_BYPASS
 	if _VERIFY_CONFIGURED; then
 		local VWT=$(MKTEMP_DIR git-edit-verify)
 		if git worktree add --detach "$VWT" "$PREV_NEW" >/dev/null 2>&1; then
@@ -4198,6 +4228,19 @@ _GUARD_TIP_MODES () {
 	return 1
 }
 
+# Records the gate a `--no-verify` run bypassed, for the note `EMIT_STATUS` prints. The command
+# is resolved here only to name it, so the multi-line refusal the gate itself makes stays out of
+# a path where nothing ever runs it – hence the first line alone. With nothing configured it
+# records nothing: no gate existed, so none was skipped, and a note there would invent one
+_VERIFY_NOTE_BYPASS () {
+	[ ${#OPT_NO_VERIFY} -gt 0 ] || return 0
+	local CMD=$VERIFY_VALUE
+	[ -z "$CMD" ] && CMD=$STATE_VERIFY_CMD
+	[ -z "$CMD" ] && CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -n "$CMD" ] && _VERIFY_BYPASSED=${CMD%%$'\n'*}
+	return 0
+}
+
 # Runs the caller's verification over what a rewrite built, before the CAS applies it – the
 # gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
 # standing `edit.verifyCmd`, at the primary commit and the tip
@@ -4345,7 +4388,9 @@ _VERIFY_REWRITE () {
 	local ORIG_HEAD=$3
 	local PRIMARY=$4
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
-	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 0
+	# Below the worktree guard, so the note marks a gate this run declined rather than one the
+	# mode never had – `--abort`, `--undo` and `--status` never reach here at all
+	[ ${#OPT_NO_VERIFY} -gt 0 ] && { _VERIFY_NOTE_BYPASS; return 0; }
 	# Flag first, then what the pause recorded – a resume re-verifies what the
 	# original run asked for – then the standing config
 	local VERIFY_CMD=$VERIFY_VALUE

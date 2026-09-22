@@ -2637,6 +2637,10 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --no-verify --continue
 	_ST_EQ "the override applies the fold" "$RC" "0"
 	_ST_OUT_HAS "after restoring the inspected-away worktree" 'restoring'
+	# The run that lands a result a gate rejected is the one a reader most needs told, and the
+	# command comes from what the pause recorded rather than from config
+	_ST_OUT_HAS "and the landing says the gate was overridden" 'Verify skipped'
+	_ST_OUT_HAS "naming the check the pause had recorded" "$TMP/verify.sh"
 	_ST_EQ "the whole chain survived" "$(git rev-list --count HEAD)" "$(git rev-list --count $VF_TIP)"
 	_ST_CHECK "the overridden content landed at the base" \
 		sh -c "git show \"\$(git rev-parse ':/VF base'):vf.txt\" | grep -q FORBIDDEN"
@@ -2645,6 +2649,19 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --no-verify --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
 	_ST_EQ "--no-verify skips the gate up front" "$RC" "0"
 	_ST_OUT_LACKS "and the check never ran" 'Verified'
+	# Silence here would read exactly like a repo that configured no gate at all, so the bypass
+	# says so and names what it bypassed – the one gate state nothing else in the output records
+	_ST_OUT_HAS "while saying the gate was bypassed" 'Verify skipped'
+	_ST_OUT_HAS "naming the flag that bypassed it" '--no-verify was passed'
+	_ST_OUT_HAS "and the command that never ran" "$TMP/verify.sh"
+	# With nothing configured there was no gate to skip, and a note would invent one – that
+	# remaining silence is what makes the note above tell the two states apart
+	git config --unset edit.verifyCmd
+	printf 'vf ungated\n' >> vf.txt && git add vf.txt
+	_ST_RUN --no-verify --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
+	_ST_EQ "an ungated repo folds under --no-verify too" "$RC" "0"
+	_ST_OUT_LACKS "claiming no gate was skipped" 'Verify skipped'
+	git config edit.verifyCmd "$TMP/verify.sh"
 	# The flag outranks the config
 	git config edit.verifyCmd "false"
 	printf 'vf flag\n' >> vf.txt && git add vf.txt
@@ -3460,7 +3477,12 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "which it names" '^Branch ub-side points into the rewritten span'
 	_ST_OUT_HAS "with its exact counterpart" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)  # same change: UB mid"
 	_ST_OUT_HAS "and why the key moved nothing" 'rebase.updateRefs is set, but git edit moves only the branch it rewrites'
-	_ST_OUT_LACKS "not a branch a worktree has checked out" 'Branch ub-live'
+	# A checked-out branch is stranded exactly as ub-side is – the difference is that someone may
+	# be working in it right now, which made silence there the worse of the two. It is named
+	# without a command, since moving it is that checkout's to do over whatever sits in it
+	_ST_OUT_HAS "and a branch a worktree has checked out, the same way" '^Branch ub-live points into the rewritten span, checked out in '
+	_ST_OUT_HAS "with its counterpart" "its counterpart here is $(git rev-parse --short=12 HEAD~1)  # same change: UB mid"
+	_ST_OUT_LACKS "but no command aimed at someone else's worktree" 'git branch -f ub-live'
 	_ST_OUT_LACKS "nor one below the span" 'Branch ub-below'
 	_ST_OUT_LACKS "nor one built on top of it" 'Branch ub-top'
 	_ST_EQ "and the checked-out one stays where it was too" "$(git -C "$TMP/ub-live" rev-parse HEAD)" "$UB_SIDE"

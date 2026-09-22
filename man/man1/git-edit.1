@@ -61,8 +61,11 @@ mode but \fB\-\-exec\fR, whose command is yours and has no single target.
 Nothing above those two is guaranteed: a stat block or path list grows with
 the commit. Colour goes with the padding, so a captured line starts at column
 zero and a name reaches further than a count \(em
-.B "| grep -E '^(Verified|git-edit:)'"
-answers what landed and what checked it, wherever the gate's summary sits.
+.B "| grep -E '^(Verif|git-edit:)'"
+answers what landed and what checked it, wherever the gate's summary sits. A run
+that had a gate and declined it reports that too \(em
+.B "Verify skipped \(en --no-verify was passed, so `npm test` never ran"
+\(em so silence means only that the repo configured no gate.
 .IP \(bu 3
 Every rewrite reports its old\(->new map the way git does: notes are carried
 across it (honoring \fBnotes.rewriteRef\fR and \fBnotes.rewriteMode\fR, and
@@ -88,8 +91,10 @@ labeled as such.
 .B rebase.updateRefs
 is not applied: git moves such a branch as its rebase completes, before the
 result is verified or lands, so an aborted or refused rewrite would leave the
-branch rewritten. A branch checked out in a worktree is left to that worktree,
-as git leaves it too.
+branch rewritten. A branch checked out in a worktree is left for that worktree
+to move, as git leaves it too \(em but it is named all the same, with its
+counterpart and no command, since the move belongs to that checkout and to
+whatever work is sitting in it.
 .IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
