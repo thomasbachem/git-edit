@@ -2954,6 +2954,17 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "the walk names the commit that heals it" 'first green: [0-9a-f]* NV bootstrap line'
 	_ST_OUT_LACKS "and does not disown the failure" 'not this operation'
 	_ST_RUN --abort
+	# The commit under test reaches the command by name too – documented, and unset through 1.2.1,
+	# since a prefix assignment on the `eval` builtin never exported to the child. A command that
+	# insists on it pins all three sites: the gate, the counterpart run and the climb
+	printf '#!/bin/sh\n[ "$GIT_EDIT_VERIFY_COMMIT" = "$(git rev-parse HEAD)" ] || exit 1\ngrep -q USE nv_app.txt 2>/dev/null || exit 0\ngrep -q NEEDED nv_boot.txt\n' > "$TMP/need_env.sh"
+	chmod +x "$TMP/need_env.sh"
+	git config edit.verifyCmd "$TMP/need_env.sh"
+	_ST_RUN --amend-into="$NV_BASE" -- nv_app.txt
+	_ST_EQ "the fold pauses on the same failure with the commit named" "$RC" "2"
+	_ST_OUT_HAS "the climb finds the healing commit with the name in hand" 'first green: [0-9a-f]* NV bootstrap line'
+	_ST_OUT_LACKS "and the counterpart, named too, is not blamed" 'not this operation'
+	_ST_RUN --abort
 	# A check already failing at the commit being replaced is not this
 	# rewrite's doing – saying so is what keeps the gate worth reading
 	git config edit.verifyCmd "false"

@@ -4322,7 +4322,7 @@ _VERIFY_DIAGNOSE () {
 
 	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
 	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
-		if ! (cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$CP eval "$CMD" </dev/null) >/dev/null 2>&1; then
+		if ! (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && eval "$CMD" </dev/null) >/dev/null 2>&1; then
 			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
 			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
 			# Naming the cause without the remedy leaves the reader to find it in the page. The
@@ -4368,7 +4368,7 @@ _VERIFY_DIAGNOSE () {
 		[ "$SKIP" = "true" ] && continue
 		git -C "$WT" checkout -qf --detach "$X" 2>/dev/null || continue
 		CHECKED+=1
-		if (cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$X eval "$CMD" </dev/null) >/dev/null 2>&1; then
+		if (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && eval "$CMD" </dev/null) >/dev/null 2>&1; then
 			FOUND=$X
 		fi
 	done
@@ -4461,9 +4461,10 @@ _VERIFY_REWRITE () {
 			_VERIFY_FAILED=$C
 			return 1
 		fi
-		# The subshell contains both the cd and the env naming the commit
+		# The subshell contains both the cd and the export naming the commit – exported, since a
+		# prefix assignment on the `eval` builtin never reaches the child it forks
 		RUN_T0=$SECONDS
-		OUT=$(cd "$WT" && GIT_EDIT_VERIFY_COMMIT=$C eval "$VERIFY_CMD" </dev/null 2>&1)
+		OUT=$(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && eval "$VERIFY_CMD" </dev/null 2>&1)
 		RC=$?
 		# Taken here rather than at the diagnosis below, which the printing in
 		# between would pad – the walk budget is the failing run's own duration
