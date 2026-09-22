@@ -1,7 +1,7 @@
 .\" Man page for git-edit. Kept in sync with the script's USAGE() and README.
 .\" Auto-found via man's PATH derivation (<repo>/man/man1) once the repo is on
 .\" PATH, so `git edit --help` / `man git-edit` work with no install step.
-.TH GIT-EDIT 1 "2026-09-22" "git-edit" "Git Extensions"
+.TH GIT-EDIT 1 "2026-09-23" "git-edit" "Git Extensions"
 .SH NAME
 git\-edit \- edit, reword, drop, squash, reorder, split, or fold past commits
 .PP
@@ -19,7 +19,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
-\fBgit edit\fR \fB\-\-move=\fR\fIsha\fR {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
+\fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR | \fB\-\-version\fR
@@ -125,6 +125,17 @@ and
 .B \-\-version
 answer regardless.
 .SH MODES
+A mode or option that names one commit \(em
+.BR \-\-amend\-into ,
+.BR \-\-split ,
+.BR \-\-onto ,
+.BR \-s= ,
+.B \-\-after
+or
+.B \-\-before
+\(em refuses to be given twice, where only the last value would count.
+.B \-\-move
+alone repeats, each time naming more of what it moves.
 .TP
 .B \-e, \-\-edit
 Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
@@ -305,6 +316,27 @@ otherwise be a hand\-built span reorder or a
 .B "git rebase \-\-onto"
 chain. Moving in either direction works; a commit already in position is a
 clean no\-op.
+.TP
+.B \-\-move=\fIa\fR \-\-move=\fIb\fR... {\fB\-\-after=\fR\fIanchor\fR | \fB\-\-before=\fR\fIanchor\fR}
+Given more than once, move every commit it names to \fIanchor\fR together,
+as one block in their history order, whatever order they were named in.
+Commits lying between them stay where they are, so on a branch other
+sessions commit to this is the form that moves exactly what it names. The
+anchor may lie below, above or between them, just not among them. The block
+moves in one replay, where moving its commits one at a time replays the span
+once per commit \(em and under
+.BR edit.verifySpan ,
+verifies it once per commit.
+.TP
+.B \-\-move=\fIoldest\fB..\fInewest\fR
+A value may name a run of adjacent commits instead. Both ends are included,
+as git edit reads every range, unlike git's own \fIA\fB..\fIB\fR; they may
+come either way round, and an open end means
+.BR HEAD ,
+so \fIoldest\fB..\fR takes everything from \fIoldest\fR up. The run is every
+commit between its ends, whoever made it \(em where other sessions commit to
+the branch, name each commit instead, since a commit landed in between, or on
+top of an open end, would move with it.
 .TP
 .B \-\-onto=\fIupstream\fR
 Replant the current branch onto \fIupstream\fR, deriving the fork point rather

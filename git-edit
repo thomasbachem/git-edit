@@ -188,6 +188,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
 	ECHO_E "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
+	ECHO_E "\e[0;94m       git edit --move=<a> --move=<b>... --after|--before=<sha> # several as one block, in one replay\e[0m"
 	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
 	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest | --version\e[0m"
@@ -223,6 +224,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
 	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
+	ECHO_E "\e[0;94m       --move=<a> --move=<b>...        Move each named commit together, one block in history order, those\e[0m"
+	ECHO_E "\e[0;94m                                       between them staying put – one replay, not one per commit\e[0m"
+	ECHO_E "\e[0;94m       --move=<oldest>..<newest>       Name a run of adjacent commits, both ends included, whoever made them\e[0m"
 	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, deriving the fork point\e[0m"
 	ECHO_E "\e[0;94m                                       (recovers it from the reflog when a rewrite orphaned the old base)\e[0m"
 	ECHO_E "\e[0;94m       --skip                          Resume past the paused commit instead of through it (--onto only)\e[0m"
@@ -5640,7 +5644,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into:=OPT_AMEND_INTO -split:=OPT_SPLIT -reorder=OPT_REORDER -onto:=OPT_ONTO -skip=OPT_SKIP -move:=OPT_MOVE -after:=OPT_AFTER -before:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5657,6 +5661,17 @@ if [ ${#OPT_VERSION} -gt 0 ]; then
 	ECHO_E "\e[0;94mgit-edit ${GIT_EDIT_VERSION}\e[0m"
 	exit 0
 fi
+
+# An option naming one commit, given twice, kept the last value alone – a fold or a split landing
+# on the wrong commit with nothing said – so a repeat refuses. `-s` holds a target in the element
+# it names, the others take the value as a second one. `--move` alone may repeat, by design
+for REPEAT_OPT REPEAT_ARR REPEAT_MAX in --amend-into OPT_AMEND_INTO 2 --split OPT_SPLIT 2 --onto OPT_ONTO 2 \
+		-s/--squash OPT_SQUASH 1 --after OPT_AFTER 2 --before OPT_BEFORE 2; do
+	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
+		PRINT_ERR "$REPEAT_OPT given twice – it names one commit, and only the last would count"
+		exit 1
+	fi
+done
 
 # Past the usage and version answers, which an outdated git should still get
 _REQUIRE_GIT_VERSION
@@ -6031,15 +6046,22 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 	exit 0
 fi
 
-# `--move` dispatches early – repositions one commit directly after or before an anchor by
-# computing the minimal span and desired order, then delegating to the reorder machinery,
-# so span derivation, the error-prone part of hand-rolled calls, is owned here
+# `--move` dispatches early – repositions commits directly after or before an anchor by computing
+# the minimal span and desired order, then delegating to the reorder machinery, so span derivation,
+# the error-prone part of hand-rolled calls, is owned here. Each `--move` names a commit or an
+# inclusive run, and several move together as one block in their history order, whatever lies
+# between them staying where it is – in one replay, where a commit at a time would replay the
+# span, and verify it under a standing `edit.verifySpan`, once per commit
 if [ ${#OPT_MOVE} -gt 0 ]; then
-	MOVE_SHA=""
-	if [[ ${#OPT_MOVE} -gt 1 && -n "${OPT_MOVE[2]}" ]]; then
-		MOVE_SHA="${OPT_MOVE[2]#=}"
-	fi
-	if [ -z "$MOVE_SHA" ]; then
+	MOVE_ARGS=()
+	for (( MOVE_I = 2; MOVE_I <= ${#OPT_MOVE}; MOVE_I += 2 )); do
+		MOVE_ARGS+=("${OPT_MOVE[$MOVE_I]#=}")
+	done
+	MOVE_EMPTY=$(( ${#MOVE_ARGS[@]} == 0 ))
+	for MOVE_ARG in "${MOVE_ARGS[@]}"; do
+		[ -z "$MOVE_ARG" ] && MOVE_EMPTY=1
+	done
+	if [ $MOVE_EMPTY -eq 1 ]; then
 		USAGE
 		PRINT_ERR "--move requires a <sha> value (e.g., --move=abc123)"
 		exit 1
@@ -6069,44 +6091,94 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 	fi
 	if [ $# -gt 0 ]; then
 		USAGE
-		PRINT_ERR "--move takes no positional arguments (commit and destination are flag values)"
-		exit 1
-	fi
-	if ! git rev-parse --quiet --verify "$MOVE_SHA^{commit}" >/dev/null 2>&1; then
-		PRINT_ERR "Unknown <sha>: $MOVE_SHA"
+		PRINT_ERR "--move takes no positional arguments (commits and destination are flag values – several commits go as --move=<a> --move=<b>, a run of commits as --move=<oldest>..<newest>)"
 		exit 1
 	fi
 	if ! git rev-parse --quiet --verify "$MOVE_ANCHOR^{commit}" >/dev/null 2>&1; then
 		PRINT_ERR "Unknown <sha>: $MOVE_ANCHOR"
 		exit 1
 	fi
-	# Both routes resolve stale SHAs like any other target
-	_GUARD_REACHABLE "$MOVE_SHA"
-	MOVE_SHA=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+	# Each value a commit or a run, read inclusive as every range here is – either way round, an
+	# open end being `HEAD` – and each end resolved like any other target where a rewrite staled it
+	MOVE_SET=()
+	for MOVE_ARG in "${MOVE_ARGS[@]}"; do
+		if [[ "$MOVE_ARG" == *".."* && "$MOVE_ARG" != *"..."* ]]; then
+			MOVE_FROM="${${MOVE_ARG%%..*}:-HEAD}"
+			MOVE_TO="${${MOVE_ARG#*..}:-HEAD}"
+		else
+			MOVE_FROM=$MOVE_ARG
+			MOVE_TO=$MOVE_ARG
+		fi
+		for MOVE_END in "$MOVE_FROM" "$MOVE_TO"; do
+			if ! git rev-parse --quiet --verify "$MOVE_END^{commit}" >/dev/null 2>&1; then
+				PRINT_ERR "Unknown <sha>: $MOVE_END"
+				exit 1
+			fi
+		done
+		_GUARD_REACHABLE "$MOVE_FROM"
+		MOVE_FROM_RESOLVED=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+		if [ "$MOVE_TO" = "$MOVE_FROM" ]; then
+			MOVE_TO=$MOVE_FROM_RESOLVED
+		else
+			_GUARD_REACHABLE "$MOVE_TO"
+			MOVE_TO=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+		fi
+		MOVE_FROM=$MOVE_FROM_RESOLVED
+		if [ "$MOVE_FROM" != "$MOVE_TO" ] && git merge-base --is-ancestor "$MOVE_TO" "$MOVE_FROM" 2>/dev/null; then
+			MOVE_END=$MOVE_FROM
+			MOVE_FROM=$MOVE_TO
+			MOVE_TO=$MOVE_END
+		fi
+		if [ "$MOVE_FROM" = "$MOVE_TO" ]; then
+			MOVE_PART=("$MOVE_FROM")
+		elif ! git merge-base --is-ancestor "$MOVE_FROM" "$MOVE_TO" 2>/dev/null; then
+			PRINT_ERR "Commits ${MOVE_FROM:0:7} and ${MOVE_TO:0:7} are not on one line of history"
+			exit 1
+		elif git rev-parse --verify -q "$MOVE_FROM^" >/dev/null 2>&1; then
+			MOVE_PART=($(git rev-list --reverse "$MOVE_FROM^..$MOVE_TO"))
+		else
+			MOVE_PART=($(git rev-list --reverse "$MOVE_TO"))
+		fi
+		for MOVE_STEP in "${MOVE_PART[@]}"; do
+			(( ${MOVE_SET[(Ie)$MOVE_STEP]} )) || MOVE_SET+=("$MOVE_STEP")
+		done
+	done
 	_GUARD_REACHABLE "$MOVE_ANCHOR"
 	MOVE_ANCHOR=$(git rev-parse "$_RESOLVED_SHA^{commit}")
-	if [ "$MOVE_SHA" = "$MOVE_ANCHOR" ]; then
-		PRINT_ERR "--move commit and its --$MOVE_KIND anchor are the same commit"
+	# In history order, whatever order they were named in
+	MOVE_SORTED=($(git rev-list --reverse HEAD 2>/dev/null | grep -Fx -f <(printf '%s\n' "${MOVE_SET[@]}") 2>/dev/null))
+	if [ ${#MOVE_SORTED[@]} -ne ${#MOVE_SET[@]} ]; then
+		PRINT_ERR "--move names a commit HEAD does not reach"
 		exit 1
 	fi
-	# Already in position – an honest no-op instead of an empty rebase
-	if { [ "$MOVE_KIND" = "after" ] && [ "$(git rev-parse "$MOVE_SHA^" 2>/dev/null)" = "$MOVE_ANCHOR" ]; } || \
-	   { [ "$MOVE_KIND" = "before" ] && [ "$(git rev-parse "$MOVE_ANCHOR^" 2>/dev/null)" = "$MOVE_SHA" ]; } then
-		PRINT_TEXT "Commit %s already sits directly $MOVE_KIND %s – nothing to move" 36 "${MOVE_SHA:0:7}" "${MOVE_ANCHOR:0:7}"
-		PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" false
-		exit 0
+	MOVE_SET=("${MOVE_SORTED[@]}")
+	MOVE_FIRST=${MOVE_SET[1]}
+	MOVE_LAST=${MOVE_SET[-1]}
+	if (( ${MOVE_SET[(Ie)$MOVE_ANCHOR]} )); then
+		if [ ${#MOVE_SET[@]} -eq 1 ]; then
+			PRINT_ERR "--move commit and its --$MOVE_KIND anchor are the same commit"
+		elif [ ${#MOVE_ARGS[@]} -eq 1 ]; then
+			PRINT_ERR "--$MOVE_KIND anchor ${MOVE_ANCHOR:0:7} lies inside the moved run ${MOVE_FIRST:0:7}..${MOVE_LAST:0:7}"
+		else
+			PRINT_ERR "--$MOVE_KIND anchor ${MOVE_ANCHOR:0:7} is one of the commits being moved"
+		fi
+		exit 1
 	fi
-	# Minimal span: both endpoints inclusive, oldest-first – contiguous by
-	# construction, so the reorder pre-flight checks pass or refuse cleanly
-	# (merge in span, pushed base)
-	if git merge-base --is-ancestor "$MOVE_SHA" "$MOVE_ANCHOR" 2>/dev/null; then
-		MOVE_SPAN_OLD=$MOVE_SHA
+	# Minimal span: the moved commits and the anchor inclusive, oldest-first – contiguous by
+	# construction, so the reorder pre-flight checks pass or refuse cleanly (merge in span,
+	# pushed base). The anchor may lie below them, above them, or between them
+	if git merge-base --is-ancestor "$MOVE_LAST" "$MOVE_ANCHOR" 2>/dev/null; then
+		MOVE_SPAN_OLD=$MOVE_FIRST
 		MOVE_SPAN_NEW=$MOVE_ANCHOR
-	elif git merge-base --is-ancestor "$MOVE_ANCHOR" "$MOVE_SHA" 2>/dev/null; then
+	elif git merge-base --is-ancestor "$MOVE_ANCHOR" "$MOVE_FIRST" 2>/dev/null; then
 		MOVE_SPAN_OLD=$MOVE_ANCHOR
-		MOVE_SPAN_NEW=$MOVE_SHA
+		MOVE_SPAN_NEW=$MOVE_LAST
+	elif git merge-base --is-ancestor "$MOVE_FIRST" "$MOVE_ANCHOR" 2>/dev/null && \
+	     git merge-base --is-ancestor "$MOVE_ANCHOR" "$MOVE_LAST" 2>/dev/null; then
+		MOVE_SPAN_OLD=$MOVE_FIRST
+		MOVE_SPAN_NEW=$MOVE_LAST
 	else
-		PRINT_ERR "Commits ${MOVE_SHA:0:7} and ${MOVE_ANCHOR:0:7} are not on one line of history"
+		PRINT_ERR "Commits ${MOVE_FIRST:0:7} and ${MOVE_ANCHOR:0:7} are not on one line of history"
 		exit 1
 	fi
 	if git rev-parse --verify -q "$MOVE_SPAN_OLD^" >/dev/null 2>&1; then
@@ -6114,22 +6186,54 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 	else
 		MOVE_SPAN=($(git rev-list --reverse "$MOVE_SPAN_NEW"))
 	fi
-	# Desired order: span minus the moved commit, re-inserted at the anchor
+	# Desired order: the span minus the moved commits, which go back in together, in their own
+	# order, at the anchor
 	COMMITS_DESIRED=()
 	for MOVE_STEP in "${MOVE_SPAN[@]}"; do
-		if [ "$MOVE_STEP" = "$MOVE_SHA" ]; then
+		if (( ${MOVE_SET[(Ie)$MOVE_STEP]} )); then
 			continue
 		fi
 		if [ "$MOVE_STEP" = "$MOVE_ANCHOR" ] && [ "$MOVE_KIND" = "before" ]; then
-			COMMITS_DESIRED+=("$MOVE_SHA")
+			COMMITS_DESIRED+=("${MOVE_SET[@]}")
 		fi
 		COMMITS_DESIRED+=("$MOVE_STEP")
 		if [ "$MOVE_STEP" = "$MOVE_ANCHOR" ] && [ "$MOVE_KIND" = "after" ]; then
-			COMMITS_DESIRED+=("$MOVE_SHA")
+			COMMITS_DESIRED+=("${MOVE_SET[@]}")
 		fi
 	done
+	# A commit the span does not hold – on a merge's side leg, say – would come back short or
+	# doubled, so it refuses here rather than reorder something else
+	if [ ${#COMMITS_DESIRED[@]} -ne ${#MOVE_SPAN[@]} ]; then
+		PRINT_ERR "--move cannot place its commits as one block – not all of them lie on the line ${MOVE_SPAN_OLD:0:7}..${MOVE_SPAN_NEW:0:7}"
+		exit 1
+	fi
+	# Named as a run where they are one, each by itself where something lies between them
+	MOVE_RUN=$(( ${MOVE_SPAN[(Ie)$MOVE_LAST]} - ${MOVE_SPAN[(Ie)$MOVE_FIRST]} + 1 == ${#MOVE_SET[@]} ))
+	# Already in position – an honest no-op instead of an empty rebase
+	if [ "${(j: :)COMMITS_DESIRED}" = "${(j: :)MOVE_SPAN}" ]; then
+		if [ ${#MOVE_SET[@]} -eq 1 ]; then
+			PRINT_TEXT "Commit %s already sits directly $MOVE_KIND %s – nothing to move" 36 "${MOVE_FIRST:0:7}" "${MOVE_ANCHOR:0:7}"
+		else
+			PRINT_TEXT "Commits %s..%s already sit directly $MOVE_KIND %s – nothing to move" 36 "${MOVE_FIRST:0:7}" "${MOVE_LAST:0:7}" "${MOVE_ANCHOR:0:7}"
+		fi
+		PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" false
+		exit 0
+	fi
+	# Commits at the old end of the span that keep their place are never rebuilt – so they leave
+	# the span, whose oldest commit the pushed guard reads. Kept in, a move to just above the last
+	# pushed commit was refused as rewriting the anchor it lands after
+	while [ ${#MOVE_SPAN[@]} -gt 0 ] && [ "${MOVE_SPAN[1]}" = "${COMMITS_DESIRED[1]}" ]; do
+		MOVE_SPAN=("${(@)MOVE_SPAN[2,-1]}")
+		COMMITS_DESIRED=("${(@)COMMITS_DESIRED[2,-1]}")
+	done
 	COMMITS=("${MOVE_SPAN[@]}")
-	PRINT_ACTION "Moving %s $MOVE_KIND %s..." "$MOVE_SHA" "$MOVE_ANCHOR"
+	if [ ${#MOVE_SET[@]} -eq 1 ]; then
+		PRINT_ACTION "Moving %s $MOVE_KIND %s..." "$MOVE_FIRST" "$MOVE_ANCHOR"
+	elif [ $MOVE_RUN -eq 1 ]; then
+		PRINT_ACTION "Moving ${#MOVE_SET[@]} commits, %s through %s, $MOVE_KIND %s..." "$MOVE_FIRST" "$MOVE_LAST" "$MOVE_ANCHOR"
+	else
+		PRINT_ACTION "Moving ${#MOVE_SET[@]} commits – ${(j:, :)${(@)MOVE_SET//*/%s}} – $MOVE_KIND %s..." "${MOVE_SET[@]}" "$MOVE_ANCHOR"
+	fi
 	GIT_REORDER
 	PRINT_COMPLETED "$REORDER_NEW_HEAD" "$REORDER_REF" true
 	exit 0

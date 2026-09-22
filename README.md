@@ -50,6 +50,7 @@ Either way `man git-edit` works right away – the formula installs the page, an
 | `git edit --split=<sha>` | **Split** one commit into two |
 | `git edit --reorder <commit>...` | **Reorder** a contiguous span, the arguments giving the new order oldest-first |
 | `git edit --move=<sha> --after=<anchor>` | **Move** one commit (`--before=<anchor>` likewise) – span and ordering derived |
+| `git edit --move=<a> --move=<b> --after=<anchor>` | **Move several** as one block in one replay, commits between them staying put – `<oldest>..<newest>` names a run |
 | `git edit --onto=<upstream>` | **Replant** the branch onto a moved upstream |
 | `git edit --exec -- <cmd>...` | **Anything else**, run in an isolated worktree and applied only if it moved HEAD |
 

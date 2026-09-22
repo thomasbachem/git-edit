@@ -512,7 +512,8 @@ GIT_SELFTEST () {
 		for ztok in ${(z)ZLINE}; do
 			[[ "$ztok" != *"=OPT_"* ]] && continue
 			ztok=${ztok%%=OPT_*}
-			ztok=${ztok%%:*}
+			# Cut at the spec's modifiers – `:` for an argument, `+` for an option kept per use
+			ztok=${ztok%%[:+]*}
 			ztok=${ztok//[\{\}]/}
 			for zname in ${(s:,:)ztok}; do
 				[[ "$zname" == -* ]] && DOCFLAGS+=("-$zname")
@@ -4380,6 +4381,170 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a reorder under it exits 0" "$RC" "0"
 	_ST_EQ "swapping the two" "$(git log -2 --format=%s | tr '\n' '|')" "HZ right subject|HZ second|"
 	_ST_EQ "with the tip tree kept" "$(git rev-parse 'HEAD^{tree}')" "$HZ_TIP_TREE"
+
+	# --- 83. a run of adjacent commits moves as one block, in one replay ---
+	# Landing several new commits at one spot a commit at a time replays the span once per commit
+	# – and verifies it once per commit under a standing `edit.verifySpan`, which cost a PowCal
+	# landing three passes over 185 commits. A run `<oldest>..<newest>` moves in one, read
+	# inclusive and either way round, as `-d` reads a range
+	_ST_SCENARIO "\e[1;96m[83] --move takes a run of adjacent commits as one block\e[0m"
+	local RN
+	for RN in anchor x1 x2 "run a" "run b" "run c"; do
+		echo "$RN" > "rn_${RN// /_}.txt" && git add "rn_${RN// /_}.txt" && git commit -qm "RN $RN"
+	done
+	local RN_TREE=$(git rev-parse 'HEAD^{tree}')
+	local RN_MOVES=$(git reflog show --format=%H "$(git symbolic-ref HEAD)" | wc -l | tr -d ' ')
+	: > "$TMP/rn-count"
+	_ST_RUN --verify="echo run >> '$TMP/rn-count'" --verify-span --move="$(git rev-parse ':/RN run a')..$(git rev-parse ':/RN run c')" --after="$(git rev-parse ':/RN anchor')"
+	_ST_EQ "a run moves down" "$RC" "0"
+	_ST_OUT_HAS "announced as one" 'Moving 3 commits'
+	_ST_EQ "whole and in its own order, right after the anchor" "$(git log --format=%s -6 | tr '\n' '|')" "RN x2|RN x1|RN run c|RN run b|RN run a|RN anchor|"
+	_ST_EQ "with the tip tree kept" "$(git rev-parse 'HEAD^{tree}')" "$RN_TREE"
+	_ST_EQ "in one ref move" "$(( $(git reflog show --format=%H "$(git symbolic-ref HEAD)" | wc -l) - RN_MOVES ))" "1"
+	_ST_EQ "verifying each rebuilt commit once" "$(wc -l < "$TMP/rn-count" | tr -d ' ')" "5"
+	_ST_RUN --move="$(git rev-parse ':/RN run c')..$(git rev-parse ':/RN run a')" --after="$(git rev-parse ':/RN x2')"
+	_ST_EQ "ends given newest first move it back up" "$RC" "0"
+	_ST_EQ "to the tip" "$(git log --format=%s -6 | tr '\n' '|')" "RN run c|RN run b|RN run a|RN x2|RN x1|RN anchor|"
+	_ST_RUN --move="$(git rev-parse ':/RN run a').." --before="$(git rev-parse ':/RN x1')"
+	_ST_EQ "an open end runs to HEAD" "$RC" "0"
+	_ST_EQ "and moves before an anchor too" "$(git log --format=%s -6 | tr '\n' '|')" "RN x2|RN x1|RN run c|RN run b|RN run a|RN anchor|"
+	_ST_RUN --move="$(git rev-parse ':/RN run a')..$(git rev-parse ':/RN run c')" --after="$(git rev-parse ':/RN anchor')"
+	_ST_EQ "a run in position is a no-op" "$RC" "0"
+	_ST_OUT_HAS "saying so" 'already sit directly after'
+	local RN_HEAD=$(git rev-parse HEAD)
+	_ST_RUN --move="$(git rev-parse ':/RN run a')..$(git rev-parse ':/RN run c')" --after="$(git rev-parse ':/RN run b')"
+	_ST_EQ "an anchor inside the run refuses" "$RC" "1"
+	_ST_OUT_HAS "naming where it lies" 'lies inside the moved run'
+	# An anchor given twice placed the commit after the last one alone, with nothing said
+	_ST_RUN --move="$(git rev-parse ':/RN run a')" --after="$(git rev-parse ':/RN x2')" --after="$(git rev-parse ':/RN x1')"
+	_ST_EQ "--after given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the repeat" '--after given twice – it names one commit'
+	_ST_RUN --move="$(git rev-parse ':/RN run a')" --before="$(git rev-parse ':/RN x2')" --before="$(git rev-parse ':/RN x1')"
+	_ST_EQ "--before given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it there too" '--before given twice – it names one commit'
+	_ST_EQ "neither moving anything" "$(git rev-parse HEAD)" "$RN_HEAD"
+	_ST_RUN --move="$(git rev-parse ':/RN run a')" "$(git rev-parse ':/RN run b')" --after="$(git rev-parse ':/RN x2')"
+	_ST_EQ "a second commit as a positional refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the forms that take several" 'several commits go as --move=<a> --move=<b>'
+
+	# --- 84. a move steps down from a standing span as a fold does ---
+	# The tier flag was pinned on folds alone, while a move rebuilds everything above its anchor
+	# just the same – a PowCal landing passed it to its folds and not to its moves, 18 minutes of
+	# suite runs. The default tier of a move is the tip, a reorder naming no primary commit
+	_ST_SCENARIO "\e[1;96m[84] --no-verify-span steps a move down from edit.verifySpan\e[0m"
+	local VM
+	for VM in base m1 m2 m3 tip; do
+		echo "$VM" > "vm_$VM.txt" && git add "vm_$VM.txt" && git commit -qm "VM $VM"
+	done
+	git config edit.verifyCmd "echo run >> '$TMP/vm-count'"
+	git config edit.verifySpan true
+	: > "$TMP/vm-count"
+	_ST_RUN --move="$(git rev-parse ':/VM tip')" --after="$(git rev-parse ':/VM base')"
+	_ST_EQ "a move under the standing span applies" "$RC" "0"
+	_ST_EQ "verifying all it rebuilt" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "4"
+	_ST_OUT_HAS "with the lever that steps back down" 'no-verify-span` runs only its 1 (set by edit.verifySpan)'
+	: > "$TMP/vm-count"
+	_ST_RUN --no-verify-span --move="$(git rev-parse ':/VM tip')" --after="$(git rev-parse ':/VM m3')"
+	_ST_EQ "the flag steps the move down" "$RC" "0"
+	_ST_EQ "to the tip alone" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "1"
+	_ST_OUT_HAS "naming the shortfall" 'Verified 1 of 4 commit(s)'
+	: > "$TMP/vm-count"
+	_ST_RUN --no-verify-span --move="$(git rev-parse ':/VM m2')..$(git rev-parse ':/VM m3')" --after="$(git rev-parse ':/VM base')"
+	_ST_EQ "and a run's move" "$RC" "0"
+	_ST_EQ "to the tip alone too" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "1"
+	git config --unset edit.verifySpan
+	git config --unset edit.verifyCmd
+
+	# --- 85. a move lands right above the last pushed commit ---
+	# The move's span took in the anchor it lands right after, which the rebase replays unchanged,
+	# and the pushed guard reads the span's oldest commit – so moving a commit to the bottom of the
+	# unpushed run was refused as rewriting the pushed one below it
+	_ST_SCENARIO "\e[1;96m[85] a move lands right above the last pushed commit\e[0m"
+	echo "pa" > pa.txt && git add pa.txt && git commit -qm "PA pushed"
+	local PA_PUSHED=$(git rev-parse HEAD)
+	git push -q origin HEAD:refs/heads/pa-pushed 2>/dev/null
+	local PA
+	for PA in one two mine; do
+		echo "$PA" > "pa_$PA.txt" && git add "pa_$PA.txt" && git commit -qm "PA $PA"
+	done
+	_ST_CHECK "the fixture pushed its base" git merge-base --is-ancestor "$PA_PUSHED" origin/pa-pushed
+	# Each move starts out of position whether or not the one before it landed, so a refusal
+	# cannot pass as a no-op
+	_ST_RUN --move="$(git rev-parse ':/PA two')..$(git rev-parse ':/PA mine')" --after="$PA_PUSHED"
+	_ST_EQ "a run right above it applies" "$RC" "0"
+	_ST_OUT_LACKS "without calling it pushed" 'already pushed'
+	_ST_EQ "landing there" "$(git log --format=%s -4 | tr '\n' '|')" "PA one|PA mine|PA two|PA pushed|"
+	_ST_RUN --move="$(git rev-parse ':/PA mine')" --after="$PA_PUSHED"
+	_ST_EQ "a single move right above it too" "$RC" "0"
+	_ST_EQ "landing there too" "$(git log --format=%s -4 | tr '\n' '|')" "PA one|PA two|PA mine|PA pushed|"
+	_ST_EQ "the pushed commit untouched" "$(git rev-parse HEAD~3)" "$PA_PUSHED"
+	# Before it, the pushed commit itself moves up, which the guard still refuses
+	_ST_RUN --move="$(git rev-parse ':/PA mine')" --before="$PA_PUSHED"
+	_ST_EQ "a move below it still refuses" "$RC" "1"
+	_ST_OUT_HAS "as rewriting it" 'already pushed'
+	git push -q origin --delete pa-pushed 2>/dev/null
+
+	# --- 86. --move given more than once moves exactly the commits it names ---
+	# A range takes every commit between its ends, whoever made it – in a checkout other sessions
+	# commit to, a peer's commit landed between two of a landing's moves with them. Naming each
+	# moves those alone, together and in their history order, the rest staying where it is
+	_ST_SCENARIO "\e[1;96m[86] --move given more than once moves exactly the commits it names\e[0m"
+	local LS
+	for LS in anchor x mine1 peer mine2; do
+		echo "$LS" > "ls_$LS.txt" && git add "ls_$LS.txt" && git commit -qm "LS $LS"
+	done
+	local LS_TREE=$(git rev-parse 'HEAD^{tree}')
+	local LS_MOVES=$(git reflog show --format=%H "$(git symbolic-ref HEAD)" | wc -l | tr -d ' ')
+	_ST_RUN --move="$(git rev-parse ':/LS mine1')" --move="$(git rev-parse ':/LS mine2')" --after="$(git rev-parse ':/LS anchor')"
+	_ST_EQ "two named commits move" "$RC" "0"
+	_ST_OUT_HAS "announced by name" 'Moving 2 commits – '
+	_ST_EQ "together after the anchor, the commit between them left behind" "$(git log --format=%s -5 | tr '\n' '|')" "LS peer|LS x|LS mine2|LS mine1|LS anchor|"
+	_ST_EQ "with the tip tree kept" "$(git rev-parse 'HEAD^{tree}')" "$LS_TREE"
+	_ST_EQ "in one ref move" "$(( $(git reflog show --format=%H "$(git symbolic-ref HEAD)" | wc -l) - LS_MOVES ))" "1"
+	_ST_RUN --move="$(git rev-parse ':/LS mine2')" --move="$(git rev-parse ':/LS mine1')" --after="$(git rev-parse ':/LS peer')"
+	_ST_EQ "named newest first" "$RC" "0"
+	_ST_EQ "they keep their history order" "$(git log --format=%s -5 | tr '\n' '|')" "LS mine2|LS mine1|LS peer|LS x|LS anchor|"
+	_ST_RUN --move="$(git rev-parse ':/LS x')" --move="$(git rev-parse ':/LS mine2')" --after="$(git rev-parse ':/LS peer')"
+	_ST_EQ "an anchor lying between them" "$RC" "0"
+	_ST_EQ "gathers them there" "$(git log --format=%s -5 | tr '\n' '|')" "LS mine1|LS mine2|LS x|LS peer|LS anchor|"
+	_ST_RUN --move="$(git rev-parse ':/LS x')" --move="$(git rev-parse ':/LS mine2')" --after="$(git rev-parse ':/LS peer')"
+	_ST_EQ "named commits in position are a no-op" "$RC" "0"
+	_ST_OUT_HAS "saying so" 'already sit directly after'
+	local LS_HEAD=$(git rev-parse HEAD)
+	_ST_RUN --move="$(git rev-parse ':/LS x')" --move="$(git rev-parse ':/LS peer')" --after="$(git rev-parse ':/LS peer')"
+	_ST_EQ "an anchor among them refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it" 'is one of the commits being moved'
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$LS_HEAD"
+	_ST_RUN --move="$(git rev-parse ':/LS peer')..$(git rev-parse ':/LS x')" --move="$(git rev-parse ':/LS mine1')" --before="$(git rev-parse ':/LS mine2')"
+	_ST_EQ "a run and a single commit together" "$RC" "0"
+	_ST_EQ "move as one block" "$(git log --format=%s -5 | tr '\n' '|')" "LS mine2|LS mine1|LS x|LS peer|LS anchor|"
+
+	# --- 87. an option naming one commit refuses to be given twice ---
+	# The parser kept the last value alone, so a fold or a split given two targets landed on the
+	# second with nothing said
+	_ST_SCENARIO "\e[1;96m[87] an option naming one commit refuses a repeat\e[0m"
+	echo "rp" > rp.txt && git add rp.txt && git commit -qm "RP one"
+	echo "rp" > rp2.txt && git add rp2.txt && git commit -qm "RP two"
+	local RP_HEAD=$(git rev-parse HEAD)
+	echo "folded" >> rp.txt && git add rp.txt
+	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" --amend-into="$(git rev-parse ':/RP two')" -- rp.txt
+	_ST_EQ "--amend-into given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the repeat" '--amend-into given twice'
+	_ST_CHECK "leaving the fold staged" sh -c '! git diff --cached --quiet -- rp.txt'
+	_ST_RUN --split="$(git rev-parse ':/RP two')" --split="$(git rev-parse ':/RP one')" --text="RP split" -- rp2.txt
+	_ST_EQ "--split given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it there" '--split given twice'
+	_ST_RUN --onto="$(git rev-parse ':/RP one')" --onto="$(git rev-parse ':/RP two')"
+	_ST_EQ "--onto given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "and there" '--onto given twice'
+	_ST_RUN -y -s="$(git rev-parse ':/RP one')" -s="$(git rev-parse ':/RP two')" "$(git rev-parse ':/RP two')"
+	_ST_EQ "-s= given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "and there too" 'squash given twice'
+	_ST_EQ "none of them moving anything" "$(git rev-parse HEAD)" "$RP_HEAD"
+	# Given once, the same fold lands – the refusal is the repeat's alone
+	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" -- rp.txt
+	_ST_EQ "a single --amend-into folds" "$RC" "0"
+	_ST_EQ "into the commit it names" "$(git show "$(git rev-parse ':/RP one')":rp.txt | tail -1)" "folded"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
