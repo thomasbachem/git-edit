@@ -3862,6 +3862,29 @@ _LOAD_STATE () {
 	if [ -n "$STATE_RRPRE_SET" ]; then
 		_RERERE_SCOPE_BEGIN "$STATE_RRPRE"
 	fi
+	# A verify flag on a resume sticks to the operation, as it does on the first invocation –
+	# noted here rather than at the next pause, since a re-pause of any kind (a verify failure,
+	# a further conflict) keeps the state file as it stands rather than rewriting it. The command
+	# first, so the tier can see it, and a span tier with no command in hand refuses here, before
+	# anything is rebuilt: recorded, it would refuse every plain resume for want of one, and the
+	# pause would be a dead end
+	if [ ${#OPT_CONTINUE} -gt 0 ] || [ ${#OPT_SKIP} -gt 0 ]; then
+		if [ -n "$VERIFY_VALUE" ] && [ "$VERIFY_VALUE" != "$STATE_VERIFY_CMD" ]; then
+			_STATE_NOTE "verify_cmd=$VERIFY_VALUE"
+			STATE_VERIFY_CMD=$VERIFY_VALUE
+		fi
+		if [ ${#OPT_NO_VERIFY_SPAN} -gt 0 ] && [ "$STATE_VERIFY_SPAN" != "0" ]; then
+			_STATE_NOTE "verify_span=0"
+			STATE_VERIFY_SPAN=0
+		elif [ ${#OPT_VERIFY_SPAN} -gt 0 ] && [ "$STATE_VERIFY_SPAN" != "1" ]; then
+			if [ -z "$STATE_VERIFY_CMD" ] && [ -z "$(git config --get edit.verifyCmd 2>/dev/null)" ]; then
+				PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
+				exit 1
+			fi
+			_STATE_NOTE "verify_span=1"
+			STATE_VERIFY_SPAN=1
+		fi
+	fi
 }
 
 # Names the sidecar carrying a paused `--text` across the exit, alongside the state file –
@@ -5663,6 +5686,14 @@ if [ ${#OPT_VERIFY} -gt 0 ]; then
 	fi
 	if [ -z "$VERIFY_VALUE" ]; then
 		PRINT_ERR "--verify needs a command (--verify=<cmd>)"
+		exit 1
+	fi
+	# Refused here rather than only where the gate runs: a pause persists the command as one
+	# `key=value` line, and a conflict pause comes before any gate – a resume would then read
+	# back the first line alone, a truncated check that can still exit 0
+	if [ "$VERIFY_VALUE" != "${VERIFY_VALUE%%$'\n'*}" ]; then
+		PRINT_ERR "The verify command spans multiple lines – a pause could only carry its first"
+		ECHO_E "\e[0;31m  Put it in a script and name that instead.\e[0m" >&2
 		exit 1
 	fi
 fi

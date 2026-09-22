@@ -440,7 +440,10 @@ so a resume refuses while any edit is present rather than check out over it
 .B git edit \fIcommit\fR
 pass after the result applies.
 .B \-\-continue
-re\-verifies \(em with the pause's own command and tier \(em,
+re\-verifies \(em with the pause's own command and tier, or with what a
+.B \-\-verify
+or tier flag on the resume names, which then sticks to the operation as it
+would on its first invocation \(em,
 .B "\-\-no\-verify \-\-continue"
 applies the result anyway, and
 .B \-\-abort
@@ -471,6 +474,11 @@ or
 .BR edit.verifyCmd ,
 and can stand for a repo through
 .BR edit.verifySpan .
+Given on
+.BR \-\-continue ,
+it raises a paused run to this tier for the rest of the operation, and
+refuses up front where no command is in hand rather than record a tier no
+resume could serve.
 The default tier states how many commits in between it left unchecked, so
 the gap is visible where it matters rather than only in this page. The span
 tier states in turn what it ran beyond the default one and what the whole
@@ -486,8 +494,10 @@ target and the span tier checks each of them, which for a deep one\-line
 change is the run's whole cost; this keeps the check at what the rewrite
 authored, where
 .B \-\-no\-verify
-would skip it altogether. A pause keeps the declined tier for its resume.
-Refused together with
+would skip it altogether. A pause keeps the declined tier for its resume, and
+on
+.B \-\-continue
+the flag steps a recorded span down the same way. Refused together with
 .BR \-\-verify\-span .
 .TP
 .B \-\-no\-verify

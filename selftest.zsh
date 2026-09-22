@@ -2897,10 +2897,51 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --continue
 	_ST_EQ "and the resume re-pauses" "$RC" "2"
 	_ST_OUT_HAS "verifying the span, not just primary+tip" '# verify 3 commit(s)'
+	# The flag on a resume steps the recorded span down, and the pause then keeps that –
+	# a flag given on any invocation of an operation sticks to the operation, as --verify-span does
+	_ST_RUN --no-verify-span --continue
+	_ST_EQ "a resume may decline the recorded span" "$RC" "2"
+	_ST_OUT_HAS "verifying primary+tip alone" '# verify 2 commit(s)'
+	_ST_RUN --continue
+	_ST_EQ "and a plain resume keeps the declined tier" "$RC" "2"
+	_ST_OUT_HAS "still at primary+tip" '# verify 2 commit(s)'
+	# The other direction and the command stick the same way – a resume raises the tier back
+	# and a plain resume keeps that, and a --verify on a resume replaces the pause's command
+	_ST_RUN --verify-span --continue
+	_ST_EQ "a resume may raise the recorded tier back" "$RC" "2"
+	_ST_OUT_HAS "verifying the span again" '# verify 3 commit(s)'
+	_ST_RUN --continue
+	_ST_EQ "and a plain resume keeps that" "$RC" "2"
+	_ST_OUT_HAS "still the span" '# verify 3 commit(s)'
+	_ST_RUN --verify='false resumed' --continue
+	_ST_EQ "a resume may replace the command" "$RC" "2"
+	_ST_OUT_HAS "running the resume's command" 'false resumed # verify'
+	_ST_RUN --continue
+	_ST_EQ "and a plain resume keeps it" "$RC" "2"
+	_ST_OUT_HAS "still the resume's command" 'false resumed # verify'
+	# A multi-line command is refused before it can be persisted truncated – on a resume as on
+	# a fresh run, whose conflict pause comes before any gate
+	_ST_RUN --verify="$(printf 'false\nfalse')" --continue
+	_ST_EQ "a multi-line --verify on a resume refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the reason" 'spans multiple lines'
+	_ST_CHECK "without touching the recorded command" sh -c "[ \"\$(grep '^verify_cmd=' '$(git rev-parse --git-dir)/git-edit-state' | tail -1)\" = 'verify_cmd=false resumed' ]"
 	_ST_RUN --abort
 	git reset -q -- vd.txt && git checkout -q -- vd.txt
 	git config --unset edit.verifyCmd
 	git reset -q --hard
+	# A span tier asked for on a resume with no command in hand refuses before anything is
+	# rebuilt and records nothing – recorded, every plain resume would refuse for want of one
+	_ST_RUN "$(git rev-parse HEAD)"
+	_ST_EQ "an edit pauses" "$RC" "2"
+	local VR_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
+	printf 'vs1\nmid\nend\nedited\n' > "${VR_WT:-$ST_NO_WT}/vs.txt"
+	_ST_RUN --verify-span --continue
+	_ST_EQ "a span tier with no command refuses the resume" "$RC" "1"
+	_ST_OUT_HAS "naming the missing command" 'needs a command'
+	_ST_CHECK "and records no tier" sh -c "! grep -q '^verify_span=' '$(git rev-parse --git-dir)/git-edit-state'"
+	_ST_RUN --continue
+	_ST_EQ "so a plain resume still completes" "$RC" "0"
+	_ST_CHECK "with the edit landed" sh -c "git show HEAD:vs.txt | grep -qx edited"
 
 	# An explicit `--verify` on a mode with no gate refuses up front, since ignoring it would
 	# promise a gate the run never keeps – the standing config stays exempt there, so a reword
