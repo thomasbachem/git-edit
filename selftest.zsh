@@ -4519,10 +4519,10 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a run and a single commit together" "$RC" "0"
 	_ST_EQ "move as one block" "$(git log --format=%s -5 | tr '\n' '|')" "LS mine2|LS mine1|LS x|LS peer|LS anchor|"
 
-	# --- 87. an option naming one commit refuses to be given twice ---
-	# The parser kept the last value alone, so a fold or a split given two targets landed on the
-	# second with nothing said
-	_ST_SCENARIO "\e[1;96m[87] an option naming one commit refuses a repeat\e[0m"
+	# --- 87. an option taking one value refuses to be given twice ---
+	# The parser kept the last value alone, so a fold given two targets or two trees took the
+	# second, and a second message or check replaced the first, with nothing said
+	_ST_SCENARIO "\e[1;96m[87] an option taking one value refuses a repeat\e[0m"
 	echo "rp" > rp.txt && git add rp.txt && git commit -qm "RP one"
 	echo "rp" > rp2.txt && git add rp2.txt && git commit -qm "RP two"
 	local RP_HEAD=$(git rev-parse HEAD)
@@ -4540,6 +4540,27 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN -y -s="$(git rev-parse ':/RP one')" -s="$(git rev-parse ':/RP two')" "$(git rev-parse ':/RP two')"
 	_ST_EQ "-s= given twice refuses" "$RC" "1"
 	_ST_OUT_HAS "and there too" 'squash given twice'
+	# Each second value below would have landed – a fold of the other tree, a reword to the other
+	# message, a fold the failing check never gated, a pause in the other directory
+	local RP_TA=$(_ST_COMPOSE rp.txt "rp tree a")
+	local RP_TB=$(_ST_COMPOSE rp.txt "rp tree b")
+	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" --tree="$RP_TA" --tree="$RP_TB" -- rp.txt
+	_ST_EQ "--tree given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming one tree" '--tree given twice – it names one tree'
+	_ST_RUN -M --text="RP first" --text="RP second" "$(git rev-parse ':/RP two')"
+	_ST_EQ "--text given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming one message" '--text given twice – it takes one message'
+	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" --verify=false --verify=true -- rp.txt
+	_ST_EQ "--verify given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming one command" '--verify given twice – it runs one command'
+	_ST_RUN -C="$TMP/rp-wt-a" -C="$TMP/rp-wt-b" "$(git rev-parse ':/RP one')"
+	_ST_EQ "-C given twice refuses" "$RC" "1"
+	_ST_OUT_HAS "naming one directory" '-C/--dir given twice – it takes one directory'
+	# Spelled both ways, the two landed apart in the parser even before – and the first one won
+	_ST_RUN -C="$TMP/rp-wt-a" --dir="$TMP/rp-wt-b" "$(git rev-parse ':/RP one')"
+	_ST_EQ "-C and --dir together refuse" "$RC" "1"
+	_ST_OUT_HAS "as one option" '-C/--dir given twice – it takes one directory'
+	_ST_CHECK "pausing in neither" sh -c '[ ! -e "$1" ] && [ ! -e "$2" ]' _ "$TMP/rp-wt-a" "$TMP/rp-wt-b"
 	_ST_EQ "none of them moving anything" "$(git rev-parse HEAD)" "$RP_HEAD"
 	# Given once, the same fold lands – the refusal is the repeat's alone
 	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" -- rp.txt

@@ -5644,7 +5644,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree:=OPT_TREE -verify:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5662,13 +5662,18 @@ if [ ${#OPT_VERSION} -gt 0 ]; then
 	exit 0
 fi
 
-# An option naming one commit, given twice, kept the last value alone – a fold or a split landing
-# on the wrong commit with nothing said – so a repeat refuses. `-s` holds a target in the element
-# it names, the others take the value as a second one. `--move` alone may repeat, by design
-for REPEAT_OPT REPEAT_ARR REPEAT_MAX in --amend-into OPT_AMEND_INTO 2 --split OPT_SPLIT 2 --onto OPT_ONTO 2 \
-		-s/--squash OPT_SQUASH 1 --after OPT_AFTER 2 --before OPT_BEFORE 2; do
+# An option taking one value, given twice, kept the last alone – a fold landing on the wrong
+# commit or folding the wrong tree, a message or a check dropped with nothing said – so a repeat
+# refuses. `-s` and `-C` hold their value in the element they name, the others take it as a
+# second one. `--move` alone may repeat, by design
+for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 2 'names one commit' \
+		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' \
+		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
+		--before OPT_BEFORE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
+		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
+		-C/--dir OPT_DIR 1 'takes one directory'; do
 	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
-		PRINT_ERR "$REPEAT_OPT given twice – it names one commit, and only the last would count"
+		PRINT_ERR "$REPEAT_OPT given twice – it $REPEAT_WHAT, and only the last would count"
 		exit 1
 	fi
 done
