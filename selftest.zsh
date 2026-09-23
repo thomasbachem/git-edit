@@ -10,6 +10,9 @@
 #
 # Scenarios share one scratch repo, in order – a fixture can collide with an
 # earlier scenario's leftovers, which reads as a tool failure but isn't.
+# `--selftest=<ids>` runs a few alone, with the ones each names by `# needs <ids>`
+# on its `_ST_SCENARIO` line – so a scenario reading another's state or locals
+# says so there, and a helper two of them call sits up with the others.
 
 # No `emulate` here: the sourcing script has put every option back to zsh's default before
 # this file is read, and a reset in here would take its `set -o pipefail` down with it
@@ -139,6 +142,24 @@ GIT_SELFTEST () {
 			return 1
 		fi
 	}
+	# Composes in a private index from HEAD's own entries, as a caller would, into a commit on
+	# HEAD, which pins the tip it was composed on – what `--amend-into --tree` takes
+	_ST_COMPOSE () {
+		# Args: <path> <content>... – prints the commit carrying HEAD's tree with each <path>
+		# replaced, at the mode HEAD holds it at
+		local IDX="$TMP/compose-index"
+		rm -f "$IDX"
+		GIT_INDEX_FILE=$IDX git read-tree HEAD
+		while [ $# -ge 2 ]; do
+			GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "$(git ls-tree HEAD -- "$1" | cut -d' ' -f1),$(printf '%s\n' "$2" | git hash-object -w --stdin),$1"
+			shift 2
+		done
+		git commit-tree "$(GIT_INDEX_FILE=$IDX git write-tree)" -p HEAD -m "composed"
+	}
+	_ST_REWRITE () {
+		# Args: <worktree> <file> <content> – the temp-file write that drops the executable bit
+		printf '%s\n' "$3" > "$1/$2.tmp" && mv "$1/$2.tmp" "$1/$2" && git -C "$1" add -- "$2"
+	}
 
 	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
 	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -184,13 +205,13 @@ GIT_SELFTEST () {
 	_ST_EQ "message applied" "$(git log --format=%s -3 | tail -1)" "C reworded"
 
 	# --- 2. Undo: reverts the reword, CAS-guarded ---
-	_ST_SCENARIO "\e[1;96m[2] undo\e[0m"
+	_ST_SCENARIO "\e[1;96m[2] undo\e[0m" # needs 1
 	_ST_RUN --undo
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_EQ "HEAD restored" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 3. Pushed guard: refuse B, allow with --allow-pushed ---
-	_ST_SCENARIO "\e[1;96m[3] pushed guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[3] pushed guard\e[0m" # needs 2
 	_ST_RUN -M --text="B reworded" "$SHA_B"
 	_ST_CHECK "refuses pushed commit" test "$RC" != "0"
 	_ST_OUT_HAS "names the reason" 'already pushed'
@@ -237,7 +258,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "staged change preserved" sh -c "git diff --cached --name-only | grep -q c.txt"
 
 	# --- 6. Fold conflict -> resolve -> continue (with cascade) ---
-	_ST_SCENARIO "\e[1;96m[6] amend-into conflict + continue\e[0m"
+	_ST_SCENARIO "\e[1;96m[6] amend-into conflict + continue\e[0m" # needs 5
 	_ST_RUN --amend-into="$SHA_C2"
 	_ST_EQ "pauses with exit 2" "$RC" "2"
 	local ROUNDS=0
@@ -358,7 +379,7 @@ GIT_SELFTEST () {
 	_ST_EQ "branch unchanged" "$(git rev-parse HEAD)" "$PRE_HEAD"
 
 	# --- 13. Undo refuses after the branch moved on ---
-	_ST_SCENARIO "\e[1;96m[13] undo CAS guard\e[0m"
+	_ST_SCENARIO "\e[1;96m[13] undo CAS guard\e[0m" # needs 11
 	echo "zeta" > z.txt && git add z.txt && git commit -qm "Z commit"
 	_ST_RUN --undo
 	_ST_CHECK "refuses" test "$RC" != "0"
@@ -383,7 +404,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "new file followed consensus" git cat-file -e 'HEAD~1:p.txt'
 
 	# --- 16. auto refuses ambiguous targets ---
-	_ST_SCENARIO "\e[1;96m[16] auto ambiguity refusal\e[0m"
+	_ST_SCENARIO "\e[1;96m[16] auto ambiguity refusal\e[0m" # needs 15
 	echo "em3" > m.txt && echo "en3" > n.txt
 	git add m.txt n.txt
 	_ST_RUN --amend-into=auto
@@ -4022,20 +4043,8 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	echo "tf-later" > tf2.txt && git add tf2.txt && git commit -qm "TF later"
 	# A peer's staging on the very path, with its WIP on top – both must survive the fold
 	printf 'peer\n' > tf.txt && git add tf.txt && printf 'peer\nwip\n' > tf.txt
-	# Composed in a private index from HEAD's own entries, as a caller would, and handed over as a
-	# commit on HEAD, which pins the tip it was composed on
+	# Composed by `_ST_COMPOSE` as a caller would, and handed over as a commit on HEAD
 	local TF_IDX="$TMP/tf-index"
-	_ST_COMPOSE () {
-		# Args: <path> <content>... – prints the commit carrying HEAD's tree with each <path>
-		# replaced, at the mode HEAD holds it at
-		rm -f "$TF_IDX"
-		GIT_INDEX_FILE=$TF_IDX git read-tree HEAD
-		while [ $# -ge 2 ]; do
-			GIT_INDEX_FILE=$TF_IDX git update-index --add --cacheinfo "$(git ls-tree HEAD -- "$1" | cut -d' ' -f1),$(printf '%s\n' "$2" | git hash-object -w --stdin),$1"
-			shift 2
-		done
-		git commit-tree "$(GIT_INDEX_FILE=$TF_IDX git write-tree)" -p HEAD -m "composed"
-	}
 	local TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-folded")
 	_ST_RUN --amend-into="$TF_BASE" --tree="$TF_COMPOSED" -- tf.txt
 	_ST_EQ "a composed tree folds" "$RC" "0"
@@ -4149,11 +4158,8 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --amend-into="$SM_BASE" -- sm.sh
 	_ST_EQ "the fold stops" "$RC" "2"
 	local SM_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-	# The resolver writes the file anew – a temp file moved into place comes back at 644
-	_ST_REWRITE () {
-		# Args: <worktree> <file> <content> – the temp-file write that drops the executable bit
-		printf '%s\n' "$3" > "$1/$2.tmp" && mv "$1/$2.tmp" "$1/$2" && git -C "$1" add -- "$2"
-	}
+	# The resolver writes the file anew through `_ST_REWRITE` – a temp file moved into place comes
+	# back at 644
 	_ST_REWRITE "$SM_WT" sm.sh $'#!/bin/sh\necho sm1-folded'
 	_ST_EQ "and staged it without the bit" "$(git -C "$SM_WT" ls-files -s -- sm.sh | cut -d' ' -f1)" "100644"
 	_ST_RUN --continue
@@ -4567,6 +4573,72 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a single --amend-into folds" "$RC" "0"
 	_ST_EQ "into the commit it names" "$(git show "$(git rev-parse ':/RP one')":rp.txt | tail -1)" "folded"
 
+	# --- 88. --selftest=<ids> runs those scenarios alone, with the ones they need ---
+	# A development run takes a few scenarios cut from the suite's text, so the cut must lose
+	# nothing, keep out what it was not asked for, and bring along what each one needs
+	_ST_SCENARIO "\e[1;96m[88] --selftest=<ids> runs those alone, with what they need\e[0m"
+	_ST_EQ "every scenario picked gives the suite back, line for line" \
+		"$(_SELFTEST_PICK "$SELFTEST_FILE" - && print -r -- "$SELFTEST_TEXT" | cksum)" \
+		"$(print -r -- "$(<"$SELFTEST_FILE")" | cksum)"
+	# A helper defined inside one scenario is missing from a run without it
+	local ST_FIRST=$(command grep -n $'^\t_ST_SCENARIO "' "$SELFTEST_FILE" | head -1 | cut -d: -f1)
+	_ST_EQ "no scenario defines a helper of its own" \
+		"$(awk -v f="$ST_FIRST" 'NR > f && /^\t_ST_[A-Z_]* \(\) \{/' "$SELFTEST_FILE")" ""
+	local ST_P1=$'\t_ST_SCENARIO "\\e[1;96m[1] one\\e[0m"'
+	local ST_P2=$'\t_ST_SCENARIO "\\e[1;96m[2] two\\e[0m" # needs 1'
+	local ST_P3=$'\t_ST_SCENARIO "\\e[1;96m[3] three\\e[0m"'
+	local ST_PS=$'\t# --- Summary ---'
+	printf '%s\n' pre "$ST_P1" one "$ST_P2" two "$ST_P3" three "$ST_PS" post > "$TMP/pick.zsh"
+	_ST_EQ "a pick keeps the setup, its own block, the one it needs and the summary" \
+		"$(_SELFTEST_PICK "$TMP/pick.zsh" 2 && print -r -- "$SELFTEST_TEXT")" \
+		"$(printf '%s\n' pre "$ST_P1" one "$ST_P2" two "$ST_PS" post)"
+	_ST_EQ "naming what it runs" "$(_SELFTEST_PICK "$TMP/pick.zsh" 2 && print -r -- "$SELFTEST_SCOPE")" "scenarios 1-2 (2 of 3)"
+	_ST_EQ "one alone in the singular" "$(_SELFTEST_PICK "$TMP/pick.zsh" 3 && print -r -- "$SELFTEST_SCOPE")" "scenario 3 (1 of 3)"
+	_ST_EQ "a gap kept apart" "$(_SELFTEST_PICK "$TMP/pick.zsh" 1,3 && print -r -- "$SELFTEST_SCOPE")" "scenarios 1, 3 (2 of 3)"
+	_ST_EQ "an open end running to the suite's own" "$(_SELFTEST_PICK "$TMP/pick.zsh" 2- && print -r -- "$SELFTEST_SCOPE")" "scenarios 1-3 (3 of 3)"
+	# A need no file order can meet, or an id on two blocks, refuses every pick, the mark named
+	printf '%s\n' pre "${ST_P1} # needs 2" one "$ST_P2" two "$ST_PS" post > "$TMP/pick-ahead.zsh"
+	OUT=$(_SELFTEST_PICK "$TMP/pick-ahead.zsh" 2 2>&1)
+	RC=$?
+	_ST_EQ "a need pointing ahead refuses" "$RC" "1"
+	_ST_OUT_HAS "naming the mark" 'scenario 1 needs 2, which is no scenario before it'
+	printf '%s\n' pre "$ST_P1" one "$ST_P1" again "$ST_PS" post > "$TMP/pick-twice.zsh"
+	OUT=$(_SELFTEST_PICK "$TMP/pick-twice.zsh" 1 2>&1)
+	RC=$?
+	_ST_EQ "an id on two blocks refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it" 'scenario 1 is declared twice'
+	# Through the real dispatch, in both spellings, the trailer saying it was not the whole suite
+	_ST_RUN --selftest=70
+	_ST_EQ "a pick runs" "$RC" "0"
+	_ST_OUT_HAS "the scenario it names" '\[70\] --version'
+	_ST_OUT_LACKS "and not the one before" '\[69\] '
+	_ST_OUT_LACKS "nor the one after" '\[71\] '
+	_ST_OUT_HAS "its trailer naming the pick" '^git-edit: ok – selftest [0-9]*/[0-9]* passed – scenario 70 (1 of [0-9]*)$'
+	_ST_RUN --selftest 70
+	_ST_EQ "the value may follow as its own word" "$RC" "0"
+	_ST_OUT_HAS "to the same run" 'passed – scenario 70 (1 of'
+	_ST_RUN --selftest=2
+	_ST_EQ "a pick needing another runs" "$RC" "0"
+	_ST_EQ "that one first, then its own, nothing past" \
+		"$(print -r -- "$OUT" | command grep -o '\[[0-9]*\] [a-z]*' | tr '\n' '|')" "[1] reword|[2] undo|"
+	_ST_RUN --selftest=999
+	_ST_EQ "a scenario the suite lacks refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it" "scenario '999', which the suite does not have"
+	_ST_RUN --selftest=3-1
+	_ST_EQ "a range backwards refuses" "$RC" "1"
+	_ST_OUT_HAS "saying so" 'runs backwards'
+	_ST_RUN --selftest=
+	_ST_EQ "an empty pick refuses" "$RC" "1"
+	_ST_OUT_HAS "pointing at the full suite" 'leave the value off for the full suite'
+	_ST_RUN --selftest=1 --selftest=2
+	_ST_EQ "a second --selftest refuses" "$RC" "1"
+	_ST_OUT_HAS "as any repeat does" '--selftest given twice'
+	# The picks above run one level down – a level further means a pick reached this scenario
+	OUT=$(GIT_EDIT_SELFTEST_DEPTH=2 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --selftest=70 </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "a selftest two levels down refuses" "$RC" "1"
+	_ST_OUT_HAS "rather than nesting on" 'two levels inside another'
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
@@ -4584,7 +4656,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 		done
 		cd /
 		rm -rf "$TMP" 2>/dev/null
-		echo "git-edit: ok – selftest $PASS/$TOTAL passed"
+		echo "git-edit: ok – selftest $PASS/$TOTAL passed${SELFTEST_SCOPE:+ – $SELFTEST_SCOPE}"
 		_STATUS_EMITTED=true
 		return 0
 	else
@@ -4593,7 +4665,11 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 		# hook registered at the start, or the exit trap would remove it right after this promise
 		_CLEANUP_HOOK=""
 		PRINT_TEXT "Scratch repo kept for inspection: %s" 33 "$TMP"
-		echo "git-edit: error – selftest $FAIL/$TOTAL failed"
+		# A scenario can pass in sequence and fail alone, starting from state an earlier one left
+		if [ -n "$SELFTEST_SCOPE" ]; then
+			PRINT_TEXT "Only %s ran – one that passes in the full suite may need an earlier one, named with %s on its %s line" 33 "$SELFTEST_SCOPE" "# needs <ids>" "_ST_SCENARIO"
+		fi
+		echo "git-edit: error – selftest $FAIL/$TOTAL failed${SELFTEST_SCOPE:+ – $SELFTEST_SCOPE}"
 		_STATUS_EMITTED=true
 		return 1
 	fi

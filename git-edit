@@ -191,7 +191,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --move=<a> --move=<b>... --after|--before=<sha> # several as one block, in one replay\e[0m"
 	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
-	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest | --version\e[0m"
+	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest[=<ids>] | --version\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
 	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
@@ -240,7 +240,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
 	ECHO_E "\e[0;94m       --no-verify-span                Verify the primary commit and the tip alone this run, under a standing edit.verifySpan\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
-	ECHO_E "\e[0;94m       --selftest                      Run the built-in end-to-end test suite in a scratch repo\e[0m"
+	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the built-in end-to-end test suite in a scratch repo – =83-87,90 runs those\e[0m"
+	ECHO_E "\e[0;94m                                       scenarios alone, with the ones they need, for development (commits and releases take all)\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m                                       (--split: the extracted commit's – the remainder keeps the original)\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
@@ -5630,6 +5631,100 @@ ABORT () {
 	exit 1
 }
 
+# Cuts the suite down to the scenarios `--selftest=<pick>` names, for runs during development –
+# the full suite stays the gate. Scenarios share one scratch repo, so one that starts from an
+# earlier one's state says so with `# needs <ids>` on its `_ST_SCENARIO` line, and those come
+# along. The setup before the first scenario and everything from `# --- Summary ---` always stay
+_SELFTEST_PICK () {
+	# Args: <suite file> <pick> – sets `SELFTEST_TEXT` to the cut suite and `SELFTEST_SCOPE` to
+	# what it kept, or refuses
+	local -a SUITE IDS KEPT RUNS
+	local -A AT NEEDS WANT
+	local I ID ITEM FROM TO N SUMMARY=0 RUN_FROM="" RUN_TO=""
+	SUITE=("${(@f)$(<"$1")}")
+	for (( I = 1; I <= ${#SUITE}; I++ )); do
+		if [[ "${SUITE[I]}" =~ '^	_ST_SCENARIO "\\e\[1;96m\[([0-9]+[a-z]?)\]' ]]; then
+			ID=${match[1]}
+			if (( ${+AT[$ID]} )); then
+				PRINT_ERR "Selftest scenario $ID is declared twice"
+				return 1
+			fi
+			IDS+=("$ID")
+			AT[$ID]=$I
+			[[ "${SUITE[I]}" =~ '# needs ([0-9a-z, ]+)$' ]] && NEEDS[$ID]=${match[1]// /}
+		elif [ "${SUITE[I]}" = $'\t# --- Summary ---' ]; then
+			SUMMARY=$I
+		fi
+	done
+	if [ ${#IDS} -eq 0 ] || (( SUMMARY < ${AT[${IDS[-1]}]} )); then
+		PRINT_ERR "The selftest suite has no scenarios, or no summary after them"
+		return 1
+	fi
+	# Needs point back, since blocks run in file order – checked on every pick, so a wrong one
+	# refuses the next run instead of waiting for the scenario that carries it
+	for ID in "${IDS[@]}"; do
+		for N in ${(s:,:)NEEDS[$ID]}; do
+			if (( ! ${+AT[$N]} )) || (( ${AT[$N]} >= ${AT[$ID]} )); then
+				PRINT_ERR "Selftest scenario $ID needs $N, which is no scenario before it"
+				return 1
+			fi
+		done
+	done
+	# An open end runs to the suite's own, as a commit range's empty side means HEAD
+	for ITEM in ${(s:,:)2}; do
+		FROM=${ITEM%%-*}
+		TO=${ITEM#*-}
+		[ -z "$FROM" ] && FROM=${IDS[1]}
+		[ -z "$TO" ] && TO=${IDS[-1]}
+		for N in "$FROM" "$TO"; do
+			if (( ! ${+AT[$N]} )); then
+				PRINT_ERR "--selftest names scenario '$N', which the suite does not have"
+				return 1
+			fi
+		done
+		if (( ${AT[$FROM]} > ${AT[$TO]} )); then
+			PRINT_ERR "--selftest=$ITEM runs backwards – name the earlier scenario first"
+			return 1
+		fi
+		for ID in "${IDS[@]}"; do
+			(( ${AT[$ID]} >= ${AT[$FROM]} && ${AT[$ID]} <= ${AT[$TO]} )) && WANT[$ID]=1
+		done
+	done
+	if [ ${#WANT} -eq 0 ]; then
+		PRINT_ERR "--selftest= names no scenario – leave the value off for the full suite"
+		return 1
+	fi
+	# One pass from the end closes over needs of needs, each pointing further back
+	for (( I = ${#IDS}; I >= 1; I-- )); do
+		(( ${+WANT[${IDS[I]}]} )) || continue
+		for N in ${(s:,:)NEEDS[${IDS[I]}]}; do
+			WANT[$N]=1
+		done
+	done
+	KEPT=("${(@)SUITE[1,${AT[${IDS[1]}]}-1]}")
+	for (( I = 1; I <= ${#IDS}; I++ )); do
+		ID=${IDS[I]}
+		if (( ${+WANT[$ID]} )); then
+			if (( I < ${#IDS} )); then
+				TO=$(( ${AT[${IDS[I+1]}]} - 1 ))
+			else
+				TO=$(( SUMMARY - 1 ))
+			fi
+			KEPT+=("${(@)SUITE[${AT[$ID]},TO]}")
+			[ -z "$RUN_FROM" ] && RUN_FROM=$ID
+			RUN_TO=$ID
+		fi
+		# A run of kept scenarios closes at the first one left out, or at the end
+		if [ -n "$RUN_FROM" ] && { (( ! ${+WANT[$ID]} )) || (( I == ${#IDS} )) }; then
+			RUNS+=("$RUN_FROM${${RUN_TO:#$RUN_FROM}:+-$RUN_TO}")
+			RUN_FROM=""
+		fi
+	done
+	KEPT+=("${(@)SUITE[SUMMARY,-1]}")
+	SELFTEST_TEXT=${(F)KEPT}
+	SELFTEST_SCOPE="scenario${${${#WANT}:#1}:+s} ${(j:, :)RUNS} (${#WANT} of ${#IDS})"
+}
+
 
 # ---------------------------------------- ARGUMENT PARSING ----------------------------------------
 
@@ -5644,7 +5739,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5671,7 +5766,7 @@ for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
 		--before OPT_BEFORE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
 		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
-		-C/--dir OPT_DIR 1 'takes one directory'; do
+		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios'; do
 	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
 		PRINT_ERR "$REPEAT_OPT given twice – it $REPEAT_WHAT, and only the last would count"
 		exit 1
@@ -5877,7 +5972,23 @@ if [ ${#OPT_SELFTEST} -gt 0 ]; then
 		ECHO_E "\e[0;31m  It ships alongside this script – copy it from the repository.\e[0m" >&2
 		exit 1
 	fi
-	source "$SELFTEST_FILE"
+	# Scenario 88 runs picks of the suite from inside it, one level down – a pick reaching 88 itself
+	# would nest without end, each level starting three more
+	if (( ${GIT_EDIT_SELFTEST_DEPTH:-0} >= 2 )); then
+		PRINT_ERR "A selftest two levels inside another – a pick reached the scenario that runs picks"
+		exit 1
+	fi
+	export GIT_EDIT_SELFTEST_DEPTH=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} + 1 ))
+	# `--selftest=<pick>` loads the suite cut down to those scenarios, `--selftest 83` arriving
+	# glued as `--selftest83`
+	SELFTEST_SCOPE=""
+	if [ "${OPT_SELFTEST[1]}" = "--selftest" ]; then
+		source "$SELFTEST_FILE"
+	else
+		_SELFTEST_PICK "$SELFTEST_FILE" "${${OPT_SELFTEST[1]#--selftest}#=}" || exit 1
+		eval "$SELFTEST_TEXT"
+		PRINT_TEXT "Running %s – a commit or a release takes the full suite" 33 "$SELFTEST_SCOPE"
+	fi
 	# ${0:A} resolves the running script's absolute path at top level (inside
 	# functions zsh rebinds $0 to the function name)
 	GIT_SELFTEST "${0:A}"

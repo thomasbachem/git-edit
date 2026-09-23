@@ -22,7 +22,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
-\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR | \fB\-\-version\fR
+\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
 .B git edit
@@ -134,9 +134,10 @@ A mode or option that takes one value \(em
 .BR \-\-before ,
 .BR \-\-tree ,
 .BR \-\-text ,
-.B \-\-verify
-or
+.BR \-\-verify ,
 .BR \-C / \-\-dir
+or
+.B \-\-selftest
 \(em refuses to be given twice, where only the last value would count.
 .B \-\-move
 alone repeats, each time naming more of what it moves.
@@ -587,7 +588,7 @@ Revert the last completed operation's ref move, compare\-and\-swap guarded
 Report the in\-flight operation (or the last completed one) in the trailer
 grammar \(em for an agent or session re\-entering mid\-operation.
 .TP
-.B \-\-selftest
+.BR \-\-selftest [ =\fIids\fR ]
 Run the end\-to\-end test suite in a scratch repository. A passing run removes
 that repository and every temp worktree anchored to it; a failing run keeps
 both and prints the path, since that tree is the evidence. The suite lives in
@@ -596,6 +597,14 @@ beside this script and is sourced only for this mode; it drives
 .B git\-edit
 as a subprocess rather than calling into it, so what it exercises is the
 shipped behaviour.
+Given scenario numbers and ranges, such as
+.BR 83\-87,90 ,
+it runs those alone \(em an open end running to the suite's own \(em together with any a
+scenario names in a
+.B # needs
+mark, and its trailer says what ran. That is for runs during development:
+scenarios share one repository, so a pick proves only what it ran, and a
+commit or a release takes the whole suite.
 .PP
 Independently, each mutating run sweeps temp worktrees left in
 .B TMPDIR
