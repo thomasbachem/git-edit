@@ -177,6 +177,8 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
 | `--allow-mode-change` | Let `--amend-into` fold a file-mode change – a flipped executable bit, which it otherwise refuses – and, on `--continue`, keep one a conflict resolution staged or the landing found nothing asked for |
 | `--tree=<tree-ish>` | With `--amend-into`, fold that tree's diff from `HEAD` instead of the index's – composed apart from the shared index; a commit pins the tip it was composed on |
+| `--base=<sha>` | With `--exec`, the tip its result was built on – needed where that result carries commits made before the run and takes commits off the branch, and refused where the branch has moved past it |
+| `--dry-run` | With `--exec`, build and report the result, and the landing pinned to its base, with nothing verified or applied |
 | `--verify=<cmd>` / `--verify-span` / `--no-verify-span` / `--no-verify` | Gate the rewrite on your own check, at the tip or across the span – step a standing span back down for one run, or skip a configured check |
 | `--skip` | With `--onto`, resume past the paused commit instead of through it |
 | `-y`, `--yes` | Auto-confirm the drop/squash prompt a terminal run shows |

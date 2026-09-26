@@ -21,7 +21,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
-\fBgit edit\fR \fB\-\-exec\fR \fB\-\-\fR \fIcommand\fR...
+\fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
@@ -389,6 +389,41 @@ mode's gate covers a replay of a commit somebody already made. Having no pause
 to offer, a failure refuses outright and names the SHA, and
 .B \-\-no\-verify
 applies it.
+.IP
+The compare\-and\-swap covers the \fIcommand\fR's own run and nothing
+before it. A history built before the run \(em elsewhere, then landed with
+.B "git reset \-\-hard"
+\(em says nothing of the tip it was built on, so whatever reached the branch
+meanwhile would leave with the rest, and the run would still report
+.BR ok .
+A result carrying any commit made before the run \(em its tip or one below a
+commit the \fIcommand\fR added on top \(em refuses where it takes commits off
+the branch, naming the newest of them, unless
+.B \-\-base
+names the tip it was built on. A descendant of the tip lands as ever, and so
+does anything the \fIcommand\fR builds itself; a rebuild that keeps its
+commits' original committer dates reads as built before the run, and
+.B \-\-base
+at the current tip lands it. A reset back to an earlier
+commit refuses the same way, since it drops whatever sits above that commit
+by then \(em
+.B \-d
+names the commits a drop takes.
+.IP
+.B \-\-dry\-run
+stops at the result: built in the same isolated worktree, it is reported
+with the tip it was built on and a
+.B "git range\-diff"
+to compare the two, and left addressable by SHA with nothing verified or
+applied. The last line before the trailer is its landing, pinned to that tip:
+.BR "git edit \-\-exec \-\-base=<tip> \-\- git reset \-q \-\-hard <sha>" ,
+which refuses if the branch moved since. Inspect a scripted rewrite this way
+rather than by running the script outside
+.BR \-\-exec ,
+where the closing
+.B "reset \-\-hard"
+that hands its result back moves the shared checkout's branch and discards
+its working tree.
 .SH OPTIONS
 .TP
 .B \-m, \-\-message
@@ -448,6 +483,33 @@ fold \fItree\-ish\fR's diff from
 instead of the index's \(em composed apart from the shared index, a commit
 pinning the tip it was composed on; see
 .BR MODES .
+.TP
+.B \-\-base=\fIsha\fR
+With
+.BR \-\-exec ,
+the tip its result was built on, as a SHA \(em a name like
+.B HEAD
+resolves to wherever the branch is now, the very tip the flag checks
+against, so it refuses. Where the branch has moved past it, the run refuses
+before the \fIcommand\fR starts, naming what reached the branch since and the
+.B "git rebase \-\-onto"
+that carries those onto the result inside the run; see
+.BR MODES .
+.TP
+.B \-\-dry\-run
+With
+.BR \-\-exec ,
+build and report the result, and the landing pinned to its base, without
+verifying or applying it; see
+.BR MODES .
+Any verify flag refuses \(em
+.BR \-\-verify ,
+.BR \-\-verify\-span ,
+.B \-\-no\-verify
+or
+.B \-\-no\-verify\-span
+\(em since the gate, and any check skipped, belong to the run that lands the
+result, decided once it has been inspected.
 .TP
 .B \-\-verify=\fIcmd\fR
 Run \fIcmd\fR against what the rewrite built, before the compare\-and\-swap
@@ -630,6 +692,7 @@ that a caller can dispatch on with
 .RS
 git\-edit: ok \(en refs/heads/main moved <old-sha> \(-> <new-sha>
 git\-edit: ok \(en refs/heads/main unchanged
+git\-edit: ok \(en dry run built <new-sha> on <old-sha>, refs/heads/main unchanged
 git\-edit: error \(en <reason>
 git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
@@ -806,14 +869,21 @@ one wants
 a cheaper
 .B \-\-verify
 or
-.BR \-\-no\-verify . This is a sketch: a real loop also carries each commit's author
-and dates onto
+.BR \-\-no\-verify .
+This is a sketch: a real loop also carries each commit's author and author
+date onto
 .B commit\-tree
 .RB ( GIT_AUTHOR_NAME / EMAIL / DATE ),
+leaving the committer date to the run, since a result carrying commits
+dated before it lands only under
+.BR \-\-base ,
 and stops at merge commits rather than flattening them. Conflict\-freedom
 cuts the other way too: a buggy transform lands on every commit uniformly
 and silently, so sweep the result before trusting it \(em run the tests per
-rebuilt commit, or diff each rebuilt tree against its source. A
+rebuilt commit, or diff each rebuilt tree against its source.
+.B \-\-dry\-run
+leaves the result unapplied for that sweep and prints the command that
+lands it. A
 hand\-authored point fix stays on the normal modes; the snapshot map is for
 changes that are a pure function of each commit's content.
 .SH "EXIT STATUS"

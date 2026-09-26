@@ -181,7 +181,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit [-M | --reword] [--text <msg>] <commit>\e[0m"
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
-	ECHO_E "\e[0;94m       git edit --exec -- <command>...\e[0m"
+	ECHO_E "\e[0;94m       git edit --exec [--base=<sha>] [--dry-run] -- <command>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto [--tree=<tree-ish>] # fold staged changes (or a composed tree) into <sha> (auto = the unpushed commit owning the lines)\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha>                               # split <sha> by content (same-file halves)\e[0m"
@@ -204,6 +204,10 @@ USAGE () {
 	ECHO_E "\e[0;94m       -C=<path>, --dir=<path>         Run in the specified worktree path\e[0m"
 	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
 	ECHO_E "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
+	ECHO_E "\e[0;94m       --base=<sha>                    With --exec: the tip its result was built on – refused where the branch\e[0m"
+	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run\e[0m"
+	ECHO_E "\e[0;94m       --dry-run                       With --exec: build, then report the result and its pinned landing –\e[0m"
+	ECHO_E "\e[0;94m                                       neither verified nor applied\e[0m"
 	ECHO_E "\e[0;94m       --amend-into=<sha>|auto [--text <msg>] [-- <pathspec>...]\e[0m"
 	ECHO_E "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
 	ECHO_E "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
@@ -257,6 +261,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – refs/heads/main unchanged\e[0m"
+	ECHO_E "\e[0;94m         git-edit: ok – dry run built <new-sha> on <old-sha>, refs/heads/main unchanged\e[0m"
 	ECHO_E "\e[0;94m         git-edit: error – exit code <N>\e[0m"
 	ECHO_E "\e[0;94m         git-edit: paused – edit <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'\e[0m"
 	ECHO_E "\e[0;94m         git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
@@ -446,6 +451,14 @@ EMIT_STATUS () {
 	else
 		echo "git-edit: ok – $2 unchanged"
 	fi
+	_STATUS_EMITTED=true
+}
+
+# Emits an `--exec --dry-run`'s outcome – nothing moved, and the SHA it built is what the caller
+# came for, so it rides in the one line a `tail -1` or a `^git-edit:` grep is sure to reach
+EMIT_DRY_RUN () {
+	# Args: <built_sha> <base_sha> <ref>
+	echo "git-edit: ok – dry run built $1 on $2, $3 unchanged"
 	_STATUS_EMITTED=true
 }
 
@@ -1779,6 +1792,55 @@ _RESQUASH_ELIGIBLE () {
 	return 0
 }
 
+# Refuses an `--exec` result carrying commits made before the run that would take commits off
+# the branch – built elsewhere, on a tip nothing names, so whatever reached the branch since
+# would leave with the rest. The newest of those lead the list, being the likeliest someone else's
+_REFUSE_EXEC_PREBUILT () {
+	# Args: <orig-head> <new-head> <ref> <commits-made-before-the-run>
+	local ORIG_HEAD=$1
+	local NEW_HEAD=$2
+	local BRANCH=${3#refs/heads/}
+	local PRE_RUN=$4
+	local -i LEAVING=$(git rev-list --count "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null)
+	# A rewind is the one shape with a mode of its own – a drop names its commits rather than
+	# resetting past whatever the tip has become
+	local REWIND=false
+	git merge-base --is-ancestor "$NEW_HEAD" "$ORIG_HEAD" 2>/dev/null && REWIND=true
+	if [ "$REWIND" = true ]; then
+		PRINT_ERR "HEAD moved back to ${NEW_HEAD:0:7} – a reset past the tip drops whatever sits above it, a commit that reached $BRANCH meanwhile included"
+	else
+		PRINT_ERR "HEAD moved to ${NEW_HEAD:0:7}, carrying $PRE_RUN commit(s) made before this run – landing a history built elsewhere would drop whatever reached $BRANCH after it was built"
+	fi
+	ECHO_E "\e[0;31m  It takes $LEAVING commit(s) off $BRANCH, the newest first:\e[0m" >&2
+	git log --format='%h %s' -5 "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	(( LEAVING > 5 )) && ECHO_E "\e[0;31m    … and $(( LEAVING - 5 )) more\e[0m" >&2
+	if [ "$REWIND" = true ]; then
+		ECHO_E "\e[0;31m  To drop commits, name them: git edit -d <sha>... – or pin the tip you expect with --base=<sha>.\e[0m" >&2
+	else
+		ECHO_E "\e[0;31m  Name the tip it was built on, refused again if $BRANCH has moved past it: git edit --exec --base=<sha> -- ...\e[0m" >&2
+	fi
+}
+
+# Refuses an `--exec --base` whose tip the branch has moved past – naming what reached it since,
+# and the rebase that carries those onto a history built on the base, inside the run itself
+_REFUSE_EXEC_BASE_MOVED () {
+	# Args: <base> <orig-head> <ref>
+	local BASE=$1
+	local ORIG_HEAD=$2
+	local BRANCH=${3#refs/heads/}
+	if ! git merge-base --is-ancestor "$BASE" "$ORIG_HEAD" 2>/dev/null; then
+		PRINT_ERR "$BRANCH was rewritten since --base ${BASE:0:7} – it is no longer an ancestor of the tip"
+		ECHO_E "\e[0;31m  Rebuild on the current tip, ${ORIG_HEAD:0:12}.\e[0m" >&2
+		return 0
+	fi
+	local -i SINCE=$(git rev-list --count "$BASE..$ORIG_HEAD" 2>/dev/null)
+	PRINT_ERR "$BRANCH moved past --base ${BASE:0:7} – $SINCE commit(s) reached it since, which landing a history built on it would drop"
+	git log --format='%h %s' -10 "$BASE..$ORIG_HEAD" 2>/dev/null | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	(( SINCE > 10 )) && ECHO_E "\e[0;31m    … and $(( SINCE - 10 )) more\e[0m" >&2
+	ECHO_E "\e[0;31m  Rebuild on the tip, or carry them onto your history in the run:\e[0m" >&2
+	ECHO_E "\e[0;31m    git edit --exec --base=${ORIG_HEAD:0:12} -- git rebase --onto <your history> ${BASE:0:12}\e[0m" >&2
+}
+
 # Runs an arbitrary command inside a fresh per-invocation worktree, detached at the branch
 # tip – where the command rewrites `HEAD`, the original ref moves by atomic CAS, refusing
 # if the branch moved, so raw rewriting commands never touch the main checkout
@@ -1795,6 +1857,15 @@ GIT_EXEC () {
 	EXEC_NEW_HEAD=$ORIG_HEAD
 	EXEC_REF=$REF
 	EXEC_CHANGED=false
+	EXEC_DRY_BUILT=""
+	EXEC_DRY_BASE=""
+
+	# A pinned tip the branch has moved past refuses before the command runs – whatever it
+	# builds on that base would drop what reached the branch since
+	if [ -n "$EXEC_BASE" ] && [ "$EXEC_BASE" != "$ORIG_HEAD" ]; then
+		_REFUSE_EXEC_BASE_MOVED "$EXEC_BASE" "$ORIG_HEAD" "$REF"
+		exit 1
+	fi
 
 	# Unique per-invocation worktree so concurrent --exec calls never collide
 	local WT=$(MKTEMP_DIR git-edit-exec)
@@ -1811,7 +1882,9 @@ GIT_EXEC () {
 	cd "$WT" || exit 1
 
 	# Run the caller's command – no `eval`, the array passes straight through so quoting
-	# and special characters survive
+	# and special characters survive. The clock is read first: a result committed before it
+	# was built somewhere else, on a tip nothing here can name
+	local RUN_START=$(date +%s)
 	PRINT_CMD "$* # (in $WT)"
 	"$@"
 	local STATUS=$?
@@ -1838,6 +1911,37 @@ GIT_EXEC () {
 			ECHO_E "\e[0;31m  Rewritten history is at $NEW_HEAD; pass --allow-pushed to override.\e[0m" >&2
 			exit 1
 		fi
+	fi
+
+	# Built-elsewhere guard – the CAS covers only the command's own run, so a history built before
+	# it, landed as a rewrite, would drop whatever reached the branch after it was built, reporting
+	# `ok`. Every commit the result brings in counts, not just its tip, which a commit made on top
+	# in the run would date anew; and a reset to an ancestor predates the run by definition. A
+	# descendant drops nothing, and `--base` names the tip the history was built on
+	if [ -z "$EXEC_BASE" ] && ! git merge-base --is-ancestor "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null; then
+		local -i PRE_RUN=0
+		if ! git merge-base --is-ancestor "$NEW_HEAD" "$ORIG_HEAD" 2>/dev/null; then
+			PRE_RUN=$(git log --format=%ct "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null | awk -v t="$RUN_START" '$1 < t' | wc -l)
+		fi
+		if git merge-base --is-ancestor "$NEW_HEAD" "$ORIG_HEAD" 2>/dev/null || (( PRE_RUN > 0 )); then
+			_REFUSE_EXEC_PREBUILT "$ORIG_HEAD" "$NEW_HEAD" "$REF" "$PRE_RUN"
+			exit 1
+		fi
+	fi
+
+	# A dry run stops at the result – no gate, no CAS – and hands over the landing, pinned to
+	# the tip it built on, so running the command outside `--exec` never looks like the way to
+	# inspect a rewrite first
+	if [ ${#OPT_DRY_RUN} -gt 0 ]; then
+		EXEC_DRY_BASE=$ORIG_HEAD
+		local MB=$(git merge-base "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null)
+		local PUSHED_FLAG=""
+		[ ${#OPT_ALLOW_PUSHED} -gt 0 ] && PUSHED_FLAG=" --allow-pushed"
+		PRINT_TEXT "Dry run – built %s on %s, neither verified nor applied." 33 "${NEW_HEAD:0:12}" "${ORIG_HEAD:0:12}"
+		[ -n "$MB" ] && PRINT_TEXT "Compare: %s" 33 "git range-diff ${MB:0:12}..${ORIG_HEAD:0:12} ${MB:0:12}..${NEW_HEAD:0:12}"
+		PRINT_TEXT "Land it: %s" 32 "git edit --exec --base=${ORIG_HEAD:0:12}$PUSHED_FLAG -- git reset -q --hard $NEW_HEAD"
+		EXEC_DRY_BUILT=$NEW_HEAD
+		return 0
 	fi
 
 	# The command authored this content rather than replaying a commit somebody already made,
@@ -5739,7 +5843,7 @@ done
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 zmodload zsh/zutil
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -5764,7 +5868,7 @@ fi
 for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 2 'names one commit' \
 		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' \
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
-		--before OPT_BEFORE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
+		--before OPT_BEFORE 2 'names one commit' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
 		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
 		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios'; do
 	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
@@ -5836,6 +5940,43 @@ if [ ${#OPT_TREE} -gt 0 ]; then
 	if [ ${#OPT_AMEND_INTO} -eq 0 ]; then
 		USAGE
 		PRINT_ERR "--tree only applies to --amend-into"
+		exit 1
+	fi
+fi
+# Resolve --base's value – the tip an --exec result was built on, both `--base=<sha>` and
+# `--base <sha>` forms. Hex only: a name like HEAD resolves to wherever the branch is now, the
+# very tip the flag exists to check the build against
+EXEC_BASE=""
+if [ ${#OPT_BASE} -gt 0 ]; then
+	if [ ${#OPT_EXEC} -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--base only applies to --exec"
+		exit 1
+	fi
+	if [[ ${#OPT_BASE} -gt 1 ]]; then
+		EXEC_BASE=${OPT_BASE[2]#=}
+	fi
+	if [[ ! "$EXEC_BASE" =~ '^[0-9a-fA-F]{7,64}$' ]]; then
+		PRINT_ERR "--base takes the SHA of the tip your history was built on (--base=<sha>)"
+		ECHO_E "\e[0;31m  A name like HEAD resolves to wherever the branch is now – the tip the flag checks against.\e[0m" >&2
+		exit 1
+	fi
+	if ! EXEC_BASE=$(git rev-parse --verify --quiet "$EXEC_BASE^{commit}" 2>/dev/null); then
+		PRINT_ERR "--base ${OPT_BASE[2]#=} names no commit here"
+		exit 1
+	fi
+fi
+# A dry run builds and reports – it never verifies, the landing run does, so an explicit gate
+# here would be a promise the run never keeps, and an opt-out one its landing line drops. Which
+# checks to skip is also best settled once the result has been inspected
+if [ ${#OPT_DRY_RUN} -gt 0 ]; then
+	if [ ${#OPT_EXEC} -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--dry-run only applies to --exec"
+		exit 1
+	fi
+	if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 -o ${#OPT_NO_VERIFY} -gt 0 -o ${#OPT_NO_VERIFY_SPAN} -gt 0 ]; then
+		PRINT_ERR "--dry-run never verifies – the run that lands its result does, so pass verify flags there"
 		exit 1
 	fi
 fi
@@ -6158,6 +6299,10 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 		fi
 	fi
 	GIT_EXEC "$@"
+	if [ -n "$EXEC_DRY_BUILT" ]; then
+		EMIT_DRY_RUN "$EXEC_DRY_BUILT" "$EXEC_DRY_BASE" "$EXEC_REF"
+		exit 0
+	fi
 	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
 	exit 0
 fi
