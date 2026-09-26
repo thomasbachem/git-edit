@@ -1298,7 +1298,7 @@ _RESYNC_STRANDED_ENTRIES () {
 _RECONCILE_CHECKOUT () {
 	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>]
 	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 P
-	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED GONE
+	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED GONE MODE_ONLY
 	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
 	if [ ${#RESYNCED[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
@@ -1317,8 +1317,14 @@ _RECONCILE_CHECKOUT () {
 			if ! git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null; then
 				# Only the pre-rewrite blob itself is stale content a restore reclaims – a
 				# worktree matching neither tip carries edits on top, a peer's or your own,
-				# and naming those for reconciling would prescribe discarding them
-				if git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
+				# and naming those for reconciling would prescribe discarding them. The new
+				# tip's content under another mode is neither: no edit, just a bit a file moved
+				# into place lost, a chmod not committed, or one the rewrite made and the
+				# checkout never got – told apart, since "uncommitted edits" on a file just
+				# committed whole invites committing "the rest"
+				if git -C "$CO" -c core.fileMode=false diff --quiet HEAD -- "$P" 2>/dev/null; then
+					MODE_ONLY+=("$P")
+				elif git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
 					STALE+=("$P")
 				else
 					MODIFIED+=("$P")
@@ -1338,8 +1344,31 @@ _RECONCILE_CHECKOUT () {
 	if [ ${#MODIFIED[@]} -gt 0 ]; then
 		PRINT_TEXT "Worktree files left alone – uncommitted edits there, not the pre-rewrite content (a peer's, or your own): %s" 33 "${(j: :)${(q-)MODIFIED[@]}}"
 	fi
+	# Both modes named, and the chmod matching the committed one offered – it discards no content,
+	# though a deliberate chmod not yet committed is undone by it all the same
+	if [ ${#MODE_ONLY[@]} -gt 0 ]; then
+		local -a MODE_NOTES TO_X TO_NOX
+		local HERE THERE
+		for P in "${MODE_ONLY[@]}"; do
+			# `--full-tree`, as `$P` is the repo's path and a pathspec would read it from the cwd
+			THERE=$(git ls-tree --full-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1}')
+			HERE=100644
+			[ -x "$CO/$P" ] && HERE=100755
+			MODE_NOTES+=("${(q-)P} ($HERE here, $THERE committed)")
+			if [ "$THERE" = 100755 ]; then
+				TO_X+=("$P")
+			else
+				TO_NOX+=("$P")
+			fi
+		done
+		PRINT_TEXT "Worktree files at the new tip's content, only their mode differing – no edits there: %s" 33 "${(j:, :)MODE_NOTES}"
+		local CHMOD=""
+		[ ${#TO_X[@]} -gt 0 ] && CHMOD="chmod +x -- ${(j: :)${(q-)TO_X[@]}}"
+		[ ${#TO_NOX[@]} -gt 0 ] && CHMOD="${CHMOD:+$CHMOD && }chmod -x -- ${(j: :)${(q-)TO_NOX[@]}}"
+		PRINT_TEXT "Match the committed mode: %s" 33 "$CHMOD"
+	fi
 	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
-		[ -n "$CURRENT_HEADLINE" ] && [ ${#MODIFIED[@]} -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		[ -n "$CURRENT_HEADLINE" ] && [ ${#MODIFIED[@]} -eq 0 ] && [ ${#MODE_ONLY[@]} -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
 		return 0
 	fi
 	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
