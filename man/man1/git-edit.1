@@ -911,9 +911,17 @@ and silently, so sweep the result before trusting it \(em run the tests per
 rebuilt commit, or diff each rebuilt tree against its source.
 .B \-\-dry\-run
 leaves the result unapplied for that sweep and prints the command that
-lands it. A
-hand\-authored point fix stays on the normal modes; the snapshot map is for
-changes that are a pure function of each commit's content.
+lands it.
+.PP
+A hand\-authored fold stays on
+.B \-\-amend\-into
+while its replay runs clean. Where later commits rewrote its lines, the
+replay stops at each of them for a state written by hand. Then
+.B \-\-abort
+and map the fold instead, restated as edits that every snapshot from its target
+up matches exactly once. Prove the tip against the result intended, and read
+each patch the range\-diff marks changed beyond the targets rather than
+counting them: each is a later commit the fold's text reached.
 .SH "EXIT STATUS"
 .TP
 .B 0
