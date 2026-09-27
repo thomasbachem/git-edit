@@ -416,6 +416,21 @@ by then \(em
 .B \-d
 names the commits a drop takes.
 .IP
+A result whose messages end in more blank lines than the commits they
+replace refuses too, naming them \(em matched by subject, or by author and
+author date, which a reword keeps; a commit brought in from elsewhere replaces
+nothing and lands as it was. It is the mark of a
+rebuild loop reading a message with
+.B %B
+and handing it to
+.B commit\-tree
+unchanged, which adds a blank line to every message it rebuilds, one more
+per pass, where neither
+.B "git log"
+nor
+.B "git range\-diff"
+shows it. A loop that carries a message byte for byte, or trims it, passes.
+.IP
 .B \-\-dry\-run
 stops at the result: built in the same isolated worktree, it is reported
 with the tip it was built on and a
@@ -879,8 +894,15 @@ or
 This is a sketch: a real loop also carries each commit's author and author
 date onto
 .B commit\-tree
-.RB ( GIT_AUTHOR_NAME / EMAIL / DATE ),
-leaving the committer date to the run, since a result carrying commits
+.RB ( GIT_AUTHOR_NAME / EMAIL / DATE )
+and its message as the shell's
+.B $(...)
+reads it, trailing newlines trimmed, or byte for byte from
+.B "git cat\-file commit"
+\(em ported to a language that keeps them,
+.B %B
+gains a blank line per pass, which the landing refuses. It leaves
+the committer date to the run, since a result carrying commits
 dated before it lands only under
 .BR \-\-base ,
 and stops at merge commits rather than flattening them. Conflict\-freedom

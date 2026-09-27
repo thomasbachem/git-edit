@@ -1870,6 +1870,59 @@ _REFUSE_EXEC_BASE_MOVED () {
 	ECHO_E "\e[0;31m    git edit --exec --base=${ORIG_HEAD:0:12} -- git rebase --onto <your history> ${BASE:0:12}\e[0m" >&2
 }
 
+# Lists each commit an `--exec` result brings in whose message ends in more blank lines than
+# the one it replaces, as a line of SHA and subject. The one it replaces shares its subject or
+# its author and author date, which a reword keeps – a commit matching neither came from
+# elsewhere, a branch brought in, and carries its message as it was. Only a byte count sees
+# them: `git log` and `git range-diff` both trim
+_EXEC_GAINED_BLANK_LINES () {
+	# Args: <orig-head> <new-head>
+	setopt local_options extended_glob
+	local -A LEFT
+	local SIDE RAW ENTRY BODY KEY
+	local -a F
+	local -i EXTRA BEFORE
+	for SIDE in leaving arriving; do
+		# `-z` ends each entry in a NUL rather than a newline, so a body keeps its own trailing
+		# ones, and the `x` keeps the last entry's whether or not git closes it with a NUL
+		if [ $SIDE = leaving ]; then
+			RAW=$(git log -z --format='%H%x01%s%x01%ae %at%x01%B' "$2..$1" 2>/dev/null; print -n x)
+		else
+			RAW=$(git log -z --format='%H%x01%s%x01%ae %at%x01%B' "$1..$2" 2>/dev/null; print -n x)
+		fi
+		for ENTRY in "${(@0)${RAW%x}}"; do
+			[ -z "$ENTRY" ] && continue
+			F=("${(@ps:\x01:)ENTRY}")
+			BODY=${F[4]}
+			EXTRA=$(( ${#BODY} - ${#${BODY%%[$'\n']##}} - 1 ))
+			(( EXTRA < 0 )) && EXTRA=0
+			if [ $SIDE = leaving ]; then
+				for KEY in "s ${F[2]}" "a ${F[3]}"; do
+					(( EXTRA > ${LEFT[$KEY]:--1} )) && LEFT[$KEY]=$EXTRA
+				done
+			else
+				BEFORE=-1
+				for KEY in "s ${F[2]}" "a ${F[3]}"; do
+					(( ${LEFT[$KEY]:--1} > BEFORE )) && BEFORE=${LEFT[$KEY]}
+				done
+				(( BEFORE >= 0 && EXTRA > BEFORE )) && print -r -- "${F[1]:0:7} ${F[2]}"
+			fi
+		done
+	done
+}
+
+# Refuses an `--exec` result whose messages gained trailing blank lines – the mark of a loop
+# feeding `%B` raw to `commit-tree`, which adds one to every message it rebuilds, one more per
+# pass, where nothing downstream shows it
+_REFUSE_EXEC_BLANK_LINES () {
+	# Args: <new-head> <gained, one `<sha> <subject>` a line>
+	local -a GAINED=("${(@f)2}")
+	PRINT_ERR "HEAD moved to ${1:0:7}, but ${#GAINED} message(s) it brings in end in more blank lines than before – a message read with %B and fed raw to commit-tree gains one each pass, which git log and git range-diff both hide"
+	print -rl -- "${(@)GAINED[1,5]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	(( ${#GAINED} > 5 )) && ECHO_E "\e[0;31m    … and $(( ${#GAINED} - 5 )) more\e[0m" >&2
+	ECHO_E "\e[0;31m  Take each message from git cat-file commit, or trim its trailing newlines to one, and rebuild.\e[0m" >&2
+}
+
 # Runs an arbitrary command inside a fresh per-invocation worktree, detached at the branch
 # tip – where the command rewrites `HEAD`, the original ref moves by atomic CAS, refusing
 # if the branch moved, so raw rewriting commands never touch the main checkout
@@ -1956,6 +2009,14 @@ GIT_EXEC () {
 			_REFUSE_EXEC_PREBUILT "$ORIG_HEAD" "$NEW_HEAD" "$REF" "$PRE_RUN"
 			exit 1
 		fi
+	fi
+
+	# Message guard – a hand-rolled rebuild loop is the one place a message gets retyped, and
+	# its commonest slip is invisible, so the dry run refuses it too, before anyone inspects
+	local GAINED=$(_EXEC_GAINED_BLANK_LINES "$ORIG_HEAD" "$NEW_HEAD")
+	if [ -n "$GAINED" ]; then
+		_REFUSE_EXEC_BLANK_LINES "$NEW_HEAD" "$GAINED"
+		exit 1
 	fi
 
 	# A dry run stops at the result – no gate, no CAS – and hands over the landing, pinned to
