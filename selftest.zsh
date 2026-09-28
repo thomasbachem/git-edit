@@ -4390,7 +4390,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 
 	# --- 83. a run of adjacent commits moves as one block, in one replay ---
 	# Landing several new commits at one spot a commit at a time replays the span once per commit
-	# – and verifies it once per commit under a standing `edit.verifySpan`, which cost a PowCal
+	# – and verifies it once per commit under a standing `edit.verifySpan`, which cost a
 	# landing three passes over 185 commits. A run `<oldest>..<newest>` moves in one, read
 	# inclusive and either way round, as `-d` reads a range
 	_ST_SCENARIO "\e[1;96m[83] --move takes a run of adjacent commits as one block\e[0m"
@@ -4435,7 +4435,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 
 	# --- 84. a move steps down from a standing span as a fold does ---
 	# The tier flag was pinned on folds alone, while a move rebuilds everything above its anchor
-	# just the same – a PowCal landing passed it to its folds and not to its moves, 18 minutes of
+	# just the same – a landing passed it to its folds and not to its moves, 18 minutes of
 	# suite runs. The default tier of a move is the tip, a reorder naming no primary commit
 	_ST_SCENARIO "\e[1;96m[84] --no-verify-span steps a move down from edit.verifySpan\e[0m"
 	local VM
