@@ -4836,6 +4836,171 @@ EOF
 	git config --unset edit.verifySpan
 	git config --unset edit.verifyCmd
 
+	# --- 93. a TERM mid-check leaves no worktree behind ---
+	# Untrapped, the signal ended zsh without its exit trap, so the operation's worktree stayed
+	# registered while --status reported nothing in flight for --abort to clean up
+	_ST_SCENARIO "\e[1;96m[93] a TERM mid-check leaves no worktree behind\e[0m"
+	local VT
+	for VT in base one two; do
+		echo "$VT" > "vt_$VT.txt" && git add "vt_$VT.txt" && git commit -qm "VT $VT"
+	done
+	local VT_TIP=$(git rev-parse HEAD)
+	local VT_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
+	# The check names its own process, so none outlives the scenario whatever the signal reaches,
+	# and marks its own end, since a signal to the run alone waits for the check it is running
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vt-check\"; sleep 2; echo done > \"$TMP/vt-done\"'"
+	rm -f "$TMP/vt-check" "$TMP/vt-done"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/VT two')" --after="$(git rev-parse ':/VT base')" </dev/null >"$TMP/vt-out" 2>&1 &
+	local VT_PID=$!
+	local -i VT_WAIT=0
+	until [ -s "$TMP/vt-check" ] || (( ++VT_WAIT > 150 )); do
+		sleep 0.1
+	done
+	kill -TERM $VT_PID
+	wait $VT_PID
+	RC=$?
+	kill "$(cat "$TMP/vt-check" 2>/dev/null)" 2>/dev/null
+	OUT=$(<"$TMP/vt-out")
+	_ST_EQ "the run exits as terminated" "$RC" "143"
+	_ST_CHECK "once the check it was running ended on its own" test -s "$TMP/vt-done"
+	_ST_OUT_HAS "naming the signal in its trailer" '^git-edit: error – stopped by SIGTERM$'
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$VT_TIP"
+	_ST_EQ "and removing its worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VT_WORKTREES"
+	_ST_RUN --status
+	_ST_OUT_HAS "with nothing left in flight" 'no operation in flight'
+	git config --unset edit.verifyCmd
+
+	# --- 94. a signal after the landing names the move ---
+	# A caller dispatches on the trailer, so a run stopped once its branch moved must not read
+	# like one that changed nothing – the TERM follows the undo line while the run still reports,
+	# and a run that finished first is undone and tried again
+	_ST_SCENARIO "\e[1;96m[94] a signal after the landing names the move\e[0m"
+	local VL
+	for VL in base one two; do
+		echo "$VL" > "vl_$VL.txt" && git add "vl_$VL.txt" && git commit -qm "VL $VL"
+	done
+	git config edit.verifyCmd true
+	local VL_TWO=$(git rev-parse ':/VL two') VL_BASE=$(git rev-parse ':/VL base')
+	local VL_TIP VL_PID
+	local -i VL_TRY=0 VL_CAUGHT=0
+	while (( VL_TRY++ < 5 && ! VL_CAUGHT )); do
+		VL_TIP=$(git rev-parse HEAD)
+		rm -f "$TMP/vl-out"
+		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VL_TWO" --after="$VL_BASE" </dev/null >"$TMP/vl-out" 2>&1 &
+		VL_PID=$!
+		until grep -q '^Undo:' "$TMP/vl-out" 2>/dev/null || ! kill -0 $VL_PID 2>/dev/null; do
+			:
+		done
+		kill -TERM $VL_PID 2>/dev/null
+		wait $VL_PID
+		RC=$?
+		OUT=$(<"$TMP/vl-out")
+		if [ $RC -eq 143 ]; then
+			VL_CAUGHT=1
+		else
+			"$SELF" --undo </dev/null >/dev/null 2>&1
+		fi
+	done
+	_ST_EQ "a run stopped after its landing" "$RC" "143"
+	_ST_OUT_HAS "names the move in its trailer" "^git-edit: error – stopped by SIGTERM after refs/heads/[^ ]* moved $VL_TIP → [0-9a-f]\{40\}\$"
+	_ST_EQ "the move it names is the branch's" "$(git rev-parse HEAD)" "${${OUT##* → }%%$'\n'*}"
+	git config --unset edit.verifyCmd
+
+	# --- 95. a stopped resume stays resumable until it lands ---
+	# A signal mid-check leaves the pause for another `--continue`, while one after the landing
+	# must not leave a landed operation in flight for an `--abort` to call untouched
+	_ST_SCENARIO "\e[1;96m[95] a stopped resume stays resumable until it lands\e[0m"
+	local VR
+	for VR in base one two; do
+		echo "$VR" > "vr_$VR.txt" && git add "vr_$VR.txt" && git commit -qm "VR $VR"
+	done
+	local VR_TWO=$(git rev-parse ':/VR two') VR_BASE=$(git rev-parse ':/VR base')
+	local VR_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
+	# Fails until `vr-pass` exists, and holds each check open while `vr-slow` does
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; test -f \"$TMP/vr-slow\" && sleep 2; test -f \"$TMP/vr-pass\"'"
+	rm -f "$TMP/vr-pass" "$TMP/vr-slow"
+	_ST_RUN --move="$VR_TWO" --after="$VR_BASE"
+	_ST_EQ "a failing gate pauses the move" "$RC" "2"
+	touch "$TMP/vr-slow"
+	rm -f "$TMP/vr-check"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
+	local VR_PID=$!
+	local -i VR_WAIT=0
+	until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
+		sleep 0.1
+	done
+	kill -TERM $VR_PID
+	wait $VR_PID
+	RC=$?
+	_ST_EQ "a TERM mid-check stops the resume" "$RC" "143"
+	_ST_RUN --status
+	_ST_OUT_HAS "leaving it paused for another" '^git-edit: paused'
+	rm -f "$TMP/vr-slow"
+	touch "$TMP/vr-pass"
+	local -i VR_TRY=0 VR_CAUGHT=0
+	while (( VR_TRY++ < 5 && ! VR_CAUGHT )); do
+		if (( VR_TRY > 1 )); then
+			rm -f "$TMP/vr-pass"
+			_ST_RUN --move="$VR_TWO" --after="$VR_BASE"
+			touch "$TMP/vr-pass"
+		fi
+		rm -f "$TMP/vr-out"
+		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
+		VR_PID=$!
+		until grep -q '^Undo:' "$TMP/vr-out" 2>/dev/null || ! kill -0 $VR_PID 2>/dev/null; do
+			:
+		done
+		kill -TERM $VR_PID 2>/dev/null
+		wait $VR_PID
+		RC=$?
+		if [ $RC -eq 143 ]; then
+			VR_CAUGHT=1
+		else
+			"$SELF" --undo </dev/null >/dev/null 2>&1
+		fi
+	done
+	_ST_EQ "a TERM after the resume landed" "$RC" "143"
+	_ST_RUN --status
+	_ST_OUT_HAS "leaves nothing in flight" 'no operation in flight'
+	_ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VR_WORKTREES"
+	# Only the state the run resumed – a pause another run wrote while this one was checking holds
+	# that run's work, so a signal after this one's landing leaves it be
+	local VR_SF="$(git rev-parse --git-common-dir)/git-edit-state"
+	local VR_ONE=$(git log -1 --format=%H --grep='^VR one$' HEAD)
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; sleep 1'"
+	VR_TRY=0
+	VR_CAUGHT=0
+	while (( VR_TRY++ < 5 && ! VR_CAUGHT )); do
+		rm -f "$TMP/vr-check" "$TMP/vr-out"
+		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VR_ONE" --after="$VR_BASE" </dev/null >"$TMP/vr-out" 2>&1 &
+		VR_PID=$!
+		VR_WAIT=0
+		until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
+			sleep 0.1
+		done
+		printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
+		until grep -q '^Undo:' "$TMP/vr-out" 2>/dev/null || ! kill -0 $VR_PID 2>/dev/null; do
+			:
+		done
+		kill -TERM $VR_PID 2>/dev/null
+		wait $VR_PID
+		RC=$?
+		if [ $RC -eq 143 ]; then
+			VR_CAUGHT=1
+		else
+			rm -f "$VR_SF"
+			"$SELF" --undo </dev/null >/dev/null 2>&1
+		fi
+	done
+	_ST_EQ "a TERM after a first run's landing" "$RC" "143"
+	_ST_CHECK "keeps a pause another run wrote meanwhile" test -f "$VR_SF"
+	rm -f "$VR_SF"
+	# The stopped run kept its own worktree, reading that pause as its own
+	git worktree list --porcelain | sed -n 's/^worktree //p' | grep '/git-edit-reorder\.' | while read -r VR_WT; do
+		git worktree remove --force "$VR_WT"
+	done
+	git config --unset edit.verifyCmd
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""

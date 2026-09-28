@@ -939,6 +939,22 @@ Paused on a conflict awaiting
 .B \-\-continue
 or
 .BR \-\-abort .
+.TP
+.BR 129 ", " 130 ", " 143
+Stopped by SIGHUP, SIGINT or SIGTERM, with an
+.B error
+trailer naming the signal. The run cleans up as a failed one does, its worktree
+removed unless a pause it saved still points there: a
+.B \-\-continue
+stopped before it lands stays paused for another, one stopped after is done
+and leaves nothing in flight. A signal sent to git\-edit alone takes effect
+once the check its gate is running returns, while one sent to the whole
+process group, as a terminal's Ctrl\-C is, ends that check too. A signal that
+arrives once the branch has moved says so in that trailer \(em
+.B "stopped by SIGTERM after refs/heads/main moved <old-sha> \(-> <new-sha>"
+\(em and
+.B "git edit \-\-undo"
+takes the move back.
 .SH CONFIGURATION
 .TP
 .B edit.worktreeLink

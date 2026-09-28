@@ -137,6 +137,10 @@ _STATUS_EMITTED=false
 # trailer rather than leaving agents to scrape stderr
 _LAST_ERROR=""
 
+# The ref move the run landed, so a signal stopping it afterwards reports the move in its
+# trailer rather than reading like a run that changed nothing
+_LANDED_MOVE=""
+
 # Runs the cleanup hook, then emits a machine-readable error trailer matching the success
 # form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
 _GLOBAL_EXIT_TRAP () {
@@ -144,6 +148,13 @@ _GLOBAL_EXIT_TRAP () {
 	# A resumable operation keeps its worktree: an interrupt mid-verification would otherwise
 	# remove the one the saved state still points at – completions clear their state first
 	local SF=$(_STATE_FILE_PATH)
+	# A resume that landed is resumable no more, so one stopped before its own `_CLEAR_STATE`
+	# clears the state here, sparing `--abort` a pause it would call untouched, and its worktree
+	# goes below – the state it resumed only, as a pause another run wrote holds that run's work
+	if [ -n "$_LANDED_MOVE" ] && [ -n "$STATE_WORKTREE" ] && [ -n "$SF" ] \
+		&& grep -qxF "worktree=$STATE_WORKTREE" "$SF" 2>/dev/null; then
+		_CLEAR_STATE
+	fi
 	if [ -n "$_CLEANUP_HOOK" ] && { [ $CODE -eq 0 ] || [ -z "$SF" ] || [ ! -f "$SF" ]; }; then
 		eval "$_CLEANUP_HOOK" 2>/dev/null
 		_CLEANUP_HOOK=""
@@ -168,6 +179,15 @@ _GLOBAL_EXIT_TRAP () {
 	fi
 }
 trap '_GLOBAL_EXIT_TRAP' EXIT
+
+# Routes a termination signal through the exit trap, as a failed run leaves – untrapped, zsh
+# dies without running it, and the operation's worktree stays registered behind
+_TRAP_TERMINATION () {
+	trap '_LAST_ERROR="stopped by SIGHUP${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 129' HUP
+	trap '_LAST_ERROR="stopped by SIGINT${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 130' INT
+	trap '_LAST_ERROR="stopped by SIGTERM${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 143' TERM
+}
+_TRAP_TERMINATION
 
 
 # ------------------------------------------- FUNCTIONS --------------------------------------------
@@ -862,6 +882,7 @@ _JOURNAL_FILE_PATH () {
 # and names the branches left there, which it never moves
 _RECORD_REF_MOVE () {
 	# Args: <ref> <old> <new> <label>
+	_LANDED_MOVE="$1 moved $2 → $3"
 	local JF=$(_JOURNAL_FILE_PATH)
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4" >> "$JF"
 	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
@@ -5807,8 +5828,10 @@ CONTINUE_OR_ABORT () {
 		esac
 	done
 
-	# Disable the trap to prevent interference with Git processes or text editors
-	trap - INT TERM QUIT HUP
+	# Hand the signals from `ABORT` back to the run's own exit, so none aborts
+	# a rebase under a Git process or text editor
+	trap - QUIT
+	_TRAP_TERMINATION
 }
 
 # Confirms a drop or squash before anything is rewritten, on either squash route alike, since
