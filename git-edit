@@ -4687,9 +4687,11 @@ _VERIFY_REWRITE () {
 	local RUN_T0
 	local -i SKIPPED=0
 	local -i RC=0 RUN_SECS=0
+	local -i POSITION=0
 	# The whole gate's clock – the price a caller learns from this run and spends on the next
 	local -i VERIFY_T0=$SECONDS
 	for C in "${COMMITS[@]}"; do
+		POSITION+=1
 		ABSENT=""
 		for P in "${CMD_PATHS[@]}"; do
 			if ! git -C "$WT" cat-file -e "$C:$P" 2>/dev/null; then
@@ -4706,6 +4708,14 @@ _VERIFY_REWRITE () {
 			PRINT_ERR "Cannot check out ${C:0:7} for verification"
 			_VERIFY_FAILED=$C
 			return 1
+		fi
+		# Named as its check starts, since the span tier can run for minutes – on a terminal, or
+		# where a caller showing progress sets `GIT_EDIT_PROGRESS`, as a captured run would carry a
+		# line per commit that nobody watches live
+		if [ -t 1 ] || [ -n "$GIT_EDIT_PROGRESS" ]; then
+			# Through `git log`, as `ECHO_E` would read escapes in the subject, and not as "Verif…",
+			# which the documented `^(Verif|git-edit:)` grep keeps to the outcome
+			_PRINT_COMMIT_LINE "$C" "Checking $POSITION of ${#COMMITS[@]} – %h %s"
 		fi
 		# The subshell contains both the cd and the export naming the commit – exported, since a
 		# prefix assignment on the `eval` builtin never reaches the child it forks

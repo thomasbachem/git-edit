@@ -188,7 +188,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `--version` | Print the released version – it tracks the tag, so a checkout following `main` reports the last one cut |
 | `--selftest[=<ids>]` | Run the end-to-end suite in a scratch repo – several hundred assertions driving the installed script as a subprocess, including a check that every flag it declares is documented in the man page and here. `=83-87,90` runs just those scenarios, with the ones they need, for development – a commit or a release takes the whole suite |
 
-Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_ISOLATE`, `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them.
+Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_ISOLATE`, `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them.
 
 ## Screenshot
 

@@ -538,7 +538,11 @@ applies it \(em by default at the primary commit the mode authored (a fold's
 amended commit, an edit's) and at the new tip, each checked out in the
 operation's isolated worktree, with
 .B GIT_EDIT_VERIFY_COMMIT
-naming the commit under test. The command runs under git\-edit's own zsh,
+naming the commit under test. On a terminal, or where
+.B GIT_EDIT_PROGRESS
+is set, each commit is named on a line of its own as its check starts \(em
+.B "Checking 2 of 5 \(en <sha> <subject>"
+\(em so a long gate can be followed. The command runs under git\-edit's own zsh,
 which resets the options and aliases a caller's
 .B .zshenv
 sets, so an alias defined there does not resolve in it \(em a function or
@@ -1018,6 +1022,11 @@ interactive pauses.
 .B GIT_EDIT_NO_REPLAY
 If set, the plumbing modes rebuild descendants one \fBcommit\-tree\fR at a time
 instead of in one proven \fBgit replay\fR pass.
+.TP
+.B GIT_EDIT_PROGRESS
+If set, the verify gate names each commit as its check starts even where
+stdout is not a terminal \(em for a caller that shows a long gate's progress.
+A captured run leaves the lines out otherwise, since nobody watches them live.
 .SH FILES
 All three sit in the repository's common git directory, so every worktree
 shares them.
