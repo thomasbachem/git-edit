@@ -6004,11 +6004,12 @@ for ARG in "$@"; do
 	COMMANDLINE+=" $(printf '%q' "$ARG")"
 done
 
+zmodload zsh/zutil
+# Parses the flags with `zparseopts`:
 # • `-D` pulls parsed flags out of `$@`
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-zmodload zsh/zutil
 if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
