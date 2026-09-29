@@ -535,10 +535,12 @@ result, decided once it has been inspected.
 .B \-\-verify=\fIcmd\fR
 Run \fIcmd\fR against what the rewrite built, before the compare\-and\-swap
 applies it \(em by default at the primary commit the mode authored (a fold's
-amended commit, an edit's) and at the new tip, each checked out in the
-operation's isolated worktree, with
+amended commit, an edit's), at each commit a conflict resolution wrote, and
+at the new tip, each checked out in the operation's isolated worktree, with
 .B GIT_EDIT_VERIFY_COMMIT
-naming the commit under test. On a terminal, or where
+naming the commit under test. A resolution is checked where it was made
+because git replayed the rest, and a later commit can heal a wrong one before
+the tip ever shows it. On a terminal, or where
 .B GIT_EDIT_PROGRESS
 is set, each commit is named on a line of its own as its check starts \(em
 .B "Checking 2 of 5 \(en <sha> <subject>"
@@ -594,7 +596,7 @@ re\-derives its halves from its own worktree, and
 leaves its built commits addressable by SHA.
 .TP
 .B \-\-verify\-span
-Verify every rebuilt commit instead of just the primary one and the tip \(em
+Verify every rebuilt commit instead of just the default tier's \(em
 a green tip proves nothing about the span, so this is the tier for a
 span\-wide rewrite. Needs a command from
 .B \-\-verify
@@ -607,7 +609,8 @@ Given on
 it raises a paused run to this tier for the rest of the operation, and
 refuses up front where no command is in hand rather than record a tier no
 resume could serve.
-The default tier states how many commits in between it left unchecked, so
+The default tier states how many of the commits it ran were resolved at a
+stop and how many in between it left unchecked, so
 the gap is visible where it matters rather than only in this page. The span
 tier states in turn what it ran beyond the default one and what the whole
 check took, since a caller picks its flags before a run, and the price that
@@ -617,7 +620,8 @@ reaches it in time is the previous run's.
 Where
 .B edit.verifySpan
 stands for the repo, step this one run back down to the default tier \(em the
-primary commit and the tip. A fold or a move rebuilds every commit above its
+primary commit, the commits a conflict resolution wrote, and the tip. A fold
+or a move rebuilds every commit above its
 target and the span tier checks each of them, which for a deep one\-line
 change is the run's whole cost; this keeps the check at what the rewrite
 authored, where

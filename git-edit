@@ -261,8 +261,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       --allow-mode-change             Let --amend-into fold a file-mode change (a flipped executable bit, say),\e[0m"
 	ECHO_E "\e[0;94m                                       or a --continue keep one a resolution staged or the landing found unasked\e[0m"
 	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
-	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary one and the tip (also: edit.verifySpan)\e[0m"
-	ECHO_E "\e[0;94m       --no-verify-span                Verify the primary commit and the tip alone this run, under a standing edit.verifySpan\e[0m"
+	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary, resolved and tip ones (also: edit.verifySpan)\e[0m"
+	ECHO_E "\e[0;94m       --no-verify-span                Verify the primary, resolved and tip commits alone this run, under a standing edit.verifySpan\e[0m"
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the built-in end-to-end test suite in a scratch repo – =83-87,90 runs those\e[0m"
 	ECHO_E "\e[0;94m                                       scenarios alone, with the ones they need, for development (commits and releases take all)\e[0m"
@@ -3579,6 +3579,7 @@ _CONTINUE_ONTO () {
 		else
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 			_GUARD_STOP_MODES "$STATE_WORKTREE"
+			_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
@@ -3662,6 +3663,7 @@ _CONTINUE_REORDER () {
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -3728,6 +3730,7 @@ _CONTINUE_REBASE () {
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		# Re-establish the --text override the paused invocation took down with it
 		# The command is too long to trace literally, so the display elides it
 		local FOLD_EDITOR="true"
@@ -3864,6 +3867,7 @@ _CONTINUE_EDIT () {
 		# Mid-replay conflict
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -4059,6 +4063,7 @@ _LOAD_STATE () {
 	STATE_TARGETS=""
 	STATE_ALLOW_MODE_CHANGE=""
 	STATE_MODE_STRAY=""
+	STATE_RESOLVED=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -4090,6 +4095,7 @@ _LOAD_STATE () {
 			targets)         STATE_TARGETS=$VAL ;;
 			allow_mode_change) STATE_ALLOW_MODE_CHANGE=$VAL ;;
 			mode_stray)      STATE_MODE_STRAY=$VAL ;;
+			resolved)        STATE_RESOLVED=$VAL ;;
 		esac
 	done < "$SF"
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
@@ -4339,6 +4345,15 @@ _GUARD_RESOLUTION_CLEAN () {
 	fi
 }
 
+# Records the tree a resolver staged at a stop, the one state in a replay that somebody wrote
+# rather than git – so the gate's default tier can find the commit carrying it and check it too
+_NOTE_RESOLVED_TREE () {
+	local TREE=$(git -C "$1" write-tree 2>/dev/null)
+	[ -z "$TREE" ] && return 0
+	STATE_RESOLVED="${STATE_RESOLVED:+$STATE_RESOLVED }$TREE"
+	_STATE_NOTE "resolved=$STATE_RESOLVED"
+}
+
 # Appends a key=value line to an in-flight operation's state file – the loader takes a key's last
 # line, so a later value replaces an earlier one and an empty one clears it
 _STATE_NOTE () {
@@ -4504,7 +4519,7 @@ _VERIFY_NOTE_BYPASS () {
 
 # Runs the caller's verification over what a rewrite built, before the CAS applies it – the
 # gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
-# standing `edit.verifyCmd`, at the primary commit and the tip
+# standing `edit.verifyCmd`, at the primary commit, each resolved one and the tip
 _VERIFY_CONFIGURED () {
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 1
 	local CMD=$VERIFY_VALUE
@@ -4684,15 +4699,28 @@ _VERIFY_REWRITE () {
 		COMMITS=(${(f)"$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"})
 		[ ${#COMMITS[@]} -gt 0 ] && SPANNED=true
 	fi
-	# What the default tier runs – the primary commit and the tip, one where they coincide –
-	# so the span tier can state what it ran beyond that
-	local -i DEFAULT_N=1
-	[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && DEFAULT_N=2
+	# Every rebuilt commit carrying a tree a resolver staged – git replayed the rest, and a later
+	# commit can heal a wrong resolution before the tip ever shows it
+	local -a RESOLVED_TREES=(${=STATE_RESOLVED}) RESOLVED_HITS=()
+	local LINE H
+	if [ ${#RESOLVED_TREES[@]} -gt 0 ]; then
+		for LINE in ${(f)"$(git log --reverse --topo-order --format='%H %T' "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"}; do
+			H=${LINE%% *}
+			{ [ "$H" = "$PRIMARY" ] || [ "$H" = "$NEW_HEAD" ]; } && continue
+			(( ${RESOLVED_TREES[(Ie)${LINE#* }]} )) && RESOLVED_HITS+=("$H")
+		done
+	fi
+	# What the default tier runs – the primary commit, the resolved ones and the tip, one where
+	# primary and tip coincide – so the span tier can state what it ran beyond that
+	local -i DEFAULT_N=$(( 1 + ${#RESOLVED_HITS[@]} ))
+	[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && DEFAULT_N+=1
 	# A span is empty where the result is a commit the branch already had – a dropped tip
 	# rebuilds nothing – and the tip it lands is still checked, as on the default tier
+	local -i RESOLVED_N=0
 	if [ ${#COMMITS[@]} -eq 0 ]; then
 		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
-		COMMITS+=("$NEW_HEAD")
+		COMMITS+=("${RESOLVED_HITS[@]}" "$NEW_HEAD")
+		RESOLVED_N=${#RESOLVED_HITS[@]}
 	fi
 	# Repo files the command references – each token, a leading `-flag=` or `./` stripped, that
 	# names a path at the result tip, since a verified commit missing one can only die on it
@@ -4792,6 +4820,7 @@ _VERIFY_REWRITE () {
 		TOTAL=$BUILT
 	fi
 	local -a SHORT=()
+	[ $RESOLVED_N -gt 0 ] && SHORT+=("$RESOLVED_N of them resolved at a stop")
 	[ $SKIPPED -gt 0 ] && SHORT+=("$SKIPPED skipped where a path the command names is absent")
 	[ $(( TOTAL - ${#COMMITS[@]} )) -gt 0 ] && SHORT+=("$(( TOTAL - ${#COMMITS[@]} )) unchecked in between, \`--verify-span\` covers them (also: edit.verifySpan)")
 	# The span tier's mirror of that note: what it ran beyond the default tier, with the lever
@@ -4869,6 +4898,7 @@ _CONTINUE_AMEND_INTO () {
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
