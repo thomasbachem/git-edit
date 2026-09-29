@@ -2066,16 +2066,21 @@ GIT_EXEC () {
 	fi
 	_VERIFY_NO_RESUME=false
 
+	# The reflog names the oldest commit a rewrite replaced, as most modes name their target –
+	# a run that only added commits on top replaced none, and those commits say what it did
+	local REPLACED=$(git rev-list --reverse --topo-order "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | head -1)
+	local LABEL="exec${REPLACED:+ ${REPLACED:0:7}}"
+
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
-	local UPDATE="git update-ref -m 'git edit: exec' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE="git update-ref -m 'git edit: $LABEL' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE"
 	if ! eval "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
 		PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
 	fi
-	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "exec"
+	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "$LABEL"
 
 	if [ -n "$BRANCH" ]; then
 		_PRINT_REWRITE_APPLY_HINT "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
