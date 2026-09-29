@@ -1428,8 +1428,10 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	# --- 43. the orphan sweep takes debris and nothing else ---
 	_ST_SCENARIO "\e[1;96m[43] orphan worktree sweep\e[0m"
 	git reset -q --hard
-	local GCBASE=${TMPDIR:-/tmp}
-	GCBASE=${GCBASE%/}
+	# A temp dir of the run's own – any git-edit on the machine sweeps the shared one, and one
+	# getting there first would leave this run nothing to report
+	local GCBASE="$TMP/gc-tmp"
+	mkdir -p "$GCBASE"
 	# Provable debris: pointer dangles, and it has sat around for a day
 	local GC_DEAD="$GCBASE/git-edit-gctest-dead.$$"
 	mkdir -p "$GC_DEAD" && echo "gitdir: /nonexistent/repo/.git/worktrees/x" > "$GC_DEAD/.git"
@@ -1442,7 +1444,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	mkdir -p "$GC_LIVE" && echo "gitdir: $(git rev-parse --absolute-git-dir)" > "$GC_LIVE/.git"
 	touch -t 202601010000 "$GC_LIVE"
 	# Any mutating invocation runs the sweep
-	_ST_RUN -M --text="Sweep trigger" HEAD
+	TMPDIR=$GCBASE _ST_RUN -M --text="Sweep trigger" HEAD
 	_ST_EQ "the run itself succeeds" "$RC" "0"
 	_ST_CHECK "orphaned debris is swept" sh -c "[ ! -d '$GC_DEAD' ]"
 	_ST_OUT_HAS "and the sweep is reported, never silent" 'Swept.*orphaned temp worktree'
