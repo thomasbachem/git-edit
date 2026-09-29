@@ -162,6 +162,8 @@ git -C <worktree> add <file>
 git edit --continue                          # dispatch on the fresh trailer, cascades repeat the loop
 ```
 
+**Every move is attributed.** Each reflog entry names the operation – `git edit: amend-into <sha>`, `git edit: exec <oldest commit replaced>` – and, where `GIT_EDIT_ACTOR` holds a label such as an agent session's id, ends with ` [<label>]`, so a history viewer can say who moved the branch. The reflog never leaves the clone, so neither does the label.
+
 `man git-edit` carries the rest under SCRIPTING: the pause states in full, what `rerere` replays into a later conflict, and the snapshot-map recipe for a mechanical change across many commits, which belongs in a single `--exec` rather than in one fold per commit.
 
 Worth putting in an agent's own instructions verbatim: *for any history-rewriting git command, reach for `git edit` – and for one it doesn't cover, `git edit --exec -- …` – so it can't disturb another session's working tree.*

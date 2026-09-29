@@ -124,6 +124,14 @@ _VERIFY_NO_RESUME=false
 # run that had a check and declined it looks like the one that never had one
 _VERIFY_BYPASSED=""
 
+# The caller's own label – an agent session's id, a CI job – closing every reflog message this
+# tool writes so a history viewer can name who moved the branch, kept only where it cannot break
+# the quoted command it rides in
+_REFLOG_TAG=""
+if [ -n "$GIT_EDIT_ACTOR" ] && [[ "$GIT_EDIT_ACTOR" != *[^A-Za-z0-9_-]* ]]; then
+	_REFLOG_TAG=" [$GIT_EDIT_ACTOR]"
+fi
+
 # Temp files to remove however the run ends – a conflict exits straight from the handler,
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
 # to keep its worktree, so these need a list of their own
@@ -1183,7 +1191,7 @@ GIT_UNDO () {
 
 	PRINT_ACTION "Undoing last operation (%s)..." "${NEW}"
 
-	local CMD="git update-ref -m 'git edit: undo $LABEL' $REF $OLD $NEW"
+	local CMD="git update-ref -m 'git edit: undo $LABEL$_REFLOG_TAG' $REF $OLD $NEW"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' has moved since that operation – refusing to rewind over newer work"
@@ -2073,7 +2081,7 @@ GIT_EXEC () {
 
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
-	local UPDATE="git update-ref -m 'git edit: $LABEL' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE="git update-ref -m 'git edit: $LABEL$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE"
 	if ! eval "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
@@ -2358,7 +2366,7 @@ GIT_AMEND_INTO () {
 
 	# Step 4 – atomic CAS-update of the branch ref, guarded on the pre-op tip, refusing where
 	# the branch moved during autosquash, since nothing was consumed and the staging stands
-	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
@@ -2682,7 +2690,7 @@ _SPLIT_APPLY () {
 	fi
 
 	# Atomic CAS ref update
-	local CMD="git update-ref -m 'git edit: split ${X:0:7}' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: split ${X:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during split – refusing to overwrite"
@@ -3122,7 +3130,7 @@ SEQEOF
 	fi
 
 	# Atomic CAS-update, guarded on the pre-op tip
-	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
@@ -3390,7 +3398,7 @@ GIT_ONTO () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
@@ -3604,7 +3612,7 @@ _CONTINUE_ONTO () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -3687,7 +3695,7 @@ _CONTINUE_REORDER () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -3773,7 +3781,7 @@ _CONTINUE_REBASE () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -3928,7 +3936,7 @@ _CONTINUE_EDIT () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $BASE"
+	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $BASE"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		_CLEANUP_HOOK=""
@@ -4933,7 +4941,7 @@ _CONTINUE_AMEND_INTO () {
 	# branch never having moved, while legacy states guard on the fixup tip
 	local GUARD=$STATE_ORIG_HEAD
 	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
-	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}' $STATE_BRANCH $NEW_HEAD $GUARD"
+	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $GUARD"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! eval "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -4983,7 +4991,7 @@ _ABORT_AMEND_INTO () {
 	if [ -n "$STATE_HEAD_WITH_FIXUP" ]; then
 		local CURRENT=$(git rev-parse "$STATE_BRANCH" 2>/dev/null)
 		if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
-			local UPDATE_CMD="git update-ref -m 'git edit: abort amend-into' $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
+			local UPDATE_CMD="git update-ref -m 'git edit: abort amend-into$_REFLOG_TAG' $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
 			PRINT_CMD "$UPDATE_CMD" 90
 			eval "$UPDATE_CMD" 2>/dev/null
 			git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
@@ -5291,7 +5299,7 @@ GIT_REWORD () {
 
 	# Atomic compare-and-swap on the ref – refuse where the branch moved under us, such as a
 	# concurrent commit landing from another tool
-	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during reword – refusing to overwrite"
@@ -5503,7 +5511,7 @@ GIT_REWORD_BATCH () {
 
 	# Single atomic compare-and-swap – refuse if the branch moved meanwhile
 	# (a concurrent commit or rewrite), exactly as the single reword does
-	local CMD="git update-ref -m 'git edit: reword ${#TARGETS[@]} commits' $REF $NEW_HEAD $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: reword ${#TARGETS[@]} commits$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during batch reword – refusing to overwrite"
@@ -5690,7 +5698,7 @@ GIT_RESQUASH () {
 	_REBUILD_DESCENDANTS "$NEWEST"
 
 	# Atomic ref update
-	local CMD="git update-ref -m 'git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m 'git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
 	if ! eval "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during resquash – refusing to overwrite"
@@ -7277,7 +7285,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# Atomic compare-and-swap – only update where the ref still matches `ORIG_HEAD`, so a
 		# concurrent commit, from an editor working in the main checkout say, is never
 		# silently overwritten by this run
-		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
+		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}$_REFLOG_TAG' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
 		PRINT_CMD "$CMD"
 		if ! eval "$CMD" 2>/dev/null; then
 			PRINT_ERR "Branch '$ORIG_BRANCH' moved during rebase – refusing to overwrite"

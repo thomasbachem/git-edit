@@ -1015,6 +1015,18 @@ to skip it altogether. Unset, it is five times the failing run's own duration
 (at least 30s), so a slow check stops early on its own.
 .SH ENVIRONMENT
 .TP
+.B GIT_EDIT_ACTOR
+A label for whoever runs git\-edit \(em an agent session's id, a CI job \(em
+closing every reflog message it writes as \fB [\fR\fIlabel\fR\fB]\fR, so a
+history viewer can name who moved the branch. The reflog never leaves the
+clone, so neither does the label. A value holding anything but letters,
+digits,
+.B _
+and
+.B \-
+is left out, since it could break the command the message rides in. The undo
+journal keeps no label, so an undo's entry names only whoever undid.
+.TP
 .B GIT_EDIT_WORKTREE_LINK
 Colon\-separated paths to link into temporary worktrees, added to whatever
 .B edit.worktreeLink
