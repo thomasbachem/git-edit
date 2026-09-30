@@ -104,7 +104,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS () {
 		local DESC=$1
 		local PATTERN=$2
-		if print -r -- "$OUT" | grep -q -e "$PATTERN"; then
+		if grep -q -e "$PATTERN" <<<"$OUT"; then
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m $DESC"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
@@ -114,7 +114,9 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS () {
 		local DESC=$1
 		local PATTERN=$2
-		if print -r -- "$OUT" | grep -q -e "$PATTERN"; then
+		# A here-string, since a pipe's writer dies once `grep -q` has its match, and on a long
+		# `$OUT` the failed pipeline passed this check
+		if grep -q -e "$PATTERN" <<<"$OUT"; then
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | grep -e "$PATTERN" | head -3 | sed 's/^/       | /'
 		else
@@ -550,7 +552,7 @@ GIT_SELFTEST () {
 		local MANTEXT=$(sed 's/\\//g' "$MANPAGE")
 		for mflag in "${DOCFLAGS[@]}"; do
 			[ -z "$mflag" ] && continue
-			echo "$MANTEXT" | grep -q -- "$mflag" || missing="$missing $mflag"
+			grep -q -- "$mflag" <<<"$MANTEXT" || missing="$missing $mflag"
 			[ -f "$READMEFILE" ] && { grep -q -- "$mflag" "$READMEFILE" || rmissing="$rmissing $mflag" }
 		done
 		if [ -z "$missing" ]; then
@@ -2366,7 +2368,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	local ROUNDS54=0
 	while [ "$RC" = "2" ] && [ $ROUNDS54 -lt 4 ]; do
 		ROUNDS54=$((ROUNDS54+1))
-		if print -r -- "$OUT" | grep -q 'current step became empty'; then
+		if grep -q 'current step became empty' <<<"$OUT"; then
 			# The pause an emptied pick surfaces as – continue drives through it
 			_ST_RUN --continue
 			continue
@@ -5167,6 +5169,24 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --status
 	_ST_OUT_HAS "and its journal entry written for --undo" "Last completed: exec (${RG_TIP:0:7} → "
 	git checkout -q -- rg_one.txt
+
+	# --- 100. a records batch past the pipe buffer still reads as records ---
+	# Piped into `grep -q`, a text past the pipe buffer lost its writer at grep's early match,
+	# and `pipefail` read the match as a miss – the batch was refused as missing its commit
+	_ST_SCENARIO "\e[1;96m[100] a records batch past the pipe buffer still reads as records\e[0m"
+	local LB
+	for LB in one two; do
+		echo "$LB" > "lb_$LB.txt" && git add "lb_$LB.txt" && git commit -qm "LB $LB"
+	done
+	local LB_ONE=$(git rev-parse --short ':/LB one') LB_TWO=$(git rev-parse --short ':/LB two')
+	# Twice the 64 KiB a macOS pipe buffer grows to
+	local LB_BODY=$(printf 'Body line %s of a long batch reword\n' {1..3500})
+	_ST_RUN_IN "$(printf -- '--- %s\nLB one reworded\n\n%s\n--- %s\nLB two reworded\n' "$LB_ONE" "$LB_BODY" "$LB_TWO")" -M --text -
+	_ST_EQ "a batch past the pipe buffer rewords" "$RC" "0"
+	_ST_EQ "both its commits" "$(git log -2 --format=%s | sort | tr '\n' ' ')" "LB one reworded LB two reworded "
+	# The two-dash check reads the same text
+	_ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n\n%s\n' "$LB_ONE" "$LB_BODY")" -M --text -
+	_ST_OUT_HAS "and one with two-dash headers is named as such" "Records start with '--- <commit>'"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

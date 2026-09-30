@@ -4532,7 +4532,7 @@ _GUARD_TIP_MODES () {
 	local LINE
 	for LINE in ${(f)"$(_MODE_LINES "$WT" "$ORIG" "$NEW")"}; do
 		[ -z "$LINE" ] && continue
-		print -r -- "$MEANT" | grep -qxF -- "$LINE" || STRAY+=("$LINE")
+		grep -qxF -- "$LINE" <<<"$MEANT" || STRAY+=("$LINE")
 	done
 	[ ${#STRAY[@]} -eq 0 ] && return 0
 	PRINT_ERR "The rewrite changed a file mode nothing asked for – nothing was applied"
@@ -5388,7 +5388,9 @@ GIT_REWORD () {
 # `--- ` line at column 0 with a token after it is the batch reword's record header, and
 # its absence leaves the ordinary single-message form
 _LOOKS_LIKE_RECORDS () {
-	print -r -- "$1" | grep -q '^--- .'
+	# A here-string, as every `grep -q` on a variable here takes – piped, a text past the pipe
+	# buffer lost its writer to SIGPIPE at grep's early match, and `pipefail` made that a miss
+	grep -q '^--- .' <<<"$1"
 }
 
 # Rewords many commits in one plumbing pass, reading `--- <commit>` records from `--text`
@@ -5473,7 +5475,7 @@ GIT_REWORD_BATCH () {
 		# The `--- ` line is this format's record separator, so a commit whose own message carries
 		# one cannot be represented – its dump would split mid-body and mis-attribute the
 		# remainder, so refuse it here and name the single form, which has no separator
-		if print -r -- "$cur" | grep -q '^--- '; then
+		if grep -q '^--- ' <<<"$cur"; then
 			PRINT_ERR "Commit ${sha:0:7}'s message has a '--- ' line, which the record format reserves"
 			ECHO_E "\e[0;31m  Reword it on its own instead: git edit -M ${sha:0:9}\e[0m" >&2
 			exit 1
@@ -6849,7 +6851,7 @@ if [ $# -eq 0 ]; then
 	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o -n "$TEXT_VALUE" ]; then
 		# The records form's one shape mistake seen in the wild: two-dash headers, which read
 		# as records to their author and as nothing to the detector above
-		if [ ${#OPT_REWORD} -gt 0 ] && print -r -- "$RAW_TEXT_VALUE" | grep -q -E '^-- [0-9a-f]{7,}'; then
+		if [ ${#OPT_REWORD} -gt 0 ] && grep -q -E '^-- [0-9a-f]{7,}' <<<"$RAW_TEXT_VALUE"; then
 			PRINT_ERR "Records start with '--- <commit>' – three dashes, and these headers carry two"
 			exit 1
 		fi
