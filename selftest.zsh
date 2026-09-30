@@ -2727,9 +2727,9 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	printf 'rb\n' > rb.txt && git add rb.txt && git commit -qm "VR two"
 	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
 	_ST_EQ "a reorder passes through verification" "$RC" "0"
-	# Both commits are rebuilt while the default tier checks the tip, so the one line says so
-	_ST_OUT_HAS "and verified its result" 'Verified 1 of 2 commit(s)'
-	_ST_OUT_HAS "counting the one it did not reach" '1 unchecked in between'
+	# Both commits are rebuilt, and the default tier checks the first one rebuilt and the tip
+	_ST_OUT_HAS "and verified its result" 'Verified 2 commit(s)'
+	_ST_OUT_LACKS "leaving none unchecked" 'unchecked in between'
 	_ST_OUT_LACKS "with no skip note from a repo-pathless command" 'Verify skipped'
 	# Plumbing modes have nothing to verify – a reword must not run the check
 	_ST_RUN -M --text="VR two reworded" "$(git rev-parse HEAD)"
@@ -4447,9 +4447,8 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "naming the forms that take several" 'several commits go as --move=<a> --move=<b>'
 
 	# --- 84. a move steps down from a standing span as a fold does ---
-	# The tier flag was pinned on folds alone, while a move rebuilds everything above its anchor
-	# just the same – a landing passed it to its folds and not to its moves, 18 minutes of
-	# suite runs. The default tier of a move is the tip, a reorder naming no primary commit
+	# The tier flag was pinned on folds alone, though a move rebuilds everything above its anchor
+	# too – a landing passed it to its folds, not its moves, 18 minutes of suite runs
 	_ST_SCENARIO "\e[1;96m[84] --no-verify-span steps a move down from edit.verifySpan\e[0m"
 	local VM
 	for VM in base m1 m2 m3 tip; do
@@ -4461,16 +4460,18 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --move="$(git rev-parse ':/VM tip')" --after="$(git rev-parse ':/VM base')"
 	_ST_EQ "a move under the standing span applies" "$RC" "0"
 	_ST_EQ "verifying all it rebuilt" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "4"
-	_ST_OUT_HAS "with the lever that steps back down" 'no-verify-span` runs only its 1 (set by edit.verifySpan)'
+	# A move down's default tier is the commit it moved, the first one rebuilt and the tip
+	_ST_OUT_HAS "with the lever that steps back down" 'no-verify-span` runs only its 2 (set by edit.verifySpan)'
 	: > "$TMP/vm-count"
+	# Moved up to the tip, the commit is the tip, beside the first one rebuilt and the one it lands on
 	_ST_RUN --no-verify-span --move="$(git rev-parse ':/VM tip')" --after="$(git rev-parse ':/VM m3')"
 	_ST_EQ "the flag steps the move down" "$RC" "0"
-	_ST_EQ "to the tip alone" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "1"
-	_ST_OUT_HAS "naming the shortfall" 'Verified 1 of 4 commit(s)'
+	_ST_EQ "to the first commit rebuilt, the one it lands on and the tip" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "3"
+	_ST_OUT_HAS "naming the shortfall" 'Verified 3 of 4 commit(s)'
 	: > "$TMP/vm-count"
 	_ST_RUN --no-verify-span --move="$(git rev-parse ':/VM m2')..$(git rev-parse ':/VM m3')" --after="$(git rev-parse ':/VM base')"
 	_ST_EQ "and a run's move" "$RC" "0"
-	_ST_EQ "to the tip alone too" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "1"
+	_ST_EQ "to both commits it moved and the tip" "$(wc -l < "$TMP/vm-count" | tr -d ' ')" "3"
 	git config --unset edit.verifySpan
 	git config --unset edit.verifyCmd
 
@@ -5192,6 +5193,96 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	# The two-dash check reads the same text
 	_ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n\n%s\n' "$LB_ONE" "$LB_BODY")" -M --text -
 	_ST_OUT_HAS "and one with two-dash headers is named as such" "Records start with '--- <commit>'"
+
+	# --- 101. a move or reorder checks each commit it puts below one that came before it ---
+	# A move named the gate no commit of its own, so its tip alone ran – a commit carried below
+	# a file its new check needs landed green, the tip still holding that file
+	_ST_SCENARIO "\e[1;96m[101] a move or reorder checks each commit it puts below one that came before it\e[0m"
+	local MV
+	for MV in base filler dep one needs; do
+		echo "$MV" > "mv_$MV.txt" && git add "mv_$MV.txt" && git commit -qm "MV $MV"
+	done
+	local MV_TIP=$(git rev-parse HEAD) MV_BASE=$(git rev-parse ':/MV base')
+	# Fails wherever the check a commit adds runs without the file it needs
+	git config edit.verifyCmd "sh -c '[ ! -f mv_needs.txt ] || [ -f mv_dep.txt ]'"
+	# The first commit it moves passes, the second is the one carried below what it needs
+	_ST_RUN --move="$(git rev-parse ':/MV one')" --move="$(git rev-parse ':/MV needs')" --after="$MV_BASE"
+	_ST_EQ "a move carrying a commit below what it needs pauses" "$RC" "2"
+	_ST_OUT_HAS "at that commit, not the first one it moved" '^  failing: [0-9a-f]* MV needs$'
+	_ST_EQ "applying nothing" "$(git rev-parse HEAD)" "$MV_TIP"
+	# A resume compares the same two orders, so it checks the same commits
+	_ST_RUN --continue
+	_ST_EQ "a resume stops there again" "$RC" "2"
+	_ST_OUT_HAS "at the same commit" '^  failing: [0-9a-f]* MV needs$'
+	_ST_RUN --abort
+	# Moved up past what needs it, a commit leaves the first one rebuilt short – set up by a move
+	# that passes, then undone by the one under test
+	_ST_RUN --move="$(git rev-parse ':/MV one')" --after="$(git rev-parse ':/MV needs')"
+	_ST_EQ "a move that breaks nothing lands" "$RC" "0"
+	MV_TIP=$(git rev-parse HEAD)
+	_ST_RUN --move="$(git rev-parse ':/MV dep')" --after="$(git rev-parse ':/MV one')"
+	_ST_EQ "a move leaving the commit above it short pauses" "$RC" "2"
+	_ST_OUT_HAS "at the first commit it rebuilt" '^  failing: [0-9a-f]* MV needs$'
+	_ST_EQ "applying nothing either" "$(git rev-parse HEAD)" "$MV_TIP"
+	_ST_RUN --abort
+	# Further up, the commit that needs it passes the first rebuilt one by – and still fails at the
+	# one the moved commit now sits on, since nothing between them brings back what it carried
+	_ST_RUN --move="$(git rev-parse ':/MV filler')" --after="$(git rev-parse ':/MV dep')"
+	_ST_EQ "a move keeping it below what needs it lands" "$RC" "0"
+	MV_TIP=$(git rev-parse HEAD)
+	_ST_RUN --move="$(git rev-parse ':/MV dep')" --after="$(git rev-parse ':/MV one')"
+	_ST_EQ "a move leaving a commit further up short pauses" "$RC" "2"
+	_ST_OUT_HAS "at the commit the moved one now sits on" '^  failing: [0-9a-f]* MV one$'
+	_ST_OUT_HAS "naming the moved commit as what it lacks" '^  first green: [0-9a-f]* MV dep$'
+	_ST_EQ "applying nothing there either" "$(git rev-parse HEAD)" "$MV_TIP"
+	_ST_RUN --continue
+	_ST_OUT_HAS "and a resume stops there again" '^  failing: [0-9a-f]* MV one$'
+	_ST_RUN --abort
+	# A plain reorder names no moved commit and stops there all the same
+	_ST_RUN --reorder "$(git rev-parse ':/MV filler')" "$(git rev-parse ':/MV needs')" "$(git rev-parse ':/MV one')" "$(git rev-parse ':/MV dep')"
+	_ST_EQ "a reorder leaving a commit further up short pauses" "$RC" "2"
+	_ST_OUT_HAS "at the commit below the one it lifted" '^  failing: [0-9a-f]* MV one$'
+	_ST_EQ "applying nothing with it either" "$(git rev-parse HEAD)" "$MV_TIP"
+	_ST_RUN --abort
+	# Moved down, the commit itself sits below one that came before it, so it alone joins the tip
+	git config edit.verifyCmd "sh -c 'git log -1 --format=%s \"\$GIT_EDIT_VERIFY_COMMIT\" >> \"$TMP/mv-verified\"'"
+	rm -f "$TMP/mv-verified"
+	_ST_RUN --move="$(git rev-parse ':/MV one')" --before="$(git rev-parse ':/MV filler')"
+	_ST_EQ "a move down lands" "$RC" "0"
+	_ST_EQ "checking the moved commit and the tip alone" "$(tr '\n' ' ' < "$TMP/mv-verified")" "MV one MV needs "
+	# Commits sharing author, time and subject can't be placed, so each counts as out of order
+	local MV_TWIN
+	for MV_TWIN in a b; do
+		echo "$MV_TWIN" > "mv_twin_$MV_TWIN.txt" && git add "mv_twin_$MV_TWIN.txt"
+		GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' git commit -qm "MV twin"
+	done
+	echo last > mv_last.txt && git add mv_last.txt && git commit -qm "MV last"
+	rm -f "$TMP/mv-verified"
+	_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~2)" "$(git rev-parse HEAD~1)"
+	_ST_EQ "a reorder of commits it can't place lands" "$RC" "0"
+	_ST_EQ "checking each of them" "$(tr '\n' ' ' < "$TMP/mv-verified")" "MV last MV twin MV twin "
+	git config --unset edit.verifyCmd
+
+	# --- 102. a replant checks the commits it replanted, not its upstream's ---
+	# Read from the branch's old tip, the rebuilt range took in every commit the upstream gained,
+	# so the first of those ran as the replant's own and the count carried them all
+	_ST_SCENARIO "\e[1;96m[102] a replant checks the commits it replanted, not its upstream's\e[0m"
+	local RP RP_BRANCH=$(git symbolic-ref --short HEAD)
+	git checkout -q -b rp-upstream
+	for RP in u1 u2 u3; do
+		echo "$RP" > "rp_$RP.txt" && git add "rp_$RP.txt" && git commit -qm "RP $RP"
+	done
+	git checkout -q "$RP_BRANCH"
+	for RP in t1 t2; do
+		echo "$RP" > "rp_$RP.txt" && git add "rp_$RP.txt" && git commit -qm "RP $RP"
+	done
+	git config edit.verifyCmd "sh -c 'git log -1 --format=%s \"\$GIT_EDIT_VERIFY_COMMIT\" >> \"$TMP/rp-verified\"'"
+	rm -f "$TMP/rp-verified"
+	_ST_RUN --onto=rp-upstream
+	_ST_EQ "the replant lands" "$RC" "0"
+	_ST_EQ "checking the first commit it replanted and the tip" "$(tr '\n' ' ' < "$TMP/rp-verified")" "RP t1 RP t2 "
+	_ST_OUT_HAS "counting only what it built" 'Verified 2 commit(s)'
+	git config --unset edit.verifyCmd
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

@@ -3000,6 +3000,39 @@ _ABORT_SPLIT () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
+# Names the commits a reorder's gate checks – each it put directly below one that came before it
+# in the old order, matched by author and subject, which a replay keeps – a commit that needed one
+# moved up fails until it reappears, and every such run of failures holds one of these
+_REORDER_CHECKS () {
+	# Args: <orig_head> <new_head>
+	local ORIG=$1 NEW=$2 LINE KEY
+	local -a HASHES=() KEYS=() CHECKS=()
+	for LINE in ${(f)"$(git log --reverse --format='%H%x1f%ae%x1f%at%x1f%s' "$ORIG..$NEW" 2>/dev/null)"}; do
+		HASHES+=("${LINE%%$'\x1f'*}")
+		KEYS+=("${LINE#*$'\x1f'}")
+	done
+	# Each original's place, oldest first – 0 where two share a key, which places neither
+	local -A WAS=()
+	local -i I=0
+	for KEY in ${(f)"$(git log --reverse --format='%ae%x1f%at%x1f%s' "$NEW..$ORIG" 2>/dev/null)"}; do
+		I+=1
+		(( ${+WAS[$KEY]} )) && WAS[$KEY]=0 || WAS[$KEY]=$I
+	done
+	local -A NOW=()
+	for KEY in "${KEYS[@]}"; do
+		NOW[$KEY]=$(( ${NOW[$KEY]:-0} + 1 ))
+	done
+	local -a POS=()
+	for KEY in "${KEYS[@]}"; do
+		[ ${NOW[$KEY]} -eq 1 ] && POS+=(${WAS[$KEY]:-0}) || POS+=(0)
+	done
+	# One it cannot place counts as out of order, so it can only add a check
+	for (( I = 1; I < ${#HASHES[@]}; I++ )); do
+		(( POS[I] == 0 || POS[I+1] == 0 || POS[I] > POS[I+1] )) && CHECKS+=("${HASHES[$I]}")
+	done
+	print -r -- "${CHECKS[*]}"
+}
+
 # Reorders a contiguous span, the positional args giving the new order oldest-first – runs
 # the rebase in an isolated temp worktree under a scripted `GIT_SEQUENCE_EDITOR`, reusing
 # the conflict pause machinery, and the branch ref only moves at the end
@@ -3162,7 +3195,7 @@ SEQEOF
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$(_REORDER_CHECKS "$ORIG_HEAD" "$NEW_HEAD")"; then
 		_SAVE_STATE \
 			"operation=reorder" \
 			"worktree=$WT" \
@@ -3427,7 +3460,7 @@ GIT_ONTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "" "$UPSTREAM_FULL"; then
 		_SAVE_STATE \
 			"operation=onto" \
 			"worktree=$WT" \
@@ -3651,7 +3684,7 @@ _CONTINUE_ONTO () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "" "$STATE_TARGET"; then
 		_CLEANUP_HOOK=""
 		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
@@ -3734,7 +3767,7 @@ _CONTINUE_REORDER () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_REORDER_CHECKS "$STATE_ORIG_HEAD" "$NEW_HEAD")"; then
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		exit 2
@@ -4574,7 +4607,7 @@ _VERIFY_NOTE_BYPASS () {
 
 # Runs the caller's verification over what a rewrite built, before the CAS applies it – the
 # gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
-# standing `edit.verifyCmd`, at the primary commit, each resolved one and the tip
+# standing `edit.verifyCmd`, at the commits a mode names, first rebuilt and resolved ones, the tip
 _VERIFY_CONFIGURED () {
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 1
 	local CMD=$VERIFY_VALUE
@@ -4716,11 +4749,15 @@ _VERIFY_DIAGNOSE () {
 }
 
 _VERIFY_REWRITE () {
-	# Args: <worktree> <new_head> <orig_head> [<primary-commit>]
+	# Args: <worktree> <new_head> <orig_head> [<commits the mode names, space-separated>]
+	#       [<base a replant replayed onto>]
 	local WT=$1
 	local NEW_HEAD=$2
 	local ORIG_HEAD=$3
 	local PRIMARY=$4
+	# A replant's new base brings the commits its upstream gained, which this run never built –
+	# the range the gate reads leaves them out
+	local -a BUILT_RANGE=("$NEW_HEAD" --not "$ORIG_HEAD" ${5:+"$5"})
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
 	# Below the worktree guard, so the note marks a gate this run declined rather than one the
 	# mode never had – `--abort`, `--undo` and `--status` never reach here at all
@@ -4749,32 +4786,43 @@ _VERIFY_REWRITE () {
 	fi
 	local -a COMMITS
 	local SPANNED=false
+	# Unquoted, so an empty span yields no element – the quoted form yields one blank
+	local -a REBUILT=(${(f)"$(git rev-list --reverse "${BUILT_RANGE[@]}" 2>/dev/null)"})
 	if _VERIFY_SPAN_ON; then
-		# Unquoted, so an empty span yields no element – the quoted form yields one blank
-		COMMITS=(${(f)"$(git rev-list --reverse "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"})
+		COMMITS=("${REBUILT[@]}")
 		[ ${#COMMITS[@]} -gt 0 ] && SPANNED=true
 	fi
+	# The commits the mode names, and the first one it rebuilt, which a commit moved up or
+	# dropped leaves without what sat below it
+	local -a PRIMARIES=(${=PRIMARY} ${REBUILT[1]})
 	# Every rebuilt commit carrying a tree a resolver staged – git replayed the rest, and a later
 	# commit can heal a wrong resolution before the tip ever shows it
 	local -a RESOLVED_TREES=(${=STATE_RESOLVED}) RESOLVED_HITS=()
 	local LINE H
 	if [ ${#RESOLVED_TREES[@]} -gt 0 ]; then
-		for LINE in ${(f)"$(git log --reverse --topo-order --format='%H %T' "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)"}; do
+		for LINE in ${(f)"$(git log --reverse --topo-order --format='%H %T' "${BUILT_RANGE[@]}" 2>/dev/null)"}; do
 			H=${LINE%% *}
-			{ [ "$H" = "$PRIMARY" ] || [ "$H" = "$NEW_HEAD" ]; } && continue
+			[ "$H" = "$NEW_HEAD" ] && continue
 			(( ${RESOLVED_TREES[(Ie)${LINE#* }]} )) && RESOLVED_HITS+=("$H")
 		done
 	fi
-	# What the default tier runs – the primary commit, the resolved ones and the tip, one where
-	# primary and tip coincide – so the span tier can state what it ran beyond that
-	local -i DEFAULT_N=$(( 1 + ${#RESOLVED_HITS[@]} ))
-	[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && DEFAULT_N+=1
+	# What the default tier runs – those, the resolved ones and the tip, in history order so the
+	# oldest failure is the one it stops at – so the span tier can state what it ran beyond that
+	local -a DEFAULT_SET=()
+	for H in "${REBUILT[@]}"; do
+		[ "$H" != "$NEW_HEAD" ] && (( ${PRIMARIES[(Ie)$H]} || ${RESOLVED_HITS[(Ie)$H]} )) && DEFAULT_SET+=("$H")
+	done
+	# A primary the replay didn't rebuild still runs, first as it always did
+	for H in "${PRIMARIES[@]}"; do
+		[ "$H" = "$NEW_HEAD" ] || (( ${DEFAULT_SET[(Ie)$H]} )) || DEFAULT_SET=("$H" "${DEFAULT_SET[@]}")
+	done
+	DEFAULT_SET+=("$NEW_HEAD")
+	local -i DEFAULT_N=${#DEFAULT_SET[@]}
 	# A span is empty where the result is a commit the branch already had – a dropped tip
 	# rebuilds nothing – and the tip it lands is still checked, as on the default tier
 	local -i RESOLVED_N=0
 	if [ ${#COMMITS[@]} -eq 0 ]; then
-		[ -n "$PRIMARY" ] && [ "$PRIMARY" != "$NEW_HEAD" ] && COMMITS+=("$PRIMARY")
-		COMMITS+=("${RESOLVED_HITS[@]}" "$NEW_HEAD")
+		COMMITS=("${DEFAULT_SET[@]}")
 		RESOLVED_N=${#RESOLVED_HITS[@]}
 	fi
 	# Repo files the command references – each token, a leading `-flag=` or `./` stripped, that
@@ -4869,7 +4917,7 @@ _VERIFY_REWRITE () {
 	# gap included, which helps nobody who never learns it exists. A dropped tip rebuilds
 	# nothing while still verifying where it lands, so the built count can be the lower one
 	local RAN=$(( ${#COMMITS[@]} - SKIPPED ))
-	local BUILT=$(git rev-list --count "$ORIG_HEAD..$NEW_HEAD" 2>/dev/null)
+	local BUILT=$(git rev-list --count "${BUILT_RANGE[@]}" 2>/dev/null)
 	local -i TOTAL=${#COMMITS[@]}
 	if [ -n "$BUILT" ] && [ $BUILT -gt $TOTAL ]; then
 		TOTAL=$BUILT

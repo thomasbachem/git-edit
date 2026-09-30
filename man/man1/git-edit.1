@@ -534,9 +534,14 @@ result, decided once it has been inspected.
 .TP
 .B \-\-verify=\fIcmd\fR
 Run \fIcmd\fR against what the rewrite built, before the compare\-and\-swap
-applies it \(em by default at the primary commit the mode authored (a fold's
-amended commit, an edit's), at each commit a conflict resolution wrote, and
-at the new tip, each checked out in the operation's isolated worktree, with
+applies it \(em by default at the commits the mode authored (a fold's amended
+commit, an edit's), at the first commit it rebuilt, which a commit moved up or
+dropped leaves missing what sat below it, at each commit a move or reorder puts
+directly below one that came before it \(em the topmost commit moved down, or
+the one a commit moved up lands on, where a commit it jumped over that needed
+it still fails \(em at each commit a conflict resolution wrote, and at the new
+tip, each
+checked out in the operation's isolated worktree, with
 .B GIT_EDIT_VERIFY_COMMIT
 naming the commit under test. A resolution is checked where it was made
 because git replayed the rest, and a later commit can heal a wrong one before
@@ -620,7 +625,9 @@ reaches it in time is the previous run's.
 Where
 .B edit.verifySpan
 stands for the repo, step this one run back down to the default tier \(em the
-primary commit, the commits a conflict resolution wrote, and the tip. A fold
+commits the mode authored, the first one it rebuilt, each one a move or reorder
+puts below a commit that came before it, the commits a conflict resolution
+wrote, and the tip. A fold
 or a move rebuilds every commit above its
 target and the span tier checks each of them, which for a deep one\-line
 change is the run's whole cost; this keeps the check at what the rewrite
