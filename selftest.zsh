@@ -4876,41 +4876,65 @@ EOF
 	_ST_OUT_HAS "with nothing left in flight" 'no operation in flight'
 	git config --unset edit.verifyCmd
 
-	# --- 94. a signal after the landing names the move ---
-	# A caller dispatches on the trailer, so a run stopped once its branch moved must not read
-	# like one that changed nothing – the TERM follows the undo line while the run still reports,
-	# and a run that finished first is undone and tried again
-	_ST_SCENARIO "\e[1;96m[94] a signal after the landing names the move\e[0m"
+	# --- 94. a signal once the branch moves lets the run finish ---
+	# Stopped past its `update-ref`, a run stranded what the move still owed – journal entry,
+	# rewrite delivery, index re-sync – and stopped inside it, it named no move at all
+	_ST_SCENARIO "\e[1;96m[94] a signal once the branch moves lets the run finish\e[0m"
 	local VL
 	for VL in base one two; do
 		echo "$VL" > "vl_$VL.txt" && git add "vl_$VL.txt" && git commit -qm "VL $VL"
 	done
-	git config edit.verifyCmd true
-	local VL_TWO=$(git rev-parse ':/VL two') VL_BASE=$(git rev-parse ':/VL base')
-	local VL_TIP VL_PID
-	local -i VL_TRY=0 VL_CAUGHT=0
-	while (( VL_TRY++ < 5 && ! VL_CAUGHT )); do
-		VL_TIP=$(git rev-parse HEAD)
-		rm -f "$TMP/vl-out"
-		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VL_TWO" --after="$VL_BASE" </dev/null >"$TMP/vl-out" 2>&1 &
-		VL_PID=$!
-		until grep -q '^Undo:' "$TMP/vl-out" 2>/dev/null || ! kill -0 $VL_PID 2>/dev/null; do
-			:
-		done
-		kill -TERM $VL_PID 2>/dev/null
-		wait $VL_PID
-		RC=$?
-		OUT=$(<"$TMP/vl-out")
-		if [ $RC -eq 143 ]; then
-			VL_CAUGHT=1
-		else
-			"$SELF" --undo </dev/null >/dev/null 2>&1
-		fi
+	local VL_REF=$(git symbolic-ref HEAD) VL_HOOKS=$(git rev-parse --path-format=absolute --git-path hooks)
+	local VL_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
+	local VL_TIP=$(git rev-parse HEAD) VL_PID
+	# Holds the move open, so the signal lands inside it every time
+	print -r -- "#!/bin/sh
+[ \"\$1\" = committed ] || exit 0
+while read -r old new ref; do [ \"\$ref\" = $VL_REF ] && { : > '$TMP/vl-moving'; sleep 1; }; done
+exit 0" > "$VL_HOOKS/reference-transaction"
+	chmod +x "$VL_HOOKS/reference-transaction"
+	rm -f "$TMP/vl-moving"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c 'echo changed > vl_two.txt && git commit -qam "VL changed"' </dev/null >"$TMP/vl-out" 2>&1 &
+	VL_PID=$!
+	until [ -f "$TMP/vl-moving" ] || ! kill -0 $VL_PID 2>/dev/null; do
+		sleep 0.05
 	done
-	_ST_EQ "a run stopped after its landing" "$RC" "143"
-	_ST_OUT_HAS "names the move in its trailer" "^git-edit: error – stopped by SIGTERM after refs/heads/[^ ]* moved $VL_TIP → [0-9a-f]\{40\}\$"
+	kill -TERM $VL_PID 2>/dev/null
+	wait $VL_PID
+	RC=$?
+	OUT=$(<"$TMP/vl-out")
+	_ST_EQ "a TERM while the branch moves lets the run finish" "$RC" "0"
+	_ST_OUT_HAS "naming the signal above the trailer" '^SIGTERM arrived once the branch had moved'
+	_ST_OUT_HAS "whose trailer reports the move" "^git-edit: ok – $VL_REF moved $VL_TIP → "
+	_ST_EQ "with the index re-synced to the new tip" "$(git diff --cached --name-only)" ""
+	_ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VL_WORKTREES"
+	_ST_RUN --status
+	_ST_OUT_HAS "and its journal entry written for --undo" "Last completed: exec (${VL_TIP:0:7} → "
+	git checkout -q -- vl_two.txt
+	# A second signal stops it after all, here while the `post-rewrite` delivery holds the run
+	print -r -- "#!/bin/sh
+: > '$TMP/vl-delivering'; cat >/dev/null; sleep 1" > "$VL_HOOKS/post-rewrite"
+	chmod +x "$VL_HOOKS/post-rewrite"
+	VL_TIP=$(git rev-parse HEAD)
+	rm -f "$TMP/vl-moving" "$TMP/vl-delivering"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/VL one')" --after="$(git rev-parse ':/VL two')" </dev/null >"$TMP/vl-out" 2>&1 &
+	VL_PID=$!
+	until [ -f "$TMP/vl-moving" ] || ! kill -0 $VL_PID 2>/dev/null; do
+		sleep 0.05
+	done
+	kill -TERM $VL_PID 2>/dev/null
+	until [ -f "$TMP/vl-delivering" ] || ! kill -0 $VL_PID 2>/dev/null; do
+		sleep 0.05
+	done
+	kill -TERM $VL_PID 2>/dev/null
+	wait $VL_PID
+	RC=$?
+	OUT=$(<"$TMP/vl-out")
+	rm -f "$VL_HOOKS/reference-transaction" "$VL_HOOKS/post-rewrite"
+	_ST_EQ "a second signal stops the run" "$RC" "143"
+	_ST_OUT_HAS "naming the move in its trailer" "^git-edit: error – stopped by SIGTERM after $VL_REF moved $VL_TIP → [0-9a-f]\{40\}\$"
 	_ST_EQ "the move it names is the branch's" "$(git rev-parse HEAD)" "${${OUT##* → }%%$'\n'*}"
-	git config --unset edit.verifyCmd
+	_ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VL_WORKTREES"
 
 	# --- 95. a stopped resume stays resumable until it lands ---
 	# A signal mid-check leaves the pause for another `--continue`, while one after the landing
@@ -4943,68 +4967,53 @@ EOF
 	_ST_OUT_HAS "leaving it paused for another" '^git-edit: paused'
 	rm -f "$TMP/vr-slow"
 	touch "$TMP/vr-pass"
-	local -i VR_TRY=0 VR_CAUGHT=0
-	while (( VR_TRY++ < 5 && ! VR_CAUGHT )); do
-		if (( VR_TRY > 1 )); then
-			rm -f "$TMP/vr-pass"
-			_ST_RUN --move="$VR_TWO" --after="$VR_BASE"
-			touch "$TMP/vr-pass"
-		fi
-		rm -f "$TMP/vr-out"
-		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
-		VR_PID=$!
-		until grep -q '^Undo:' "$TMP/vr-out" 2>/dev/null || ! kill -0 $VR_PID 2>/dev/null; do
-			:
-		done
-		kill -TERM $VR_PID 2>/dev/null
-		wait $VR_PID
-		RC=$?
-		if [ $RC -eq 143 ]; then
-			VR_CAUGHT=1
-		else
-			"$SELF" --undo </dev/null >/dev/null 2>&1
-		fi
+	# Holds the branch's move open, so the TERM lands after the resume started moving it
+	local VR_REF=$(git symbolic-ref HEAD) VR_HOOKS=$(git rev-parse --path-format=absolute --git-path hooks)
+	print -r -- "#!/bin/sh
+[ \"\$1\" = committed ] || exit 0
+while read -r old new ref; do [ \"\$ref\" = $VR_REF ] && { : > '$TMP/vr-moving'; sleep 1; }; done
+exit 0" > "$VR_HOOKS/reference-transaction"
+	chmod +x "$VR_HOOKS/reference-transaction"
+	rm -f "$TMP/vr-moving"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
+	VR_PID=$!
+	until [ -f "$TMP/vr-moving" ] || ! kill -0 $VR_PID 2>/dev/null; do
+		sleep 0.05
 	done
-	_ST_EQ "a TERM after the resume landed" "$RC" "143"
+	kill -TERM $VR_PID 2>/dev/null
+	wait $VR_PID
+	RC=$?
+	OUT=$(<"$TMP/vr-out")
+	_ST_EQ "a TERM once the resume moves the branch lets it finish" "$RC" "0"
+	_ST_OUT_HAS "naming the signal above the trailer" '^SIGTERM arrived once the branch had moved'
 	_ST_RUN --status
 	_ST_OUT_HAS "leaves nothing in flight" 'no operation in flight'
 	_ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VR_WORKTREES"
 	# Only the state the run resumed – a pause another run wrote while this one was checking holds
-	# that run's work, so a signal after this one's landing leaves it be
+	# that run's work, so finishing this one leaves it be
 	local VR_SF="$(git rev-parse --git-common-dir)/git-edit-state"
 	local VR_ONE=$(git log -1 --format=%H --grep='^VR one$' HEAD)
 	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; sleep 1'"
-	VR_TRY=0
-	VR_CAUGHT=0
-	while (( VR_TRY++ < 5 && ! VR_CAUGHT )); do
-		rm -f "$TMP/vr-check" "$TMP/vr-out"
-		GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VR_ONE" --after="$VR_BASE" </dev/null >"$TMP/vr-out" 2>&1 &
-		VR_PID=$!
-		VR_WAIT=0
-		until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
-			sleep 0.1
-		done
-		printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
-		until grep -q '^Undo:' "$TMP/vr-out" 2>/dev/null || ! kill -0 $VR_PID 2>/dev/null; do
-			:
-		done
-		kill -TERM $VR_PID 2>/dev/null
-		wait $VR_PID
-		RC=$?
-		if [ $RC -eq 143 ]; then
-			VR_CAUGHT=1
-		else
-			rm -f "$VR_SF"
-			"$SELF" --undo </dev/null >/dev/null 2>&1
-		fi
+	rm -f "$TMP/vr-check" "$TMP/vr-moving"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VR_ONE" --after="$VR_BASE" </dev/null >"$TMP/vr-out" 2>&1 &
+	VR_PID=$!
+	VR_WAIT=0
+	until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
+		sleep 0.1
 	done
-	_ST_EQ "a TERM after a first run's landing" "$RC" "143"
-	_ST_CHECK "keeps a pause another run wrote meanwhile" test -f "$VR_SF"
+	printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
+	until [ -f "$TMP/vr-moving" ] || ! kill -0 $VR_PID 2>/dev/null; do
+		sleep 0.05
+	done
+	kill -TERM $VR_PID 2>/dev/null
+	wait $VR_PID
+	RC=$?
+	OUT=$(<"$TMP/vr-out")
+	rm -f "$VR_HOOKS/reference-transaction"
+	_ST_EQ "a TERM once a first run moves the branch lets it finish" "$RC" "0"
+	_ST_CHECK "keeping a pause another run wrote meanwhile" test -f "$VR_SF"
 	rm -f "$VR_SF"
-	# The stopped run kept its own worktree, reading that pause as its own
-	git worktree list --porcelain | sed -n 's/^worktree //p' | grep '/git-edit-reorder\.' | while read -r VR_WT; do
-		git worktree remove --force "$VR_WT"
-	done
+	_ST_EQ "and removing its own worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VR_WORKTREES"
 	git config --unset edit.verifyCmd
 
 	# --- 96. exec's reflog entry names the oldest commit it replaced ---
@@ -5113,6 +5122,51 @@ EOF
 	_ST_EQ "an unsafe value is left out" "$(git reflog show -1 --format=%gs "$SID_REF")" "git edit: exec"
 	_ST_CHECK "and runs nothing" test ! -e "$TMP/sid-pwned"
 	export GIT_EDIT_ACTOR=
+
+	# --- 99. a reader gone mid-run stops it before the branch moves, never after ---
+	# A GUI quitting mid-run closes the pipe it read from, and the run's next line raised a SIGPIPE
+	# nothing trapped – zsh died without its exit trap, the worktree still registered
+	_ST_SCENARIO "\e[1;96m[99] a reader gone mid-run stops it before the branch moves, never after\e[0m"
+	local RG
+	for RG in base one two; do
+		echo "$RG" > "rg_$RG.txt" && git add "rg_$RG.txt" && git commit -qm "RG $RG"
+	done
+	local RG_REF=$(git symbolic-ref HEAD) RG_HOOKS=$(git rev-parse --path-format=absolute --git-path hooks)
+	local RG_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
+	local RG_TIP=$(git rev-parse HEAD) RG_LINE
+	git config edit.verifyCmd 'sleep 1'
+	# The reader leaves as the check starts, so the run's next line finds nobody
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/RG two')" --after="$(git rev-parse ':/RG base')" </dev/null 2>&1 | \
+	while IFS= read -r RG_LINE; do
+		[[ $RG_LINE == *'# verify'* ]] && break
+	done
+	RC=${pipestatus[1]}
+	git config --unset edit.verifyCmd
+	_ST_EQ "a reader gone mid-check stops the run" "$RC" "141"
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$RG_TIP"
+	_ST_EQ "and removing its worktree" "$(git worktree list | wc -l | tr -d ' ')" "$RG_WORKTREES"
+	_ST_RUN --status
+	_ST_OUT_HAS "with nothing left in flight" 'no operation in flight'
+	# Once the branch moves the run finishes unheard – the hook holds the move open until the
+	# reader, leaving at the `update-ref` line, is gone
+	print -r -- "#!/bin/sh
+[ \"\$1\" = committed ] || exit 0
+while read -r old new ref; do [ \"\$ref\" = $RG_REF ] && sleep 1; done
+exit 0" > "$RG_HOOKS/reference-transaction"
+	chmod +x "$RG_HOOKS/reference-transaction"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c 'echo changed > rg_one.txt && git commit -qam "RG changed"' </dev/null 2>&1 | \
+	while IFS= read -r RG_LINE; do
+		[[ $RG_LINE == *'git update-ref'* ]] && break
+	done
+	RC=${pipestatus[1]}
+	rm -f "$RG_HOOKS/reference-transaction"
+	_ST_EQ "a reader gone once the branch moves lets the run finish" "$RC" "0"
+	_ST_CHECK "moving the branch" test "$(git rev-parse HEAD)" != "$RG_TIP"
+	_ST_EQ "with the index re-synced to the new tip" "$(git diff --cached --name-only)" ""
+	_ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$RG_WORKTREES"
+	_ST_RUN --status
+	_ST_OUT_HAS "and its journal entry written for --undo" "Last completed: exec (${RG_TIP:0:7} → "
+	git checkout -q -- rg_one.txt
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

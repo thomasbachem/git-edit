@@ -944,21 +944,31 @@ Paused on a conflict awaiting
 or
 .BR \-\-abort .
 .TP
-.BR 129 ", " 130 ", " 143
-Stopped by SIGHUP, SIGINT or SIGTERM, with an
+.BR 129 ", " 130 ", " 141 ", " 143
+Stopped by SIGHUP, SIGINT, SIGPIPE or SIGTERM before the branch moved, with an
 .B error
-trailer naming the signal. The run cleans up as a failed one does, its worktree
-removed unless a pause it saved still points there: a
+trailer naming the signal. SIGPIPE comes when whatever reads the output goes
+away, a GUI quitting mid\-run say. The run cleans up as a failed one does, its
+worktree removed unless a pause it saved still points there, so a
 .B \-\-continue
-stopped before it lands stays paused for another, one stopped after is done
-and leaves nothing in flight. A signal sent to git\-edit alone takes effect
-once the check its gate is running returns, while one sent to the whole
-process group, as a terminal's Ctrl\-C is, ends that check too. A signal that
-arrives once the branch has moved says so in that trailer \(em
+stopped mid\-check stays paused for another. A signal sent to git\-edit alone
+takes effect once the check its gate is running returns, while one sent to the
+whole process group, as a terminal's Ctrl\-C is, ends that check too.
+.IP
+Once the branch's
+.B update\-ref
+has begun, the run finishes instead \(em the journal entry
+.B \-\-undo
+reads, the rewrite delivery and the index re\-sync all still happen \(em and
+exits 0, a line above its
+.B ok
+trailer naming the signal. A lost reader never stops it from there, a second
+SIGHUP, SIGINT or SIGTERM does, with a trailer naming the move \(em
 .B "stopped by SIGTERM after refs/heads/main moved <old-sha> \(-> <new-sha>"
-\(em and
+\(em that
 .B "git edit \-\-undo"
-takes the move back.
+takes back. One sent to the whole process group still ends the Git command or
+hook running at that moment.
 .SH CONFIGURATION
 .TP
 .B edit.worktreeLink

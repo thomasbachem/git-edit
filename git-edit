@@ -149,6 +149,13 @@ _LAST_ERROR=""
 # trailer rather than reading like a run that changed nothing
 _LANDED_MOVE=""
 
+# Set as the run starts moving its branch – zsh holds a signal until the `update-ref` it arrived
+# during returns, so `_LANDED_MOVE` alone would still read the moved branch as untouched
+_LANDING=false
+
+# The first HUP, INT or TERM a landing run finished through rather than stop halfway
+_DEFERRED_SIGNAL=""
+
 # Runs the cleanup hook, then emits a machine-readable error trailer matching the success
 # form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
 _GLOBAL_EXIT_TRAP () {
@@ -189,11 +196,30 @@ _GLOBAL_EXIT_TRAP () {
 trap '_GLOBAL_EXIT_TRAP' EXIT
 
 # Routes a termination signal through the exit trap, as a failed run leaves – untrapped, zsh
-# dies without running it, and the operation's worktree stays registered behind
+# dies without running it and the operation's worktree stays registered, PIPE included: a
+# reader gone mid-run, a GUI quitting say, ends the run at its next line of output
 _TRAP_TERMINATION () {
-	trap '_LAST_ERROR="stopped by SIGHUP${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 129' HUP
-	trap '_LAST_ERROR="stopped by SIGINT${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 130' INT
-	trap '_LAST_ERROR="stopped by SIGTERM${_LANDED_MOVE:+ after $_LANDED_MOVE}"; exit 143' TERM
+	trap '_ON_TERMINATION HUP 129' HUP
+	trap '_ON_TERMINATION INT 130' INT
+	trap '_ON_TERMINATION TERM 143' TERM
+	trap '_ON_TERMINATION PIPE 141' PIPE
+}
+
+# Stops the run, unless its branch is already moving – stopping then would only strand what the
+# move still owes: journal entry `--undo` reads, rewrite delivery, index re-sync
+_ON_TERMINATION () {
+	# Args: <signal> <exit code>
+	# A closed reader is no request to stop, so a landing run takes each SIGPIPE in stride – each,
+	# since a descriptor a caller's `>&2` saved comes back pointing at the dead pipe
+	if [ "$1" = PIPE ]; then
+		exec >/dev/null 2>&1
+		[ "$_LANDING" = true ] && return
+	elif [ "$_LANDING" = true ] && [ -z "$_DEFERRED_SIGNAL" ]; then
+		_DEFERRED_SIGNAL=$1
+		return
+	fi
+	_LAST_ERROR="stopped by SIG$1${_LANDED_MOVE:+ after $_LANDED_MOVE}"
+	exit $2
 }
 _TRAP_TERMINATION
 
@@ -472,6 +498,7 @@ EMIT_STATUS () {
 		PRINT_TEXT "Verify skipped – %s was passed, so \`%s\` never ran" 90 "--no-verify" "$_VERIFY_BYPASSED"
 		_VERIFY_BYPASSED=""
 	fi
+	_PRINT_DEFERRED_SIGNAL
 	# The SHAs are the authority, not the flag – some callers pass a hardcoded `true` where a
 	# no-op rebase leaves `HEAD` put, and reporting a move there is a false success on `ok`
 	if [ "$3" = "true" ] && [ "$1" != "$SCRIPT_INITIAL_HEAD" ]; then
@@ -480,6 +507,13 @@ EMIT_STATUS () {
 		echo "git-edit: ok – $2 unchanged"
 	fi
 	_STATUS_EMITTED=true
+}
+
+# Names the signal a landing run finished through, directly above the trailer – a caller that
+# sent it would otherwise read the run as one that finished before it came
+_PRINT_DEFERRED_SIGNAL () {
+	[ -n "$_DEFERRED_SIGNAL" ] || return 0
+	PRINT_TEXT "SIG%s arrived once the branch had moved – finished the run rather than stop it halfway" 90 "$_DEFERRED_SIGNAL"
 }
 
 # Emits an `--exec --dry-run`'s outcome – nothing moved, and the SHA it built is what the caller
@@ -884,6 +918,16 @@ _JOURNAL_FILE_PATH () {
 	echo "$DIR/git-edit-journal"
 }
 
+# Runs a branch's CAS `update-ref`, the run landing from here on unless it is refused
+_MOVE_REF () {
+	# Args: <update-ref command>
+	_LANDING=true
+	eval "$1" && return 0
+	local RC=$?
+	_LANDING=false
+	return $RC
+}
+
 # Records a completed CAS ref move – appends a journal entry and prints the inverse command,
 # so recovery is plain git rather than knowledge of this script, also via `git edit --undo`
 # Warns about tags left pointing into the rewritten span, which surface only at release time,
@@ -1193,7 +1237,7 @@ GIT_UNDO () {
 
 	local CMD="git update-ref -m 'git edit: undo $LABEL$_REFLOG_TAG' $REF $OLD $NEW"
 	PRINT_CMD "$CMD"
-	if ! eval "$CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' has moved since that operation – refusing to rewind over newer work"
 		ECHO_E "\e[0;31m  Expected $REF at ${NEW:0:7}, found $(git rev-parse --short "$REF" 2>/dev/null).\e[0m" >&2
 		exit 1
@@ -1205,6 +1249,7 @@ GIT_UNDO () {
 		PRINT_TEXT "Trees differ between the two tips – re-sync the index with %s if this is your checkout's branch." 33 "git reset"
 	fi
 	PRINT_TEXT "%s" 32 "Undid: $LABEL"
+	_PRINT_DEFERRED_SIGNAL
 	echo "git-edit: ok – $REF moved $NEW → $OLD"
 	_STATUS_EMITTED=true
 }
@@ -2083,7 +2128,7 @@ GIT_EXEC () {
 	# concurrent commit from another session
 	local UPDATE="git update-ref -m 'git edit: $LABEL$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE"
-	if ! eval "$UPDATE" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
 		PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
@@ -2368,7 +2413,7 @@ GIT_AMEND_INTO () {
 	# the branch moved during autosquash, since nothing was consumed and the staging stands
 	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
 		PRINT_TEXT "Nothing was applied; your staged changes are untouched – retry when ready." 33
 		exit 1
@@ -2692,7 +2737,7 @@ _SPLIT_APPLY () {
 	# Atomic CAS ref update
 	local CMD="git update-ref -m 'git edit: split ${X:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
-	if ! eval "$CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during split – refusing to overwrite"
 		PRINT_TEXT "Split history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
@@ -3132,7 +3177,7 @@ SEQEOF
 	# Atomic CAS-update, guarded on the pre-op tip
 	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
 		PRINT_TEXT "Reordered history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
@@ -3400,7 +3445,7 @@ GIT_ONTO () {
 
 	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
 		PRINT_TEXT "Replanted history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
@@ -3614,7 +3659,7 @@ _CONTINUE_ONTO () {
 
 	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "onto ${STATE_TARGET:0:7}"
@@ -3697,7 +3742,7 @@ _CONTINUE_REORDER () {
 
 	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "reorder around ${STATE_TARGET:0:7}"
@@ -3783,7 +3828,7 @@ _CONTINUE_REBASE () {
 
 	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_ACTION ${STATE_TARGET:0:7}"
@@ -3938,7 +3983,7 @@ _CONTINUE_EDIT () {
 
 	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $BASE"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Branch '$STATE_BRANCH' moved during apply – run 'git edit --continue' to replay onto the new tip"
 		exit 1
@@ -4943,7 +4988,7 @@ _CONTINUE_AMEND_INTO () {
 	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
 	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $GUARD"
 	PRINT_CMD "$UPDATE_CMD" 90
-	if ! eval "$UPDATE_CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
@@ -4993,7 +5038,7 @@ _ABORT_AMEND_INTO () {
 		if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
 			local UPDATE_CMD="git update-ref -m 'git edit: abort amend-into$_REFLOG_TAG' $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
 			PRINT_CMD "$UPDATE_CMD" 90
-			eval "$UPDATE_CMD" 2>/dev/null
+			_MOVE_REF "$UPDATE_CMD" 2>/dev/null
 			git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
 		else
 			PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
@@ -5301,7 +5346,7 @@ GIT_REWORD () {
 	# concurrent commit landing from another tool
 	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
-	if ! eval "$CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during reword – refusing to overwrite"
 		PRINT_TEXT "Reworded history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
@@ -5513,7 +5558,7 @@ GIT_REWORD_BATCH () {
 	# (a concurrent commit or rewrite), exactly as the single reword does
 	local CMD="git update-ref -m 'git edit: reword ${#TARGETS[@]} commits$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
 	PRINT_CMD "$CMD"
-	if ! eval "$CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during batch reword – refusing to overwrite"
 		PRINT_TEXT "Reworded history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
@@ -5700,7 +5745,7 @@ GIT_RESQUASH () {
 	# Atomic ref update
 	local CMD="git update-ref -m 'git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
 	PRINT_CMD "$CMD"
-	if ! eval "$CMD" 2>/dev/null; then
+	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during resquash – refusing to overwrite"
 		PRINT_TEXT "Resquashed history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
@@ -7288,7 +7333,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# silently overwritten by this run
 		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}$_REFLOG_TAG' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
 		PRINT_CMD "$CMD"
-		if ! eval "$CMD" 2>/dev/null; then
+		if ! _MOVE_REF "$CMD" 2>/dev/null; then
 			PRINT_ERR "Branch '$ORIG_BRANCH' moved during rebase – refusing to overwrite"
 			PRINT_TEXT "Rebased history is at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
 			exit 1
