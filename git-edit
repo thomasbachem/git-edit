@@ -4384,7 +4384,9 @@ _GUARD_RESOLUTION_CLEAN () {
 	local FILE
 	while IFS= read -r FILE; do
 		[ -z "$FILE" ] && continue
-		if git -C "$WT" show ":$FILE" 2>/dev/null | grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)'; then
+		# Read whole – piped, `git show` died at an early marker once the blob outgrew the pipe
+		# buffer, and `pipefail` read that as a clean file
+		if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' <<<"$(git -C "$WT" show ":$FILE" 2>/dev/null)"; then
 			BAD+=("$FILE")
 		fi
 	done < <(git -C "$WT" diff --cached --name-only 2>/dev/null)

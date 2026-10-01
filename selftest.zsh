@@ -1035,6 +1035,11 @@ GIT_SELFTEST () {
 	_ST_EQ "continue refused (exit 2)" "$RC" "2"
 	_ST_OUT_HAS "names the marker problem" 'still contains conflict markers'
 	_ST_CHECK "markers never reached history" sh -c "! git log -p --all | grep -q '^+<<<<<<< '"
+	# Past the pipe buffer too, where a piped read lost its writer at the first marker
+	print -r -- "${(l:1000000::x:)}" >> "${MK_WT:-$ST_NO_WT}/mk.txt" && git -C "$MK_WT" add mk.txt
+	_ST_RUN --continue
+	_ST_EQ "a resolution past the pipe buffer is refused too" "$RC" "2"
+	_ST_OUT_HAS "naming the same problem" 'still contains conflict markers'
 	# A marker-free resolution is not blocked
 	printf 'm1\nMS\nm3\n' > "${MK_WT:-$ST_NO_WT}/mk.txt" && git -C "$MK_WT" add mk.txt
 	_ST_RUN --continue
