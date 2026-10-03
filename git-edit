@@ -2236,9 +2236,38 @@ GIT_AMEND_INTO () {
 	if [ ${#OPT_ALLOW_NEW_PATH} -eq 0 ]; then
 		local ABSENT_PATH
 		local ABSENT_INTRODUCER
+		local ABSENT_FROM
+		local ABSENT_RENAMES
+		local ABSENT_RENAMES_READ
+		local RENAME_LINE
+		local -a RENAME_FIELDS
 		local -a ABSENT_LINES
 		for ABSENT_PATH in "${STAGED_PATHS[@]}"; do
 			if ! git cat-file -e "$TARGET_FULL:$ABSENT_PATH" 2>/dev/null; then
+				# A path renamed since arrives by no add – the fixup's replay merges against the tip, and
+				# that merge's rename detection carries the change to the old name: asked the same way
+				# here, under its settings, so a pairing it still misses stops on a conflict, never lands
+				ABSENT_FROM=
+				# Only a path the fold keeps – a deletion meets that merge as a rename/delete conflict
+				if git cat-file -e "$AMEND_TREE:$ABSENT_PATH" 2>/dev/null; then
+					if [ -z "$ABSENT_RENAMES_READ" ]; then
+						ABSENT_RENAMES_READ=1
+						if [ "$(git config --type=bool --get merge.renames 2>/dev/null || git config --type=bool --get diff.renames 2>/dev/null)" != false ]; then
+							ABSENT_RENAMES=$(git diff -M -l"$(git config --get merge.renameLimit || git config --get diff.renameLimit || echo 7000)" --name-status --diff-filter=R "$ORIG_HEAD" "$TARGET_FULL" 2>/dev/null)
+						fi
+					fi
+					for RENAME_LINE in "${(@f)ABSENT_RENAMES}"; do
+						RENAME_FIELDS=("${(@ps:\t:)RENAME_LINE}")
+						if [ "${RENAME_FIELDS[2]}" = "$ABSENT_PATH" ]; then
+							ABSENT_FROM=${RENAME_FIELDS[3]}
+							break
+						fi
+					done
+				fi
+				if [ -n "$ABSENT_FROM" ]; then
+					PRINT_TEXT "Note: %s is %s at %s – git's rename detection carries the fold there." 90 "$ABSENT_PATH" "$ABSENT_FROM" "${TARGET_FULL:0:7}"
+					continue
+				fi
 				ABSENT_INTRODUCER=$(git log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- "$ABSENT_PATH" | head -1)
 				if [ -n "$ABSENT_INTRODUCER" ]; then
 					ABSENT_LINES+=("$ABSENT_PATH – arrives in $ABSENT_INTRODUCER")

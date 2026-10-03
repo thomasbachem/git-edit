@@ -234,9 +234,11 @@ commit introduces it \(em folded beneath its introduction, that commit
 replays as an add/add conflict of the whole file \(em with the introducing
 commit named;
 .B \-\-allow\-new\-path
-overrides. A path new to the entire span backfills cleanly and passes with
-a note. A flipped file mode is refused as well \(em a fold rarely means one,
-and the usual cause is a literal mode typed into
+overrides. A path renamed since folds onto its old name instead, wherever
+git's rename detection pairs the two as the replay's own merge will, and a
+note names the old path. A path new to the entire span backfills cleanly and
+passes with a note. A flipped file mode is refused as well \(em a fold rarely
+means one, and the usual cause is a literal mode typed into
 .BR "git update\-index \-\-cacheinfo" ,
 which takes the executable bit with it and would ride into history
 invisibly, a diffstat counting lines only;
