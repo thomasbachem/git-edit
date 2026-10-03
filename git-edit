@@ -156,12 +156,17 @@ _LANDING=false
 # The first HUP, INT or TERM a landing run finished through rather than stop halfway
 _DEFERRED_SIGNAL=""
 
+# The state file holding a pause this run recorded or resumed – the repo has one slot, and a pause
+# another run recorded there meanwhile is that run's to keep, not this one's
+_STATE_OWNED=""
+
 # Runs the cleanup hook, then emits a machine-readable error trailer matching the success
 # form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
 _GLOBAL_EXIT_TRAP () {
 	local CODE=$?
 	# A resumable operation keeps its worktree: an interrupt mid-verification would otherwise
-	# remove the one the saved state still points at – completions clear their state first
+	# remove the one the saved state still points at – completions clear their state first, and
+	# a failed run keeps it only for a pause of its own, never for one a parallel run recorded
 	local SF=$(_STATE_FILE_PATH)
 	# A resume that landed is resumable no more, so one stopped before its own `_CLEAR_STATE`
 	# clears the state here, sparing `--abort` a pause it would call untouched, and its worktree
@@ -170,7 +175,7 @@ _GLOBAL_EXIT_TRAP () {
 		&& grep -qxF "worktree=$STATE_WORKTREE" "$SF" 2>/dev/null; then
 		_CLEAR_STATE
 	fi
-	if [ -n "$_CLEANUP_HOOK" ] && { [ $CODE -eq 0 ] || [ -z "$SF" ] || [ ! -f "$SF" ]; }; then
+	if [ -n "$_CLEANUP_HOOK" ] && { [ $CODE -eq 0 ] || [ -z "$_STATE_OWNED" ] || [ ! -f "$_STATE_OWNED" ]; }; then
 		eval "$_CLEANUP_HOOK" 2>/dev/null
 		_CLEANUP_HOOK=""
 	fi
@@ -4141,6 +4146,7 @@ _SAVE_STATE () {
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
 		if [ "$_CAPTURE_REWRITES" = "true" ]; then echo "capture=$_CAPTURE_DIR"; fi
 	} > "$SF"
+	_STATE_OWNED=$SF
 }
 
 _LOAD_STATE () {
@@ -4213,6 +4219,8 @@ _LOAD_STATE () {
 			resolved)        STATE_RESOLVED=$VAL ;;
 		esac
 	done < "$SF"
+	# The resuming or aborting run takes the pause over – `--status` only reads it
+	_STATE_OWNED=$SF
 	# Adopt the paused run's rerere scope, so the finalizer diffs against the
 	# baseline from before the operation began – a state without one predates
 	# the scope, and an unknown baseline must never forget anything
@@ -4286,6 +4294,8 @@ _CLEAR_STATE () {
 	_CAPTURE_REMOVE "$(sed -n 's/^capture=//p' "$SF" 2>/dev/null | head -1)"
 	_CAPTURE_REMOVE "$_CAPTURE_DIR"
 	rm -f "$SF" "$SF-msg" "$SF-verify"
+	# The slot is free from here, so a pause a parallel run records next is not this one's
+	_STATE_OWNED=""
 }
 
 _STATE_EXISTS () {
