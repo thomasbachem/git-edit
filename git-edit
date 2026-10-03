@@ -555,15 +555,8 @@ EMIT_VERIFY_PAUSED () {
 	# Args: <failing-sha> <worktree-path> [<result-tip>]
 	# Also marks the state file – `verify_failed` tells a later `--status` this pause from a
 	# conflict, and `verify_result` records what a resume applies, the worktree's `HEAD` being
-	local SF=$(_STATE_FILE_PATH)
-	if [ -n "$SF" ] && [ -f "$SF" ]; then
-		if [ "$STATE_VERIFY_FAILED" != "$1" ]; then
-			echo "verify_failed=$1" >> "$SF"
-		fi
-		if [ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ]; then
-			echo "verify_result=$3" >> "$SF"
-		fi
-	fi
+	[ "$STATE_VERIFY_FAILED" != "$1" ] && _STATE_NOTE "verify_failed=$1"
+	[ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ] && _STATE_NOTE "verify_result=$3"
 	# A driver greps the trailer, commonly through a `| tail -N` that cuts off
 	# the run's own output printed above it – so the trailer carries the path
 	local VLOG=$(_VERIFY_LOG_PATH)
@@ -1584,6 +1577,15 @@ _REQUIRE_NO_INFLIGHT () {
 	fi
 }
 
+# Refuses a pause where a parallel run's took the state slot while this one ran – that check came
+# too late, so the same error, which drivers already wait out, and the exit trap removes a worktree
+# the run made, as a pause records itself before anything is authored there
+_REFUSE_PEER_PAUSE () {
+	PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
+	ECHO_E "\e[0;31m  It paused while this one ran, so nothing was applied – retry once it is continued or aborted.\e[0m" >&2
+	exit 1
+}
+
 # Refuses a branch that moved under a resolution – a parallel session landed a commit, so the
 # rewrite cannot apply, but the resolution is finished and the worktree holds the only copy,
 # so keep it and its state rather than letting the exit trap strand both
@@ -1670,13 +1672,13 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 			# `--continue` like the other modes, and abort in the main checkout, where a pause strands
 			if _IS_NON_INTERACTIVE; then
 				if [ -n "$WORKTREE_DIR" ] && [ -n "$ORIG_BRANCH" ]; then
+					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
+						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 					# The editor override carrying --text lasts this one rebase
 					# invocation – hand the message on, as `--continue` spawns its own
 					if [ -n "$TEXT_VALUE" ]; then
 						print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
 					fi
-					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
-						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 					_CLEANUP_HOOK=""
 					PRINT_ERR "Conflict during $ACTION – resolve in worktree, then 'git edit --continue'"
 					PRINT_TEXT "Worktree: %s" 33 "$WORKTREE_DIR"
@@ -2879,14 +2881,17 @@ GIT_SPLIT_PAUSE () {
 		PRINT_ERR "Cannot create split worktree at ${X:0:7}"
 		exit 1
 	fi
+	# Until the pause is recorded, as a parallel run's may take the slot first
+	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
 	_LINK_WORKTREE_EXTRAS "$WT"
 
+	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
+		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(git rev-parse --show-toplevel)"
+	_CLEANUP_HOOK=""
 	# A message given up front survives the pause in the sidecar
 	if [ -n "$TEXT_VALUE" ]; then
 		print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
 	fi
-	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
-		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(git rev-parse --show-toplevel)"
 
 	PRINT_ACTION "Splitting %s..." "$X"
 	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
@@ -4130,6 +4135,8 @@ _SAVE_STATE () {
 	local SF=$(_STATE_FILE_PATH) || { PRINT_ERR "Not in a git repo"; return 1; }
 	local KV
 	local SAVE_VERIFY_CMD=${VERIFY_VALUE:-$STATE_VERIFY_CMD}
+	local SF_NEW="$SF.$$"
+	_TEMP_FILES+=("$SF_NEW")
 	{
 		for KV in "$@"; do echo "$KV"; done
 		# The rerere scope's baseline rides along uninvited – every pause must
@@ -4145,7 +4152,17 @@ _SAVE_STATE () {
 		if [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then echo "allow_mode_change=1"; fi
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
 		if [ "$_CAPTURE_REWRITES" = "true" ]; then echo "capture=$_CAPTURE_DIR"; fi
-	} > "$SF"
+	} > "$SF_NEW"
+	# Rewrites this run's own pause in place, and claims a free slot by a hard link – an exclusive
+	# create where the filesystem has none – so a parallel run's pause taken meanwhile refuses this one
+	if [ -n "$_STATE_OWNED" ]; then
+		mv -f "$SF_NEW" "$SF"
+	elif ln "$SF_NEW" "$SF" 2>/dev/null || { [ ! -e "$SF" ] && ( setopt noclobber; cat "$SF_NEW" > "$SF" ) 2>/dev/null; }; then
+		rm -f "$SF_NEW"
+	else
+		rm -f "$SF_NEW"
+		_REFUSE_PEER_PAUSE
+	fi
 	_STATE_OWNED=$SF
 }
 
@@ -4276,6 +4293,10 @@ _VERIFY_SAVE_LOG () {
 	# Args: <commit> <cmd> <exit-status> <seconds> <output>
 	local LF
 	LF=$(_VERIFY_LOG_PATH) || return 0
+	# A parallel run's pause owns the sidecar too – this run's record is the tail printed above
+	if [ -z "$_STATE_OWNED" ] && _STATE_EXISTS; then
+		return 0
+	fi
 	{
 		echo "commit: $1"
 		echo "command: $2"
@@ -4481,11 +4502,10 @@ _NOTE_RESOLVED_TREE () {
 	_STATE_NOTE "resolved=$STATE_RESOLVED"
 }
 
-# Appends a key=value line to an in-flight operation's state file – the loader takes a key's last
-# line, so a later value replaces an earlier one and an empty one clears it
+# Appends a key=value line to this run's own pause, never a parallel run's – the loader takes a
+# key's last line, so a later value replaces an earlier one and an empty one clears it
 _STATE_NOTE () {
-	local SF=$(_STATE_FILE_PATH)
-	[ -n "$SF" ] && [ -f "$SF" ] && echo "$1" >> "$SF"
+	[ -n "$_STATE_OWNED" ] && [ -f "$_STATE_OWNED" ] && echo "$1" >> "$_STATE_OWNED"
 	return 0
 }
 
@@ -7175,9 +7195,12 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		PRINT_ERR "Cannot create edit worktree at ${EDIT_TARGET:0:7}"
 		exit 1
 	fi
+	# Until the pause is recorded, as a parallel run's may take the slot first
+	_CLEANUP_HOOK="git worktree remove --force '$EDIT_WT' 2>/dev/null; rm -rf '$EDIT_WT'"
 	_LINK_WORKTREE_EXTRAS "$EDIT_WT"
 	_SAVE_STATE "operation=edit" "worktree=$EDIT_WT" "branch=refs/heads/$EDIT_BRANCH" \
 		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)"
+	_CLEANUP_HOOK=""
 	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
 	PRINT_TEXT "Worktree at the commit: %s" 33 "$EDIT_WT"
 	PRINT_TEXT "Make your changes there, then %s (add %s to also reword) – or cancel via %s." 33 "git edit --continue" '--text "…"' "git edit --abort"

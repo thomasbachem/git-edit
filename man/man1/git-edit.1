@@ -1086,7 +1086,9 @@ shares them.
 The paused operation \(em its worktree, branch, target and phase. Only one can
 be paused at a time: while this file exists every mutating mode refuses rather
 than move the branch under a resolution that has not applied yet, whose own
-compare\-and\-swap would then fail at the end.
+compare\-and\-swap would then fail at the end. A run reaching a pause of its
+own after a parallel session's took the slot refuses the same way and removes
+the temporary worktree it made, as nothing there is authored yet.
 .B \-\-continue
 and
 .B \-\-abort
