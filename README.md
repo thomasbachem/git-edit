@@ -162,7 +162,7 @@ git -C <worktree> add <file>
 git edit --continue                          # dispatch on the fresh trailer, cascades repeat the loop
 ```
 
-**Every move is attributed.** Each reflog entry names the operation – `git edit: amend-into <sha>`, `git edit: exec <oldest commit replaced>` – and, where `GIT_EDIT_ACTOR` holds a label such as an agent session's id, ends with ` [<label>]`, so a history viewer can say who moved the branch. The reflog never leaves the clone, so neither does the label.
+**Every move is attributed.** Each reflog entry names the operation – `git edit: amend-into <sha>`, `git edit: exec <oldest commit replaced>` – and, where `GIT_EDIT_ACTOR` holds a label such as an agent session's id, ends with ` [<label>]`, so a history viewer can say who moved the branch. The reflog never leaves the clone, so neither does the label. The undo journal keeps it too: every session and worktree of a repository shares that journal, so its last run can be a parallel session's on any branch, and a labeled caller's `--undo` refuses a run made under another label – or none – unless `--allow-other-actor` says it is meant.
 
 `man git-edit` carries the rest under SCRIPTING: the pause states in full, what `rerere` replays into a later conflict, and the snapshot-map recipe for a mechanical change across many commits, which belongs in a single `--exec` rather than in one fold per commit.
 
@@ -178,6 +178,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref |
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
 | `--allow-mode-change` | Let `--amend-into` fold a file-mode change – a flipped executable bit, which it otherwise refuses – and, on `--continue`, keep one a conflict resolution staged or the landing found nothing asked for |
+| `--allow-other-actor` | Let `--undo` take back a run another `GIT_EDIT_ACTOR` caller made |
 | `--tree=<tree-ish>` | With `--amend-into`, fold that tree's diff from `HEAD` instead of the index's – composed apart from the shared index; a commit pins the tip it was composed on |
 | `--base=<sha>` | With `--exec`, the tip its result was built on – needed where that result carries commits made before the run and takes commits off the branch, and refused where the branch has moved past it |
 | `--dry-run` | With `--exec`, build and report the result, and the landing pinned to its base, with nothing verified or applied |

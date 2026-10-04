@@ -498,6 +498,14 @@ and on
 keep one a conflict resolution staged, or one the landing found nothing
 asked for.
 .TP
+.B \-\-allow\-other\-actor
+Let
+.B \-\-undo
+take back a run another
+.B GIT_EDIT_ACTOR
+caller made \(em a parallel session's, or one of your own under another
+label.
+.TP
 .B \-\-tree=\fItree\-ish\fR
 With
 .BR \-\-amend\-into ,
@@ -682,7 +690,10 @@ staged changes were never consumed, so there is nothing to undo.
 .TP
 .B \-\-undo
 Revert the last completed operation's ref move, compare\-and\-swap guarded
-(refused if the branch has moved on since).
+(refused if the branch has moved on since). The journal is the repository's,
+so its last operation can be a parallel session's on any branch: with
+.B GIT_EDIT_ACTOR
+set, a run made under another label, or none, is refused too.
 .TP
 .B \-\-status
 Report the in\-flight operation (or the last completed one) in the trailer
@@ -1043,8 +1054,10 @@ digits,
 .B _
 and
 .B \-
-is left out, since it could break the command the message rides in. The undo
-journal keeps no label, so an undo's entry names only whoever undid.
+is left out, since it could break the command the message rides in. An
+undo's entry names only whoever undid. The journal records the label too, for
+.B \-\-undo
+to refuse a labeled caller another's run.
 .TP
 .B GIT_EDIT_WORKTREE_LINK
 Colon\-separated paths to link into temporary worktrees, added to whatever
@@ -1102,7 +1115,10 @@ trailer names this path for a driver reading through a
 It lives as long as the pause.
 .TP
 .I <git dir>/git\-edit\-journal
-One line per completed ref move (\fB<epoch> <ref> <old> <new>\fR), behind
+One line per completed ref move (\fB<epoch> <ref> <old> <new> <label>\fR,
+then a tab and the caller's
+.B GIT_EDIT_ACTOR
+label for a labeled run), behind
 .B \-\-undo
 and the last\-operation report of
 .BR \-\-status .
