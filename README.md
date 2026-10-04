@@ -188,6 +188,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `-h` | Print the usage. Prefer it to `--help`, which git routes through `man` – without a terminal that arrives as backspace-overstruck text |
 | `--continue` / `--abort` | Resume or cancel the paused operation |
 | `--undo` / `--status` | Revert the last completed operation, or report the in-flight one |
+| `--carry[=<old tip>]` | Merge the checkout's uncommitted edits onto what a rewrite landed – the branch's last one by default – where a commit of the file as it stands would take the rewrite back, and move a renamed file's edits to its new path. A clean merge is written, a conflict named and left |
 | `--version` | Print the released version – it tracks the tag, so a checkout following `main` reports the last one cut |
 | `--selftest[=<ids>]` | Run the end-to-end suite in a scratch repo – several hundred assertions driving the installed script as a subprocess, including a check that every flag it declares is documented in the man page and here. `=83-87,90` runs just those scenarios, with the ones they need, for development – a commit or a release takes the whole suite |
 

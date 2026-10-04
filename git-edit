@@ -124,6 +124,10 @@ _VERIFY_NO_RESUME=false
 # run that had a check and declined it looks like the one that never had one
 _VERIFY_BYPASSED=""
 
+# Where the run started – an isolated run reports from its temp worktree, so a command it prints
+# for the branch's checkout names that checkout only where it is not the caller's own
+_START_DIR=$PWD
+
 # The caller's own label – an agent session's id, a CI job – closing every reflog message and
 # journal line this tool writes, so a history viewer can name who moved the branch and `--undo`
 # whose run it takes back, kept only where it cannot break the quoted command it rides in
@@ -252,7 +256,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --move=<a> --move=<b>... --after|--before=<sha> # several as one block, in one replay\e[0m"
 	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
-	ECHO_E "\e[0;94m       git edit --undo | --status | --selftest[=<ids>] | --version\e[0m"
+	ECHO_E "\e[0;94m       git edit --undo | --status | --carry[=<sha>] | --selftest[=<ids>] | --version\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
 	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing\e[0m"
@@ -298,6 +302,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since,\e[0m"
 	ECHO_E "\e[0;94m                                       or where GIT_EDIT_ACTOR is set and another caller made it)\e[0m"
 	ECHO_E "\e[0;94m       --status                        Report the in-flight operation (or the last completed one)\e[0m"
+	ECHO_E "\e[0;94m       --carry[=<old tip>]             Merge the checkout's uncommitted edits onto what the branch's last rewrite\e[0m"
+	ECHO_E "\e[0;94m                                       (or the one from <old tip>) landed, where committed whole they'd take it back\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
 	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
 	ECHO_E "\e[0;94m       --allow-mode-change             Let --amend-into fold a file-mode change (a flipped executable bit, say),\e[0m"
@@ -1271,6 +1277,150 @@ GIT_UNDO () {
 	_STATUS_EMITTED=true
 }
 
+# Lists a change's removed and added lines, sorted, to tell that a merge kept the edits whole
+_CHANGED_LINES () {
+	# Args: <from file> <to file>
+	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 -- "$1" "$2" 2>/dev/null | awk 'f && /^[-+]/; /^@@/ {f = 1}' | LC_ALL=C sort
+}
+
+# Merges the checkout's uncommitted edits onto what a rewrite landed – each path it changed whose
+# file holds edits on the pre-rewrite content, a renamed file's moved to its new path – writing
+# only a clean merge that keeps the edits' own lines whole, and only over the file as it was read
+GIT_CARRY () {
+	# Args: [<old tip>] – by default, the last journaled rewrite of the checkout's branch
+	local CO REF OLD NEW P SRC LINE MERGE_RC OURS_HASH TMPF LINK
+	local -a J CARRIED LEFT
+	CO=$(git rev-parse --show-toplevel 2>/dev/null)
+	if ! REF=$(git symbolic-ref -q HEAD); then
+		PRINT_ERR "--carry needs a checked-out branch – HEAD is detached"
+		exit 1
+	fi
+	if [ -n "$1" ]; then
+		if ! OLD=$(git rev-parse --verify --quiet "$1^{commit}"); then
+			PRINT_ERR "--carry=$1 names no commit here"
+			exit 1
+		fi
+		NEW=$(git rev-parse HEAD)
+	else
+		local JF=$(_JOURNAL_FILE_PATH)
+		if [ -n "$JF" ] && [ -s "$JF" ]; then
+			# Newest first – every branch's runs share the journal
+			for LINE in "${(@Oaf)$(<"$JF")}"; do
+				J=(${=${LINE%$'\t'*}})
+				if [ "${J[2]}" = "$REF" ]; then
+					OLD=${J[3]}
+					NEW=${J[4]}
+					break
+				fi
+			done
+		fi
+		if [ -z "$OLD" ]; then
+			PRINT_ERR "No rewrite of ${REF#refs/heads/} on record – name the tip your edits were made on: --carry=<sha>"
+			exit 1
+		fi
+	fi
+	PRINT_ACTION "Carrying uncommitted edits from %s onto %s..." "$OLD" "$NEW"
+
+	local -A RENAMED_FROM RENAMED_TO
+	local -a RENAME_FIELDS
+	for LINE in "${(@f)$(git diff -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)}"; do
+		RENAME_FIELDS=("${(@ps:\t:)LINE}")
+		[ ${#RENAME_FIELDS[@]} -eq 3 ] || continue
+		RENAMED_FROM[${RENAME_FIELDS[3]}]=${RENAME_FIELDS[2]}
+		RENAMED_TO[${RENAME_FIELDS[2]}]=${RENAME_FIELDS[3]}
+	done
+	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) MERGED=$(MKTEMP_FILE git-edit-merged)
+	_TEMP_FILES+=("$BASE" "$THEIRS" "$MERGED")
+	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+		[ -z "$P" ] && continue
+		# A submodule's worktree is a repository of its own
+		[ -d "$CO/$P" ] && [ ! -L "$CO/$P" ] && continue
+		SRC=$P
+		if ! git cat-file -e "$NEW:$P" 2>/dev/null; then
+			# A rename's source goes with its new path, unless that path is in the checkout already
+			[ -e "$CO/$P" ] || [ -L "$CO/$P" ] || continue
+			[ "$(_WORKTREE_HASH "$CO" "$P")" = "$(git rev-parse "${OLD}:${P}" 2>/dev/null)" ] && continue
+			[ -n "${RENAMED_TO[$P]}" ] && [ ! -e "$CO/${RENAMED_TO[$P]}" ] && continue
+			if [ -n "${RENAMED_TO[$P]}" ]; then
+				LEFT+=("$P – renamed to ${RENAMED_TO[$P]}, which the checkout holds already")
+			else
+				LEFT+=("$P – removed by the rewrite")
+			fi
+			continue
+		fi
+		[ -n "${RENAMED_FROM[$P]}" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && SRC=${RENAMED_FROM[$P]}
+		[ -e "$CO/$SRC" ] || [ -L "$CO/$SRC" ] || continue
+		# Edits need a pre-rewrite blob to have been made on, and a stale or current file has none
+		git cat-file -e "$OLD:$SRC" 2>/dev/null || continue
+		OURS_HASH=$(_WORKTREE_HASH "$CO" "$SRC")
+		[ "$OURS_HASH" = "$(git rev-parse "${OLD}:${SRC}")" ] && continue
+		[ "$OURS_HASH" = "$(git rev-parse "${NEW}:${P}")" ] && continue
+		# A retargeted symlink has no lines to merge, and writing through it would replace it
+		if [ -L "$CO/$SRC" ]; then
+			LEFT+=("$P – a symlink")
+			continue
+		fi
+		# A commit since the rewrite brought content of its own, which the merge would take back
+		if [ "$(git rev-parse "HEAD:$P" 2>/dev/null)" != "$(git rev-parse "${NEW}:${P}")" ]; then
+			LEFT+=("$P – changed again since the rewrite")
+			continue
+		fi
+		git cat-file blob "$OLD:$SRC" > "$BASE" && git cat-file blob "$NEW:$P" > "$THEIRS"
+		git merge-file -p -q "$CO/$SRC" "$BASE" "$THEIRS" > "$MERGED" 2>/dev/null
+		MERGE_RC=$?
+		if [ $MERGE_RC -gt 127 ]; then
+			LEFT+=("$P – no text merge")
+			continue
+		elif [ $MERGE_RC -gt 0 ]; then
+			LEFT+=("$P – $MERGE_RC conflict(s)")
+			continue
+		fi
+		# Carried before – the edits sit on the new content already
+		[ "$SRC" = "$P" ] && cmp -s "$MERGED" "$CO/$SRC" && continue
+		if [ "$(_CHANGED_LINES "$BASE" "$CO/$SRC")" != "$(_CHANGED_LINES "$THEIRS" "$MERGED")" ]; then
+			LEFT+=("$P – the merge would alter the edits")
+			continue
+		fi
+		# Written beside the file and moved into place, keeping its mode – a renamed one takes the new
+		# path's – unless the file changed since it was read, a parallel edit the merge never saw
+		TMPF="$CO/$P.git-edit-carry.$$"
+		_TEMP_FILES+=("$TMPF")
+		# A rename into a new directory finds none in the checkout yet
+		[ "$SRC" = "$P" ] || mkdir -p "$CO/${P:h}"
+		cp -p "$CO/$SRC" "$TMPF" && cat "$MERGED" > "$TMPF" || { rm -f "$TMPF"; LEFT+=("$P – not writable"); continue; }
+		if [ "$SRC" != "$P" ]; then
+			if [ "$(git ls-tree "$NEW" -- "$P" | awk '{print $1}')" = 100755 ]; then
+				chmod +x "$TMPF"
+			else
+				chmod -x "$TMPF"
+			fi
+		fi
+		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS_HASH" ] || { [ "$SRC" != "$P" ] && [ -e "$CO/$P" ]; }; then
+			rm -f "$TMPF"
+			LEFT+=("$P – changed while carrying")
+			continue
+		fi
+		mv -f "$TMPF" "$CO/$P"
+		if [ "$SRC" != "$P" ]; then
+			rm -f "$CO/$SRC"
+			CARRIED+=("$SRC → $P")
+		else
+			CARRIED+=("$P")
+		fi
+	done
+	rm -f "$BASE" "$THEIRS" "$MERGED"
+
+	[ ${#CARRIED[@]} -gt 0 ] && PRINT_TEXT "Carried onto the new content: %s" 32 "${(j:, :)CARRIED}"
+	if [ ${#LEFT[@]} -gt 0 ]; then
+		PRINT_ERR "Left as they were, to merge by hand: ${(j:, :)LEFT}"
+		exit 1
+	fi
+	[ ${#CARRIED[@]} -eq 0 ] && PRINT_TEXT "%s" 32 "Nothing to carry – no path the rewrite changed holds edits on its pre-rewrite content."
+	_PRINT_DEFERRED_SIGNAL
+	echo "git-edit: ok – carried ${#CARRIED[@]} path(s) across ${OLD:0:7}..${NEW:0:7}"
+	_STATUS_EMITTED=true
+}
+
 # Reports the in-flight operation in the same format as the original pause, so a caller
 # landing mid-operation – after a context reset or from another session – can re-enter
 # without reading state files, falling back to the journal's last completed operation
@@ -1493,6 +1643,12 @@ _RECONCILE_CHECKOUT () {
 	fi
 	if [ ${#RENAMED[@]} -gt 0 ]; then
 		PRINT_TEXT "Renamed by the rewrite, with uncommitted edits left untracked at the old path and the new one missing: %s" 33 "${(j:, :)RENAMED}"
+	fi
+	if [ $(( ${#REVERTING[@]} + ${#RENAMED[@]} )) -gt 0 ]; then
+		# Pinned to this rewrite's old tip, which a later one would otherwise take the place of
+		local CARRY_CMD="git edit --carry=${OLD:0:12}" HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+		[ -n "$HERE" ] && [ "${HERE:A}" = "${CO:A}" ] || CARRY_CMD="git -C ${(q-)CO} edit --carry=${OLD:0:12}"
+		PRINT_TEXT "Merge those edits onto the new content, which takes out again what the rewrite took out of history, with: %s" 33 "$CARRY_CMD"
 	fi
 	# Both modes named, and the chmod matching the committed one offered – it discards no content,
 	# though a deliberate chmod not yet committed is undone by it all the same
@@ -6244,7 +6400,7 @@ zmodload zsh/zutil
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -6482,13 +6638,13 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 	exit 0
 fi
 
-# `--undo`, `--status` and `--selftest` are standalone commands – no positionals, no mode
-# flags, dispatched before any commit parsing, and stray arguments are refused rather than
+# `--undo`, `--status`, `--carry` and `--selftest` are standalone commands – no positionals, no
+# mode flags, dispatched before any commit parsing, and stray arguments are refused rather than
 # ignored, since `--undo <sha>` would otherwise undo whatever happens to be last
-if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_SELFTEST} -gt 0 ]; then
+if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_CARRY} -gt 0 ] || [ ${#OPT_SELFTEST} -gt 0 ]; then
 	if [ $# -gt 0 ]; then
 		USAGE
-		PRINT_ERR "--undo/--status/--selftest take no arguments (got: $*)"
+		PRINT_ERR "--undo/--status/--carry/--selftest take no arguments (got: $*)"
 		exit 1
 	fi
 fi
@@ -6502,6 +6658,10 @@ if [ ${#OPT_UNDO} -gt 0 ]; then
 fi
 if [ ${#OPT_STATUS} -gt 0 ]; then
 	GIT_STATUS_REPORT
+	exit 0
+fi
+if [ ${#OPT_CARRY} -gt 0 ]; then
+	GIT_CARRY "${${OPT_CARRY[1]#--carry}#=}"
 	exit 0
 fi
 if [ ${#OPT_SELFTEST} -gt 0 ]; then

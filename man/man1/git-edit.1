@@ -22,7 +22,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...
-\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
+\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
 .B git edit
@@ -169,7 +169,10 @@ both modes given, with the
 .B chmod
 that matches the commit. A fold and
 .B \-\-exec
-reconcile the checkout the same way. The amend stages the worktree wholesale, so a scratch file
+reconcile the checkout the same way, and where uncommitted edits would take the
+rewrite back,
+.B \-\-carry
+merges them onto the new content. The amend stages the worktree wholesale, so a scratch file
 left there joins the commit \(em any untracked file it absorbs is named before
 the amend.
 .TP
@@ -697,6 +700,18 @@ Revert the last completed operation's ref move, compare\-and\-swap guarded
 so its last operation can be a parallel session's on any branch: with
 .B GIT_EDIT_ACTOR
 set, a run made under another label, or none, is refused too.
+.TP
+.BR \-\-carry [ =\fIold\-tip\fR ]
+Merge the checkout's uncommitted edits onto what a rewrite landed, for each
+path it changed whose file holds edits on the pre\-rewrite content \(em the
+files a landing names as taking the rewrite back if committed whole \(em and
+move a renamed file's edits to its new path. The rewrite is the branch's last
+one on record, or the one from \fIold\-tip\fR to \fBHEAD\fR. Only a clean merge
+that keeps the edits' own lines whole is written, and only over the file as it
+was read; a conflict, a binary, a symlink, a path changed again since or one
+the rewrite removed is named and left as it was, and the run exits 1. A rewrite that took
+content out of history hands it back as uncommitted work, which a merge onto
+the new content takes out again \(em so a landing offers this and never runs it.
 .TP
 .B \-\-status
 Report the in\-flight operation (or the last completed one) in the trailer
