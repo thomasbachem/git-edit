@@ -525,6 +525,22 @@ instead of the index's \(em composed apart from the shared index, a commit
 pinning the tip it was composed on; see
 .BR MODES .
 .TP
+.B \-\-snapshot
+With
+.BR \-\-amend\-into ,
+merge the fold into every first\-parent commit from its target up instead of
+replaying the commits above it \(em each through
+.B git merge\-tree
+against the pre\-op tip as base, so a file moved since takes the fold under
+its old name, and each commit keeps its author and message. A conflict stops
+in a worktree laid out as any merge's, once per distinct content of the
+conflicted file: its staged resolution serves every commit carrying the same,
+and rerere pre\-fills a hunk already resolved at an earlier stop. Only a
+conflict over content resolves this way \(em a rename or deletion meeting the
+fold refuses, as does
+.BR \-\-text .
+A commit the fold leaves empty stays and is named. Needs git 2.40 or later.
+.TP
 .B \-\-base=\fIsha\fR
 With
 .BR \-\-exec ,
@@ -968,8 +984,11 @@ A hand\-authored fold stays on
 while its replay runs clean. Where later commits rewrote its lines, the
 replay stops at each of them for a state written by hand. Then
 .B \-\-abort
-and map the fold instead, restated as edits that every snapshot from its target
-up matches exactly once. Prove the tip against the result intended, and read
+and fold with
+.B \-\-snapshot
+instead, which stops once per distinct content of the file, or map the fold by
+hand, restated as edits that every snapshot from its target up matches exactly
+once. Prove the tip against the result intended, and read
 each patch the range\-diff marks changed beyond the targets rather than
 counting them: each is a later commit the fold's text reached.
 .SH "EXIT STATUS"

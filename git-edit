@@ -281,6 +281,8 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       (per git blame; a purely additive change falls back to the paths)\e[0m"
 	ECHO_E "\e[0;94m       --tree=<tree-ish>               With --amend-into: fold <tree-ish>'s diff from HEAD instead of the index's –\e[0m"
 	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on\e[0m"
+	ECHO_E "\e[0;94m       --snapshot                      With --amend-into: merge the fold into each commit from its target up instead of\e[0m"
+	ECHO_E "\e[0;94m                                       replaying those above it – a conflict stops once per distinct content\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
 	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves:\e[0m"
@@ -2559,6 +2561,11 @@ GIT_AMEND_INTO () {
 		fi
 	fi
 
+	if [ ${#OPT_SNAPSHOT} -gt 0 ]; then
+		_AMEND_INTO_SNAPSHOT
+		return
+	fi
+
 	# Step 1 – snapshot the staged index as a commit object, `write-tree` plus `commit-tree`
 	# building it without moving a ref or touching the index, so the staging survives to the CAS
 	local TARGET_SUBJECT=$(git log -1 --format='%s' "$TARGET_FULL")
@@ -2587,17 +2594,7 @@ GIT_AMEND_INTO () {
 		TARGET_SUBJECT=$(git log -1 --format='%s' "$TARGET_FULL")
 	fi
 
-	local STAGED_TREE
-	if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
-		# Scoped fold – compose `HEAD`'s tree plus only the named staged entries, so whatever else
-		# sits in the shared index cannot ride along into a past commit, a parallel session's
-		# staging included, which can land in the turn between `git add` and this call
-		STAGED_TREE=$(_STAGED_TREE_FOR "$ORIG_HEAD")
-	elif [ -n "$AMEND_TREE" ]; then
-		STAGED_TREE=$AMEND_TREE
-	else
-		STAGED_TREE=$(git write-tree 2>/dev/null)
-	fi
+	local STAGED_TREE=$(_FOLD_TREE "$ORIG_HEAD")
 	if [ -z "$STAGED_TREE" ]; then
 		PRINT_ERR "Cannot snapshot index (unmerged entries?) – resolve conflicts first"
 		exit 1
@@ -2722,6 +2719,359 @@ GIT_AMEND_INTO () {
 	# Export new `HEAD` + ref for the success trailer in the dispatch block
 	AMEND_NEW_HEAD=$NEW_HEAD
 	AMEND_REF=$REF
+}
+
+# Composes the tree a fold carries – a scoped fold takes the pre-op tip plus only the named staged
+# entries, so whatever else sits in the shared index cannot ride along into a past commit, a
+# parallel session's staging included, which can land in the turn between `git add` and the call
+_FOLD_TREE () {
+	# Args: <pre-op tip>
+	if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+		_STAGED_TREE_FOR "$1"
+	elif [ -n "$AMEND_TREE" ]; then
+		print -r -- "$AMEND_TREE"
+	else
+		git write-tree 2>/dev/null
+	fi
+}
+
+# Tells whether this git's `merge-tree` takes an explicit merge base, which 2.40 added – its usage
+# spells the option `--[no-]merge-base` from 2.44 on
+_MERGE_TREE_TAKES_BASE () {
+	[[ "$( export LC_ALL=C; git merge-tree -h 2>&1 )" == *"merge-base"* ]]
+}
+
+# Folds by merging the fold into every commit from the target up instead of replaying the commits
+# above it – where later commits rewrote the lines beside the fold, a replay stops at each of
+# them, while a snapshot stops once per distinct content of the conflicted file
+_AMEND_INTO_SNAPSHOT () {
+	if [ -n "$TEXT_VALUE" ]; then
+		PRINT_ERR "--snapshot takes no --text – fold first, then reword: git edit -M --text=\"…\" <sha>"
+		exit 1
+	fi
+	if ! _MERGE_TREE_TAKES_BASE; then
+		PRINT_ERR "--snapshot needs git 2.40 or later, whose merge-tree takes --merge-base"
+		exit 1
+	fi
+	local STAGED_TREE=$(_FOLD_TREE "$ORIG_HEAD")
+	if [ -z "$STAGED_TREE" ]; then
+		PRINT_ERR "Cannot snapshot index (unmerged entries?) – resolve conflicts first"
+		exit 1
+	fi
+	# The fold as a commit on the tip, the side every snapshot merges in
+	STATE_FOLD=$(git commit-tree "$STAGED_TREE" -p "$ORIG_HEAD" -m "fold into ${TARGET_FULL:0:7}") || exit 1
+	STATE_WORKTREE=$(MKTEMP_DIR git-edit-snapshot)
+	rmdir "$STATE_WORKTREE"
+	local WT_CMD="git worktree add --detach '$STATE_WORKTREE' $ORIG_HEAD"
+	PRINT_CMD "$WT_CMD" 90
+	if ! eval "$WT_CMD" >/dev/null 2>&1; then
+		PRINT_ERR "Failed to create temp worktree"
+		exit 1
+	fi
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_LINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
+	STATE_TARGET=$TARGET_FULL
+	STATE_ORIG_HEAD=$ORIG_HEAD
+	STATE_BRANCH=$REF
+	STATE_MAINDIR=$MAIN_DIR
+	STATE_DEPTH=$DEPTH
+	STATE_STAGEDTREE=$STAGED_TREE
+	STATE_FILES=${(pj:\t:)STAGED_PATHS}
+	STATE_PATHSPECS=${(pj:\t:)AMEND_PATHSPECS}
+	STATE_TREE=$AMEND_TREE
+	STATE_REBASEBASE=--root
+	git rev-parse -q --verify "$TARGET_FULL^" >/dev/null 2>&1 && STATE_REBASEBASE="$TARGET_FULL^"
+	_RERERE_SCOPE_BEGIN
+	_SNAPSHOT_RUN
+}
+
+# Rebuilds each first-parent commit from the target up with the fold merged in, author and
+# message kept – `git merge-tree` against the pre-op tip as base carries a renamed path's fold to
+# its old name, and a conflict takes the resolution recorded for that path and content, or stops
+_SNAPSHOT_BUILD () {
+	# Args: <resolution map>
+	# • Reads `STATE_TARGET`, `STATE_ORIG_HEAD` and `STATE_FOLD`
+	# • Sets `_SNAPSHOT_TIP`, or on a stop `_SNAPSHOT_ERA`, `_SNAPSHOT_TREE` and `_SNAPSHOT_STAGES`
+	# • Returns 2 on a stop, 1 on a refusal it has printed
+	local MAP=$1 C OUT RC TREE PARENT NEWC P BLOB LINE KEY IDX
+	local -a ERAS MT_LINES STAGES PATHS PENDING SUBST NF
+	local -A RES SEEN
+	local FIRST_USE
+	_REWRITE_PAIRS=()
+	_SNAPSHOT_RESOLVED_TREES=()
+	if [ -s "$MAP" ]; then
+		# A tab through a variable – inside a subscript zsh keeps `$'\t'` as those four characters
+		local TAB=$'\t'
+		while IFS=$TAB read -r P BLOB LINE; do
+			RES[$P$TAB$BLOB]=$LINE
+		done < "$MAP"
+	fi
+	PARENT=$(git rev-parse -q --verify "$STATE_TARGET^" 2>/dev/null)
+	if [ -n "$PARENT" ]; then
+		ERAS=(${(f)"$(git rev-list --reverse --first-parent "$PARENT..$STATE_ORIG_HEAD")"})
+	else
+		ERAS=(${(f)"$(git rev-list --reverse --first-parent "$STATE_ORIG_HEAD")"})
+	fi
+	PRINT_CMD "git merge-tree --write-tree --merge-base=${STATE_ORIG_HEAD:0:7} <commit> ${STATE_FOLD:0:7}  # each of ${#ERAS[@]} commit(s)" 90
+	for C in "${ERAS[@]}"; do
+		OUT=$(git merge-tree --write-tree --merge-base="$STATE_ORIG_HEAD" "$C" "$STATE_FOLD" 2>/dev/null)
+		RC=$?
+		MT_LINES=("${(@f)OUT}")
+		TREE=${MT_LINES[1]}
+		if [ $RC -eq 1 ]; then
+			# The conflicted entries, a line per stage, run up to the blank line before git's messages
+			STAGES=()
+			for LINE in "${(@)MT_LINES[2,-1]}"; do
+				[ -z "$LINE" ] && break
+				STAGES+=("$LINE")
+			done
+			PATHS=(${(u)STAGES[@]#*$'\t'})
+			# Only a conflict over content leaves all three stages at a path this commit has – a
+			# deletion or a rename meeting the fold has no one text to resolve
+			for P in "${PATHS[@]}"; do
+				if [ ${#${(M)STAGES[@]:#*$'\t'${(b)P}}} -ne 3 ] || ! git cat-file -e "$C:$P" 2>/dev/null; then
+					PRINT_ERR "Merging the fold into ${C:0:7} meets $P in a conflict that is not over its content"
+					ECHO_E "\e[0;31m  --snapshot resolves content conflicts only – fold without it to replay instead.\e[0m" >&2
+					return 1
+				fi
+			done
+			PENDING=()
+			SUBST=()
+			FIRST_USE=false
+			for P in "${PATHS[@]}"; do
+				KEY=$P$'\t'$(git rev-parse "$C:$P")
+				if [ -n "${RES[$KEY]}" ]; then
+					SUBST+=("$P"$'\t'"${RES[$KEY]}")
+					[ -z "${SEEN[$KEY]}" ] && FIRST_USE=true
+					SEEN[$KEY]=1
+				else
+					PENDING+=("$P")
+				fi
+			done
+			if [ ${#SUBST[@]} -gt 0 ]; then
+				IDX=$(MKTEMP_FILE git-edit-snapshot-idx)
+				_TEMP_FILES+=("$IDX")
+				rm -f "$IDX"
+				GIT_INDEX_FILE=$IDX git read-tree "$TREE" || { rm -f "$IDX"; return 1; }
+				for LINE in "${SUBST[@]}"; do
+					P=${LINE%%$'\t'*}
+					LINE=${LINE#*$'\t'}
+					if [ "$LINE" = "-" ]; then
+						GIT_INDEX_FILE=$IDX git update-index --force-remove -- "$P" || { rm -f "$IDX"; return 1; }
+					else
+						GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "${LINE%% *},${LINE#* },$P" || { rm -f "$IDX"; return 1; }
+					fi
+				done
+				TREE=$(GIT_INDEX_FILE=$IDX git write-tree) || { rm -f "$IDX"; return 1; }
+				rm -f "$IDX"
+			fi
+			if [ ${#PENDING[@]} -gt 0 ]; then
+				_SNAPSHOT_ERA=$C
+				_SNAPSHOT_TREE=$TREE
+				_SNAPSHOT_STAGES=()
+				for P in "${PENDING[@]}"; do
+					_SNAPSHOT_STAGES+=(${(M)STAGES[@]:#*$'\t'${(b)P}})
+				done
+				return 2
+			fi
+			# The first commit each resolution reaches, for the gate's default tier to check
+			[ "$FIRST_USE" = "true" ] && _SNAPSHOT_RESOLVED_TREES+=("$TREE")
+		elif [ $RC -ne 0 ]; then
+			PRINT_ERR "git merge-tree could not merge the fold into ${C:0:7}"
+			return 1
+		fi
+		NF=("${(@0)$(git log -1 --format='%an%x00%ae%x00%aI%x00%B' "$C")}")
+		if [ -n "$PARENT" ]; then
+			NEWC=$(GIT_AUTHOR_NAME="${NF[1]}" GIT_AUTHOR_EMAIL="${NF[2]}" GIT_AUTHOR_DATE="${NF[3]}" git commit-tree "$TREE" -p "$PARENT" -m "${NF[4]}") || return 1
+		else
+			NEWC=$(GIT_AUTHOR_NAME="${NF[1]}" GIT_AUTHOR_EMAIL="${NF[2]}" GIT_AUTHOR_DATE="${NF[3]}" git commit-tree "$TREE" -m "${NF[4]}") || return 1
+		fi
+		_RECORD_REWRITE "$C" "$NEWC"
+		PARENT=$NEWC
+	done
+	_SNAPSHOT_TIP=$PARENT
+	return 0
+}
+
+# Lays the first conflict no resolution covers out in the worktree as any merge's – the commit
+# checked out, the merge's result in place, its conflicted paths at their three stages – so `git
+# status`, rerere and the resolution guard read it as usual, then pauses
+_SNAPSHOT_PAUSE () {
+	# Args: <worktree git dir>
+	local WT=$STATE_WORKTREE P
+	local -a PATHS=(${(u)_SNAPSHOT_STAGES[@]#*$'\t'})
+	local NULL_OID=${(l:${#_SNAPSHOT_ERA}::0:)}
+	git -C "$WT" checkout -qf --detach "$_SNAPSHOT_ERA" 2>/dev/null
+	if ! git -C "$WT" read-tree --reset -u "$_SNAPSHOT_TREE" 2>/dev/null || \
+	   ! { for P in "${PATHS[@]}"; do print -r -- "0 $NULL_OID"$'\t'"$P"; done; print -rl -- "${_SNAPSHOT_STAGES[@]}"; } | git -C "$WT" update-index --index-info; then
+		PRINT_ERR "Could not lay the conflict at ${_SNAPSHOT_ERA:0:7} out in the worktree"
+		exit 1
+	fi
+	: >| "$1/git-edit-snapshot-pending"
+	for P in "${PATHS[@]}"; do
+		print -r -- "$P"$'\t'"$(git rev-parse "$_SNAPSHOT_ERA:$P")" >> "$1/git-edit-snapshot-pending"
+	done
+	# A hunk resolved at an earlier stop arrives pre-filled – that stop's own record, recorded at
+	# its continue, would otherwise count as this one's
+	rm -f "$1/MERGE_RR"
+	git -C "$WT" -c rerere.enabled=true rerere >/dev/null 2>&1
+	_SNAPSHOT_SAVE_STATE
+	_CLEANUP_HOOK=""
+	PRINT_ERR "Conflict merging the fold into ${_SNAPSHOT_ERA:0:7} – resolve in the worktree, stage it, then 'git edit --continue'"
+	_PRINT_COMMIT_LINE "$_SNAPSHOT_ERA" '  at: %h %s'
+	PRINT_TEXT "%s" 33 "The resolution serves every later commit carrying the same content, so each stops once."
+	PRINT_TEXT "Worktree: %s" 33 "$WT"
+	local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
+	PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+	EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
+	exit 2
+}
+
+_SNAPSHOT_SAVE_STATE () {
+	_SAVE_STATE \
+		"operation=snapshot" \
+		"worktree=$STATE_WORKTREE" \
+		"branch=$STATE_BRANCH" \
+		"orig_head=$STATE_ORIG_HEAD" \
+		"target=$STATE_TARGET" \
+		"depth=$STATE_DEPTH" \
+		"rebasebase=$STATE_REBASEBASE" \
+		"stagedtree=$STATE_STAGEDTREE" \
+		"fold=$STATE_FOLD" \
+		"maindir=$STATE_MAINDIR" \
+		"files=$STATE_FILES" \
+		"pathspecs=$STATE_PATHSPECS" \
+		"tree=$STATE_TREE"
+}
+
+# Builds the snapshot fold and lands it, or pauses at a conflict no resolution covers – the first
+# run and every `--continue` alike, the build being quick and the map carrying what was resolved
+_SNAPSHOT_RUN () {
+	local WT=$STATE_WORKTREE LINE
+	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
+	local -a _SNAPSHOT_STAGES _SNAPSHOT_RESOLVED_TREES EMPTIED
+	local _SNAPSHOT_TIP _SNAPSHOT_ERA _SNAPSHOT_TREE
+	_SNAPSHOT_BUILD "$GD/git-edit-snapshot-map"
+	case $? in
+		0) ;;
+		2) _SNAPSHOT_PAUSE "$GD" ;;
+		*) exit 1 ;;
+	esac
+	local NEW_HEAD=$_SNAPSHOT_TIP
+	# The last snapshot is the tip merged with its own fold, so it must carry the fold exactly
+	if [ "$(git rev-parse "$NEW_HEAD^{tree}")" != "$(git rev-parse "$STATE_STAGEDTREE^{tree}")" ]; then
+		PRINT_ERR "The rebuilt tip differs from the fold applied to the tip – refusing to land it"
+		exit 1
+	fi
+	local RESOLUTIONS=0
+	[ -s "$GD/git-edit-snapshot-map" ] && RESOLUTIONS=$(grep -c . "$GD/git-edit-snapshot-map")
+	PRINT_TEXT "Merged the fold into %s commit(s) from %s up, with %s resolution(s)." 32 "${#_REWRITE_PAIRS[@]}" "${STATE_TARGET:0:7}" "$RESOLUTIONS"
+	# A commit the fold emptied stays, as nothing here drops one – named, unless empty before too
+	local -A TREE_OF PARENT_OF
+	local -a SPAN=("$NEW_HEAD" "$STATE_ORIG_HEAD")
+	local BELOW=$(git rev-parse -q --verify "$STATE_TARGET^" 2>/dev/null)
+	if [ -n "$BELOW" ]; then
+		SPAN+=(--not "$BELOW")
+		TREE_OF[$BELOW]=$(git rev-parse "$BELOW^{tree}")
+	fi
+	for LINE in ${(f)"$(git log --format='%H %T %P' "${SPAN[@]}" 2>/dev/null)"}; do
+		TREE_OF[${LINE%% *}]=${${LINE#* }%% *}
+		PARENT_OF[${LINE%% *}]=${${LINE#* * }%% *}
+	done
+	for LINE in "${_REWRITE_PAIRS[@]}"; do
+		[ "${TREE_OF[${LINE#* }]}" = "${TREE_OF[${PARENT_OF[${LINE#* }]}]}" ] && \
+		[ "${TREE_OF[${LINE%% *}]}" != "${TREE_OF[${PARENT_OF[${LINE%% *}]}]}" ] && EMPTIED+=("${LINE#* }")
+	done
+	for LINE in "${EMPTIED[@]}"; do
+		_PRINT_COMMIT_LINE "$LINE" '  left empty by the fold: %h %s'
+	done
+	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
+	STATE_RESOLVED="${_SNAPSHOT_RESOLVED_TREES[*]}"
+	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_MODE_LINES "$WT" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE")" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
+		_SNAPSHOT_SAVE_STATE
+		_CLEANUP_HOOK=""
+		EMIT_GATE_PAUSED "$WT" "$NEW_HEAD"
+		exit 2
+	fi
+	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	PRINT_CMD "$UPDATE_CMD" 90
+	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
+		[ -n "$_STATE_OWNED" ] && _REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$WT"
+		PRINT_ERR "Branch '$STATE_BRANCH' moved during the snapshot fold – refusing to overwrite"
+		PRINT_TEXT "Nothing was applied; your staged changes are untouched – retry when ready." 33
+		exit 1
+	fi
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
+	# The folded paths' index entries follow the new tip, as a replayed fold's do – a `--tree`
+	# fold staged nothing, so the summary reconciles its entries like any other rewrite's
+	AMEND_TREE=$STATE_TREE
+	[ -z "$AMEND_TREE" ] && [ -n "$STATE_FILES" ] && git -C "$STATE_MAINDIR" reset -q -- "${(@ps:\t:)STATE_FILES}" 2>/dev/null
+	[ -n "$STATE_PATHSPECS" ] && AMEND_PATHSPECS=("${(@ps:\t:)STATE_PATHSPECS}")
+	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "${STATE_FILES//$'\t'/,}" "$STATE_MAINDIR" "$STATE_REBASEBASE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE" "${_SNAPSHOT_RESOLVED_TREES:+resolved}"
+	[ -n "$_STATE_OWNED" ] && _CLEAR_STATE
+	AMEND_NEW_HEAD=$NEW_HEAD
+	AMEND_REF=$STATE_BRANCH
+}
+
+# Records the resolution staged for each path that stopped, keyed by that path and the stopped
+# commit's content so every commit carrying the same takes it, then builds again
+_CONTINUE_SNAPSHOT () {
+	if [ -n "$TEXT_VALUE" ]; then
+		PRINT_ERR "--snapshot takes no --text – finish the fold, then reword: git edit -M --text=\"…\" <sha>"
+		exit 1
+	fi
+	if [ ! -d "$STATE_WORKTREE" ]; then
+		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
+		_CLEAR_STATE
+		exit 1
+	fi
+	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	PRINT_ACTION "Continuing the snapshot fold into %s..." "$STATE_TARGET"
+	local WT=$STATE_WORKTREE P BLOB ENTRY
+	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
+	if [ -s "$GD/git-edit-snapshot-pending" ]; then
+		local UNMERGED=$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)
+		if [ -n "$UNMERGED" ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Unresolved paths remain – resolve and stage them, then 'git edit --continue'"
+			EMIT_CONFLICT "$WT" "${UNMERGED//$'\n'/,}"
+			exit 2
+		fi
+		_GUARD_RESOLUTION_CLEAN "$WT"
+		# Recorded for rerere too, which pre-fills the same hunks at a later stop
+		git -C "$WT" -c rerere.enabled=true rerere >/dev/null 2>&1
+		while IFS=$'\t' read -r P BLOB; do
+			ENTRY=$(git -C "$WT" ls-files -s -- ":(literal)$P" 2>/dev/null)
+			if [ -n "$ENTRY" ]; then
+				ENTRY=${${ENTRY%%$'\t'*}% *}
+			else
+				ENTRY=-
+			fi
+			print -r -- "$P"$'\t'"$BLOB"$'\t'"$ENTRY" >> "$GD/git-edit-snapshot-map"
+		done < "$GD/git-edit-snapshot-pending"
+		rm -f "$GD/git-edit-snapshot-pending"
+	fi
+	_SNAPSHOT_RUN
+	PRINT_COMPLETED "$AMEND_NEW_HEAD" "$AMEND_REF" true
+}
+
+# Aborts a paused snapshot fold – the branch never moved and nothing was consumed, so removing
+# the worktree, its map with it, leaves the fold to retry
+_ABORT_SNAPSHOT () {
+	PRINT_ACTION "Aborting the snapshot fold into %s..." "$STATE_TARGET"
+	if [ -d "$STATE_WORKTREE" ]; then
+		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		PRINT_CMD "$CMD" 90
+		eval "$CMD"
+	fi
+	if [ -n "$STATE_TREE" ]; then
+		PRINT_TEXT "Branch was never touched – the tree is intact, ready to retry." 32
+	else
+		PRINT_TEXT "Branch was never touched – your staged changes are still staged, ready to retry." 32
+	fi
+	_CLEAR_STATE
+	PRINT_TEXT "%s" 32 "Snapshot fold aborted, state cleared."
+	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
 # Commits that last touched the exact lines the staged diff rewrites – a fix usually belongs
@@ -4437,6 +4787,7 @@ _LOAD_STATE () {
 	STATE_DEPTH=""
 	STATE_REBASEBASE=""
 	STATE_STAGEDTREE=""
+	STATE_FOLD=""
 	STATE_MAINDIR=""
 	STATE_FILES=""
 	STATE_PATHSPECS=""
@@ -4470,6 +4821,7 @@ _LOAD_STATE () {
 			depth)           STATE_DEPTH=$VAL ;;
 			rebasebase)      STATE_REBASEBASE=$VAL ;;
 			stagedtree)      STATE_STAGEDTREE=$VAL ;;
+			fold)            STATE_FOLD=$VAL ;;
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
@@ -6421,7 +6773,7 @@ zmodload zsh/zutil
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -6520,6 +6872,11 @@ if [ ${#OPT_TREE} -gt 0 ]; then
 		PRINT_ERR "--tree only applies to --amend-into"
 		exit 1
 	fi
+fi
+if [ ${#OPT_SNAPSHOT} -gt 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ]; then
+	USAGE
+	PRINT_ERR "--snapshot only applies to --amend-into"
+	exit 1
 fi
 # Resolve --base's value – the tip an --exec result was built on, both `--base=<sha>` and
 # `--base <sha>` forms. Hex only: a name like HEAD resolves to wherever the branch is now, the
@@ -6635,6 +6992,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	fi
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
+		snapshot)   _CONTINUE_SNAPSHOT ;;
 		reorder)    _CONTINUE_REORDER ;;
 		onto)       _CONTINUE_ONTO ;;
 		rebase)     _CONTINUE_REBASE ;;
@@ -6649,6 +7007,7 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 	_REANCHOR_INITIAL_HEAD
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
+		snapshot)   _ABORT_SNAPSHOT ;;
 		reorder)    _ABORT_REORDER ;;
 		onto)       _ABORT_ONTO ;;
 		rebase)     _ABORT_REBASE ;;
