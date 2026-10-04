@@ -484,7 +484,11 @@ non\-interactive contexts.
 .TP
 .B \-\-allow\-pushed
 Permit rewriting a commit that exists on a remote\-tracking ref. Refused by
-default.
+default. A landing that takes the upstream's commits off the branch prints the
+push that publishes it, its
+.B \-\-force\-with\-lease
+pinned to the upstream as the rewrite found it \(em a background fetch would
+move the remote\-tracking ref under a bare lease, turning it into a plain force.
 .TP
 .B \-\-allow\-new\-path
 Let

@@ -937,6 +937,26 @@ _MOVE_REF () {
 	return $RC
 }
 
+# Names the push that publishes a rewrite of pushed history – its lease pinned to the upstream as
+# the rewrite found it, since a background fetch moving the remote-tracking ref turns a bare
+# `--force-with-lease` into a plain force
+_PRINT_FORCE_PUSH () {
+	# Args: <ref> <old> <new>
+	[[ "$1" == refs/heads/* ]] || return 0
+	local B=${1#refs/heads/} UP REMOTE MERGE
+	UP=$(git rev-parse -q --verify "$B@{upstream}" 2>/dev/null) || return 0
+	# Only where this run took the upstream's commits off the branch – behind it, a push needed a
+	# force before, and ahead of it, none
+	git merge-base --is-ancestor "$UP" "$2" 2>/dev/null || return 0
+	git merge-base --is-ancestor "$UP" "$3" 2>/dev/null && return 0
+	REMOTE=$(git config --get "branch.$B.remote")
+	MERGE=$(git config --get "branch.$B.merge")
+	[ -n "$REMOTE" ] && [ "$REMOTE" != . ] && [[ "$MERGE" == refs/heads/* ]] || return 0
+	local DST=${MERGE#refs/heads/} SPEC=$B
+	[ "$DST" = "$B" ] || SPEC="$B:$DST"
+	PRINT_TEXT "Pushed history rewritten – publish it with: %s" 33 "git push --force-with-lease=${(q-)DST}:$UP ${(q-)REMOTE} ${(q-)SPEC}"
+}
+
 # Records a completed CAS ref move – appends a journal entry and prints the inverse command,
 # so recovery is plain git rather than knowledge of this script, also via `git edit --undo`
 # Warns about tags left pointing into the rewritten span, which surface only at release time,
@@ -948,6 +968,7 @@ _RECORD_REF_MOVE () {
 	local TAB=$'\t'
 	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4${_ACTOR:+$TAB$_ACTOR}" >> "$JF"
 	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+	_PRINT_FORCE_PUSH "$1" "$2" "$3"
 	_CAPTURE_COLLECT "$2" "$3"
 
 	# A tag is orphaned where it was reachable from the old tip but not the new one, and its

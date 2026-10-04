@@ -175,7 +175,7 @@ Worth putting in an agent's own instructions verbatim: *for any history-rewritin
 | `-m`, `--message` | Also edit the commit message after applying the changes |
 | `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` (the extracted commit's – the remainder keeps the original) and `--amend-into`, skipping the editor – `-` reads it from stdin |
 | `-C`, `--dir[=<path>]` | Run in a separate worktree (default `<repo>.git-edit`), as non-interactive runs do by themselves |
-| `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref |
+| `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref – the landing then prints the push that publishes it, its `--force-with-lease` pinned to the upstream it replaced |
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
 | `--allow-mode-change` | Let `--amend-into` fold a file-mode change – a flipped executable bit, which it otherwise refuses – and, on `--continue`, keep one a conflict resolution staged or the landing found nothing asked for |
 | `--allow-other-actor` | Let `--undo` take back a run another `GIT_EDIT_ACTOR` caller made |
