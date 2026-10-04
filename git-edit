@@ -7380,8 +7380,11 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		WT_STATUS=$?
 		if [ $WT_STATUS -ne 0 ]; then
 			if [[ "$WT_OUT" == *"missing but already registered"* ]]; then
-				ECHO_E "\e[0;90m(stale worktree registration – pruning and retrying)\e[0m"
-				git worktree prune 2>/dev/null
+				# This path alone – a prune drops every vanished worktree's records, a parallel
+				# session's reflog with them, the one trail to commits it built there
+				ECHO_E "\e[0;90m(stale worktree registration – reclaiming its path and retrying)\e[0m"
+				CMD="git worktree add -f --detach '$WORKTREE_DIR' $ORIG_HEAD"
+				PRINT_CMD "$CMD"
 				eval "$CMD" || ABORT
 			else
 				echo "$WT_OUT" >&2
