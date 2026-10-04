@@ -5480,6 +5480,31 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	git worktree remove --force "$TMP/pr-own"
 	git worktree prune
 
+	# --- 108. a landing names the edits a whole-file commit would take it back with ---
+	# Edits on the pre-rewrite content revert the rewrite once committed whole, and a rename leaves
+	# them untracked at the old path, where a restore of the new one would strand them
+	_ST_SCENARIO "\e[1;96m[108] a landing names edits that would take it back, renames included\e[0m"
+	printf '1\n2\n3\n4\n5\n' > rh-a.txt && printf 'x\ny\nz\n' > rh-c.txt && printf 'k\nl\nm\n' > rh-f.txt
+	git add rh-a.txt rh-c.txt rh-f.txt && git commit -qm "RH base"
+	local RH_OLD=$(git rev-parse HEAD)
+	git worktree add -q --detach "$TMP/rh-side" HEAD
+	git -C "$TMP/rh-side" mv rh-a.txt rh-b.txt
+	printf 'ONE\n2\n3\n4\n5\n' > "$TMP/rh-side/rh-b.txt" && printf 'EX\ny\nz\n' > "$TMP/rh-side/rh-c.txt" && printf 'KAY\nl\nm\n' > "$TMP/rh-side/rh-f.txt"
+	git -C "$TMP/rh-side" commit -qam "RH rename and change"
+	local RH_NEW=$(git -C "$TMP/rh-side" rev-parse HEAD)
+	git worktree remove --force "$TMP/rh-side"
+	printf '1\n2\n3\n4\n5\n6\n' > rh-a.txt && printf 'x\ny\nz\nw\n' > rh-c.txt
+	# A change made in the checkout first and edited on there holds the rewrite already
+	printf 'KAY\nl\nm\nn\n' > rh-f.txt
+	_ST_RUN --exec --base="$RH_OLD" --no-verify -- git reset -q --hard "$RH_NEW"
+	_ST_EQ "the landing lands" "$RC:$(git rev-parse HEAD)" "0:$RH_NEW"
+	_ST_OUT_HAS "naming edits a whole-file commit takes it back with" 'take the rewrite back there: rh-c.txt'
+	_ST_OUT_HAS "and a rename's edits left at the old path" 'the new one missing: rh-a.txt → rh-b.txt'
+	_ST_OUT_LACKS "with no restore that would strand them" 'worktree -- rh-b.txt'
+	_ST_OUT_HAS "while edits already on the new content are merely left alone" 'your own): rh-f.txt'
+	_ST_OUT_LACKS "and not called a revert" 'back there: rh-c.txt rh-f.txt'
+	git reset -q --hard && rm -f rh-a.txt
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""

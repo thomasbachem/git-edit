@@ -160,7 +160,10 @@ content; the affected paths and a targeted
 command are printed. That restore is an offer \(em it discards whatever the
 rewrite left in those paths, which for an edit that removed content is the work
 just handed back. A path carrying further uncommitted edits is named as left
-alone and kept out of it, and one holding the new content under another mode
+alone and kept out of it \(em as taking the rewrite back if committed whole
+where those edits sit on the pre\-edit content, and beside its new path where
+the rewrite renamed it, the edits left untracked at the old one \(em and one
+holding the new content under another mode
 \(em an executable bit lost to a file moved into place \(em is named apart,
 both modes given, with the
 .B chmod
