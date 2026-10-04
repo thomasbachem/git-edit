@@ -55,11 +55,13 @@ GIT_EDIT_VERSION="1.6.0"
 
 # Suspend background maintenance for this process and every git it spawns – from git 2.54
 # `rerere gc` runs detached per commit, and its `MERGE_RR.lock` kills a rebase reaching its
-# next conflict, wedging every later continue on "you have staged changes"
+# next conflict, wedging every later continue on "you have staged changes" – and have them print
+# a non-ASCII path as itself, since its quoted form read back (`"\303\234ber.txt"`) names no file
 if [ -z "$GIT_CONFIG_COUNT" ]; then
-	export GIT_CONFIG_COUNT=2
+	export GIT_CONFIG_COUNT=3
 	export GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false
 	export GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+	export GIT_CONFIG_KEY_2=core.quotePath GIT_CONFIG_VALUE_2=false
 fi
 
 # Cap on the commits a stale SHA's resolution computes a patch id for – the author date
@@ -2419,8 +2421,19 @@ _STAGED_TREE_FOR () {
 	local TMPIDX=$(MKTEMP_FILE git-edit-amend-idx)
 	rm -f "$TMPIDX"
 	GIT_INDEX_FILE=$TMPIDX git read-tree "$BASE" || { rm -f "$TMPIDX"; return 1; }
-	local META PATHNAME DSTMODE DSTSHA
-	while IFS=$'\t' read -r META PATHNAME; do
+	local META PATHNAME DSTMODE DSTSHA I
+	local -a RAW
+	# NUL-separated, so each path reaches the index as its own bytes – one with a quote, a
+	# backslash or a control character arrives quoted otherwise, and that quoting became the name
+	if [ -n "$AMEND_TREE" ]; then
+		RAW=("${(@0)$(git diff-tree -z -r "$BASE" "$AMEND_TREE" -- "${AMEND_PATHSPECS[@]}")}")
+	else
+		RAW=("${(@0)$(git diff-index -z --cached -r "$BASE" -- "${AMEND_PATHSPECS[@]}")}")
+	fi
+	for (( I = 1; I < ${#RAW[@]}; I += 2 )); do
+		META=${RAW[I]}
+		PATHNAME=${RAW[I+1]}
+		[ -z "$META" ] && continue
 		DSTMODE=$(echo "$META" | awk '{print $2}')
 		DSTSHA=$(echo "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
@@ -2428,13 +2441,7 @@ _STAGED_TREE_FOR () {
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		fi
-	done < <(
-		if [ -n "$AMEND_TREE" ]; then
-			git diff-tree -r "$BASE" "$AMEND_TREE" -- "${AMEND_PATHSPECS[@]}"
-		else
-			git diff-index --cached -r "$BASE" -- "${AMEND_PATHSPECS[@]}"
-		fi
-	)
+	done
 	GIT_INDEX_FILE=$TMPIDX git write-tree
 	rm -f "$TMPIDX"
 }
@@ -2491,7 +2498,7 @@ GIT_AMEND_INTO () {
 	# The folded paths (root-relative): shown in the completion summary, and
 	# scoping the success sync to exactly these entries
 	local -a STAGED_PATHS
-	STAGED_PATHS=("${(@f)$(git diff "${AMEND_SOURCE[@]}" --name-only -- "${AMEND_PATHSPECS[@]}")}")
+	STAGED_PATHS=(${(0)"$(git diff "${AMEND_SOURCE[@]}" --name-only -z -- "${AMEND_PATHSPECS[@]}")"})
 	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
 
 	# Pre-flight – a staged path the target predates is refused where a later commit introduces
