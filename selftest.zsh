@@ -175,6 +175,10 @@ GIT_SELFTEST () {
 	# the continue wedges on "staged changes" with the stop's bookkeeping never written
 	export GIT_CONFIG_GLOBAL=$TMP/gitconfig
 	printf '[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n' > "$GIT_CONFIG_GLOBAL"
+	# No editor from the caller – one an agent's environment exports hid a run reaching for
+	# `$EDITOR`, which a plain terminal or a server then opened
+	unset GIT_EDITOR GIT_SEQUENCE_EDITOR VISUAL
+	export EDITOR=false
 
 	# --- Scratch repo: A, B pushed to a bare origin; C, D, E unpushed ---
 	git init -q -b main "$TMP/repo" || { PRINT_ERR "Cannot init scratch repo"; exit 1; }

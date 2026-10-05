@@ -4952,7 +4952,9 @@ _CONTINUE_REBASE () {
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR" eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue" 2>&1 ); then
+		# Exported, as an assignment before `eval` reaches its commands only where the caller had
+		# already exported the name – elsewhere git fell back to `$EDITOR`
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR"; eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
