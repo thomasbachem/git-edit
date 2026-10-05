@@ -1360,8 +1360,8 @@ GIT_UNDO () {
 		ECHO_E "\e[0;31m  Expected $REF at ${NEW:0:7}, found $(git rev-parse --short "$REF" 2>/dev/null).\e[0m" >&2
 		exit 1
 	fi
-	# Pop the undone entry off the journal
-	sed -i '' -e '$d' "$JF" 2>/dev/null
+	# Pop the undone entry off the journal via a temp file, GNU sed reading `-i ''` as a file name
+	{ sed -e '$d' "$JF" > "$JF.$$" && mv "$JF.$$" "$JF"; } 2>/dev/null
 
 	if ! git diff --quiet "$OLD" "$NEW" 2>/dev/null; then
 		PRINT_TEXT "Trees differ between the two tips – re-sync the index with %s if this is your checkout's branch." 33 "git reset"
@@ -2152,7 +2152,9 @@ GIT_REBASE_DROP () {
 	for DROP_COMMIT in "${COMMITS[@]}"; do
 		SED_SCRIPT+=' -e "s/^pick '"${DROP_COMMIT:0:7}"'/drop '"${DROP_COMMIT:0:7}"'/"'
 	done
-	GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT" \
+	# `-i` with its suffix attached, the one in-place form BSD and GNU sed both read – the backup
+	# goes with the rebase's state directory
+	GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT" \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -2207,12 +2209,12 @@ GIT_REBASE_SQUASH () {
 
 	# Execute rebase
 	if [[ -n "$TEXT_MSG_FILE" ]]; then
-		GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
 		GIT_EDITOR="cp ${(qq)TEXT_MSG_FILE}" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 		rm -f "$TEXT_MSG_FILE"
 	else
-		GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
 		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 	fi
 }
@@ -2228,7 +2230,7 @@ GIT_REBASE_BEGIN_EDIT () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i "" -e "s/^pick '"${COMMIT:0:7}"'/edit '"${COMMIT:0:7}"'/"' \
+	GIT_SEQUENCE_EDITOR=$'sed -i.git-edit -e "s/^pick '"${COMMIT:0:7}"'/edit '"${COMMIT:0:7}"'/"' \
 	git "${CMD[@]}" || ABORT
 }
 

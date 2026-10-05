@@ -6189,6 +6189,14 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	export GIT_EDIT_ACTOR=
 	git reset -q --hard "$TE_BASE"
 	rm -f te-msg.txt
+	# --- 117. an in-place sed edit takes the form GNU sed reads too ---
+	# GNU sed reads BSD's `sed -i ""` as a file named "", which failed every rebase todo edit on Linux
+	# – a check of the source, as a run on macOS reads either form
+	_ST_SCENARIO "\e[1;96m[117] an in-place sed edit takes the form GNU sed reads too\e[0m"
+	local SI_OUT=$(grep -nE 'sed -i( |$)' "$SELF" | grep -vE '^[0-9]+:[[:space:]]*#')
+	_ST_EQ "no sed -i lacks an attached suffix" "$SI_OUT" ""
+	_ST_CHECK "while the suffixed form is the one in use" grep -q 'sed -i\.git-edit' "$SELF"
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
