@@ -6242,8 +6242,24 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "a conflicted name with a quote is named as itself" 'resolve in .* (pn"c.txt);'
 	_ST_OUT_LACKS "never as a file without markers" 'No conflict markers'
 	_ST_OUT_HAS "the later step touching it is named" 'Remaining steps also touch a conflicted file'
+	local PN_QW=$(print -r -- "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	git -C "$PN_QW" add -- ':(literal)pn"c.txt'
+	_ST_RUN --continue
+	_ST_OUT_HAS "and its resolution still holding markers refuses" 'still contains conflict markers'
 	_ST_RUN --abort
 	git reset -q -- ':(literal)pn"c.txt' && git checkout -q -- ':(literal)pn"c.txt'
+	# As does one named like a stage, `:1:pn.txt` being stage 1 of `pn.txt` to an index lookup
+	printf '1\n2\n3\n' > 1:pn.txt && git add -- ':(literal)1:pn.txt' && git commit -qm "PN stage-like base"
+	local PN_SB=$(git rev-parse HEAD)
+	printf '1\nL\n3\n' > 1:pn.txt && git commit -qm "PN stage-like later" -- ':(literal)1:pn.txt'
+	printf '1\nS\n3\n' > 1:pn.txt && git add -- ':(literal)1:pn.txt'
+	_ST_RUN --amend-into="$PN_SB" -- ':(literal)1:pn.txt'
+	PN_QW=$(print -r -- "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+	git -C "$PN_QW" add -- ':(literal)1:pn.txt'
+	_ST_RUN --continue
+	_ST_OUT_HAS "as does one named like a stage" 'still contains conflict markers'
+	_ST_RUN --abort
+	git reset -q -- ':(literal)1:pn.txt' && git checkout -q -- ':(literal)1:pn.txt'
 
 	# --- 115. a ref name or path reaches an eval'd command as data, never as code ---
 	# A branch from `gh pr checkout` carries the contributor's name, a repo sits at the user's own

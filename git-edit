@@ -5660,14 +5660,15 @@ _GUARD_RESOLUTION_CLEAN () {
 	local WT=$1
 	local -a BAD
 	local FILE
-	while IFS= read -r FILE; do
-		[ -z "$FILE" ] && continue
+	# NUL-separated – the line form C-quotes a name holding a quote or
+	# backslash, which then shows no markers and passes
+	for FILE in ${(0)"$(git -C "$WT" diff --cached -z --name-only 2>/dev/null)"}; do
 		# Read whole – piped, `git show` died at an early marker once the blob outgrew the pipe
 		# buffer, and `pipefail` read that as a clean file
-		if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' <<<"$(git -C "$WT" show ":$FILE" 2>/dev/null)"; then
+		if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' <<<"$(git -C "$WT" show ":0:$FILE" 2>/dev/null)"; then
 			BAD+=("$FILE")
 		fi
-	done < <(git -C "$WT" diff --cached --name-only 2>/dev/null)
+	done
 	if [ ${#BAD[@]} -gt 0 ]; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
@@ -5763,7 +5764,7 @@ _GUARD_STOP_MODES () {
 			case "$WANTED" in
 				100755) FIX+=("chmod +x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=+x -- $(_QUOTE_PATHS "$P")") ;;
 				100644) FIX+=("chmod -x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=-x -- $(_QUOTE_PATHS "$P")") ;;
-				*) FIX+=("git -C ${(q-)WT} update-index --cacheinfo $WANTED,$(git -C "$WT" rev-parse ":$P" 2>/dev/null),${(q-)P}") ;;
+				*) FIX+=("git -C ${(q-)WT} update-index --cacheinfo $WANTED,$(git -C "$WT" rev-parse ":0:$P" 2>/dev/null),${(q-)P}") ;;
 			esac
 		fi
 	done
