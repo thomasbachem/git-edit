@@ -2757,6 +2757,12 @@ _COMPOSE_WHOLE () {
 # conflicts or cannot run, a binary say
 _MERGE_LANDING () {
 	# Args: <ours blob> <before blob> <after blob>
+	# One spawn where git merges blobs by ID (2.43), its result mostly in the object store already
+	if [ -n "$_MERGE_FILE_IDS" ]; then
+		local ID
+		ID=$(git merge-file --object-id -q "$1" "$2" "$3" 2>/dev/null) && print -r -- "$ID"
+		return
+	fi
 	local OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) RC
 	_TEMP_FILES+=("$OURS" "$BASE" "$THEIRS")
 	git cat-file blob "$1" > "$OURS" && git cat-file blob "$2" > "$BASE" && git cat-file blob "$3" > "$THEIRS" && \
@@ -2830,6 +2836,8 @@ _GUARD_WHOLE_LANDINGS () {
 	for (( I = 1; I <= ${#ANSWERS}; I++ )); do
 		[[ "${ANSWERS[I]}" =~ '^[0-9a-f]{40,64}$' ]] || ANSWERS[I]=""
 	done
+	local _MERGE_FILE_IDS=""
+	[[ "$(LC_ALL=C git merge-file -h 2>&1)" == *object-id* ]] && _MERGE_FILE_IDS=yes
 	N=$(( 2 + 2 * ${#CHANGED} ))
 	for (( I = 1; I <= ${#CHANGED}; I++ )); do
 		P=${CHANGED[I]}

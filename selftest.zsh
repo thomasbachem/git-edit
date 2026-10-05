@@ -6064,6 +6064,21 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "a copy still as before a landing another sits next to refuses, a binary too" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 	_ST_OUT_HAS "both pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt'"
 	git checkout -q -- wc-adj.txt wc-adj.bin
+	# A file holding a later landing but lacking an earlier one is named for the earlier, as the
+	# landings are checked oldest first
+	printf 'k1\nk2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt
+	_ST_RUN --commit --text "WC order base" -- wc-ord.txt
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt && git commit -qam 'WC order one'"
+	export GIT_EDIT_ACTOR=wc-other
+	_ST_RUN --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nK7\nk8\n' > wc-ord.txt && git commit -qam 'WC order two'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'k1\nk2\nk3\nk4\nMINE\nk6\nK7\nk8\n' > wc-ord.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-ord.txt
+	_ST_EQ "a file lacking an earlier landing but holding a later one refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_OUT_HAS "naming the earlier" "wc-ord.txt – wc-peer's exec run"
+	git checkout -q -- wc-ord.txt
 	# Outside a sparse checkout, a file's absence is no deletion
 	mkdir -p wc-out && echo out > wc-out/x.txt
 	_ST_RUN --commit --text "WC outside the cone" -- wc-out/x.txt
