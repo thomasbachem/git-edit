@@ -1614,8 +1614,12 @@ _EDITS_LACK_REWRITE () {
 	fi
 	if [ $RC -eq 0 ]; then
 		! cmp -s "$MERGED" "$1"
+	elif [ $RC -le 127 ]; then
+		# Edits beside the rewrite's own lines conflict too, made on the new content as much as on
+		# the old – the file holds the rewrite where its changed lines take in all of the rewrite's
+		[ -n "$(LC_ALL=C comm -23 <(_CHANGED_LINES "$BASE" "$THEIRS") <(_CHANGED_LINES "$BASE" "$1"))" ]
 	else
-		[ $RC -le 127 ]
+		false
 	fi
 	RC=$?
 	rm -f "$BASE" "$THEIRS" "$MERGED"
