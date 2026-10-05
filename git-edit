@@ -103,17 +103,13 @@ _CARET () {
 	# Args: <text>
 	REPLY=$1
 	[[ "$REPLY" == *[$'\001'-$'\010'$'\013'-$'\037'$'\177']* ]] || return 0
-	local -i i
-	local c
-	REPLY=""
-	for (( i = 1; i <= ${#1}; i++ )); do
-		c=${1[i]}
-		case "$c" in
-			[$'\001'-$'\010'$'\013'-$'\037']) REPLY+="^${(#)$(( #c + 64 ))}" ;;
-			$'\177') REPLY+='^?' ;;
-			*) REPLY+=$c ;;
-		esac
+	# A substitution per byte present, as a pass per character slows to seconds on a long line
+	local -i c
+	for (( c = 1; c <= 31; c++ )); do
+		(( c == 9 || c == 10 )) && continue
+		[[ "$REPLY" == *${(#)c}* ]] && REPLY=${REPLY//${(#)c}/^${(#)$(( c + 64 ))}}
 	done
+	REPLY=${REPLY//$'\177'/^?}
 }
 
 # Prints the closing status line verbatim and on one line, whatever a name or message in it holds
@@ -121,6 +117,39 @@ _EMIT_TRAILER () {
 	# Args: <line>
 	_CARET "${1//$'\n'/ }"
 	print -r -- "$REPLY"
+}
+
+# The byte a data backslash is held as on its way through `ECHO_E` – a NUL, which no name, subject
+# or template holds, in a name since `$'…'` quoting does not reach inside double quotes
+_LITB=$'\0'
+
+# Prints <text> marked as data for `ECHO_E` – its backslashes held as `_LITB`, so a `\e[0m` in a
+# name prints as itself and never hides part of a printed command
+_LIT () {
+	# Args: <text>
+	print -r -- "${1//\\/$_LITB}"
+}
+
+# Prints the unmerged paths in <worktree> one a line, read NUL-separated – the line form C-quotes a
+# name with a quote or backslash, which then names no file
+_UNMERGED_IN () {
+	# Args: <worktree>
+	local -a U
+	U=(${(0)"$(git -C "$1" diff -z --name-only --diff-filter=U 2>/dev/null)"})
+	(( ${#U} )) && print -rl -- "${U[@]}"
+	return 0
+}
+
+# Passes stdin on with each raw control byte in caret notation, as `_CARET` takes a string – the
+# `sed` after it under `LC_ALL=C`, as BSD sed in a UTF-8 locale dies on a byte no UTF-8 holds
+_CARET_LINES () {
+	# Args: [--crlf] – a command's output, whose CRLF line endings are no control the text carries
+	local L
+	while IFS= read -r L || [ -n "$L" ]; do
+		[ "$1" = --crlf ] && L=${L%$'\r'}
+		_CARET "$L"
+		print -r -- "$REPLY"
+	done
 }
 
 # Emits one colorized line, its escapes stripped in-shell when color is off
@@ -145,6 +174,8 @@ ECHO_E () {
 		fi
 	done
 	out+="$raw"
+	# Data's backslashes back, past the rendering `_LIT` kept them out of
+	out=${out//$_LITB/\\}
 	if [ "$_COLOR" = "true" ]; then
 		print -r -- "$out"
 	else
@@ -155,7 +186,7 @@ ECHO_E () {
 # Name the repo every run acts on – it is the cwd's, never an argument, so a caller working
 # across repos has no other signal that a rewrite is aimed where they meant
 _BANNER_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
-ECHO_E "\e[1;94mgit edit – Edit, reword, drop, squash, reorder, split, or fold past commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO}\e[0m}"
+ECHO_E "\e[1;94mgit edit – Edit, reword, drop, squash, reorder, split, or fold past commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO//\\/$_LITB}\e[0m}"
 
 # Global cleanup hook – a shell command any sub-operation can set, run once on script exit
 # before the error trailer, by `GIT_EXEC` for temp worktrees and by auto-isolation for its own
@@ -399,7 +430,10 @@ USAGE () {
 PRINT_TEXT () {
 	local MSG=$1; shift
 	local COLOR=$1; shift
+	# Arguments are data, a `\e[0m` in a name held literal – bar `PRINT_ACTION`'s, which carry its
+	# own `\e[22m` and mark their subjects themselves
 	local ARGS=("$@")
+	[ -n "$_PT_RAW" ] || ARGS=("${(@)ARGS//\\/$_LITB}")
 
 	local BASE=$COLOR
 	local BRIGHT=$(( COLOR <= 37 ? COLOR + 60 : COLOR ))
@@ -426,6 +460,7 @@ PRINT_ACTION () {
 	if [[ "$MSG" == *%t ]]; then
 		local TGT=$1; shift
 		local TSUB=$(git log -1 --pretty=format:'%s' "$TGT")
+		TSUB=${TSUB//\\/$_LITB}
 		TARGET_RENDER="${TGT:0:7}\e[22m (${TSUB})"
 		MSG="${MSG%\%t}"
 	fi
@@ -435,11 +470,11 @@ PRINT_ACTION () {
 	local COMMIT
 	for COMMIT in "${COMMITS[@]}"; do
 		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
-		# `ECHO_E` renders the `\e[22m` here but leaves the subject's own backslashes alone, so
-		# a `\d` or `\n` in it stays literal rather than being run or splitting the line
-		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT})")
+		# `ECHO_E` renders the `\e[22m` here, the subject's backslashes marked as data
+		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT//\\/$_LITB})")
 	done
 
+	local _PT_RAW=1
 	# Count placeholders (assumes %s is the only placeholder type used) – the target is gone, so
 	# only git-edit's own `%s` remain, whatever a subject carried
 	local PLACEHOLDERS="${MSG//[^%]}"
@@ -478,7 +513,7 @@ PRINT_ACTION () {
 # Silent on a missing object, where a `fatal:` would read as the operation having failed
 _PRINT_COMMIT_LINE () {
 	_CARET "$(git log -1 --format="$2" "$1" 2>/dev/null)"
-	print -r -- "$REPLY" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	print -r -- "$REPLY" | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 PRINT_CMD () {
@@ -487,9 +522,9 @@ PRINT_CMD () {
 	local COLOR="${2:-90}"
 
 	# Filter `--no-autostash` arg when printing commands
-	local CMD_FILTERED=$(print -r -- "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
+	local CMD_FILTERED=$(print -r -- "$CMD" | LC_ALL=C sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
 
-	ECHO_E "${_PAD}\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
+	ECHO_E "${_PAD}\e[0;${COLOR}m${CMD_FILTERED//\\/$_LITB}\e[0;90m"
 }
 
 PRINT_ERR () {
@@ -498,6 +533,7 @@ PRINT_ERR () {
 	_LAST_ERROR="$MSG"
 
 	# Split at the first `: ` alone – a bare colon is a name's, as in `:x.txt`, or ends a lead-in
+	MSG=${MSG//\\/$_LITB}
 	if [[ "$MSG" == *": "* ]]; then
 		local PREFIX="${MSG%%: *}"
 		local REST="${MSG#*: }"
@@ -618,7 +654,7 @@ EMIT_CONFLICT () {
 	local FILES_PART=""
 	if [ -n "$2" ]; then
 		# Replace commas with ", " for readability
-		FILES_PART=" ($(echo "$2" | sed 's/,/, /g'))"
+		FILES_PART=" ($(print -r -- "$2" | sed 's/,/, /g'))"
 	fi
 	_EMIT_TRAILER "git-edit: conflict – resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
@@ -684,13 +720,13 @@ _PRINT_CONFLICT_DETAIL () {
 
 	# Unmerged paths (files with conflict markers)
 	local UNMERGED
-	UNMERGED=$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)
+	UNMERGED=$(_UNMERGED_IN "$WT")
 	if [ -n "$UNMERGED" ]; then
 		PRINT_TEXT "Conflicted files:" 33 >&2
 		local FILE
 		local -a MARKERLESS
 		while IFS= read -r FILE; do
-			ECHO_E "\e[0;33m  - $FILE\e[0m" >&2
+			ECHO_E "\e[0;33m  - ${FILE//\\/$_LITB}\e[0m" >&2
 			# A marker grep is how drivers decide "resolved" – but four states
 			# arrive marker-free, and only one of them is a finished resolution
 			if ! grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$WT/$FILE" 2>/dev/null; then
@@ -708,7 +744,7 @@ _PRINT_CONFLICT_DETAIL () {
 		LAST_STEP=$(tail -1 "$GITDIR/rebase-merge/done" 2>/dev/null)
 		if [ -n "$LAST_STEP" ]; then
 			PRINT_TEXT "Currently failing on:" 33 >&2
-			ECHO_E "\e[0;33m  $LAST_STEP\e[0m" >&2
+			ECHO_E "\e[0;33m  ${LAST_STEP//\\/$_LITB}\e[0m" >&2
 		fi
 	fi
 
@@ -720,7 +756,7 @@ _PRINT_CONFLICT_DETAIL () {
 			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
 			local STEP
 			while IFS= read -r STEP; do
-				ECHO_E "\e[0;33m  $STEP\e[0m" >&2
+				ECHO_E "\e[0;33m  ${STEP//\\/$_LITB}\e[0m" >&2
 			done <<< "$REMAINING"
 		fi
 	fi
@@ -748,15 +784,18 @@ _PRINT_CONFLICT_DETAIL () {
 			done
 		done
 		if [ ${#TODO_SHAS[@]} -gt 0 ]; then
-			# `%h %s` records are marked with a byte no path can start with, so
-			# the walk's own output separates the headers from the file lines
-			local WALKED=$(git -C "$WT" log --no-walk=unsorted --root --ignore-missing --format=$'\1%h %s' --name-only "${TODO_SHAS[@]}" 2>/dev/null)
+			# `%h %s` records are marked with a byte no path can start with, so the walk's own output
+			# separates the headers from the names – read NUL-separated, as the line form C-quotes a
+			# name with a quote or backslash, and the first after a header leads with a newline
+			local -a WALKED
+			WALKED=("${(@0)$(git -C "$WT" log -z --no-walk=unsorted --root --ignore-missing --format=$'\1%h %s' --name-only "${TODO_SHAS[@]}" 2>/dev/null)}")
 			local -A TOUCHED_BY
 			local SUBJECT="" LINE
-			for LINE in ${(f)WALKED}; do
+			for LINE in "${WALKED[@]}"; do
+				LINE=${LINE#$'\n'}
 				if [[ "$LINE" == $'\1'* ]]; then
 					SUBJECT=${LINE#$'\1'}
-				elif [[ $'\n'"$UNMERGED"$'\n' == *$'\n'"$LINE"$'\n'* ]]; then
+				elif [ -n "$LINE" ] && [[ $'\n'"$UNMERGED"$'\n' == *$'\n'"$LINE"$'\n'* ]]; then
 					TOUCHED_BY[$LINE]+="$SUBJECT"$'\n'
 				fi
 			done
@@ -765,9 +804,9 @@ _PRINT_CONFLICT_DETAIL () {
 				local FILE_KEY TOUCHER
 				while IFS= read -r FILE_KEY; do
 					[ -z "${TOUCHED_BY[$FILE_KEY]}" ] && continue
-					ECHO_E "\e[0;33m  $FILE_KEY\e[0m" >&2
+					ECHO_E "\e[0;33m  ${FILE_KEY//\\/$_LITB}\e[0m" >&2
 					for TOUCHER in ${(f)TOUCHED_BY[$FILE_KEY]}; do
-						ECHO_E "\e[0;33m    $TOUCHER\e[0m" >&2
+						ECHO_E "\e[0;33m    ${TOUCHER//\\/$_LITB}\e[0m" >&2
 					done
 				done <<< "$UNMERGED"
 			fi
@@ -783,7 +822,7 @@ _PRINT_CONFLICT_DETAIL () {
 		local STEP_END=${STEPS[2]}
 		if [ "$STEP_NOW" = "$STEP_END" ]; then
 			PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
-			ECHO_E "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(_QUOTE_PATHS "${(@f)UNMERGED}")\e[0m" >&2
+			ECHO_E "\e[0;33m  $(_LIT "git -C ${(q-)WT} checkout ${PREOP:0:12} -- $(_QUOTE_PATHS "${(@f)UNMERGED}")")\e[0m" >&2
 			ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 		else
 			PRINT_TEXT "Step %s rebuilds a state that never existed – author its content rather than deriving it:" 33 "$STEP_NOW/$STEP_END" >&2
@@ -811,7 +850,7 @@ _PRINT_CONFLICT_DETAIL () {
 			# -15: git's refusals put the error above a multi-paragraph advice
 			# block, which a short tail would show instead of the cause
 			PRINT_TEXT "The continue itself said:" 33 >&2
-			print -r -- "$CONTINUE_OUTPUT" | tail -15 | sed 's/^/  /' >&2
+			print -r -- "$CONTINUE_OUTPUT" | tail -15 | LC_ALL=C sed 's/^/  /' >&2
 		fi
 	fi
 
@@ -830,7 +869,7 @@ _PRINT_MODE_CHANGES () {
 	MODE_LINES=$(git diff --summary "$1" "$2" 2>/dev/null | grep '^ mode change')
 	[ -z "$MODE_LINES" ] && return 0
 	PRINT_TEXT "Mode changes landed:" 33
-	print -r -- "$MODE_LINES" | sed "s/^ /  /;s/^/${_DIM}/;s/\$/${_OFF}/"
+	print -r -- "$MODE_LINES" | _CARET_LINES | LC_ALL=C sed "s/^ /  /;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 # Resolves the canonical ref name to report – `$ORIG_BRANCH` when set, since `-C` mode
@@ -1057,7 +1096,7 @@ _RECORD_REF_MOVE () {
 		CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
 		PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
 		if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
-			ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: $TSUBJ\e[0m"
+			ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: ${TSUBJ//\\/$_LITB}\e[0m"
 		else
 			ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
 		fi
@@ -1088,9 +1127,9 @@ _RECORD_REF_MOVE () {
 		if [ -n "${ENTRY#* }" ]; then
 			PRINT_TEXT "Branch %s points into the rewritten span, checked out in %s – that checkout's to move:" 33 "${BREF#refs/heads/}" "${ENTRY#* }"
 			if [ "${HIT#* }" = "patch-id" ]; then
-				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same change: $(git log -1 --format=%s "$BSHA")\e[0m"
+				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same change: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 			elif [ -n "$HIT" ]; then
-				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same subject: $(git log -1 --format=%s "$BSHA")\e[0m"
+				ECHO_E "\e[0;33m  its counterpart here is ${HIT:0:12}  # same subject: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 			else
 				ECHO_E "\e[0;33m  its counterpart in the new span is unresolved\e[0m"
 			fi
@@ -1099,9 +1138,9 @@ _RECORD_REF_MOVE () {
 		fi
 		PRINT_TEXT "Branch %s points into the rewritten span – if it should follow the rewrite:" 33 "${BREF#refs/heads/}"
 		if [ "${HIT#* }" = "patch-id" ]; then
-			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same change: $(git log -1 --format=%s "$BSHA")\e[0m"
+			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same change: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 		elif [ -n "$HIT" ]; then
-			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same subject: $(git log -1 --format=%s "$BSHA")\e[0m"
+			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same subject: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 		else
 			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} <its counterpart in the new span>\e[0m"
 		fi
@@ -1814,7 +1853,7 @@ _RECONCILE_CHECKOUT () {
 		return 0
 	fi
 	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
-	printf '%s\n' "${STALE[@]}" "${GONE[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+	printf '%s\n' "${STALE[@]}" "${GONE[@]}" | head -10 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ $(( ${#STALE[@]} + ${#GONE[@]} )) -gt 10 ]; then
 		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} + ${#GONE[@]} - 10 ))"
 	fi
@@ -1858,7 +1897,7 @@ _PRINT_REWRITE_APPLY_HINT () {
 		# it is and the restore is offered as an opt-in, `--source=HEAD` removing what it dropped
 		if [ "$ACTION_NAME" = "drop" ]; then
 			PRINT_TEXT "Branch %s rewritten – the dropped content is now uncommitted in your checkout:" 32 "$BRANCH"
-			printf '%s\n' "${CHANGED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+			printf '%s\n' "${CHANGED[@]}" | head -10 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 			if [ ${#CHANGED[@]} -gt 10 ]; then
 				PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
 			fi
@@ -1893,7 +1932,7 @@ _PRINT_UNTRACKED_ABSORB () {
 		return 0
 	fi
 	PRINT_TEXT "Absorbing %s untracked file(s) that were not in the commit:" 33 "${#UNTRACKED[@]}"
-	printf '%s\n' "${UNTRACKED[@]}" | head -10 | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+	printf '%s\n' "${UNTRACKED[@]}" | head -10 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ ${#UNTRACKED[@]} -gt 10 ]; then
 		PRINT_TEXT "  … and %s more" 90 "$(( ${#UNTRACKED[@]} - 10 ))"
 	fi
@@ -2005,11 +2044,11 @@ GIT_STASH () {
 	local NEW_STASH=$(git rev-parse -q --verify refs/stash)
 
 	if [[ $STATUS -ne 0 ]]; then
-		local UNMERGED_FILES=$(git diff --name-only --diff-filter=U)
+		local UNMERGED_FILES=$(_UNMERGED_IN .)
 		if [[ -n "$UNMERGED_FILES" ]]; then
 			PRINT_ERR "Stash failed because of conflict markers in files"
 			while IFS= read -r FILE; do
-				ECHO_E "\e[0;31m  - $FILE\e[0m" >&2
+				ECHO_E "\e[0;31m  - ${FILE//\\/$_LITB}\e[0m" >&2
 			done <<< "$UNMERGED_FILES"
 		else
 			PRINT_ERR "Stash failed"
@@ -2302,7 +2341,7 @@ _REFUSE_EXEC_PREBUILT () {
 		PRINT_ERR "HEAD moved to ${NEW_HEAD:0:7}, carrying $PRE_RUN commit(s) made before this run – landing a history built elsewhere would drop whatever reached $BRANCH after it was built"
 	fi
 	ECHO_E "\e[0;31m  It takes $LEAVING commit(s) off $BRANCH, the newest first:\e[0m" >&2
-	git log --format='%h %s' -5 "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	git log --format='%h %s' -5 "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	(( LEAVING > 5 )) && ECHO_E "\e[0;31m    … and $(( LEAVING - 5 )) more\e[0m" >&2
 	if [ "$REWIND" = true ]; then
 		ECHO_E "\e[0;31m  To drop commits, name them: git edit -d <sha>... – or pin the tip you expect with --base=<sha>.\e[0m" >&2
@@ -2330,7 +2369,7 @@ _REFUSE_EXEC_BASE_MOVED () {
 	fi
 	local -i SINCE=$(git rev-list --count "$BASE..$ORIG_HEAD" 2>/dev/null)
 	PRINT_ERR "$BRANCH moved past --base ${BASE:0:7} – $SINCE commit(s) reached it since, which landing a history built on it would drop"
-	git log --format='%h %s' -10 "$BASE..$ORIG_HEAD" 2>/dev/null | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	git log --format='%h %s' -10 "$BASE..$ORIG_HEAD" 2>/dev/null | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	(( SINCE > 10 )) && ECHO_E "\e[0;31m    … and $(( SINCE - 10 )) more\e[0m" >&2
 	ECHO_E "\e[0;31m  Rebuild on the tip, or carry them onto your history in the run:\e[0m" >&2
 	ECHO_E "\e[0;31m    git edit --exec --base=${ORIG_HEAD:0:12} -- git rebase --onto <your history> ${BASE:0:12}\e[0m" >&2
@@ -2384,7 +2423,7 @@ _REFUSE_EXEC_BLANK_LINES () {
 	# Args: <new-head> <gained, one `<sha> <subject>` a line>
 	local -a GAINED=("${(@f)2}")
 	PRINT_ERR "HEAD moved to ${1:0:7}, but ${#GAINED} message(s) it brings in end in more blank lines than before – a message read with %B and fed raw to commit-tree gains one each pass, which git log and git range-diff both hide"
-	print -rl -- "${(@)GAINED[1,5]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	print -rl -- "${(@)GAINED[1,5]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	(( ${#GAINED} > 5 )) && ECHO_E "\e[0;31m    … and $(( ${#GAINED} - 5 )) more\e[0m" >&2
 	ECHO_E "\e[0;31m  Take each message from git cat-file commit, or trim its trailing newlines to one, and rebuild.\e[0m" >&2
 }
@@ -2807,7 +2846,7 @@ _GUARD_WHOLE_LANDINGS () {
 		_AT_TOP "$(git rev-parse --show-toplevel)"
 		ECHO_E "\e[0;31m  Restore what was added with '${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${ADDED[@]}")', or leave it out.\e[0m" >&2
 	fi
-	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_QUOTE_PATHS "${REMOVED[@]}")\e[0m" >&2
+	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_LIT "$(_QUOTE_PATHS "${REMOVED[@]}")")\e[0m" >&2
 	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
 	exit 1
 }
@@ -2850,7 +2889,7 @@ GIT_COMMIT_WHOLE () {
 		local FLIPS=$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | grep '^ mode change')
 		if [ -n "$FLIPS" ]; then
 			PRINT_ERR "A file-mode change rides along – a lost executable bit, most often – so nothing landed"
-			print -r -- "$FLIPS" | sed "s/^ /${_RED}    /;s/\$/${_OFF}/" >&2
+			print -r -- "$FLIPS" | _CARET_LINES | LC_ALL=C sed "s/^ /${_RED}    /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  Restore the mode with chmod, or pass --allow-mode-change where the change is meant.\e[0m" >&2
 			exit 1
 		fi
@@ -3007,7 +3046,7 @@ GIT_AMEND_INTO () {
 			PRINT_ERR "Staged path(s) do not exist at ${TARGET_FULL:0:7} – replaying the commit that introduces them would raise an add/add conflict"
 			# Each names the commit a path arrives in, its subject shown inert
 			_CARET "${(F)ABSENT_LINES}"
-			print -r -- "$REPLY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+			print -r -- "$REPLY" | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  Fold into the introducing commit or later – or pass --allow-new-path to override.\e[0m" >&2
 			exit 1
 		fi
@@ -3025,7 +3064,7 @@ GIT_AMEND_INTO () {
 			else
 				PRINT_ERR "The fold would change a file mode – a literal mode in 'git update-index --cacheinfo', taking the executable bit with it?"
 			fi
-			print -r -- "$MODE_FLIPS" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
+			print -r -- "$MODE_FLIPS" | _CARET_LINES | LC_ALL=C sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
 			if [ ${#OPT_WHOLE} -gt 0 ]; then
 				ECHO_E "\e[0;31m  Restore the mode with chmod, or pass --allow-mode-change where the change is meant.\e[0m" >&2
 			else
@@ -3504,7 +3543,7 @@ _CONTINUE_SNAPSHOT () {
 	local WT=$STATE_WORKTREE P BLOB ENTRY
 	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
 	if [ -s "$GD/git-edit-snapshot-pending" ]; then
-		local UNMERGED=$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)
+		local UNMERGED=$(_UNMERGED_IN "$WT")
 		if [ -n "$UNMERGED" ]; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Unresolved paths remain – resolve and stage them, then 'git edit --continue'"
@@ -3602,7 +3641,7 @@ _RESOLVE_AMEND_TARGET () {
 	if [ ${#BLAMED[@]} -gt 1 ]; then
 		PRINT_ERR "Cannot auto-target: the staged lines were last touched by different commits"
 		for C in "${BLAMED[@]}"; do
-			ECHO_E "\e[0;31m  ${C:0:7} ($(git log -1 --format=%s "$C" 2>/dev/null))\e[0m" >&2
+			ECHO_E "\e[0;31m  ${C:0:7} ($(_LIT "$(git log -1 --format=%s "$C" 2>/dev/null)"))\e[0m" >&2
 		done
 		ECHO_E "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
 		exit 1
@@ -3651,7 +3690,7 @@ _RESOLVE_AMEND_TARGET () {
 		PRINT_ERR "Cannot auto-target: staged paths point at different commits"
 		local LINE
 		for LINE in "${CAND_LINES[@]}"; do
-			ECHO_E "\e[0;31m$LINE\e[0m" >&2
+			ECHO_E "\e[0;31m${LINE//\\/$_LITB}\e[0m" >&2
 		done
 		ECHO_E "\e[0;31m  Pass an explicit --amend-into=<sha>, or stage and fold per target.\e[0m" >&2
 		exit 1
@@ -3682,7 +3721,7 @@ _PRINT_AMENDED_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 32 "Amended commit"
 	fi
-	git show --stat --format='' "$AMENDED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --stat --format='' "$AMENDED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	if [ -n "$AMEND_TREE" ]; then
 		# The fold's content never sat in the checkout's index, so its entries are stranded like
 		# any other rewrite's – re-synced where they still hold the pre-op tip, named where not
@@ -3863,8 +3902,8 @@ _SPLIT_APPLY () {
 	# so the tip tree is identical by construction – stated so callers don't
 	# re-verify with a diff
 	PRINT_TEXT "%s – split into:" 32 "Tip tree identical ✓"
-	git show --stat --format='  %h %s' "$C1" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	git show --stat --format='  %h %s' "$C2" | head -8 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --stat --format='  %h %s' "$C1" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --stat --format='  %h %s' "$C2" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	# Each half's stat has to stay under its own subject to say which files went
 	# where, so the pair can't move below the block the way a fold's name does –
 	# one line naming the commit that was split carries that into the tail instead
@@ -3975,7 +4014,7 @@ GIT_SPLIT_PAUSE () {
 	PRINT_ACTION "Splitting %s..." "$X"
 	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
 	PRINT_TEXT "Edit it back to what the %s commit should leave behind – undo there whatever belongs in the second:" 33 "first"
-	git show --stat --format='' "$X" | sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+	git show --stat --format='' "$X" | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 	else
@@ -4068,7 +4107,7 @@ _CONTINUE_SPLIT () {
 		<(git diff-tree -r --name-only "$X^^{tree}" "$X^{tree}" | sort))
 	if [ -n "$STRAY" ]; then
 		PRINT_ERR "Worktree changes paths ${X:0:7} never touched – the remainder would just revert them"
-		print -r -- "$STRAY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		print -r -- "$STRAY" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Undo them in $STATE_WORKTREE (git checkout -- <path>, or rm for ones it added), then retry.\e[0m" >&2
 		exit 1
 	fi
@@ -4090,7 +4129,7 @@ _CONTINUE_SPLIT () {
 		done
 		if [ ${#MODE_STRAYS[@]} -gt 0 ]; then
 			PRINT_ERR "Worktree changes a file mode neither ${X:0:7} nor its parent carries – a file written anew, without its executable bit?"
-			printf '%s\n' "${MODE_STRAYS[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+			printf '%s\n' "${MODE_STRAYS[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  chmod it in $STATE_WORKTREE to the mode a half should carry, then retry – or pass --allow-mode-change to keep it.\e[0m" >&2
 			exit 1
 		fi
@@ -4368,7 +4407,7 @@ _AUTO_RESOLVE_FINAL_STEP () {
 		return 1
 	fi
 	local -a UNMERGED
-	UNMERGED=("${(@f)$(git -C "$WT" diff --name-only --diff-filter=U 2>/dev/null)}")
+	UNMERGED=(${(0)"$(git -C "$WT" diff -z --name-only --diff-filter=U 2>/dev/null)"})
 	[ -z "${UNMERGED[1]}" ] && return 1
 	# Prove the identity on a scratch copy of the index first – staging the
 	# restores before knowing left a declined pause spoofing an empty step
@@ -4417,7 +4456,7 @@ _FINISH_AUTO_RESOLVED_STEP () {
 		# The success line waits for the continue – and a failure surfaces the
 		# discarded evidence instead of masquerading as one more conflict
 		PRINT_TEXT "%s – restored the %s blobs, yet its continue failed:" 31 "Final step auto-resolved (staged tree proven identical)" "$2"
-		print -r -- "$OUTPUT" | tail -5 | sed 's/^/  /' >&2
+		print -r -- "$OUTPUT" | tail -5 | LC_ALL=C sed 's/^/  /' >&2
 	fi
 	return $RC
 }
@@ -4436,7 +4475,7 @@ _PRINT_REORDER_SUMMARY () {
 		PRINT_TEXT "%s" 33 "Note: tip tree differs from before (conflict resolutions changed content) – new order (oldest-first):"
 	fi
 	_PRINT_MODE_CHANGES "$1" "$2"
-	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_DROPPED_COMMITS "$1" "$2"
 }
 
@@ -4631,12 +4670,12 @@ _PRINT_ONTO_TRIAGE () {
 
 	local C
 	for C in "${UNIQUE[@]}"; do
-		git log -1 --format='  %h %s' "$C" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+		git log -1 --format='  %h %s' "$C" 2>/dev/null | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	done
 	if [ ${#DUPLICATE[@]} -gt 0 ]; then
 		PRINT_TEXT "%s commit(s) are already on %s and will be dropped:" 33 "${#DUPLICATE[@]}" "$ONTO_UPSTREAM"
 		for C in "${DUPLICATE[@]}"; do
-			git log -1 --format='  %h %s' "$C" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			git log -1 --format='  %h %s' "$C" 2>/dev/null | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 		done
 	fi
 }
@@ -4689,7 +4728,7 @@ _GUARD_ONTO_CHECKOUT_CLEAN () {
 	[ ${#BLOCKED[@]} -eq 0 ] && return 0
 
 	PRINT_ERR "Uncommitted work sits on ${#BLOCKED[@]} path(s) the replant rewrites – refusing to strand the checkout"
-	printf '%s\n' "${(@u)BLOCKED}" | head -10 | sed "/./!d;s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	printf '%s\n' "${(@u)BLOCKED}" | head -10 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	ECHO_E "\e[0;31m  Commit, stash, or move them, then retry – nothing was changed.\e[0m" >&2
 	exit 1
 }
@@ -5147,7 +5186,7 @@ _CONTINUE_EDIT () {
 	# Net history change – pre-answers the "does the result differ by exactly
 	# my edit?" verification the caller would otherwise run
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
-	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | sed 's/^/  /'
+	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | LC_ALL=C sed 's/^/  /'
 	_PRINT_MODE_CHANGES "$BASE" "$NEW_HEAD"
 	_PRINT_TREE_IDENTITY "$BASE" "$NEW_HEAD"
 	_PRINT_DROPPED_COMMITS "$BASE" "$NEW_HEAD"
@@ -5227,7 +5266,7 @@ _SAVE_STATE () {
 		# So do a --verify flag and the span tier – flags don't survive into the
 		# resuming invocation, and a continue must re-verify what the original
 		# run asked for, not silently less (or, with no standing config, nothing)
-		if [ -n "$SAVE_VERIFY_CMD" ]; then echo "verify_cmd=$SAVE_VERIFY_CMD"; fi
+		if [ -n "$SAVE_VERIFY_CMD" ]; then print -r -- "verify_cmd=$SAVE_VERIFY_CMD"; fi
 		if _VERIFY_SPAN_ON; then echo "verify_span=1"
 		elif [ ${#OPT_NO_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "0" ]; then echo "verify_span=0"; fi
 		# And a mode change a continue let through – the landing must not refuse what a stop allowed
@@ -5547,7 +5586,7 @@ _PRINT_DROPPED_COMMITS () {
 	# subject with no counterpart, and that commit is not a drop – the count
 	# above stays authoritative either way
 	[ ${#DROPPED[@]} -ne $((BEFORE - AFTER)) ] && return 0
-	printf '%s\n' "${DROPPED[@]:0:12}" | sed "s/^/  dropped: /;s/^/${_DIM}/;s/\$/${_OFF}/"
+	printf '%s\n' "${DROPPED[@]:0:12}" | _CARET_LINES | LC_ALL=C sed "s/^/  dropped: /;s/^/${_DIM}/;s/\$/${_OFF}/"
 	[ ${#DROPPED[@]} -gt 12 ] && PRINT_TEXT "  +%s more" 90 "$(( ${#DROPPED[@]} - 12 ))"
 	return 0
 }
@@ -5570,7 +5609,7 @@ _GUARD_RESOLUTION_CLEAN () {
 	if [ ${#BAD[@]} -gt 0 ]; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
-		printf '%s\n' "${BAD[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Strip them in $WT, re-stage, then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 		EMIT_CONFLICT "$WT" "${(j:,:)BAD}"
 		exit 2
@@ -5675,9 +5714,9 @@ _GUARD_STOP_MODES () {
 	fi
 	_CLEANUP_HOOK=""
 	PRINT_ERR "The staged resolution changes a file mode the replayed commit does not – a file written anew and staged without its executable bit?"
-	printf '%s\n' "${BAD[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	ECHO_E "\e[0;31m  Restore it, then 'git edit --continue' – or pass --allow-mode-change to keep it:\e[0m" >&2
-	printf '%s\n' "${FIX[@]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	printf '%s\n' "${FIX[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	EMIT_CONFLICT "$WT" "${(j:,:)BADPATHS}"
 	exit 2
 }
@@ -5716,7 +5755,7 @@ _GUARD_TIP_MODES () {
 	PRINT_ERR "The rewrite changed a file mode nothing asked for – nothing was applied"
 	local C TO P
 	for LINE in "${STRAY[@]}"; do
-		print -r -- "$LINE" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
+		print -r -- "$LINE" | _CARET_LINES | LC_ALL=C sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
 		# The first rebuilt commit carrying the path at the landed mode – the stop where a
 		# resolution staged the file at it, or the rebuilt commit that introduced the file at it
 		TO=${${LINE#* mode change * => }%% *}
@@ -6028,7 +6067,7 @@ _VERIFY_REWRITE () {
 		if [ $RC -ne 0 ]; then
 			PRINT_ERR "Verification failed at ${C:0:7} – nothing was applied"
 			_PRINT_COMMIT_LINE "$C" '  failing: %h %s'
-			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
+			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | _CARET_LINES --crlf | LC_ALL=C sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
 			PRINT_TEXT "Command: %s (exit %s, %ss)" 33 "$VERIFY_CMD" "$RC" "$RUN_SECS"
 			_VERIFY_SAVE_LOG "$C" "$VERIFY_CMD" "$RC" "$RUN_SECS" "$OUT"
 			# Attribution and the healing point, run in the worktree the gate already owns – then back
@@ -6560,7 +6599,7 @@ GIT_REWORD () {
 		_PRINT_COMMIT_LINE "$NEW_TARGET" '  %h %s'
 		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
-			git log -1 --format='%b' "$NEW_TARGET" | grep . | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
+			git log -1 --format='%b' "$NEW_TARGET" | grep . | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
 		fi
 		# Name the subject that was replaced – a symbolic target resolves once at invocation, so a
 		# commit landing between the caller's read and this call is silently reworded instead,
@@ -6789,7 +6828,7 @@ _PRINT_LOST_BODY () {
 	else
 		PRINT_TEXT "%s carried a %s-line body – the new one lacks %s of its lines, still readable at %s" 33 "$NOUN" "$OLD_LINES" "$LOST_LINES" "${C:0:12}"
 	fi
-	print -r -- "$LOST" | head -8 | sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
+	print -r -- "$LOST" | head -8 | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
 	if [ "$LOST_LINES" -gt 8 ]; then
 		print -r -- "${_DIM}    … and $((LOST_LINES - 8)) more${_OFF}"
 	fi
@@ -6950,7 +6989,7 @@ GIT_RESQUASH () {
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
 	PRINT_TEXT "%s" 32 "Tip tree identical ✓ – unchanged by construction."
-	git show --stat --format='' "$NEW_SQUASHED" | head -12 | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --stat --format='' "$NEW_SQUASHED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_DROPPED_BODIES "${COMMITS[@]}"
 	# Identity below the stat block, for the same reason the fold's is
 	_PRINT_COMMIT_LINE "$NEW_SQUASHED" '  squashed: %h %s'
@@ -7454,7 +7493,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		# Tracked files only, never a submodule pointer, or an unrelated dirty one refuses forever
 		if { [ -n "$STATE_VERIFY_FAILED" ] || [ -n "$STATE_MODE_STRAY" ]; } && [ -n "$(git -C "$STATE_WORKTREE" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null)" ]; then
 			PRINT_ERR "The pause worktree carries edits, but a gate pause has nothing to fold them into – the result is already built"
-			ECHO_E "\e[0;31m  Save anything worth keeping, then discard them: git -C ${(q-)STATE_WORKTREE} checkout -- .\e[0m" >&2
+			ECHO_E "\e[0;31m  Save anything worth keeping, then discard them: $(_LIT "git -C ${(q-)STATE_WORKTREE} checkout -- .")\e[0m" >&2
 			if [ -n "$STATE_VERIFY_FAILED" ]; then
 				ECHO_E "\e[0;31m  Repair the commit itself: 'git edit --no-verify --continue' applies the result, then 'git edit ${STATE_VERIFY_FAILED:0:7}'.\e[0m" >&2
 			else
@@ -8125,7 +8164,7 @@ if [ $# -eq 0 ]; then
 		local HEAD_LINE=$(git log -1 --format='%h %s' 2>/dev/null)
 		PRINT_ERR "Missing <commit> – name the commit to act on (e.g. 'git edit -M --text=\"…\" ${${HEAD_LINE%% *}:-HEAD}')"
 		if [ -n "$HEAD_LINE" ]; then
-			ECHO_E "\e[0;31m  HEAD is currently $HEAD_LINE\e[0m" >&2
+			ECHO_E "\e[0;31m  HEAD is currently ${HEAD_LINE//\\/$_LITB}\e[0m" >&2
 		fi
 		exit 1
 	fi

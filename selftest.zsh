@@ -6080,6 +6080,17 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --commit --text "PN under glob pathspecs" -- pn-i.txt
 	unset GIT_GLOB_PATHSPECS
 	_ST_EQ "a caller's GIT_GLOB_PATHSPECS leaves the re-sync intact" "$RC:$(git status --porcelain -- pn-i.txt)" "0:"
+	# A conflicted name holding a quote reads as itself in the pause it causes
+	printf '1\n2\n3\n' > 'pn"c.txt' && git add -- ':(literal)pn"c.txt' && git commit -qm "PN quote base"
+	local PN_QB=$(git rev-parse HEAD)
+	printf '1\nL\n3\n' > 'pn"c.txt' && git commit -qm "PN quote later" -- ':(literal)pn"c.txt'
+	printf '1\nS\n3\n' > 'pn"c.txt' && git add -- ':(literal)pn"c.txt'
+	_ST_RUN --amend-into="$PN_QB" -- ':(literal)pn"c.txt'
+	_ST_OUT_HAS "a conflicted name with a quote is named as itself" 'resolve in .* (pn"c.txt);'
+	_ST_OUT_LACKS "never as a file without markers" 'No conflict markers'
+	_ST_OUT_HAS "the later step touching it is named" 'Remaining steps also touch a conflicted file'
+	_ST_RUN --abort
+	git reset -q -- ':(literal)pn"c.txt' && git checkout -q -- ':(literal)pn"c.txt'
 
 	# --- 115. a ref name or path reaches an eval'd command as data, never as code ---
 	# A branch from `gh pr checkout` carries the contributor's name, a repo sits at the user's own
@@ -6136,7 +6147,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_SCENARIO "\e[1;96m[116] a subject's escape sequence prints as literal text, not a control\e[0m"
 	local TE_BASE=$(git rev-parse HEAD)
 	printf 'te1\n' > te-a.txt && printf 'tu1\n' > te-b.txt && git add te-a.txt te-b.txt
-	git commit -qm $'TE-A clear \\e[2J and title \\e]0;x\\a end, conceal \\e[8m kept' -- te-a.txt
+	git commit -qm $'TE-A clear \\e[2J and title \\e]0;x\\a end, conceal \\e[8m kept, reset \\e[0m too' -- te-a.txt
 	git commit -qm "TE-B plain" -- te-b.txt
 	printf 'te2\n' >> te-a.txt && printf 'tu2\n' >> te-b.txt && git add te-a.txt te-b.txt
 	_ST_RUN --amend-into=auto -- te-a.txt te-b.txt
@@ -6144,6 +6155,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "a subject's screen-clear prints as its literal characters" 'clear \\e\[2J and'
 	_ST_OUT_HAS "and its OSC title stays literal too" 'title \\e]0;x\\a end'
 	_ST_OUT_HAS "as does a color code no template uses, a conceal" 'conceal \\e\[8m kept'
+	_ST_OUT_HAS "and one a template uses, a reset" 'reset \\e\[0m too'
 	_ST_CHECK "with no real escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
 	git reset -q --hard "$TE_BASE"
 	rm -f te-a.txt te-b.txt
@@ -6167,6 +6179,62 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_CHECK "there too with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
 	git reset -q --hard "$TE_BASE"
 	rm -f te-n0.txt te-new.txt
+	# The order a move prints shows a subject's raw bytes in caret notation too
+	git commit -q --allow-empty -m $'TE-M raw \e]0;x\a end'
+	git commit -q --allow-empty -m "TE-M top"
+	_ST_RUN --move=HEAD~1 --after=HEAD
+	_ST_OUT_HAS "a move's summary shows a raw escape in caret notation" 'TE-M raw ^\[\]0;x^G end'
+	_ST_CHECK "there too with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
+	git reset -q --hard "$TE_BASE"
+	# A name holding a color code's text prints as itself in a hint – rendered, it hid part of the
+	# name, and the command pasted would restore another file
+	printf 'v1\n' > 'te\e[0mx.txt' && printf 'v1\n' > tex.txt && git add -- ':(literal)te\e[0mx.txt' tex.txt && git commit -qm "TE-L names"
+	_ST_RUN --exec -- sh -c 'printf "v2\n" > "$1" && git commit -qam "TE-L lands"' sh 'te\e[0mx.txt'
+	_ST_OUT_HAS "a hint names such a file as itself" 'Reconcile those paths.*te\\e\[0mx\.txt'
+	git reset -q --hard "$TE_BASE"
+	rm -f 'te\e[0mx.txt' tex.txt
+	# A conflict lists such a name, and a later step's subject holding one, as themselves
+	printf '1\n2\n3\n' > 'te\e[0mc.txt' && git add -- ':(literal)te\e[0mc.txt' && git commit -qm "TE-C base"
+	local TE_CB=$(git rev-parse HEAD)
+	printf '1\nL\n3\n' > 'te\e[0mc.txt' && git commit -qam 'TE-C later \e[0m kept'
+	printf '1\nS\n3\n' > 'te\e[0mc.txt' && git add -- ':(literal)te\e[0mc.txt'
+	_ST_RUN --amend-into="$TE_CB" -- ':(literal)te\e[0mc.txt'
+	_ST_OUT_HAS "a conflicted name lists as itself" '^  - te\\e\[0mc\.txt$'
+	_ST_OUT_HAS "as does a remaining step's subject" '^  pick [0-9a-f]* .*TE-C later \\e\[0m kept$'
+	_ST_OUT_HAS "and the step touching the name, listed under it" '^    [0-9a-f]* TE-C later \\e\[0m kept$'
+	_ST_RUN --abort
+	git reset -q --hard "$TE_BASE"
+	rm -f 'te\e[0mc.txt'
+	# A gate's CRLF line prints without its `\r`, a long colored one without a pass per character,
+	# and a byte no UTF-8 holds in a UTF-8 locale where one is installed, as BSD sed died on it there
+	local TE_U8=$(locale -a 2>/dev/null | grep -m1 -E '^(en_US\.UTF-8|en_US\.utf8|C\.UTF-8|C\.utf8)$')
+	git config edit.verifyCmd "printf 'TE gate CRLF\r\n'; printf 'TE gate \377\nTE gate past the byte\n'; awk 'BEGIN { for (i = 0; i < 8000; i++) printf \"\033[31mred\033[0m te \"; print \"\" }'; exit 1"
+	printf 'tg\n' > te-g.txt
+	local -i TE_T0=$SECONDS
+	LC_ALL=${TE_U8:-C} _ST_RUN --commit --text "x" -- te-g.txt
+	git config --unset edit.verifyCmd
+	_ST_OUT_HAS "a gate's CRLF line prints" '| TE gate CRLF'
+	_ST_OUT_LACKS "with no caret for the line's own ending" 'TE gate CRLF\^M'
+	_ST_OUT_HAS "as does the line past a byte no UTF-8 holds" '| TE gate past the byte'
+	_ST_CHECK "and a 128 KB colored line in under 10 seconds" test $(( SECONDS - TE_T0 )) -lt 10
+	rm -f te-g.txt
+	# A byte above 0x7f prints as itself – as the stand-in for a data backslash, it came back as one
+	local TE_LC
+	for TE_LC in C $TE_U8; do
+		LC_ALL=$TE_LC _ST_RUN --exec -- true $'te\xffff'
+		_ST_CHECK "a raw byte above 0x7f in a printed command prints as itself under $TE_LC" eval '[[ "$(print -r -- "$OUT" | od -An -tx1 | tr -d " \n")" == *7465ff6666* ]]'
+	done
+	# A name ending in a carriage return lists with it – only a command's output drops a CRLF ending
+	printf 'cr1\n' > $'te-cr.txt\r' && git add -- $'te-cr.txt\r' && git commit -qm "TE-CR base"
+	_ST_RUN --exec -- sh -c 'printf "cr2\n" > "$1" && git commit -qam "TE-CR lands"' sh $'te-cr.txt\r'
+	_ST_OUT_HAS "a name ending in a carriage return lists with it" '^  te-cr\.txt\^M$'
+	git reset -q --hard "$TE_BASE"
+	rm -f $'te-cr.txt\r'
+	# The `HEAD` a missing commit names shows its subject as itself
+	git commit -q --allow-empty -m 'TE-H reset \e[0m kept'
+	_ST_RUN -M --text "x"
+	_ST_OUT_HAS "the HEAD a missing commit names shows its subject as itself" 'HEAD is currently [0-9a-f]* TE-H reset \\e\[0m kept$'
+	git reset -q --hard "$TE_BASE"
 	# A terminal run pads with a real blank line – `ECHO_E` renders no `\n` spelled out, so padding
 	# held as text would print literally on every line
 	local TE_TTY=""
@@ -6204,13 +6272,15 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	export GIT_EDIT_ACTOR=
 	git reset -q --hard "$TE_BASE"
 	rm -f te-msg.txt
-	# --- 117. an in-place sed edit takes the form GNU sed reads too ---
+	# --- 117. sed runs in forms GNU and BSD sed both read ---
 	# GNU sed reads BSD's `sed -i ""` as a file named "", which failed every rebase todo edit on Linux
 	# – a check of the source, as a run on macOS reads either form
-	_ST_SCENARIO "\e[1;96m[117] an in-place sed edit takes the form GNU sed reads too\e[0m"
+	_ST_SCENARIO "\e[1;96m[117] sed runs in forms GNU and BSD sed both read\e[0m"
 	local SI_OUT=$(grep -nE 'sed -i( |$)' "$SELF" | grep -vE '^[0-9]+:[[:space:]]*#')
 	_ST_EQ "no sed -i lacks an attached suffix" "$SI_OUT" ""
 	_ST_CHECK "while the suffixed form is the one in use" grep -q 'sed -i\.git-edit' "$SELF"
+	# BSD sed in a UTF-8 locale dies on a byte no UTF-8 holds, so a listing's runs under `LC_ALL=C`
+	_ST_EQ "no sed after _CARET_LINES reads the caller's locale" "$(grep -c '_CARET_LINES[a-z -]* | sed' "$SELF")" "0"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
