@@ -6374,6 +6374,24 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --abort
 	git reset -q --hard "$TE_BASE"
 	rm -f 'te\e[0mc.txt'
+	# A subject holding a backslash or `|` finds its counterpart, and shows as itself
+	printf 'tt\n' > te-t.txt && git add te-t.txt && git commit -qm "TE-T below"
+	printf 'tt2\n' >> te-t.txt && git commit -qam 'TE-T reset \e[0m | kept'
+	git tag te-tag && git branch te-br
+	_ST_RUN -M --text "TE-T below reworded" "$(git rev-parse HEAD~1)"
+	_ST_OUT_HAS "a tag's re-point hint shows the subject as itself" 'git tag -f te-tag .*same subject: TE-T reset \\e\[0m | kept$'
+	_ST_OUT_HAS "as does a branch's" 'git branch -f te-br .*same [a-z]*: TE-T reset \\e\[0m | kept$'
+	git tag -d te-tag >/dev/null && git branch -q -D te-br
+	git reset -q --hard "$TE_BASE"
+	rm -f te-t.txt
+	printf 'ts\n' > te-s.txt && git add te-s.txt && git commit -qm 'TE-S stale \e[0m kept'
+	local TE_S=$(git rev-parse HEAD)
+	printf 'ts2\n' > te-s.txt && git add te-s.txt
+	_ST_RUN --amend-into="$TE_S" -- te-s.txt
+	_ST_RUN -d -y "$TE_S"
+	_ST_OUT_HAS "as does a stale SHA's, its content changed" 'counterpart on HEAD'
+	git reset -q --hard "$TE_BASE"
+	rm -f te-s.txt
 	# A gate's CRLF line prints without its `\r`, a long colored one without a pass per character,
 	# and a byte no UTF-8 holds in a UTF-8 locale where one is installed, as BSD sed died on it there
 	local TE_U8=$(locale -a 2>/dev/null | grep -m1 -E '^(en_US\.UTF-8|en_US\.utf8|C\.UTF-8|C\.utf8)$')

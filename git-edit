@@ -962,11 +962,12 @@ _RESOLVE_STALE () {
 	fi
 
 	# One `git log` pass, so no ceiling is needed here – the SHA is stripped by field rather
-	# than by splitting on tabs, so a subject containing one still compares whole
+	# than by splitting on tabs, so a subject containing one still compares whole, and it
+	# arrives through the environment, as `-v` would read its backslashes as escapes
 	local SUBJECT=$(git log -1 --format='%s' "$C" 2>/dev/null)
 	if [ -n "$SUBJECT" ]; then
 		MATCHES=($(git log --format='%H%x09%s' "$TIP" 2>/dev/null \
-			| awk -v s="$SUBJECT" '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == s) print sha }'))
+			| S=$SUBJECT awk '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == ENVIRON["S"]) print sha }'))
 		if [ ${#MATCHES[@]} -eq 1 ]; then
 			echo "${MATCHES[1]} subject"
 			return 0
@@ -1103,7 +1104,8 @@ _RECORD_REF_MOVE () {
 		TAGSHA=$(git rev-parse "$TAG^{commit}" 2>/dev/null)
 		[ -z "$TAGSHA" ] && continue
 		TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
-		CAND=$(git log --format='%H|%s' "$2..$3" 2>/dev/null | awk -F'|' -v s="$TSUBJ" '$2==s{print $1}')
+		# Compared whole, as the stale-SHA resolver compares one – a `|` or backslash in it included
+		CAND=$(git log --format='%H%x09%s' "$2..$3" 2>/dev/null | S=$TSUBJ awk '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == ENVIRON["S"]) print sha }')
 		PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
 		if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
 			ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: ${TSUBJ//\\/$_LITB}\e[0m"
