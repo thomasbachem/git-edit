@@ -202,7 +202,7 @@ GIT_SELFTEST () {
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "emits ok trailer" '^git-edit: ok – refs/heads/main moved'
 	_ST_OUT_HAS "states tree identity" 'Trees unchanged'
-	_ST_OUT_HAS "echoes the resulting subject" '[0-9a-f]\{7\} C reworded'
+	_ST_OUT_HAS "echoes the resulting subject" '[0-9a-f]\{7,\} C reworded'
 	# A symbolic target resolves once, so the summary has to name what it
 	# replaced – otherwise rewording the wrong commit reads as success
 	_ST_OUT_HAS "names the subject it replaced" 'replaced:.*C commit'
@@ -253,8 +253,8 @@ GIT_SELFTEST () {
 	# naming D (which touches c.txt) and not E (which doesn't) – matched on the hint's own
 	# indented lines, as the raw todo above it lists every step (subjects bare before git 2.50)
 	_ST_OUT_HAS "flags the later steps touching a conflicted file" 'Remaining steps also touch a conflicted file'
-	_ST_OUT_HAS "names the step that touches it" '^    [0-9a-f]\{7\} D commit$'
-	_ST_OUT_LACKS "leaves out a step touching other files" '^    [0-9a-f]\{7\} E commit$'
+	_ST_OUT_HAS "names the step that touches it" '^    [0-9a-f]\{7,\} D commit$'
+	_ST_OUT_LACKS "leaves out a step touching other files" '^    [0-9a-f]\{7,\} E commit$'
 	_ST_EQ "branch untouched during pause" "$(git rev-parse HEAD)" "$PRE_HEAD"
 	_ST_RUN --status
 	_ST_OUT_HAS "status reports the conflict" '^git-edit: conflict – resolve in'
@@ -902,7 +902,7 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "with an example naming the tip by SHA" "e\.g\. 'git edit -M --text=\"…\" $(git rev-parse --short HEAD)'"
 	_ST_OUT_HAS "and says what HEAD currently is" 'HEAD is currently'
 	_ST_OUT_HAS "with its subject, not just a sha" \
-		"HEAD is currently [0-9a-f]\{7\} ."
+		"HEAD is currently [0-9a-f]\{7,\} ."
 	_ST_RUN --amend-into=HEAD -M
 	_ST_EQ "--amend-into + -M refused" "$RC" "1"
 	_ST_OUT_HAS "points at the reword form" 'To reword only'
@@ -1085,8 +1085,8 @@ GIT_SELFTEST () {
 	git merge -q --no-ff rw-side -m "RW merge" >/dev/null 2>&1
 	_ST_RUN -M --text="RW reworded" "$RW_TARGET"
 	_ST_EQ "reword across a merge succeeds" "$RC" "0"
-	_ST_OUT_HAS "echo names the reworded commit, not its parent" '[0-9a-f]\{7\} RW reworded'
-	_ST_OUT_LACKS "result line does not name the wrong commit" '[0-9a-f]\{7\} RW target'
+	_ST_OUT_HAS "echo names the reworded commit, not its parent" '[0-9a-f]\{7,\} RW reworded'
+	_ST_OUT_LACKS "result line does not name the wrong commit" '[0-9a-f]\{7,\} RW target'
 	_ST_CHECK "merge topology preserved" sh -c "test \$(git log --format=%P -1 HEAD | wc -w) -eq 2"
 	git branch -q -D rw-side 2>/dev/null
 	# (b) a scoped fold that conflicts: the scope must survive --continue, or
@@ -3257,9 +3257,9 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --amend-into="$AH_BASE" -- ah.txt
 	_ST_EQ "the fold conflicts as set up" "$RC" "2"
 	_ST_OUT_HAS "the hint reaches the steps touching the file" 'Remaining steps also touch'
-	_ST_OUT_HAS "naming the one below the amend!" '^    [0-9a-f]\{7\} AH middle$'
-	_ST_OUT_HAS "and the one above it" '^    [0-9a-f]\{7\} AH tip$'
-	_ST_OUT_LACKS "while the amend! step, touching another file, stays out" '^    [0-9a-f]\{7\} amend! AH middle$'
+	_ST_OUT_HAS "naming the one below the amend!" '^    [0-9a-f]\{7,\} AH middle$'
+	_ST_OUT_HAS "and the one above it" '^    [0-9a-f]\{7,\} AH tip$'
+	_ST_OUT_LACKS "while the amend! step, touching another file, stays out" '^    [0-9a-f]\{7,\} amend! AH middle$'
 	_ST_RUN --abort
 	git reset -q --hard
 
@@ -4128,7 +4128,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	echo "tf-moved" > tf3.txt && git add tf3.txt && git commit -qm "TF moved"
 	_ST_RUN --amend-into="$TF_BASE2" --tree="$TF_COMPOSED" -- tf.txt
 	_ST_EQ "a tree composed on a moved tip is refused" "$RC" "1"
-	_ST_OUT_HAS "naming the value as given and both tips" 'tree [0-9a-f]\{7\} was composed on [0-9a-f]\{7\}, but HEAD is [0-9a-f]\{7\} now'
+	_ST_OUT_HAS "naming the value as given and both tips" 'tree [0-9a-f]\{7,\} was composed on [0-9a-f]\{7,\}, but HEAD is [0-9a-f]\{7,\} now'
 	_ST_RUN --amend-into="$TF_BASE2" --tree='HEAD^{tree}' -- tf.txt
 	_ST_EQ "a tree matching HEAD is refused" "$RC" "1"
 	_ST_OUT_HAS "as nothing to fold, the value named as given" 'tree HEAD^{tree} differs from HEAD in nothing under tf\.txt'
@@ -4707,7 +4707,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --exec -- git reset -q --hard "$PB_BUILT"
 	_ST_EQ "a pre-built history without --base refuses" "$RC" "1"
 	_ST_OUT_HAS "saying it carries commits made before the run" 'carrying 1 commit(s) made before this run'
-	_ST_OUT_HAS "naming the commit it would drop" '^    [0-9a-f]\{7\} PB peer$'
+	_ST_OUT_HAS "naming the commit it would drop" '^    [0-9a-f]\{7,\} PB peer$'
 	_ST_EQ "which stays" "$(git rev-parse HEAD)" "$PB_PEER"
 	# A commit made on top in the run dates the tip anew – what it sits on still counts
 	_ST_RUN --exec -- sh -c "git reset -q --hard $PB_BUILT && git commit -q --allow-empty -m 'PB on top'"
@@ -4716,7 +4716,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "the peer's commit still there" "$(git rev-parse HEAD)" "$PB_PEER"
 	_ST_RUN --exec --base="$PB_BASE" -- git reset -q --hard "$PB_BUILT"
 	_ST_EQ "--base at a tip the branch moved past refuses" "$RC" "1"
-	_ST_OUT_HAS "naming what reached it since" '^    [0-9a-f]\{7\} PB peer$'
+	_ST_OUT_HAS "naming what reached it since" '^    [0-9a-f]\{7,\} PB peer$'
 	_ST_OUT_HAS "and the rebase that carries it over" "git rebase --onto <your history> ${PB_BASE:0:12}"
 	# That rebase builds inside the run, so it lands – the rebuilt history, the peer's commit on top
 	_ST_RUN --exec --base="$PB_PEER" -- git rebase -q --onto "$PB_BUILT" "$PB_BASE"
@@ -4837,8 +4837,8 @@ EOF
 	_ST_RUN --exec --base="$BL_TIP" -- sh "$TMP/bl-loop.sh" "$BL_BASE" raw
 	_ST_EQ "a loop feeding %B raw refuses" "$RC" "1"
 	_ST_OUT_HAS "counting both messages" '2 message(s) it brings in end in more blank lines'
-	_ST_OUT_HAS "naming one already ending in a blank line" '^    [0-9a-f]\{7\} BL two$'
-	_ST_OUT_HAS "and one that did not" '^    [0-9a-f]\{7\} BL three$'
+	_ST_OUT_HAS "naming one already ending in a blank line" '^    [0-9a-f]\{7,\} BL two$'
+	_ST_OUT_HAS "and one that did not" '^    [0-9a-f]\{7,\} BL three$'
 	_ST_OUT_HAS "and the fix" 'Take each message from git cat-file commit'
 	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$BL_TIP"
 	_ST_RUN --exec --dry-run --base="$BL_TIP" -- sh "$TMP/bl-loop.sh" "$BL_BASE" raw
@@ -4853,7 +4853,7 @@ EOF
 	# A reword keeps the author and author date, which still match it to the commit it replaces
 	_ST_RUN --exec --base="$(git rev-parse HEAD)" -- sh -c 'GIT_AUTHOR_DATE="$(git log -1 --format=%ad --date=raw HEAD)" && export GIT_AUTHOR_DATE && git reset -q --hard "$(printf "BL reworded\n\n" | git commit-tree HEAD^{tree} -p HEAD^)"'
 	_ST_EQ "a reword ending in a blank line refuses" "$RC" "1"
-	_ST_OUT_HAS "naming it" '^    [0-9a-f]\{7\} BL reworded$'
+	_ST_OUT_HAS "naming it" '^    [0-9a-f]\{7,\} BL reworded$'
 	# A commit made elsewhere and brought in replaces nothing, so it lands with its message as it was
 	local BL_SIDE=$(printf 'BL side\n\n' | git commit-tree "$(git rev-parse HEAD^{tree})" -p HEAD)
 	_ST_RUN --exec -- git merge -q --ff-only "$BL_SIDE"
@@ -4884,8 +4884,8 @@ EOF
 	_ST_RUN --undo
 	GIT_EDIT_PROGRESS=1 _ST_RUN --move="$VP_TWO" --after="$VP_BASE"
 	_ST_EQ "and again where a caller asks for progress" "$RC" "0"
-	_ST_OUT_HAS "naming the first commit it checks" '^Checking 1 of 2 – [0-9a-f]\{7\} VP two$'
-	_ST_OUT_HAS "and the last" '^Checking 2 of 2 – [0-9a-f]\{7\} VP one$'
+	_ST_OUT_HAS "naming the first commit it checks" '^Checking 1 of 2 – [0-9a-f]\{7,\} VP two$'
+	_ST_OUT_HAS "and the last" '^Checking 2 of 2 – [0-9a-f]\{7,\} VP one$'
 	git config --unset edit.verifySpan
 	git config --unset edit.verifyCmd
 
