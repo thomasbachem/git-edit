@@ -1227,7 +1227,7 @@ GIT_SELFTEST () {
 	echo "changed" > xi.txt
 	_ST_RUN --exec -- sh -c 'echo changed > xi.txt && git add xi.txt && git commit -q --amend --no-edit'
 	_ST_EQ "exec over a checkout already carrying the change exits 0" "$RC" "0"
-	_ST_OUT_HAS "reports the checkout as current" 'index re-synced, your checkout is current'
+	_ST_OUT_HAS "reports the checkout as current, the branch as rewritten" 'rewritten – index re-synced, your checkout is current'
 	_ST_OUT_LACKS "and offers no restore" 'Reconcile those paths'
 	_ST_CHECK "nothing left staged or modified" sh -c "test -z \"\$(git status --porcelain -- xi.txt)\""
 	# The same change staged first, a rename too – entries already as the new tip has them are in
@@ -5529,7 +5529,8 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	printf 'G1\nG2 beside\ng3\n' > rh-g.txt && printf 'h1\nH2 beside\nh3\n' > rh-h.txt
 	_ST_RUN --exec --base="$RH_OLD" --no-verify -- git reset -q --hard "$RH_NEW"
 	_ST_EQ "the landing lands" "$RC:$(git rev-parse HEAD)" "0:$RH_NEW"
-	_ST_OUT_HAS "naming edits a whole-file commit takes it back with" 'take the rewrite back there: rh-c.txt'
+	_ST_OUT_HAS "naming edits a whole-file commit takes it back with" 'take the landing back there: rh-c.txt'
+	_ST_OUT_LACKS "a landing on top taking nothing out of history" 'out of history'
 	_ST_OUT_HAS "and a rename's edits left at the old path" 'the new one missing: rh-a.txt → rh-b.txt'
 	_ST_OUT_LACKS "with no restore that would strand them" 'worktree -- rh-b.txt'
 	_ST_OUT_HAS "while edits already on the new content are merely left alone" 'your own): rh-f.txt'
@@ -5561,7 +5562,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	# And edits on the new content, a change made in the checkout first
 	printf 'KAY\nl\nm\nn\n' > cy-f.txt
 	_ST_RUN --exec --base="$CY_OLD" --no-verify -- git reset -q --hard "$CY_NEW"
-	_ST_OUT_HAS "the landing points at --carry, from its own old tip" "out of history, with: git edit --carry=${CY_OLD:0:12}"
+	_ST_OUT_HAS "the landing points at --carry, from its own old tip" "new content with: git edit --carry=${CY_OLD:0:12}"
 	# A commit on top since brought content of its own, which carrying from the rewrite would revert
 	local CY_IDX=$TMP/cy-index
 	GIT_INDEX_FILE=$CY_IDX git read-tree HEAD
@@ -5733,6 +5734,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "the reflog names it a commit, with its caller" "$(git reflog show -1 --format=%gs "$(git symbolic-ref -q HEAD)")" "git edit: commit [wc-self]"
 	_ST_OUT_HAS "the run names what it commits" 'Committing 2 whole file(s) on'
 	_ST_OUT_LACKS "with no internal command shown" '_COMMIT_WHOLE_TREE'
+	_ST_OUT_HAS "the branch reads as advanced, not rewritten" 'advanced – index re-synced, your checkout is current'
 	_ST_CHECK "the checkout is clean there" test -z "$(git status --porcelain -- wc.txt wc.sh)"
 	_ST_EQ "a staged file it was not named stays staged and out" "$(git show :wc-staged.txt):$(git cat-file -e HEAD:wc-staged.txt 2>/dev/null && echo in || echo out)" "staged:out"
 	git restore --staged -- wc-staged.txt && rm -f wc-staged.txt
@@ -5991,6 +5993,14 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- wc-two.txt
 	_ST_OUT_HAS "a whole-file fold's mode change names the chmod" 'Restore the mode with chmod'
 	chmod -x wc-two.txt
+	# A file the commit's hooks rewrote is named as such, never as taking a landing back
+	printf '#!/bin/sh\nfor f in $(git diff --cached --name-only -- wc-hk.txt); do tr a-z A-Z < "$f" > "$f.t" && mv "$f.t" "$f" && git add "$f"; done\n' > "$WC_HOOK" && chmod +x "$WC_HOOK"
+	echo lower > wc-hk.txt
+	_ST_RUN --commit --text "WC hooked" -- wc-hk.txt
+	rm -f "$WC_HOOK"
+	_ST_OUT_HAS "a file the commit's hooks changed is named as such" 'still as the commit read them, which its hooks then changed: wc-hk.txt'
+	_ST_OUT_LACKS "never as taking a landing back" 'take the landing back'
+	git restore --source=HEAD --worktree -- wc-hk.txt
 	export GIT_EDIT_ACTOR=
 
 	# --- 114. a name git hands back reaches it as itself ---

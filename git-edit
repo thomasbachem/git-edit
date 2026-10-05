@@ -1635,9 +1635,14 @@ _EDITS_LACK_REWRITE () {
 _RECONCILE_CHECKOUT () {
 	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>]
 	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 P SRC
-	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED REVERTING RENAMED GONE MODE_ONLY
+	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED REVERTING RENAMED GONE MODE_ONLY HOOKED
 	# Every path here is a name, never a pattern – `[id].tsx` would match `i.tsx` beside it
 	local -x GIT_LITERAL_PATHSPECS=1
+	# Commits only added on top rewrote nothing, so a landing takes nothing out of history
+	local FORMER=pre-rewrite NOUN=rewrite TOOK=", which takes out again what the rewrite took out of history,"
+	if git merge-base --is-ancestor "$OLD" "$NEW" 2>/dev/null; then
+		FORMER=previous NOUN=landing TOOK=""
+	fi
 	# A rename leaves its new path missing from the checkout, which reads as stale there, while
 	# edits on the old path sit untracked once the re-sync moved the entry – a restore of the new
 	# path would strand them, so the two are named together instead
@@ -1656,10 +1661,10 @@ _RECONCILE_CHECKOUT () {
 		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
 	fi
 	if [ ${#LOCKED[@]} -gt 0 ]; then
-		PRINT_TEXT "Index locked – entries still on the pre-rewrite tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "$(_QUOTE_PATHS "${LOCKED[@]}")"
+		PRINT_TEXT "Index locked – entries still on the $FORMER tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "$(_QUOTE_PATHS "${LOCKED[@]}")"
 	fi
 	if [ ${#LEFT_ALONE[@]} -gt 0 ]; then
-		PRINT_TEXT "Index entries left alone – they differ from the pre-rewrite tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
+		PRINT_TEXT "Index entries left alone – they differ from the $FORMER tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
 	fi
 	# A path the rewrite removed lingers untracked once its entry is gone, so it takes a
 	# `clean` where the others take a restore
@@ -1680,6 +1685,10 @@ _RECONCILE_CHECKOUT () {
 				elif [ -n "$SRC" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && { [ -e "$CO/$SRC" ] || [ -L "$CO/$SRC" ]; } && \
 				     [ "$(_WORKTREE_HASH "$CO" "$SRC" 2>/dev/null)" != "$(git rev-parse "${OLD}:${SRC}" 2>/dev/null)" ]; then
 					RENAMED+=("$SRC → $P")
+				# A file this run took whole, still as it was read – the commit's hooks changed it there
+				elif [ -n "$WHOLE_TREE" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
+				     [ "$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)" = "$(git rev-parse -q --verify "${WHOLE_TREE}:${P}" 2>/dev/null)" ]; then
+					HOOKED+=("$P")
 				elif git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
 					STALE+=("$P")
 				elif [ ! -L "$CO/$P" ] && git cat-file -e "$OLD:$P" 2>/dev/null && \
@@ -1701,19 +1710,23 @@ _RECONCILE_CHECKOUT () {
 		fi
 	done
 	if [ ${#MODIFIED[@]} -gt 0 ]; then
-		PRINT_TEXT "Worktree files left alone – uncommitted edits there, not the pre-rewrite content (a peer's, or your own): %s" 33 "${(j: :)${(q-)MODIFIED[@]}}"
+		PRINT_TEXT "Worktree files left alone – uncommitted edits there, not the $FORMER content (a peer's, or your own): %s" 33 "${(j: :)${(q-)MODIFIED[@]}}"
+	fi
+	if [ ${#HOOKED[@]} -gt 0 ]; then
+		PRINT_TEXT "Worktree files still as the commit read them, which its hooks then changed: %s" 33 "${(j: :)${(q-)HOOKED[@]}}"
+		PRINT_TEXT "Take the hooks' version with: %s" 33 "git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${HOOKED[@]}")"
 	fi
 	if [ ${#REVERTING[@]} -gt 0 ]; then
-		PRINT_TEXT "Worktree files left alone with uncommitted edits on the pre-rewrite content – committed whole, they take the rewrite back there: %s" 33 "${(j: :)${(q-)REVERTING[@]}}"
+		PRINT_TEXT "Worktree files left alone with uncommitted edits on the $FORMER content – committed whole, they take the $NOUN back there: %s" 33 "${(j: :)${(q-)REVERTING[@]}}"
 	fi
 	if [ ${#RENAMED[@]} -gt 0 ]; then
-		PRINT_TEXT "Renamed by the rewrite, with uncommitted edits left untracked at the old path and the new one missing: %s" 33 "${(j:, :)RENAMED}"
+		PRINT_TEXT "Renamed by the $NOUN, with uncommitted edits left untracked at the old path and the new one missing: %s" 33 "${(j:, :)RENAMED}"
 	fi
 	if [ $(( ${#REVERTING[@]} + ${#RENAMED[@]} )) -gt 0 ]; then
 		# Pinned to this rewrite's old tip, which a later one would otherwise take the place of
 		local CARRY_CMD="git edit --carry=${OLD:0:12}" HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
 		[ -n "$HERE" ] && [ "${HERE:A}" = "${CO:A}" ] || CARRY_CMD="git -C ${(q-)CO} edit --carry=${OLD:0:12}"
-		PRINT_TEXT "Merge those edits onto the new content, which takes out again what the rewrite took out of history, with: %s" 33 "$CARRY_CMD"
+		PRINT_TEXT "Merge those edits onto the new content$TOOK with: %s" 33 "$CARRY_CMD"
 	fi
 	# Both modes named, and the chmod matching the committed one offered – it discards no content,
 	# though a deliberate chmod not yet committed is undone by it all the same
@@ -1740,7 +1753,7 @@ _RECONCILE_CHECKOUT () {
 	fi
 	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
 		# "Index re-synced" holds only where no entry was left alone or locked out
-		[ -n "$CURRENT_HEADLINE" ] && [ $(( ${#MODIFIED[@]} + ${#REVERTING[@]} + ${#RENAMED[@]} + ${#MODE_ONLY[@]} + ${#LEFT_ALONE[@]} + ${#LOCKED[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		[ -n "$CURRENT_HEADLINE" ] && [ $(( ${#MODIFIED[@]} + ${#REVERTING[@]} + ${#RENAMED[@]} + ${#MODE_ONLY[@]} + ${#LEFT_ALONE[@]} + ${#LOCKED[@]} + ${#HOOKED[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
 		return 0
 	fi
 	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
@@ -1751,7 +1764,7 @@ _RECONCILE_CHECKOUT () {
 	local CMD=""
 	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${STALE[@]}")"
 	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- $(_QUOTE_PATHS "${GONE[@]}")"
-	PRINT_TEXT "Reconcile those paths (discards what the rewrite left there): %s" 33 "$CMD"
+	PRINT_TEXT "Reconcile those paths (discards what the $NOUN left there): %s" 33 "$CMD"
 }
 
 # Reports what a worktree-isolated rewrite left behind in the branch's checkout – re-syncs the
@@ -1761,11 +1774,16 @@ _PRINT_REWRITE_APPLY_HINT () {
 	# Args: <branch-name> [<old-head> <new-head>] [<action>]
 	local BRANCH="$1"
 	local ACTION_NAME="$4"
+	# Commits only added on top rewrote nothing – a `--commit`, or an `--exec` committing at the tip
+	local MOVED=rewritten FORMER=pre-rewrite
+	if [ -n "$2" ] && [ -n "$3" ] && git merge-base --is-ancestor "$2" "$3" 2>/dev/null; then
+		MOVED=advanced FORMER=previous
+	fi
 	# A pure history rewrite leaves the tip tree byte-identical, so the checkout already
 	# matches and a stash/reset dance would cycle unrelated WIP for nothing
 	if [ -n "$2" ] && [ -n "$3" ] && \
 	   [ "$(git rev-parse "$2^{tree}" 2>/dev/null)" = "$(git rev-parse "$3^{tree}" 2>/dev/null)" ]; then
-		PRINT_TEXT "Branch %s rewritten – tip tree unchanged, your checkout is already current." 32 "$BRANCH"
+		PRINT_TEXT "Branch %s $MOVED – tip tree unchanged, your checkout is already current." 32 "$BRANCH"
 		return
 	fi
 	# Reconcile only what the rewrite touched – a blanket `reset --hard` discards unrelated
@@ -1791,14 +1809,14 @@ _PRINT_REWRITE_APPLY_HINT () {
 		fi
 		local CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
 		if [ -z "$CO" ]; then
-			PRINT_TEXT "Branch %s rewritten – checked out nowhere, nothing to reconcile." 32 "$BRANCH"
+			PRINT_TEXT "Branch %s $MOVED – checked out nowhere, nothing to reconcile." 32 "$BRANCH"
 			return
 		fi
 		_RECONCILE_CHECKOUT "$CO" "$2" "$3" \
-			"Branch $BRANCH rewritten – your checkout still holds the pre-rewrite content of:" \
-			"Branch $BRANCH rewritten – index re-synced, your checkout is current."
+			"Branch $BRANCH $MOVED – your checkout still holds the $FORMER content of:" \
+			"Branch $BRANCH $MOVED – index re-synced, your checkout is current."
 	else
-		PRINT_TEXT "Branch %s rewritten – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
+		PRINT_TEXT "Branch %s $MOVED – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
 	fi
 }
 
