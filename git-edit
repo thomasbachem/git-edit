@@ -1299,7 +1299,7 @@ GIT_UNDO () {
 
 	PRINT_ACTION "Undoing last operation (%s)..." "${NEW}"
 
-	local CMD="git update-ref -m 'git edit: undo $LABEL$_REFLOG_TAG' $REF $OLD $NEW"
+	local CMD="git update-ref -m ${(q-)${:-git edit: undo $LABEL$_REFLOG_TAG}} ${(q-)REF} ${(q-)OLD} ${(q-)NEW}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' has moved since that operation – refusing to rewind over newer work"
@@ -1937,7 +1937,7 @@ GIT_STASH () {
 
 	local CMD="git stash push -u"
 	PRINT_CMD "$CMD"
-	eval "$CMD -m '$COMMANDLINE'"
+	eval "$CMD -m ${(q-)COMMANDLINE}"
 	local STATUS=$?
 	
 	# Capture the new stash SHA
@@ -1969,7 +1969,7 @@ GIT_UNSTASH () {
 		local CMD="git -c color.status.added=normal -c color.status.changed=normal -c color.status.untracked=normal -c color.status.unmerged=red stash pop"
 		PRINT_CMD "git stash pop"
 
-		eval "$CMD '$STASH_REF'"
+		eval "$CMD ${(q-)STASH_REF}"
 		unset STASH_REF
 	fi
 }
@@ -2147,7 +2147,7 @@ GIT_REBASE_SQUASH () {
 	# Execute rebase
 	if [[ -n "$TEXT_MSG_FILE" ]]; then
 		GIT_SEQUENCE_EDITOR=$'sed -i ""'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
-		GIT_EDITOR="cp '$TEXT_MSG_FILE'" \
+		GIT_EDITOR="cp ${(qq)TEXT_MSG_FILE}" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 		rm -f "$TEXT_MSG_FILE"
 	else
@@ -2355,14 +2355,14 @@ GIT_EXEC () {
 	# Unique per-invocation worktree so concurrent --exec calls never collide
 	local WT=$(MKTEMP_DIR git-edit-exec)
 	rmdir "$WT"  # `git worktree add` wants to create the dir itself
-	local CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	local CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
 	eval "$CMD" || { rm -rf "$WT"; exit 1; }
 	_LINK_WORKTREE_EXTRAS "$WT"
 
 	# Register cleanup via the global hook so the `EXIT` trap removes the worktree on any
 	# exit path – success, failure or signal
-	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 
 	# A relative `core.hooksPath` the temp worktree lacks – an untracked one, as husky's `.husky/_`
 	# – is read from the checkout for this run, so the repo's hooks still run on what it commits
@@ -2469,7 +2469,7 @@ GIT_EXEC () {
 
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
-	local UPDATE="git update-ref -m 'git edit: $LABEL$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE="git update-ref -m ${(q-)${:-git edit: $LABEL$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE"
 	if ! _MOVE_REF "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
@@ -3007,13 +3007,13 @@ GIT_AMEND_INTO () {
 	# Step 2: isolated worktree at the fixup commit object
 	local WT=$(MKTEMP_DIR git-edit-amend-into)
 	rmdir "$WT"
-	local WT_CMD="git worktree add --detach '$WT' $FIXUP_COMMIT"
+	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)FIXUP_COMMIT}"
 	PRINT_CMD "$WT_CMD" 90
 	if ! eval "$WT_CMD" >/dev/null 2>&1; then
 		PRINT_ERR "Failed to create temp worktree"
 		exit 1
 	fi
-	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 	_LINK_WORKTREE_EXTRAS "$WT"
 
 	cd "$WT" || exit 1
@@ -3101,7 +3101,7 @@ GIT_AMEND_INTO () {
 
 	# Step 4 – atomic CAS-update of the branch ref, guarded on the pre-op tip, refusing where
 	# the branch moved during autosquash, since nothing was consumed and the staging stands
-	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${TARGET_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: amend-into ${TARGET_FULL:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
@@ -3164,13 +3164,13 @@ _AMEND_INTO_SNAPSHOT () {
 	STATE_FOLD=$(git commit-tree "$STAGED_TREE" -p "$ORIG_HEAD" -m "fold into ${TARGET_FULL:0:7}") || exit 1
 	STATE_WORKTREE=$(MKTEMP_DIR git-edit-snapshot)
 	rmdir "$STATE_WORKTREE"
-	local WT_CMD="git worktree add --detach '$STATE_WORKTREE' $ORIG_HEAD"
+	local WT_CMD="git worktree add --detach ${(q-)STATE_WORKTREE} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
 	if ! eval "$WT_CMD" >/dev/null 2>&1; then
 		PRINT_ERR "Failed to create temp worktree"
 		exit 1
 	fi
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 	_LINK_WORKTREE_EXTRAS "$STATE_WORKTREE"
 	STATE_TARGET=$TARGET_FULL
 	STATE_ORIG_HEAD=$ORIG_HEAD
@@ -3395,7 +3395,7 @@ _SNAPSHOT_RUN () {
 		EMIT_GATE_PAUSED "$WT" "$NEW_HEAD"
 		exit 2
 	fi
-	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		[ -n "$_STATE_OWNED" ] && _REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$WT"
@@ -3427,7 +3427,7 @@ _CONTINUE_SNAPSHOT () {
 		_CLEAR_STATE
 		exit 1
 	fi
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 	PRINT_ACTION "Continuing the snapshot fold into %s..." "$STATE_TARGET"
 	local WT=$STATE_WORKTREE P BLOB ENTRY
 	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
@@ -3462,7 +3462,7 @@ _CONTINUE_SNAPSHOT () {
 _ABORT_SNAPSHOT () {
 	PRINT_ACTION "Aborting the snapshot fold into %s..." "$STATE_TARGET"
 	if [ -d "$STATE_WORKTREE" ]; then
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -3778,7 +3778,7 @@ _SPLIT_APPLY () {
 	fi
 
 	# Atomic CAS ref update
-	local CMD="git update-ref -m 'git edit: split ${X:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m ${(q-)${:-git edit: split ${X:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)PREV_NEW} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during split – refusing to overwrite"
@@ -3889,7 +3889,7 @@ GIT_SPLIT_PAUSE () {
 		exit 1
 	fi
 	# Until the pause is recorded, as a parallel run's may take the slot first
-	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 	_LINK_WORKTREE_EXTRAS "$WT"
 
 	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
@@ -4024,7 +4024,7 @@ _CONTINUE_SPLIT () {
 		fi
 	fi
 
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	_SPLIT_APPLY "$X" "$TREE1" "$STATE_BRANCH" "$(git rev-parse "$STATE_BRANCH")" "$MSG"
 	_CLEAR_STATE
@@ -4035,7 +4035,7 @@ _ABORT_SPLIT () {
 	PRINT_ACTION "Aborting split of %s..." "${STATE_TARGET:0:7}"
 
 	if [ -d "$STATE_WORKTREE" ]; then
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -4175,13 +4175,13 @@ GIT_REORDER () {
 	# Isolated worktree at the current tip
 	local WT=$(MKTEMP_DIR git-edit-reorder)
 	rmdir "$WT"
-	local WT_CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
 	if ! eval "$WT_CMD" >/dev/null 2>&1; then
 		PRINT_ERR "Failed to create temp worktree"
 		exit 1
 	fi
-	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
@@ -4214,7 +4214,7 @@ SEQEOF
 	chmod +x "$SEQ"
 
 	_CAPTURE_BEGIN
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR='$SEQ' GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -4254,7 +4254,7 @@ SEQEOF
 	fi
 
 	# Atomic CAS-update, guarded on the pre-op tip
-	local UPDATE_CMD="git update-ref -m 'git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
@@ -4464,13 +4464,13 @@ GIT_ONTO () {
 
 	local WT=$(MKTEMP_DIR git-edit-onto)
 	rmdir "$WT"
-	local WT_CMD="git worktree add --detach '$WT' $ORIG_HEAD"
+	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
 	if ! eval "$WT_CMD" >/dev/null 2>&1; then
 		PRINT_ERR "Failed to create temp worktree"
 		exit 1
 	fi
-	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
@@ -4523,7 +4523,7 @@ GIT_ONTO () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: onto ${UPSTREAM_FULL:0:7}$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: onto ${UPSTREAM_FULL:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
@@ -4690,7 +4690,7 @@ _CONTINUE_ONTO () {
 	fi
 
 	cd "$STATE_WORKTREE" || exit 1
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	# Restore what the summary and the skip hint name the upstream by
 	ONTO_UPSTREAM=${STATE_UPSTREAM:-${STATE_TARGET:0:7}}
@@ -4737,7 +4737,7 @@ _CONTINUE_ONTO () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: onto ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: onto ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -4756,7 +4756,7 @@ _ABORT_ONTO () {
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -4776,7 +4776,7 @@ _CONTINUE_REORDER () {
 
 	cd "$STATE_WORKTREE" || exit 1
 
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing reorder around %s..." "${STATE_TARGET:0:7}"
 
@@ -4820,7 +4820,7 @@ _CONTINUE_REORDER () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: reorder around ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: reorder around ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -4845,7 +4845,7 @@ _CONTINUE_REBASE () {
 
 	cd "$STATE_WORKTREE" || exit 1
 
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
 
@@ -4906,7 +4906,7 @@ _CONTINUE_REBASE () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: $STATE_ACTION ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $STATE_ORIG_HEAD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: $STATE_ACTION ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -4924,7 +4924,7 @@ _ABORT_REBASE () {
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -4989,7 +4989,7 @@ _CONTINUE_EDIT () {
 
 	cd "$STATE_WORKTREE" || exit 1
 
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing edit of %s..." "${STATE_TARGET:0:7}"
 
@@ -5061,7 +5061,7 @@ _CONTINUE_EDIT () {
 		exit 2
 	fi
 
-	local UPDATE_CMD="git update-ref -m 'git edit: edit ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $BASE"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: edit ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)BASE}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_CLEANUP_HOOK=""
@@ -5097,7 +5097,7 @@ _ABORT_EDIT () {
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -5115,7 +5115,7 @@ _ABORT_REORDER () {
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -6049,7 +6049,7 @@ _CONTINUE_AMEND_INTO () {
 	cd "$STATE_WORKTREE" || exit 1
 
 	# Once we successfully complete, the worktree should be cleaned up
-	_CLEANUP_HOOK="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing amend-into of %s..." "${STATE_TARGET:0:7}"
 
@@ -6105,7 +6105,7 @@ _CONTINUE_AMEND_INTO () {
 	# branch never having moved, while legacy states guard on the fixup tip
 	local GUARD=$STATE_ORIG_HEAD
 	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
-	local UPDATE_CMD="git update-ref -m 'git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG' $STATE_BRANCH $NEW_HEAD $GUARD"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)GUARD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
@@ -6145,7 +6145,7 @@ _ABORT_AMEND_INTO () {
 	# Cleanup the worktree (which is in a paused rebase state)
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force '$STATE_WORKTREE' 2>/dev/null; rm -rf '$STATE_WORKTREE'"
+		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 		PRINT_CMD "$CMD" 90
 		eval "$CMD"
 	fi
@@ -6155,7 +6155,7 @@ _ABORT_AMEND_INTO () {
 	if [ -n "$STATE_HEAD_WITH_FIXUP" ]; then
 		local CURRENT=$(git rev-parse "$STATE_BRANCH" 2>/dev/null)
 		if [ "$CURRENT" = "$STATE_HEAD_WITH_FIXUP" ]; then
-			local UPDATE_CMD="git update-ref -m 'git edit: abort amend-into$_REFLOG_TAG' $STATE_BRANCH $STATE_ORIG_HEAD $STATE_HEAD_WITH_FIXUP"
+			local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: abort amend-into$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)STATE_ORIG_HEAD} ${(q-)STATE_HEAD_WITH_FIXUP}"
 			PRINT_CMD "$UPDATE_CMD" 90
 			_MOVE_REF "$UPDATE_CMD" 2>/dev/null
 			git read-tree "$STATE_HEAD_WITH_FIXUP" 2>/dev/null
@@ -6463,7 +6463,7 @@ GIT_REWORD () {
 
 	# Atomic compare-and-swap on the ref – refuse where the branch moved under us, such as a
 	# concurrent commit landing from another tool
-	local CMD="git update-ref -m 'git edit: reword ${TARGET:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m ${(q-)${:-git edit: reword ${TARGET:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)PREV_NEW} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during reword – refusing to overwrite"
@@ -6677,7 +6677,7 @@ GIT_REWORD_BATCH () {
 
 	# Single atomic compare-and-swap – refuse if the branch moved meanwhile
 	# (a concurrent commit or rewrite), exactly as the single reword does
-	local CMD="git update-ref -m 'git edit: reword ${#TARGETS[@]} commits$_REFLOG_TAG' $REF $NEW_HEAD $ORIG_HEAD"
+	local CMD="git update-ref -m ${(q-)${:-git edit: reword ${#TARGETS[@]} commits$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during batch reword – refusing to overwrite"
@@ -6864,7 +6864,7 @@ GIT_RESQUASH () {
 	_REBUILD_DESCENDANTS "$NEWEST"
 
 	# Atomic ref update
-	local CMD="git update-ref -m 'git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}$_REFLOG_TAG' $REF $PREV_NEW $ORIG_HEAD"
+	local CMD="git update-ref -m ${(q-)${:-git edit: squash ${#COMMITS[@]} into ${OLDEST:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)PREV_NEW} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during resquash – refusing to overwrite"
@@ -8277,7 +8277,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		exit 1
 	fi
 	# Until the pause is recorded, as a parallel run's may take the slot first
-	_CLEANUP_HOOK="git worktree remove --force '$EDIT_WT' 2>/dev/null; rm -rf '$EDIT_WT'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)EDIT_WT} 2>/dev/null; rm -rf ${(q-)EDIT_WT}"
 	_LINK_WORKTREE_EXTRAS "$EDIT_WT"
 	_SAVE_STATE "operation=edit" "worktree=$EDIT_WT" "branch=refs/heads/$EDIT_BRANCH" \
 		"orig_head=$(git rev-parse HEAD)" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)"
@@ -8305,7 +8305,7 @@ if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -e
 	OPT_DIR=(--dir)
 	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso)
 	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
-	_CLEANUP_HOOK="git worktree remove --force '$WORKTREE_DIR' 2>/dev/null; rm -rf '$WORKTREE_DIR'"
+	_CLEANUP_HOOK="git worktree remove --force ${(q-)WORKTREE_DIR} 2>/dev/null; rm -rf ${(q-)WORKTREE_DIR}"
 fi
 
 
@@ -8427,14 +8427,14 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		fi
 
 		# Sync existing worktree to current `HEAD`
-		CMD="git -C '$WORKTREE_DIR' reset --hard $ORIG_HEAD"
+		CMD="git -C ${(q-)WORKTREE_DIR} reset --hard ${(q-)ORIG_HEAD}"
 		PRINT_CMD "$CMD"
 		eval "$CMD" >/dev/null || ABORT
 	else
 		# Create a new detached worktree, auto-recovering from a stale registration – git refuses
 		# where the path is listed by `git worktree list` but missing on disk, which happens when
 		# a previous one was removed with `rm -rf` instead of `git worktree remove`
-		CMD="git worktree add --detach '$WORKTREE_DIR' $ORIG_HEAD"
+		CMD="git worktree add --detach ${(q-)WORKTREE_DIR} ${(q-)ORIG_HEAD}"
 		PRINT_CMD "$CMD"
 		# C locale – the stale-registration retry below matches git's English wording
 		WT_OUT=$( export LC_ALL=C; eval "$CMD" 2>&1 )
@@ -8444,7 +8444,7 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 				# This path alone – a prune drops every vanished worktree's records, a parallel
 				# session's reflog with them, the one trail to commits it built there
 				ECHO_E "\e[0;90m(stale worktree registration – reclaiming its path and retrying)\e[0m"
-				CMD="git worktree add -f --detach '$WORKTREE_DIR' $ORIG_HEAD"
+				CMD="git worktree add -f --detach ${(q-)WORKTREE_DIR} ${(q-)ORIG_HEAD}"
 				PRINT_CMD "$CMD"
 				eval "$CMD" || ABORT
 			else
@@ -8529,7 +8529,7 @@ if [ -n "$WORKTREE_DIR" ]; then
 		# Atomic compare-and-swap – only update where the ref still matches `ORIG_HEAD`, so a
 		# concurrent commit, from an editor working in the main checkout say, is never
 		# silently overwritten by this run
-		CMD="git update-ref -m 'git edit: $ACTION ${COMMIT:0:7}$_REFLOG_TAG' refs/heads/$ORIG_BRANCH $NEW_HEAD $ORIG_HEAD"
+		CMD="git update-ref -m ${(q-)${:-git edit: $ACTION ${COMMIT:0:7}$_REFLOG_TAG}} ${(q-)${:-refs/heads/$ORIG_BRANCH}} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 		PRINT_CMD "$CMD"
 		if ! _MOVE_REF "$CMD" 2>/dev/null; then
 			PRINT_ERR "Branch '$ORIG_BRANCH' moved during rebase – refusing to overwrite"
