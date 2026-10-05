@@ -5224,13 +5224,14 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 		echo "$LB" > "lb_$LB.txt" && git add "lb_$LB.txt" && git commit -qm "LB $LB"
 	done
 	local LB_ONE=$(git rev-parse --short ':/LB one') LB_TWO=$(git rev-parse --short ':/LB two')
-	# Twice the 64 KiB a macOS pipe buffer grows to
-	local LB_BODY=$(printf 'Body line %s of a long batch reword\n' {1..3500})
-	_ST_RUN_IN "$(printf -- '--- %s\nLB one reworded\n\n%s\n--- %s\nLB two reworded\n' "$LB_ONE" "$LB_BODY" "$LB_TWO")" -M --text -
+	# Twice the 64 KiB a macOS pipe buffer grows to, split across both messages – Linux caps the
+	# argument `commit-tree -m` takes a message as at 128 KiB
+	local LB_BODY=$(printf 'Body line %s of a long batch reword\n' {1..1800})
+	_ST_RUN_IN "$(printf -- '--- %s\nLB one reworded\n\n%s\n--- %s\nLB two reworded\n\n%s\n' "$LB_ONE" "$LB_BODY" "$LB_TWO" "$LB_BODY")" -M --text -
 	_ST_EQ "a batch past the pipe buffer rewords" "$RC" "0"
 	_ST_EQ "both its commits" "$(git log -2 --format=%s | sort | tr '\n' ' ')" "LB one reworded LB two reworded "
-	# The two-dash check reads the same text
-	_ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n\n%s\n' "$LB_ONE" "$LB_BODY")" -M --text -
+	# The two-dash check reads as long a text
+	_ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n\n%s\n%s\n' "$LB_ONE" "$LB_BODY" "$LB_BODY")" -M --text -
 	_ST_OUT_HAS "and one with two-dash headers is named as such" "Records start with '--- <commit>'"
 
 	# --- 101. a move or reorder checks each commit it puts below one that came before it ---
@@ -5643,71 +5644,78 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	printf 'a\nb\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
 	_ST_RUN --amend-into="$SN_T" --snapshot --text="SN reworded" -- sn-dir/sn.txt
 	_ST_OUT_HAS "as is --text with it" 'takes no --text'
-	_ST_RUN --amend-into="$SN_T" --snapshot -- sn-dir/sn.txt
-	_ST_EQ "a conflict beside the fold pauses" "$RC" "2"
-	_ST_OUT_HAS "at the oldest commit it reaches" 'at: [0-9a-f]* SN target'
-	local SN_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	_ST_CHECK "laid out as a merge's conflict" test -n "$(git -C "${SN_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U 2>/dev/null)"
-	_ST_RUN --status
-	_ST_OUT_HAS "which --status reports as one" "git-edit: conflict – resolve in ${SN_WT:-$ST_NO_WT} (sn.txt)"
-	_ST_RUN --continue
-	_ST_OUT_HAS "a continue with it unresolved is refused" 'Unresolved paths remain'
-	git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
-	_ST_RUN --continue
-	_ST_OUT_HAS "as is one staging its markers" 'still contains conflict markers'
-	printf 'a\nb\nC\nd\ne\nf\ng\nh\ni\n' > "${SN_WT:-$ST_NO_WT}/sn.txt" && git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
-	_ST_RUN --continue
-	_ST_EQ "the commit sharing its content takes the resolution, the next content stops" "$RC" "2"
-	_ST_OUT_HAS "at the next one" 'at: [0-9a-f]* SN tail'
-	_ST_EQ "pre-filled by rerere" "$(cat "${SN_WT:-$ST_NO_WT}/sn.txt" 2>/dev/null)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\nI')"
-	git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
-	_ST_RUN --continue
-	_ST_EQ "and the fold lands" "$RC" "0"
-	_ST_EQ "into the target" "$(git show HEAD~5:sn.txt)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\ni')"
-	_ST_EQ "the commit sharing its content" "$(git show HEAD~4:sn.txt)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\ni')"
-	_ST_EQ "every later one, the move's old path included" "$(git show HEAD~2:sn.txt)" "$(printf 'a\nb\nC\nD\ne\nf\ng\nh\nI')"
-	_ST_EQ "and the tip" "$(git show HEAD:sn-dir/sn.txt)" "$(printf 'a\nb\nC\nD\ne\nf\ng\nH\nI')"
-	_ST_EQ "each commit keeps its author, date and subject" "$(git log -6 --format='%an %ae %aI %s')" "$SN_AUTHORS"
-	_ST_CHECK "and the staged fold is consumed" git diff --cached --quiet -- sn-dir/sn.txt
-	# Away from every later change, a fold merges clean throughout
-	local SN_T2=$(git rev-parse HEAD~5)
-	printf 'A\nb\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
-	_ST_RUN --amend-into="$SN_T2" --snapshot -- sn-dir/sn.txt
-	_ST_EQ "a fold clear of them lands at once" "$RC:$(git show HEAD~5:sn.txt | head -1):$(git show HEAD:sn-dir/sn.txt | head -1)" "0:A:A"
-	local SN_BEFORE=$(git rev-parse HEAD)
-	printf 'A\nb\nCC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
-	_ST_RUN --amend-into="$(git rev-parse HEAD~5)" --snapshot -- sn-dir/sn.txt
-	_ST_RUN --abort
-	_ST_EQ "an abort leaves the branch" "$RC:$(git rev-parse HEAD)" "0:$SN_BEFORE"
-	_ST_CHECK "and the fold staged" test -n "$(git diff --cached --name-only -- sn-dir/sn.txt)"
-	git reset -q -- sn-dir/sn.txt && git checkout -q -- sn-dir/sn.txt
-	# A deletion meeting the fold has no one text to resolve
-	echo y > sn-other.txt && git add sn-other.txt
-	_ST_RUN --amend-into="$(git rev-parse HEAD~5)" --snapshot --allow-new-path -- sn-other.txt
-	_ST_EQ "a conflict not over content refuses" "$RC:$(git rev-parse HEAD)" "1:$SN_BEFORE"
-	_ST_OUT_HAS "naming it" 'not over its content'
-	git reset -q -- sn-other.txt && git checkout -q -- sn-other.txt
-	# A commit whose change the fold overwrites is left empty and named, one empty before is not
-	local SN_E=$(git rev-parse HEAD)
-	git commit -q --allow-empty -m "SN empty"
-	printf 'A\nB\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git commit -qam "SN redundant"
-	printf 'A\nX\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
-	_ST_RUN --amend-into="$SN_E" --snapshot -- sn-dir/sn.txt
-	SN_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	printf 'A\nX\nC\nD\ne\nf\ng\nH\nI\n' > "${SN_WT:-$ST_NO_WT}/sn-dir/sn.txt" && git -C "${SN_WT:-$ST_NO_WT}" add sn-dir/sn.txt
-	_ST_RUN --continue
-	_ST_OUT_HAS "a commit the fold overwrote is named as left empty" 'left empty by the fold: [0-9a-f]* SN redundant'
-	_ST_OUT_LACKS "while one empty before is not" 'left empty by the fold: [0-9a-f]* SN empty'
-	# A failed check pauses with the result built – a continue checks again, `--no-verify` applies it
-	printf 'A\nX\nC\nD\ne\nf\ng\nH\nZ\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
-	local SN_PRE=$(git rev-parse HEAD)
-	_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot --verify="! grep -q '^Z\$' sn-dir/sn.txt" -- sn-dir/sn.txt
-	_ST_EQ "a failed check pauses with nothing applied" "$RC:$(git rev-parse HEAD)" "2:$SN_PRE"
-	_ST_OUT_HAS "as a verify pause" 'git-edit: paused – verify failed'
-	_ST_RUN --continue
-	_ST_EQ "a continue checks again" "$RC" "2"
-	_ST_RUN --no-verify --continue
-	_ST_EQ "and --no-verify applies it" "$RC:$(git show HEAD~1:sn-dir/sn.txt | tail -1)" "0:Z"
+	# A git before 2.40 has no `merge-tree --merge-base`, so --snapshot refuses there, naming it
+	if _MERGE_TREE_TAKES_BASE; then
+		_ST_RUN --amend-into="$SN_T" --snapshot -- sn-dir/sn.txt
+		_ST_EQ "a conflict beside the fold pauses" "$RC" "2"
+		_ST_OUT_HAS "at the oldest commit it reaches" 'at: [0-9a-f]* SN target'
+		local SN_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+		_ST_CHECK "laid out as a merge's conflict" test -n "$(git -C "${SN_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U 2>/dev/null)"
+		_ST_RUN --status
+		_ST_OUT_HAS "which --status reports as one" "git-edit: conflict – resolve in ${SN_WT:-$ST_NO_WT} (sn.txt)"
+		_ST_RUN --continue
+		_ST_OUT_HAS "a continue with it unresolved is refused" 'Unresolved paths remain'
+		git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
+		_ST_RUN --continue
+		_ST_OUT_HAS "as is one staging its markers" 'still contains conflict markers'
+		printf 'a\nb\nC\nd\ne\nf\ng\nh\ni\n' > "${SN_WT:-$ST_NO_WT}/sn.txt" && git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
+		_ST_RUN --continue
+		_ST_EQ "the commit sharing its content takes the resolution, the next content stops" "$RC" "2"
+		_ST_OUT_HAS "at the next one" 'at: [0-9a-f]* SN tail'
+		_ST_EQ "pre-filled by rerere" "$(cat "${SN_WT:-$ST_NO_WT}/sn.txt" 2>/dev/null)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\nI')"
+		git -C "${SN_WT:-$ST_NO_WT}" add sn.txt
+		_ST_RUN --continue
+		_ST_EQ "and the fold lands" "$RC" "0"
+		_ST_EQ "into the target" "$(git show HEAD~5:sn.txt)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\ni')"
+		_ST_EQ "the commit sharing its content" "$(git show HEAD~4:sn.txt)" "$(printf 'a\nb\nC\nd\ne\nf\ng\nh\ni')"
+		_ST_EQ "every later one, the move's old path included" "$(git show HEAD~2:sn.txt)" "$(printf 'a\nb\nC\nD\ne\nf\ng\nh\nI')"
+		_ST_EQ "and the tip" "$(git show HEAD:sn-dir/sn.txt)" "$(printf 'a\nb\nC\nD\ne\nf\ng\nH\nI')"
+		_ST_EQ "each commit keeps its author, date and subject" "$(git log -6 --format='%an %ae %aI %s')" "$SN_AUTHORS"
+		_ST_CHECK "and the staged fold is consumed" git diff --cached --quiet -- sn-dir/sn.txt
+		# Away from every later change, a fold merges clean throughout
+		local SN_T2=$(git rev-parse HEAD~5)
+		printf 'A\nb\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
+		_ST_RUN --amend-into="$SN_T2" --snapshot -- sn-dir/sn.txt
+		_ST_EQ "a fold clear of them lands at once" "$RC:$(git show HEAD~5:sn.txt | head -1):$(git show HEAD:sn-dir/sn.txt | head -1)" "0:A:A"
+		local SN_BEFORE=$(git rev-parse HEAD)
+		printf 'A\nb\nCC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
+		_ST_RUN --amend-into="$(git rev-parse HEAD~5)" --snapshot -- sn-dir/sn.txt
+		_ST_RUN --abort
+		_ST_EQ "an abort leaves the branch" "$RC:$(git rev-parse HEAD)" "0:$SN_BEFORE"
+		_ST_CHECK "and the fold staged" test -n "$(git diff --cached --name-only -- sn-dir/sn.txt)"
+		git reset -q -- sn-dir/sn.txt && git checkout -q -- sn-dir/sn.txt
+		# A deletion meeting the fold has no one text to resolve
+		echo y > sn-other.txt && git add sn-other.txt
+		_ST_RUN --amend-into="$(git rev-parse HEAD~5)" --snapshot --allow-new-path -- sn-other.txt
+		_ST_EQ "a conflict not over content refuses" "$RC:$(git rev-parse HEAD)" "1:$SN_BEFORE"
+		_ST_OUT_HAS "naming it" 'not over its content'
+		git reset -q -- sn-other.txt && git checkout -q -- sn-other.txt
+		# A commit whose change the fold overwrites is left empty and named, one empty before is not
+		local SN_E=$(git rev-parse HEAD)
+		git commit -q --allow-empty -m "SN empty"
+		printf 'A\nB\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git commit -qam "SN redundant"
+		printf 'A\nX\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
+		_ST_RUN --amend-into="$SN_E" --snapshot -- sn-dir/sn.txt
+		SN_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+		printf 'A\nX\nC\nD\ne\nf\ng\nH\nI\n' > "${SN_WT:-$ST_NO_WT}/sn-dir/sn.txt" && git -C "${SN_WT:-$ST_NO_WT}" add sn-dir/sn.txt
+		_ST_RUN --continue
+		_ST_OUT_HAS "a commit the fold overwrote is named as left empty" 'left empty by the fold: [0-9a-f]* SN redundant'
+		_ST_OUT_LACKS "while one empty before is not" 'left empty by the fold: [0-9a-f]* SN empty'
+		# A failed check pauses with the result built – a continue checks again, `--no-verify` applies it
+		printf 'A\nX\nC\nD\ne\nf\ng\nH\nZ\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
+		local SN_PRE=$(git rev-parse HEAD)
+		_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot --verify="! grep -q '^Z\$' sn-dir/sn.txt" -- sn-dir/sn.txt
+		_ST_EQ "a failed check pauses with nothing applied" "$RC:$(git rev-parse HEAD)" "2:$SN_PRE"
+		_ST_OUT_HAS "as a verify pause" 'git-edit: paused – verify failed'
+		_ST_RUN --continue
+		_ST_EQ "a continue checks again" "$RC" "2"
+		_ST_RUN --no-verify --continue
+		_ST_EQ "and --no-verify applies it" "$RC:$(git show HEAD~1:sn-dir/sn.txt | tail -1)" "0:Z"
+	else
+		_ST_RUN --amend-into="$SN_T" --snapshot -- sn-dir/sn.txt
+		_ST_OUT_HAS "below git 2.40 it refuses, naming the version it needs" 'needs git 2.40 or later'
+		git reset -q -- sn-dir/sn.txt && git checkout -q -- sn-dir/sn.txt
+	fi
 
 	# --- 112. a fold takes a non-ASCII or quoted path by its bytes, not git's quoting ---
 	# Read back from git's quoted output, `"\303\234ber.txt"` became a file beside the real one
@@ -5721,18 +5729,21 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "in the files themselves" "$(git show 'HEAD~1:Über.txt' | head -1):$(git show 'HEAD~1:q"uote.txt' | head -1)" "U:Q"
 	_ST_EQ "with nothing beside them" "$(git ls-tree --name-only HEAD~1 | grep -c -e uote -e ber)" "2"
 	_ST_CHECK "and nothing left staged" test -z "$(git diff --cached --name-only)"
-	printf 'UU\nv\n' > 'Über.txt' && git add 'Über.txt'
-	_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot -- 'Über.txt'
-	_ST_EQ "a snapshot fold too" "$RC:$(git show 'HEAD~1:Über.txt' | head -1):$(git ls-tree --name-only HEAD~1 | grep -c -e uote -e ber)" "0:UU:2"
-	# A conflict on such a path is read from merge-tree and laid out by name as well
-	printf 'W\nv\n' > 'Über.txt' && git commit -qam "UQ later"
-	printf 'X\nv\n' > 'Über.txt' && git add 'Über.txt'
-	_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot -- 'Über.txt'
-	_ST_EQ "a snapshot conflict on it pauses" "$RC" "2"
-	local UQ_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	printf 'X\nv\n' > "${UQ_WT:-$ST_NO_WT}/Über.txt" && git -C "${UQ_WT:-$ST_NO_WT}" add 'Über.txt'
-	_ST_RUN --continue
-	_ST_EQ "and lands once resolved" "$RC:$(git show 'HEAD~1:Über.txt' | head -1)" "0:X"
+	# A snapshot fold needs git 2.40, scenario 111 checking the refusal below it
+	if _MERGE_TREE_TAKES_BASE; then
+		printf 'UU\nv\n' > 'Über.txt' && git add 'Über.txt'
+		_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot -- 'Über.txt'
+		_ST_EQ "a snapshot fold too" "$RC:$(git show 'HEAD~1:Über.txt' | head -1):$(git ls-tree --name-only HEAD~1 | grep -c -e uote -e ber)" "0:UU:2"
+		# A conflict on such a path is read from merge-tree and laid out by name as well
+		printf 'W\nv\n' > 'Über.txt' && git commit -qam "UQ later"
+		printf 'X\nv\n' > 'Über.txt' && git add 'Über.txt'
+		_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot -- 'Über.txt'
+		_ST_EQ "a snapshot conflict on it pauses" "$RC" "2"
+		local UQ_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+		printf 'X\nv\n' > "${UQ_WT:-$ST_NO_WT}/Über.txt" && git -C "${UQ_WT:-$ST_NO_WT}" add 'Über.txt'
+		_ST_RUN --continue
+		_ST_EQ "and lands once resolved" "$RC:$(git show 'HEAD~1:Über.txt' | head -1)" "0:X"
+	fi
 
 	# --- 113. --commit and --whole take files whole from the checkout ---
 	# As `git commit -- <paths>` takes them, composed apart from the shared index – refused where
