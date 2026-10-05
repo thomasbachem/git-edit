@@ -1230,6 +1230,24 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "reports the checkout as current" 'index re-synced, your checkout is current'
 	_ST_OUT_LACKS "and offers no restore" 'Reconcile those paths'
 	_ST_CHECK "nothing left staged or modified" sh -c "test -z \"\$(git status --porcelain -- xi.txt)\""
+	# The same change staged first, a rename too – entries already as the new tip has them are in
+	# sync, never named as differing
+	echo "xs" > xs.txt && echo "xt" > xt.txt && git add xs.txt xt.txt && git commit -qm "XS to change, XT to move"
+	echo "changed" > xs.txt && git add xs.txt && git mv xt.txt xu.txt
+	_ST_RUN --exec -- sh -c 'echo changed > xs.txt && git mv xt.txt xu.txt && git add xs.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec over a checkout that staged the change exits 0" "$RC" "0"
+	_ST_OUT_LACKS "names none of those entries as left alone" 'Index entries left alone'
+	_ST_OUT_HAS "and reports the checkout as current" 'index re-synced, your checkout is current'
+	_ST_CHECK "nothing left staged or modified there" sh -c "test -z \"\$(git status --porcelain -- xs.txt xt.txt xu.txt)\""
+	# A conflicted path is mid-merge – never reset, its stages gone, and never taken for in sync
+	printf '100644 %s 1\txv.txt\n100644 %s 2\txv.txt\n' "$(echo one | git hash-object -w --stdin)" "$(echo two | git hash-object -w --stdin)" | git update-index --index-info
+	printf '0 %s\txs.txt\n100644 %s 1\txs.txt\n100644 %s 2\txs.txt\n' "$(git rev-parse HEAD:xs.txt)" "$(echo one | git hash-object -w --stdin)" "$(echo two | git hash-object -w --stdin)" | git update-index --index-info
+	_ST_RUN --exec -- sh -c 'echo xv > xv.txt && git rm -q xs.txt && git add xv.txt && git commit -q --amend --no-edit'
+	_ST_EQ "exec over conflicted entries exits 0" "$RC" "0"
+	_ST_OUT_HAS "names a conflicted path the rewrite added as left alone" 'Index entries left alone.*xv\.txt'
+	_ST_OUT_HAS "and one it removed" 'Index entries left alone.*xs\.txt'
+	_ST_EQ "their stages survive" "$(git ls-files -u -- xv.txt xs.txt | wc -l | tr -d ' ')" "4"
+	git reset -q --hard
 	# A checkout carrying uncommitted edits in a changed path holds neither tip's content, so
 	# calling it stale is false and the restore would discard those lines – it is named as left
 	# alone instead. The everyday shape here: a shared checkout where the file always has WIP
@@ -1276,6 +1294,13 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "and does not call the entry a differing one" 'Index entries left alone'
 	_ST_CHECK "the entry is still stranded" sh -c "! git diff --cached --quiet -- xj.txt"
 	git reset -q --hard
+	# An entry staged apart from both tips stays put, so no headline may call the index re-synced
+	echo xp > xp.txt && git add xp.txt && git commit -qm "XP base"
+	echo peer > xp.txt && git add xp.txt && echo new > xp.txt
+	_ST_RUN --exec -- sh -c 'echo new > xp.txt && git commit -qam "XP lands"'
+	_ST_OUT_HAS "an entry staged apart from both tips is named" 'left alone.*xp\.txt'
+	_ST_OUT_LACKS "under no headline calling the index re-synced" 'your checkout is current'
+	git reset -q -- xp.txt
 
 	# --- 40. a continue names the untracked files it absorbs ---
 	_ST_SCENARIO "\e[1;96m[40] untracked absorption is named\e[0m"

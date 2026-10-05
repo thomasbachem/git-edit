@@ -1532,16 +1532,21 @@ _BRANCH_CHECKOUT () {
 # the caller's own) on a changed path stays put and is named instead
 _RESYNC_STRANDED_ENTRIES () {
 	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED, LEFT_ALONE and LOCKED
-	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXENT
+	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXALL IDXENT
 	local -a SYNC
 	RESYNCED=(); LEFT_ALONE=(); LOCKED=()
 	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
 		[ -z "$P" ] && continue
 		OLDENT=$(git ls-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
-		IDXENT=$(git -C "$CO" ls-files -s -- "$P" 2>/dev/null | awk '$3 == 0 {print $1" "$2}')
-		if [ "$OLDENT" = "$IDXENT" ]; then
+		IDXALL=$(git -C "$CO" ls-files -s -- "$P" 2>/dev/null)
+		IDXENT=$(print -r -- "$IDXALL" | awk 'NF && $3 == 0 {print $1" "$2}')
+		# A conflicted path is mid-merge – a reset would discard its stages
+		if print -r -- "$IDXALL" | awk 'NF && $3 != 0 {found = 1} END {exit !found}'; then
+			LEFT_ALONE+=("$P")
+		elif [ "$OLDENT" = "$IDXENT" ]; then
 			SYNC+=("$P")
-		else
+		# One staged as the new tip has it is in sync already
+		elif [ "$IDXENT" != "$(git ls-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
 			LEFT_ALONE+=("$P")
 		fi
 	done
@@ -1699,7 +1704,8 @@ _RECONCILE_CHECKOUT () {
 		PRINT_TEXT "Match the committed mode: %s" 33 "$CHMOD"
 	fi
 	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
-		[ -n "$CURRENT_HEADLINE" ] && [ $(( ${#MODIFIED[@]} + ${#REVERTING[@]} + ${#RENAMED[@]} + ${#MODE_ONLY[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		# "Index re-synced" holds only where no entry was left alone or locked out
+		[ -n "$CURRENT_HEADLINE" ] && [ $(( ${#MODIFIED[@]} + ${#REVERTING[@]} + ${#RENAMED[@]} + ${#MODE_ONLY[@]} + ${#LEFT_ALONE[@]} + ${#LOCKED[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
 		return 0
 	fi
 	PRINT_TEXT "%s" 33 "$STALE_HEADLINE"
