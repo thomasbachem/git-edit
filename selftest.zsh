@@ -5884,6 +5884,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	printf 'g\nmine\n' > 'wc-[g].txt' && printf 'g\nwip\n' > wc-g.txt && printf 'c\nx\ny\nz\nmine\n' > ':wc-colon.txt'
 	_ST_RUN --commit --text "WC odd names again" -- 'wc-[g].txt' ':wc-colon.txt'
 	_ST_EQ "a name like a pattern commits as itself" "$RC:$(git show --name-only --format= HEAD | sort | tr '\n' ' ')" "0::wc-colon.txt wc-[g].txt "
+	_ST_EQ "and re-syncs as itself, the file it would match keeping its WIP" "$(git status --porcelain -- ':(literal)wc-[g].txt' ':(literal):wc-colon.txt' wc-g.txt)" " M wc-g.txt"
 	export GIT_EDIT_ACTOR=wc-peer
 	_ST_RUN --exec -- sh -c "printf 'C\nx\ny\nz\nmine\n' > ./:wc-colon.txt && git commit -qam 'WC peer on an odd name'"
 	export GIT_EDIT_ACTOR=wc-self
@@ -5894,6 +5895,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --commit --text "WC remove an odd name" -- ':wc-colon.txt'
 	_ST_EQ "and a removal finds it at the tip" "$RC:$(git cat-file -e 'HEAD::wc-colon.txt' 2>/dev/null && echo kept || echo gone)" "0:gone"
 	_ST_RUN --exec -- sh -c "printf 'g\nmine\nlanded\n' > 'wc-[g].txt' && git commit -qam 'WC land beside the checkout'"
+	_ST_OUT_HAS "a restore hint marks such a name literal" "restore --source=HEAD --worktree -- ':(literal)wc-\[g\]\.txt'"
 	git checkout -q -- ':(literal)wc-[g].txt' && printf 'g\nmine\nlanded\nfolded\n' > 'wc-[g].txt' && echo f > ':wc-fold.txt'
 	_ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- 'wc-[g].txt' ':wc-fold.txt'
 	_ST_EQ "--whole folds such names as themselves" "$RC:$(git show 'HEAD:wc-[g].txt' | tail -1):$(git show 'HEAD::wc-fold.txt'):$(git show HEAD:wc-g.txt | tail -1)" "0:folded:f:g"
@@ -5983,6 +5985,56 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "a whole-file fold's mode change names the chmod" 'Restore the mode with chmod'
 	chmod -x wc-two.txt
 	export GIT_EDIT_ACTOR=
+
+	# --- 114. a name git hands back reaches it as itself ---
+	# Read as a pattern, `[id].tsx` matches `i.tsx` beside it, and a leading `:` reads as magic
+	_ST_SCENARIO "\e[1;96m[114] a name git hands back reaches it as itself, never as a pattern\e[0m"
+	# Each call naming a path after `--` takes it literally – per call, through its function's
+	# `GIT_LITERAL_PATHSPECS`, or by taking no pathspec at all – bar the caller's own pathspecs
+	local PN_AWK='
+		/^[A-Za-z_][A-Za-z0-9_]* \(\) \{/ || /^}/ { lit = 0 }
+		/local -x GIT_LITERAL_PATHSPECS=1/ { lit = 1 }
+		/^[[:space:]]*#/ { next }
+		/git[^;|&]* -- "?\$/ {
+			seen++
+			if (lit || /--literal-pathspecs|:\(literal\)|_QUOTE_PATHS|"\$\{(AMEND_)?PATHSPECS\[@\]\}"/ || / (update-index|hash-object|blame) |--no-index/) next
+			print NR ": " $0
+		}
+		END { print "seen " seen + 0 }'
+	local -a PN_OUT
+	PN_OUT=("${(@f)$(awk "$PN_AWK" "$SELF")}")
+	_ST_EQ "every name it hands git after -- reads as itself" "${(F)PN_OUT[1,-2]}" ""
+	_ST_CHECK "across every call taking one" test "${PN_OUT[-1]#seen }" -ge 30
+	printf '%s\n' 'A () {' '	local -x GIT_LITERAL_PATHSPECS=1' '	git log -- "$P"' '}' 'git reset -q -- "${NAMES[@]}"' \
+		'B () {' '	git log -- "$P"' '	git log -- ":(literal)$P"' '	git diff -- "${AMEND_PATHSPECS[@]}"' '}' > "$TMP/pn-fixture"
+	PN_OUT=("${(@f)$(awk "$PN_AWK" "$TMP/pn-fixture")}")
+	_ST_EQ "the check flags a bare one, a literal function's scope ending with it" "${(F)PN_OUT}" $'5: git reset -q -- "${NAMES[@]}"\n7: \tgit log -- "$P"\nseen 4'
+	# A fold's auto-target and its re-sync take the staged name, not what it would match
+	printf 'a\nb\n' > 'pn-[i].txt' && git add -- ':(literal)pn-[i].txt' && git commit -qm "PN pattern-like name"
+	printf 'x\n' > pn-i.txt && git add pn-i.txt && git commit -qm "PN the name it matches"
+	printf 'x\ny\n' > pn-i.txt && git add pn-i.txt
+	printf 'a\nb\nc\n' > 'pn-[i].txt' && git add -- ':(literal)pn-[i].txt'
+	_ST_RUN --amend-into=auto -- ':(literal)pn-[i].txt'
+	_ST_EQ "auto-target takes the commit that touched the name itself" "$RC:$(git log -1 --format=%s HEAD~1):$(git show 'HEAD~1:pn-[i].txt' | tail -1)" "0:PN pattern-like name:c"
+	_ST_EQ "and the staging it would match stays staged" "$(git diff --cached --name-only)" "pn-i.txt"
+	git restore --staged --worktree -- pn-i.txt
+	# A name git C-quotes in its line form – a backslash, a double quote – re-syncs and carries as
+	# itself, as a run does under the caller's own pathspec settings
+	printf 'v1\n' > 'pn\b.txt' && printf 'v1\n' > 'pn"q.txt' && git add -- ':(literal)pn\b.txt' ':(literal)pn"q.txt' && git commit -qm "PN quoted names"
+	printf 'v2\n' > 'pn\b.txt' && printf 'v2\n' > 'pn"q.txt'
+	_ST_RUN --commit --text "PN quoted names whole" -- 'pn\b.txt' 'pn"q.txt'
+	_ST_EQ "a name git quotes re-syncs as itself, the checkout clean" "$RC:$(git status --porcelain -- ':(literal)pn\b.txt' ':(literal)pn"q.txt')" "0:"
+	local PN_OLD=$(git rev-parse HEAD)
+	_ST_RUN --exec -- sh -c "printf 'v2\nlanded\n' > 'pn\"q.txt' && git commit -qam 'PN land on a quoted name'"
+	printf 'mine\nv2\n' > 'pn"q.txt'
+	_ST_RUN --carry="$PN_OLD"
+	_ST_EQ "and --carry merges onto it" "$RC:$(tr '\n' ' ' < 'pn"q.txt')" "0:mine v2 landed "
+	git checkout -q -- ':(literal)pn"q.txt'
+	printf 'v3\n' > pn-i.txt
+	export GIT_GLOB_PATHSPECS=1
+	_ST_RUN --commit --text "PN under glob pathspecs" -- pn-i.txt
+	unset GIT_GLOB_PATHSPECS
+	_ST_EQ "a caller's GIT_GLOB_PATHSPECS leaves the re-sync intact" "$RC:$(git status --porcelain -- pn-i.txt)" "0:"
 
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))

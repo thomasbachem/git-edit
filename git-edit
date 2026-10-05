@@ -63,6 +63,9 @@ if [ -z "$GIT_CONFIG_COUNT" ]; then
 	export GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
 	export GIT_CONFIG_KEY_2=core.quotePath GIT_CONFIG_VALUE_2=false
 fi
+# Pathspec semantics are git-edit's own – a caller's glob setting refuses the `:(literal)` names
+# it passes, a literal one reads them as file names
+unset GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS
 
 # Cap on the commits a stale SHA's resolution computes a patch id for – the author date
 # filter ahead of it normally leaves a handful, so this only bites on imported or scripted
@@ -726,7 +729,7 @@ _PRINT_CONFLICT_DETAIL () {
 		local STEP_END=${STEPS[2]}
 		if [ "$STEP_NOW" = "$STEP_END" ]; then
 			PRINT_TEXT "Final step – a reorder preserves the tree, so the resolution is exactly the pre-op content:" 33 >&2
-			ECHO_E "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(echo "$UNMERGED" | tr '\n' ' ' | sed 's/ $//')\e[0m" >&2
+			ECHO_E "\e[0;33m  git -C $WT checkout ${PREOP:0:12} -- $(_QUOTE_PATHS "${(@f)UNMERGED}")\e[0m" >&2
 			ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 		else
 			PRINT_TEXT "Step %s rebuilds a state that never existed – author its content rather than deriving it:" 33 "$STEP_NOW/$STEP_END" >&2
@@ -1327,7 +1330,10 @@ _CHANGED_LINES () {
 GIT_CARRY () {
 	# Args: [<old tip>] – by default, the last journaled rewrite of the checkout's branch
 	local CO REF OLD NEW P SRC LINE MERGE_RC OURS_HASH TMPF LINK
+	local -i I
 	local -a J CARRIED LEFT
+	# Every path here is a name, never a pattern
+	local -x GIT_LITERAL_PATHSPECS=1
 	CO=$(git rev-parse --show-toplevel 2>/dev/null)
 	if ! REF=$(git symbolic-ref -q HEAD); then
 		PRINT_ERR "--carry needs a checked-out branch – HEAD is detached"
@@ -1361,15 +1367,16 @@ GIT_CARRY () {
 
 	local -A RENAMED_FROM RENAMED_TO
 	local -a RENAME_FIELDS
-	for LINE in "${(@f)$(git diff -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)}"; do
-		RENAME_FIELDS=("${(@ps:\t:)LINE}")
-		[ ${#RENAME_FIELDS[@]} -eq 3 ] || continue
-		RENAMED_FROM[${RENAME_FIELDS[3]}]=${RENAME_FIELDS[2]}
-		RENAMED_TO[${RENAME_FIELDS[2]}]=${RENAME_FIELDS[3]}
+	# NUL-separated, status, source and destination each – a quote, backslash or tab in a name
+	# comes back C-quoted in the line form
+	RENAME_FIELDS=(${(0)"$(git diff -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
+	for (( I = 1; I + 2 <= ${#RENAME_FIELDS[@]}; I += 3 )); do
+		RENAMED_FROM[${RENAME_FIELDS[I + 2]}]=${RENAME_FIELDS[I + 1]}
+		RENAMED_TO[${RENAME_FIELDS[I + 1]}]=${RENAME_FIELDS[I + 2]}
 	done
 	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) MERGED=$(MKTEMP_FILE git-edit-merged)
 	_TEMP_FILES+=("$BASE" "$THEIRS" "$MERGED")
-	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
 		# A submodule's worktree is a repository of its own
 		[ -d "$CO/$P" ] && [ ! -L "$CO/$P" ] && continue
@@ -1547,8 +1554,10 @@ _RESYNC_STRANDED_ENTRIES () {
 	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED, LEFT_ALONE and LOCKED
 	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXALL IDXENT
 	local -a SYNC
+	local -x GIT_LITERAL_PATHSPECS=1
 	RESYNCED=(); LEFT_ALONE=(); LOCKED=()
-	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+	# NUL-separated, as a quote, backslash or tab in a name comes back C-quoted in the line form
+	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
 		OLDENT=$(git ls-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
 		IDXALL=$(git -C "$CO" ls-files -s -- "$P" 2>/dev/null)
@@ -1623,31 +1632,34 @@ _RECONCILE_CHECKOUT () {
 	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>]
 	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 P SRC
 	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED REVERTING RENAMED GONE MODE_ONLY
+	# Every path here is a name, never a pattern – `[id].tsx` would match `i.tsx` beside it
+	local -x GIT_LITERAL_PATHSPECS=1
 	# A rename leaves its new path missing from the checkout, which reads as stale there, while
 	# edits on the old path sit untracked once the re-sync moved the entry – a restore of the new
 	# path would strand them, so the two are named together instead
 	local -A RENAMED_FROM RENAMED_TO
-	local RENAME_LINE
+	local -i I
 	local -a RENAME_FIELDS
-	for RENAME_LINE in "${(@f)$(git diff -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)}"; do
-		RENAME_FIELDS=("${(@ps:\t:)RENAME_LINE}")
-		[ ${#RENAME_FIELDS[@]} -eq 3 ] || continue
-		RENAMED_FROM[${RENAME_FIELDS[3]}]=${RENAME_FIELDS[2]}
-		RENAMED_TO[${RENAME_FIELDS[2]}]=${RENAME_FIELDS[3]}
+	# NUL-separated, status, source and destination each – a quote, backslash or tab in a name
+	# comes back C-quoted in the line form
+	RENAME_FIELDS=(${(0)"$(git diff -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
+	for (( I = 1; I + 2 <= ${#RENAME_FIELDS[@]}; I += 3 )); do
+		RENAMED_FROM[${RENAME_FIELDS[I + 2]}]=${RENAME_FIELDS[I + 1]}
+		RENAMED_TO[${RENAME_FIELDS[I + 1]}]=${RENAME_FIELDS[I + 2]}
 	done
 	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
 	if [ ${#RESYNCED[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
 	fi
 	if [ ${#LOCKED[@]} -gt 0 ]; then
-		PRINT_TEXT "Index locked – entries still on the pre-rewrite tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "${(j: :)${(q-)LOCKED[@]}}"
+		PRINT_TEXT "Index locked – entries still on the pre-rewrite tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "$(_QUOTE_PATHS "${LOCKED[@]}")"
 	fi
 	if [ ${#LEFT_ALONE[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries left alone – they differ from the pre-rewrite tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
 	fi
 	# A path the rewrite removed lingers untracked once its entry is gone, so it takes a
 	# `clean` where the others take a restore
-	for P in "${(@f)$(git diff --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)}"; do
+	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
 		if git cat-file -e "$NEW:$P" 2>/dev/null; then
 			if ! git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null; then
@@ -1733,8 +1745,8 @@ _RECONCILE_CHECKOUT () {
 		PRINT_TEXT "  … and %s more" 90 "$(( ${#STALE[@]} + ${#GONE[@]} - 10 ))"
 	fi
 	local CMD=""
-	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- ${(j: :)${(q-)STALE[@]}}"
-	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- ${(j: :)${(q-)GONE[@]}}"
+	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${STALE[@]}")"
+	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- $(_QUOTE_PATHS "${GONE[@]}")"
 	PRINT_TEXT "Reconcile those paths (discards what the rewrite left there): %s" 33 "$CMD"
 }
 
@@ -1758,7 +1770,7 @@ _PRINT_REWRITE_APPLY_HINT () {
 	# otherwise fold into its destination
 	local -a CHANGED
 	if [ -n "$2" ] && [ -n "$3" ]; then
-		CHANGED=("${(@f)$(git diff --name-only --no-renames "$2" "$3" 2>/dev/null)}")
+		CHANGED=(${(0)"$(git diff -z --name-only --no-renames "$2" "$3" 2>/dev/null)"})
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
 		# A drop is the one rewrite whose leftover paths are the point rather than staleness –
@@ -1770,7 +1782,7 @@ _PRINT_REWRITE_APPLY_HINT () {
 			if [ ${#CHANGED[@]} -gt 10 ]; then
 				PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
 			fi
-			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "git restore --source=HEAD --staged --worktree -- ${(j: :)${(q-)CHANGED[@]}}"
+			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "git restore --source=HEAD --staged --worktree -- $(_QUOTE_PATHS "${CHANGED[@]}")"
 			return
 		fi
 		local CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
@@ -1884,10 +1896,9 @@ _REFUSE_MOVED_BRANCH () {
 
 GIT_STASH () {
 	# Scan all unmerged paths and auto-stage any that no longer contain conflict markers
-	for FILE in $(git diff --name-only --diff-filter=U); do
+	for FILE in ${(0)"$(git diff --name-only -z --diff-filter=U)"}; do
 		if ! grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' "$FILE"; then
-			git add "$FILE"
-			local CMD="git add '$FILE'"
+			local CMD="git add -- $(_QUOTE_PATHS "$FILE")"
 			PRINT_CMD "$CMD"
 			eval "$CMD"
 		fi
@@ -2461,6 +2472,19 @@ GIT_EXEC () {
 	EXEC_CHANGED=true
 }
 
+# Quotes paths for a printed command – one git would read as a pattern marked literal, as
+# `[id].tsx` would match `i.tsx` beside it
+_QUOTE_PATHS () {
+	# Args: <path>...
+	local P
+	local -a OUT
+	for P in "$@"; do
+		[[ "$P" == *[*?\[\\]* || "$P" == :* ]] && P=":(literal)$P"
+		OUT+=("${(q-)P}")
+	done
+	print -r -- "${(j: :)OUT}"
+}
+
 # Reads whole-file paths as `git commit -- <paths>` takes them, from where the caller stands –
 # each a file or link in the checkout, or one the tip has and the checkout lost
 _WHOLE_PATHS () {
@@ -2879,7 +2903,7 @@ GIT_AMEND_INTO () {
 					PRINT_TEXT "Note: %s is %s at %s – git's rename detection carries the fold there." 90 "$ABSENT_PATH" "$ABSENT_FROM" "${TARGET_FULL:0:7}"
 					continue
 				fi
-				ABSENT_INTRODUCER=$(git log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- "$ABSENT_PATH" | head -1)
+				ABSENT_INTRODUCER=$(git log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- ":(literal)$ABSENT_PATH" | head -1)
 				if [ -n "$ABSENT_INTRODUCER" ]; then
 					ABSENT_LINES+=("$ABSENT_PATH – arrives in $ABSENT_INTRODUCER")
 				else
@@ -3068,7 +3092,7 @@ GIT_AMEND_INTO () {
 	# being history now – path-scoped, so anything a parallel session staged meanwhile keeps
 	# its staged state where a whole-index reset would wipe it. A `--tree` fold staged nothing,
 	# so the summary reconciles its entries like any other rewrite's instead
-	[ -z "$AMEND_TREE" ] && git -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
+	[ -z "$AMEND_TREE" ] && git --literal-pathspecs -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
 
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE" "$ORIG_HEAD" "$STAGED_TREE" ""
 
@@ -3361,7 +3385,7 @@ _SNAPSHOT_RUN () {
 	# The folded paths' index entries follow the new tip, as a replayed fold's do – a `--tree`
 	# fold staged nothing, so the summary reconciles its entries like any other rewrite's
 	AMEND_TREE=$STATE_TREE
-	[ -z "$AMEND_TREE" ] && [ -n "$STATE_FILES" ] && git -C "$STATE_MAINDIR" reset -q -- "${(@ps:\t:)STATE_FILES}" 2>/dev/null
+	[ -z "$AMEND_TREE" ] && [ -n "$STATE_FILES" ] && git --literal-pathspecs -C "$STATE_MAINDIR" reset -q -- "${(@ps:\t:)STATE_FILES}" 2>/dev/null
 	[ -n "$STATE_PATHSPECS" ] && AMEND_PATHSPECS=("${(@ps:\t:)STATE_PATHSPECS}")
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "${STATE_FILES//$'\t'/,}" "$STATE_MAINDIR" "$STATE_REBASEBASE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE" "${_SNAPSHOT_RESOLVED_TREES:+resolved}"
 	[ -n "$_STATE_OWNED" ] && _CLEAR_STATE
@@ -3447,7 +3471,7 @@ _BLAME_AMEND_TARGETS () {
 			[ -z "$COUNT" ] && COUNT=1
 			[ "$COUNT" = "0" ] && continue
 			LARGS+=(-L "$START,+$COUNT")
-		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- "$P" 2>/dev/null | grep -E '^@@')
+		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- ":(literal)$P" 2>/dev/null | grep -E '^@@')
 		[ ${#LARGS[@]} -eq 0 ] && continue
 		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | grep -oE '^[0-9a-f]{40}'
 	done | sort -u
@@ -3460,7 +3484,7 @@ _RESOLVE_AMEND_TARGET () {
 	local -a PATHS
 	# Scoped to the same pathspec the fold will use – inferring a target from paths that will
 	# not be folded answers a question nobody asked
-	PATHS=("${(@f)$(git diff "${AMEND_SOURCE[@]}" --name-only -- "${AMEND_PATHSPECS[@]}")}")
+	PATHS=(${(0)"$(git diff -z "${AMEND_SOURCE[@]}" --name-only -- "${AMEND_PATHSPECS[@]}")"})
 	if [ -z "${PATHS[1]}" ]; then
 		if [ -n "$AMEND_TREE" ]; then
 			PRINT_ERR "--tree $AMEND_TREE_GIVEN differs from HEAD in nothing – nothing to fold"
@@ -3506,7 +3530,7 @@ _RESOLVE_AMEND_TARGET () {
 	local CANDIDATE=""
 	local MULTIPLE=false
 	for P in "${PATHS[@]}"; do
-		C=$(git -C "$TOPLEVEL" log -1 --format=%H HEAD -- "$P" 2>/dev/null)
+		C=$(git -C "$TOPLEVEL" log -1 --format=%H HEAD -- ":(literal)$P" 2>/dev/null)
 		if [ -z "$C" ]; then
 			# New file – follows the consensus of the paths with history
 			continue
@@ -3963,9 +3987,9 @@ _CONTINUE_SPLIT () {
 		local MP M1 MB MX
 		for MP in ${(0)"$(git diff-tree -r -z --name-only "$X^^{tree}" "$TREE1")"}; do
 			[ -z "$MP" ] && continue
-			M1=$(git ls-tree "$TREE1" -- "$MP" 2>/dev/null | cut -d' ' -f1)
-			MB=$(git ls-tree "$X^" -- "$MP" 2>/dev/null | cut -d' ' -f1)
-			MX=$(git ls-tree "$X" -- "$MP" 2>/dev/null | cut -d' ' -f1)
+			M1=$(git ls-tree "$TREE1" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
+			MB=$(git ls-tree "$X^" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
+			MX=$(git ls-tree "$X" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
 			if [ -n "$M1" ] && [ "$M1" != "$MB" ] && [ "$M1" != "$MX" ]; then
 				MODE_STRAYS+=("$MP: authored $M1, ${X:0:7} carries ${MX:-none}, its parent ${MB:-none}")
 			fi
@@ -4234,6 +4258,7 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	local WT=$1
 	local SOURCE=$2
 	local GUARD_EMPTY=$3
+	local -x GIT_LITERAL_PATHSPECS=1
 	[ -z "$SOURCE" ] && return 1
 	local GITDIR=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
 	[ -z "$GITDIR" ] && return 1
@@ -5499,7 +5524,7 @@ _MERGED_MODE () {
 _TREE_MODES () {
 	# Args: <worktree> <tree-ish> <path>...
 	local E
-	for E in ${(0)"$(git -C "$1" ls-tree -r -z "$2" -- "${@:3}" 2>/dev/null)"}; do
+	for E in ${(0)"$(git --literal-pathspecs -C "$1" ls-tree -r -z "$2" -- "${@:3}" 2>/dev/null)"}; do
 		[ -n "$E" ] && printf '%s\0%s\0' "${E#*$'\t'}" "${E%% *}"
 	done
 }
@@ -5520,7 +5545,7 @@ _GUARD_STOP_MODES () {
 	# hundreds, and a read per path would take seconds
 	local -A STAGED BASE THEIRS OURS
 	local E MODES
-	for E in ${(0)"$(git -C "$WT" ls-files -s -z -- "${PATHS[@]}" 2>/dev/null)"}; do
+	for E in ${(0)"$(git --literal-pathspecs -C "$WT" ls-files -s -z -- "${PATHS[@]}" 2>/dev/null)"}; do
 		# "<mode> <blob> <stage>\t<path>" – stage 0 only, an unmerged path holds no resolution yet
 		[[ "${E%%$'\t'*}" == *" 0" ]] && STAGED[${E#*$'\t'}]=${E%% *}
 	done
@@ -5539,8 +5564,8 @@ _GUARD_STOP_MODES () {
 			# which `git rebase --continue` reads as conflicts still to resolve, and `git add`'s
 			# own `--chmod` holds where `core.fileMode` is off
 			case "$WANTED" in
-				100755) FIX+=("chmod +x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=+x -- ${(q-)P}") ;;
-				100644) FIX+=("chmod -x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=-x -- ${(q-)P}") ;;
+				100755) FIX+=("chmod +x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=+x -- $(_QUOTE_PATHS "$P")") ;;
+				100644) FIX+=("chmod -x ${(q-)WT}/${(q-)P} && git -C ${(q-)WT} add --chmod=-x -- $(_QUOTE_PATHS "$P")") ;;
 				*) FIX+=("git -C ${(q-)WT} update-index --cacheinfo $WANTED,$(git -C "$WT" rev-parse ":$P" 2>/dev/null),${(q-)P}") ;;
 			esac
 		fi
@@ -5602,7 +5627,7 @@ _GUARD_TIP_MODES () {
 		P=${LINE#* mode change * => * }
 		for C in ${(f)"$(git -C "$WT" rev-list --reverse "$ORIG..$NEW" 2>/dev/null)"}; do
 			[ -z "$C" ] && continue
-			if [ "$(git -C "$WT" ls-tree "$C" -- "$P" 2>/dev/null | cut -d' ' -f1)" = "$TO" ]; then
+			if [ "$(git -C "$WT" ls-tree "$C" -- ":(literal)$P" 2>/dev/null | cut -d' ' -f1)" = "$TO" ]; then
 				_PRINT_COMMIT_LINE "$C" '    brought in by %h %s'
 				[ -z "$_MODE_STRAY_AT" ] && _MODE_STRAY_AT=$C
 				break
@@ -6074,7 +6099,7 @@ _CONTINUE_AMEND_INTO () {
 		if [ -n "$STATE_FILES" ]; then
 			local -a SYNC_PATHS
 			SYNC_PATHS=("${(@ps:\t:)STATE_FILES}")
-			git -C "$STATE_MAINDIR" reset -q -- "${SYNC_PATHS[@]}" 2>/dev/null
+			git --literal-pathspecs -C "$STATE_MAINDIR" reset -q -- "${SYNC_PATHS[@]}" 2>/dev/null
 		else
 			git -C "$STATE_MAINDIR" read-tree --reset "$NEW_HEAD" 2>/dev/null
 		fi
