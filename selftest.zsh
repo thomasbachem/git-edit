@@ -6102,6 +6102,64 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	git symbolic-ref HEAD "refs/heads/$IQ_WAS"
 	git update-ref -d "$IQ_REF"
 
+	# --- 116. a commit subject's escape sequence prints literally, never as a terminal control ---
+	# A pulled commit's subject is data – listed in a refusal it must not move the cursor, clear the
+	# screen or set the title, which `echo -e` would have run
+	_ST_SCENARIO "\e[1;96m[116] a subject's escape sequence prints as literal text, not a control\e[0m"
+	local TE_BASE=$(git rev-parse HEAD)
+	printf 'te1\n' > te-a.txt && printf 'tu1\n' > te-b.txt && git add te-a.txt te-b.txt
+	git commit -qm $'TE-A clear \\e[2J and title \\e]0;x\\a end, conceal \\e[8m kept' -- te-a.txt
+	git commit -qm "TE-B plain" -- te-b.txt
+	printf 'te2\n' >> te-a.txt && printf 'tu2\n' >> te-b.txt && git add te-a.txt te-b.txt
+	_ST_RUN --amend-into=auto -- te-a.txt te-b.txt
+	_ST_OUT_HAS "the refusal lists the candidates" 'different commit'
+	_ST_OUT_HAS "a subject's screen-clear prints as its literal characters" 'clear \\e\[2J and'
+	_ST_OUT_HAS "and its OSC title stays literal too" 'title \\e]0;x\\a end'
+	_ST_OUT_HAS "as does a color code no template uses, a conceal" 'conceal \\e\[8m kept'
+	_ST_CHECK "with no real escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
+	git reset -q --hard "$TE_BASE"
+	rm -f te-a.txt te-b.txt
+	# A subject carrying the raw bytes rather than their spelling shows them in caret notation
+	printf 'tr1\n' > te-r.txt && printf 'tu1\n' > te-b.txt && git add te-r.txt te-b.txt
+	git commit -qm $'TE-R raw \e[2J and \e]0;x\a end' -- te-r.txt
+	git commit -qm "TE-B plain" -- te-b.txt
+	printf 'tr2\n' >> te-r.txt && printf 'tu2\n' >> te-b.txt && git add te-r.txt te-b.txt
+	_ST_RUN --amend-into=auto -- te-r.txt te-b.txt
+	_ST_OUT_HAS "a subject's raw escape bytes show in caret notation" 'raw ^\[\[2J and ^\[\]0;x^G end'
+	_ST_CHECK "with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
+	git reset -q --hard "$TE_BASE"
+	rm -f te-r.txt te-b.txt
+	# The refusal naming the commit a path arrives in shows its subject inert too
+	printf 'n0\n' > te-n0.txt && git add te-n0.txt && git commit -qm "TE-N base"
+	local TE_N=$(git rev-parse HEAD)
+	printf 'n1\n' > te-new.txt && git add te-new.txt && git commit -qm $'TE-N adds \e[2J it'
+	printf 'n2\n' >> te-new.txt && git add te-new.txt
+	_ST_RUN --amend-into="$TE_N" -- te-new.txt
+	_ST_OUT_HAS "the commit a path arrives in shows its subject in caret notation" 'arrives in .*TE-N adds ^\[\[2J it'
+	_ST_CHECK "there too with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
+	git reset -q --hard "$TE_BASE"
+	rm -f te-n0.txt te-new.txt
+	# A terminal run pads with a real blank line – `ECHO_E` renders no `\n` spelled out, so padding
+	# held as text would print literally on every line
+	local TE_TTY=""
+	if script -q /dev/null true </dev/null >/dev/null 2>&1; then
+		TE_TTY=$(script -q /dev/null "$SELF" --status </dev/null 2>&1)
+	elif script -qec true /dev/null </dev/null >/dev/null 2>&1; then
+		TE_TTY=$(script -qec "${(q)SELF} --status" /dev/null </dev/null 2>&1)
+	fi
+	if [ -n "$TE_TTY" ]; then
+		_ST_CHECK "a terminal run pads with blank lines, never a literal \\n" eval '[[ "$TE_TTY" == *"git-edit: ok"* && "$TE_TTY" != *"\\n"* ]]'
+	fi
+	# A `%` in a squash target's subject must not miscount the preamble's `%s` and collapse its
+	# list onto one line – the target is rendered apart, its subject never in the format string
+	git commit -q --allow-empty -m 'TE pct 50% and %s and -> arrow'
+	printf 'tc1\n' > te-c.txt && git add te-c.txt && git commit -qm "TE top one"
+	printf 'tc2\n' > te-d.txt && git add te-d.txt && git commit -qm "TE top two"
+	_ST_RUN -s HEAD~2 HEAD~1 HEAD
+	_ST_EQ "a squash into a %-subject target keeps each commit on its own line" "$RC:$(print -r -- "$OUT" | grep -c '^ - ')" "0:2"
+	_ST_OUT_HAS "with the hostile subject rendered literally and whole" 'into .* (TE pct 50% and %s and -> arrow)'
+	git reset -q --hard "$TE_BASE"
+	rm -f te-c.txt te-d.txt
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""

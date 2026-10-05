@@ -75,7 +75,7 @@ RESOLVE_SCAN_MAX=100
 # Blank-line padding reads well in a terminal, but a caller piping through `| tail -N` – how
 # most agent runs consume this – loses a line of summary to each, so pad only for a terminal
 _PAD=""
-[ -t 1 ] && _PAD="\n"
+[ -t 1 ] && _PAD=$'\n'
 
 # Same reasoning for color: escapes read as emphasis in a terminal but as noise in a
 # captured run, where they also split literal text a caller greps for – honors `NO_COLOR`
@@ -97,17 +97,51 @@ if [ "$_COLOR" != "true" ]; then
 	_OFF=""
 fi
 
-# Emits one colorized line, stripping the escapes in-shell when color is off so no call
-# site has to know – `print -v` over a command substitution: it expands them without
-# forking, the path agents take, and keeps trailing newlines that `$(…)` would have eaten
+# Puts <text> into `REPLY` with each raw control byte in caret notation, tabs and newlines kept – a
+# subject's or path's, never a template's, so a crafted one can't clear the screen or set a title
+_CARET () {
+	# Args: <text>
+	REPLY=$1
+	[[ "$REPLY" == *[$'\001'-$'\010'$'\013'-$'\037'$'\177']* ]] || return 0
+	local -i i
+	local c
+	REPLY=""
+	for (( i = 1; i <= ${#1}; i++ )); do
+		c=${1[i]}
+		case "$c" in
+			[$'\001'-$'\010'$'\013'-$'\037']) REPLY+="^${(#)$(( #c + 64 ))}" ;;
+			$'\177') REPLY+='^?' ;;
+			*) REPLY+=$c ;;
+		esac
+	done
+}
+
+# Emits one colorized line, its escapes stripped in-shell when color is off
 ECHO_E () {
+	setopt local_options extended_glob
+	# Renders only the colors the templates use – `\e[0m`, `\e[22m`, a `0;` or `1;` 3x or 9x one – so
+	# a `\e[2J`, a title-setting sequence, a conceal or a `\n` that a ref name, path or subject
+	# carried stays literal – git-edit's own newlines are real ones in the template
+	_CARET "$*"
+	local raw=$REPLY out="" code
+	while [[ "$raw" == *'\e['* ]]; do
+		out+="${raw%%'\e['*}"
+		raw="${raw#*'\e['}"
+		# `code` is what precedes the first `m`, a color only where the templates use it – any other
+		# sequence stays the literal `\e[` and is reprocessed as text rather than run
+		code="${raw%%m*}"
+		if [[ "$raw" == *m* && "$code" == (0|22|[01]';'[39][0-7]) ]]; then
+			out+=$'\e'"[${code}m"
+			raw="${raw#${code}m}"
+		else
+			out+='\e['
+		fi
+	done
+	out+="$raw"
 	if [ "$_COLOR" = "true" ]; then
-		echo -e "$@"
+		print -r -- "$out"
 	else
-		setopt local_options extended_glob
-		local OUT
-		print -v OUT -- "$@"
-		print -r -- "${OUT//$'\e'\[[0-9;]#m/}"
+		print -r -- "${out//$'\e'\[[0-9;]#m/}"
 	fi
 }
 
@@ -377,25 +411,36 @@ PRINT_TEXT () {
 
 PRINT_ACTION () {
 	local MSG=$1; shift
-	local COMMITS=("$@")
 
+	# A trailing `%t` names a squash or merge target – render it from its own commit, so its
+	# subject stays out of the format string, where a `%` would miscount `%s` or an `->` misroute
+	# – the target is the first positional then, the `%s` commits the rest
+	local TARGET_RENDER=""
+	if [[ "$MSG" == *%t ]]; then
+		local TGT=$1; shift
+		local TSUB=$(git log -1 --pretty=format:'%s' "$TGT")
+		TARGET_RENDER="${TGT:0:7}\e[22m (${TSUB})"
+		MSG="${MSG%\%t}"
+	fi
+
+	local COMMITS=("$@")
 	local ARGS=()
 	local COMMIT
 	for COMMIT in "${COMMITS[@]}"; do
 		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
-		# `ECHO_E` interprets whatever lands here, which the `\e[22m` above needs
-		# – so double the subject's own backslashes, or a `\d` in it arrives as
-		# `d` and a `\n` splits the line
-		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT//\\/\\\\})")
+		# `ECHO_E` renders the `\e[22m` here but leaves the subject's own backslashes alone, so
+		# a `\d` or `\n` in it stays literal rather than being run or splitting the line
+		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT})")
 	done
 
-	# Count placeholders (assumes %s is the only placeholder type used)
+	# Count placeholders (assumes %s is the only placeholder type used) – the target is gone, so
+	# only git-edit's own `%s` remain, whatever a subject carried
 	local PLACEHOLDERS="${MSG//[^%]}"
-	
+
 	# Use list mode if multiple commits or if it's a merge (contains "->")
 	if [[ ${#COMMITS[@]} -gt 1 || "$MSG" == *"->"* ]] && [[ ${#PLACEHOLDERS} -eq 1 ]]; then
 		local PREFIX="${MSG%%%s*}" # e.g. "Dropping "
-		local SUFFIX="${MSG#*%s}"  # e.g. "..."
+		local SUFFIX="${MSG#*%s}"  # e.g. "..." or " -> " or " into "
 
 		# Transform "Dropping " -> "Dropping:"
 		local NEW_MSG="${PREFIX% }:"
@@ -403,28 +448,30 @@ PRINT_ACTION () {
 		# Append a newline and indented placeholder for every commit
 		# We use a C-style loop for robust iteration in Zsh
 		for (( i=0; i<${#COMMITS[@]}; i++ )); do
-			NEW_MSG+="\n - %s"
+			NEW_MSG+=$'\n'" - %s"
 		done
 
-		# Put merge arrow on a new line and bold it, otherwise keep suffix attached
+		# Put merge arrow on a new line and bold it, otherwise keep suffix attached – the rendered
+		# target, when there is one, trails whichever
 		if [[ "$SUFFIX" == *"->"* ]]; then
-			NEW_MSG+="\n\e[1;96m${SUFFIX# }"
+			NEW_MSG+=$'\n'"\e[1;96m${SUFFIX# }${TARGET_RENDER}"
 		else
-			NEW_MSG+="$SUFFIX"
+			NEW_MSG+="${SUFFIX}${TARGET_RENDER}"
 		fi
-		
+
 		PRINT_TEXT "$NEW_MSG" 36 "${ARGS[@]}"
 	else
 		# Default behavior for single commits or specific pairs (squash A -> B)
-		PRINT_TEXT "$MSG" 36 "${ARGS[@]}"
+		PRINT_TEXT "${MSG}${TARGET_RENDER}" 36 "${ARGS[@]}"
 	fi
 }
 
 # Prints one dim line naming <commit> via <format> – formatted by git and piped rather than
-# routed through `PRINT_TEXT`, whose `echo -e` eats a `\d` in the subject and splits at a `\n`
+# routed through `PRINT_TEXT`, which would read a `%s` in the subject as a placeholder
 # Silent on a missing object, where a `fatal:` would read as the operation having failed
 _PRINT_COMMIT_LINE () {
-	git log -1 --format="$2" "$1" 2>/dev/null | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	_CARET "$(git log -1 --format="$2" "$1" 2>/dev/null)"
+	print -r -- "$REPLY" | sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 PRINT_CMD () {
@@ -447,9 +494,9 @@ PRINT_ERR () {
 	if [[ "$MSG" == *": "* ]]; then
 		local PREFIX="${MSG%%: *}"
 		local REST="${MSG#*: }"
-		ECHO_E "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
+		ECHO_E $'\n'"\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
 	else
-		ECHO_E "\n\e[1;91m${MSG}\e[0m" >&2
+		ECHO_E $'\n'"\e[1;91m${MSG}\e[0m" >&2
 	fi
 }
 
@@ -2935,7 +2982,9 @@ GIT_AMEND_INTO () {
 		done
 		if [ ${#ABSENT_LINES[@]} -gt 0 ]; then
 			PRINT_ERR "Staged path(s) do not exist at ${TARGET_FULL:0:7} – replaying the commit that introduces them would raise an add/add conflict"
-			printf '%s\n' "${ABSENT_LINES[@]}" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+			# Each names the commit a path arrives in, its subject shown inert
+			_CARET "${(F)ABSENT_LINES}"
+			print -r -- "$REPLY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  Fold into the introducing commit or later – or pass --allow-new-path to override.\e[0m" >&2
 			exit 1
 		fi
@@ -7063,7 +7112,7 @@ ABORT () {
 	# Print "Aborted." directly (not via PRINT_ERR) so we don't overwrite
 	# _LAST_ERROR – the trailer should show the actual error reason that
 	# triggered the abort, not the generic "Aborted." follow-up
-	ECHO_E "\n\e[1;91mAborted.\e[0m" >&2
+	ECHO_E $'\n'"\e[1;91mAborted.\e[0m" >&2
 	exit 1
 }
 
@@ -8321,8 +8370,7 @@ if [[ "$ACTION" == "reword" ]]; then
 	exit 0
 fi
 if [[ "$ACTION" == "resquash" ]]; then
-	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "${COMMITS[1]}")
-	PRINT_ACTION "Resquashing %s into ${COMMITS[1]:0:7}\e[22m (${TARGET_SUBJECT})" "${COMMITS[@]:#${COMMITS[1]}}"
+	PRINT_ACTION "Resquashing %s into %t" "${COMMITS[1]}" "${COMMITS[@]:#${COMMITS[1]}}"
 	_CONFIRM_REWRITE
 	GIT_RESQUASH
 	PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" true
@@ -8473,10 +8521,7 @@ if [[ "$ACTION" == "drop" ]]; then
 
 	GIT_REBASE_DROP
 elif [[ "$ACTION" == "squash" ]]; then
-	# Doubled like `PRINT_ACTION`'s own subjects – this one rides in the format
-	# string, which `ECHO_E` interprets just the same
-	local TARGET_SUBJECT=$(git log -1 --pretty=format:'%s' "$TARGET")
-	PRINT_ACTION "Merging %s -> ${TARGET:0:7}\e[22m (${TARGET_SUBJECT//\\/\\\\})" "${COMMITS[@]:#$TARGET}"
+	PRINT_ACTION "Merging %s -> %t" "$TARGET" "${COMMITS[@]:#$TARGET}"
 
 	_CONFIRM_REWRITE
 
