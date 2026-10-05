@@ -116,6 +116,13 @@ _CARET () {
 	done
 }
 
+# Prints the closing status line verbatim and on one line, whatever a name or message in it holds
+_EMIT_TRAILER () {
+	# Args: <line>
+	_CARET "${1//$'\n'/ }"
+	print -r -- "$REPLY"
+}
+
 # Emits one colorized line, its escapes stripped in-shell when color is off
 ECHO_E () {
 	setopt local_options extended_glob
@@ -237,9 +244,9 @@ _GLOBAL_EXIT_TRAP () {
 	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
 		if [ -n "$_LAST_ERROR" ]; then
-			echo "git-edit: error – $_LAST_ERROR"
+			_EMIT_TRAILER "git-edit: error – $_LAST_ERROR"
 		else
-			echo "git-edit: error – exit code $CODE"
+			_EMIT_TRAILER "git-edit: error – exit code $CODE"
 		fi
 	fi
 }
@@ -480,7 +487,7 @@ PRINT_CMD () {
 	local COLOR="${2:-90}"
 
 	# Filter `--no-autostash` arg when printing commands
-	local CMD_FILTERED=$(echo "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
+	local CMD_FILTERED=$(print -r -- "$CMD" | sed -E 's/(^| )--no-autostash($| )/ /g; s/  +/ /g')
 
 	ECHO_E "${_PAD}\e[0;${COLOR}m$CMD_FILTERED\e[0;90m"
 }
@@ -584,9 +591,9 @@ EMIT_STATUS () {
 	# The SHAs are the authority, not the flag – some callers pass a hardcoded `true` where a
 	# no-op rebase leaves `HEAD` put, and reporting a move there is a false success on `ok`
 	if [ "$3" = "true" ] && [ "$1" != "$SCRIPT_INITIAL_HEAD" ]; then
-		echo "git-edit: ok – $2 moved $SCRIPT_INITIAL_HEAD → $1"
+		_EMIT_TRAILER "git-edit: ok – $2 moved $SCRIPT_INITIAL_HEAD → $1"
 	else
-		echo "git-edit: ok – $2 unchanged"
+		_EMIT_TRAILER "git-edit: ok – $2 unchanged"
 	fi
 	_STATUS_EMITTED=true
 }
@@ -602,7 +609,7 @@ _PRINT_DEFERRED_SIGNAL () {
 # came for, so it rides in the one line a `tail -1` or a `^git-edit:` grep is sure to reach
 EMIT_DRY_RUN () {
 	# Args: <built_sha> <base_sha> <ref>
-	echo "git-edit: ok – dry run built $1 on $2, $3 unchanged"
+	_EMIT_TRAILER "git-edit: ok – dry run built $1 on $2, $3 unchanged"
 	_STATUS_EMITTED=true
 }
 
@@ -613,7 +620,7 @@ EMIT_CONFLICT () {
 		# Replace commas with ", " for readability
 		FILES_PART=" ($(echo "$2" | sed 's/,/, /g'))"
 	fi
-	echo "git-edit: conflict – resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
+	_EMIT_TRAILER "git-edit: conflict – resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -621,7 +628,7 @@ EMIT_CONFLICT () {
 # conflict – nothing is unmerged, there is just authoring left to do
 EMIT_PAUSED () {
 	# Args: <operation> <sha> <worktree-path>
-	echo "git-edit: paused – $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
+	_EMIT_TRAILER "git-edit: paused – $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -639,7 +646,7 @@ EMIT_VERIFY_PAUSED () {
 	local VLOG=$(_VERIFY_LOG_PATH)
 	local LOGNOTE=""
 	[ -n "$VLOG" ] && [ -f "$VLOG" ] && LOGNOTE="; output in $VLOG"
-	echo "git-edit: paused – verify failed at ${1:0:7} in $2$LOGNOTE; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
+	_EMIT_TRAILER "git-edit: paused – verify failed at ${1:0:7} in $2$LOGNOTE; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -649,7 +656,7 @@ EMIT_MODE_PAUSED () {
 	# Args: <commit-sha> <worktree-path> [<result-tip>]
 	[ "$STATE_MODE_STRAY" != "$1" ] && _STATE_NOTE "mode_stray=$1"
 	[ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ] && _STATE_NOTE "verify_result=$3"
-	echo "git-edit: paused – mode change at ${1:0:7} in $2; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'"
+	_EMIT_TRAILER "git-edit: paused – mode change at ${1:0:7} in $2; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
 
@@ -809,7 +816,7 @@ _PRINT_CONFLICT_DETAIL () {
 	fi
 
 	# Emit comma-separated unmerged list on stdout for the trailer
-	echo "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
+	print -r -- "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
 }
 
 # Names the file-mode changes a rewrite landed, tip vs pre-op tip – a diffstat shows line
@@ -991,7 +998,7 @@ _JOURNAL_FILE_PATH () {
 		/*) ;;
 		*) DIR="$(pwd)/$DIR" ;;
 	esac
-	echo "$DIR/git-edit-journal"
+	print -r -- "$DIR/git-edit-journal"
 }
 
 # Runs a branch's CAS `update-ref`, the run landing from here on unless it is refused
@@ -1361,7 +1368,7 @@ GIT_UNDO () {
 	fi
 	PRINT_TEXT "%s" 32 "Undid: $LABEL"
 	_PRINT_DEFERRED_SIGNAL
-	echo "git-edit: ok – $REF moved $NEW → $OLD"
+	_EMIT_TRAILER "git-edit: ok – $REF moved $NEW → $OLD"
 	_STATUS_EMITTED=true
 }
 
@@ -1509,7 +1516,7 @@ GIT_CARRY () {
 	fi
 	[ ${#CARRIED[@]} -eq 0 ] && PRINT_TEXT "%s" 32 "Nothing to carry – no path the rewrite changed holds edits on its pre-rewrite content."
 	_PRINT_DEFERRED_SIGNAL
-	echo "git-edit: ok – carried ${#CARRIED[@]} path(s) across ${OLD:0:7}..${NEW:0:7}"
+	_EMIT_TRAILER "git-edit: ok – carried ${#CARRIED[@]} path(s) across ${OLD:0:7}..${NEW:0:7}"
 	_STATUS_EMITTED=true
 }
 
@@ -1574,7 +1581,7 @@ GIT_STATUS_REPORT () {
 		else
 			PRINT_TEXT "%s" 32 "No operation in flight."
 		fi
-		echo "git-edit: ok – no operation in flight"
+		_EMIT_TRAILER "git-edit: ok – no operation in flight"
 		_STATUS_EMITTED=true
 	fi
 }
@@ -4045,7 +4052,7 @@ _CONTINUE_SPLIT () {
 		<(git diff-tree -r --name-only "$X^^{tree}" "$X^{tree}" | sort))
 	if [ -n "$STRAY" ]; then
 		PRINT_ERR "Worktree changes paths ${X:0:7} never touched – the remainder would just revert them"
-		echo "$STRAY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		print -r -- "$STRAY" | sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Undo them in $STATE_WORKTREE (git checkout -- <path>, or rm for ones it added), then retry.\e[0m" >&2
 		exit 1
 	fi
@@ -5184,7 +5191,7 @@ _STATE_FILE_PATH () {
 		/*) ;;
 		*) DIR="$(pwd)/$DIR" ;;
 	esac
-	echo "$DIR/git-edit-state"
+	print -r -- "$DIR/git-edit-state"
 }
 
 _SAVE_STATE () {
@@ -5195,7 +5202,7 @@ _SAVE_STATE () {
 	local SF_NEW="$SF.$$"
 	_TEMP_FILES+=("$SF_NEW")
 	{
-		for KV in "$@"; do echo "$KV"; done
+		for KV in "$@"; do print -r -- "$KV"; done
 		# The rerere scope's baseline rides along uninvited – every pause must
 		# carry it for the resuming invocation to adopt (see _RERERE_SCOPE_BEGIN)
 		if [ -n "$_RERERE_SCOPE_OWNED" ]; then echo "rrpre=$_RERERE_PRE"; fi
@@ -5333,7 +5340,7 @@ _LOAD_STATE () {
 _TEXT_MSG_PATH () {
 	local SF
 	SF=$(_STATE_FILE_PATH) || return 1
-	echo "$SF-msg"
+	print -r -- "$SF-msg"
 }
 
 # Names the sidecar holding the failing verify run's output, alongside the state file – the pause
@@ -5342,7 +5349,7 @@ _TEXT_MSG_PATH () {
 _VERIFY_LOG_PATH () {
 	local SF
 	SF=$(_STATE_FILE_PATH) || return 1
-	echo "$SF-verify"
+	print -r -- "$SF-verify"
 }
 
 # Writes that sidecar and names it, header first, so a truncated or huge output still
@@ -6242,7 +6249,7 @@ _RESOLVE_EDITOR () {
 	for CAND in "$GIT_EDITOR" "$(git config core.editor 2>/dev/null)" "$VISUAL" "$EDITOR"; do
 		[ -z "$CAND" ] && continue
 		[ "$CAND" = "true" ] && continue
-		echo "$CAND"
+		print -r -- "$CAND"
 		return
 	done
 	echo "vi"
@@ -7284,7 +7291,7 @@ if [ ${#OPT_TEXT} -gt 0 ]; then
 	# Normalize whitespace the way the editor flow does, but not its comment stripping, which
 	# exists to drop the instructions git seeds a template with – nothing seeds this one, so
 	# a `#` line here is the caller's own content
-	TEXT_VALUE=$(echo "$TEXT_VALUE" | git stripspace)
+	TEXT_VALUE=$(print -r -- "$TEXT_VALUE" | git stripspace)
 	if [ -z "$TEXT_VALUE" ]; then
 		PRINT_ERR "--text produced an empty message after stripping"
 		exit 1
@@ -8496,11 +8503,11 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 				PRINT_CMD "$CMD"
 				eval "$CMD" || ABORT
 			else
-				echo "$WT_OUT" >&2
+				print -r -- "$WT_OUT" >&2
 				ABORT
 			fi
 		else
-			[ -n "$WT_OUT" ] && echo "$WT_OUT"
+			[ -n "$WT_OUT" ] && print -r -- "$WT_OUT"
 		fi
 	fi
 

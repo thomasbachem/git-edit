@@ -6150,6 +6150,12 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	if [ -n "$TE_TTY" ]; then
 		_ST_CHECK "a terminal run pads with blank lines, never a literal \\n" eval '[[ "$TE_TTY" == *"git-edit: ok"* && "$TE_TTY" != *"\\n"* ]]'
 	fi
+	# The status line stays the last line, a name in it whole – `echo` cut one at its `\c`, and a
+	# raw newline split the line, leaving no `git-edit:` anchor last
+	_ST_RUN --commit --text "x" -- 'te\c\nno.txt'
+	_ST_EQ "the status line keeps a name's backslashes" "$(print -r -- "$OUT" | tail -1)" 'git-edit: error – te\c\nno.txt: no such file, in the checkout or at the tip'
+	_ST_RUN --commit --text "x" -- $'te\nnl.txt'
+	_ST_CHECK "and a raw newline in one leaves it on one line" eval '[[ "$(print -r -- "$OUT" | tail -1)" == "git-edit: error – "*"has a newline in its name"* ]]'
 	# A `%` in a squash target's subject must not miscount the preamble's `%s` and collapse its
 	# list onto one line – the target is rendered apart, its subject never in the format string
 	git commit -q --allow-empty -m 'TE pct 50% and %s and -> arrow'
@@ -6160,6 +6166,16 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "with the hostile subject rendered literally and whole" 'into .* (TE pct 50% and %s and -> arrow)'
 	git reset -q --hard "$TE_BASE"
 	rm -f te-c.txt te-d.txt
+	# A message through `--text` keeps its backslash escapes – `echo` would turn a `\t` or `\e`
+	# in it into a real control byte in the stored commit
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'tm\n' > te-msg.txt && git add te-msg.txt
+	_ST_RUN --commit --text $'TE msg \\t tab \\e esc keep' -- te-msg.txt
+	_ST_EQ "a --text message keeps its escapes as literal text" "$RC:$(git log -1 --format=%B)" "0:TE msg \t tab \e esc keep"
+	_ST_EQ "no control byte reached the stored message" "$(git log -1 --format=%B | od -An -c | grep -cE '033|\\t')" "0"
+	export GIT_EDIT_ACTOR=
+	git reset -q --hard "$TE_BASE"
+	rm -f te-msg.txt
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
