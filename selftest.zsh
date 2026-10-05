@@ -5844,7 +5844,42 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "a hook under a relative path only the checkout has refuses it" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 	_ST_RUN --exec -- git commit --allow-empty -qm "WC exec past the hook"
 	_ST_EQ "as it refuses a commit an --exec makes" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
-	git config --unset core.hooksPath && rm -rf wc-hooks wc-hook.txt
+	# The override keeps to this repository – another one an --exec command commits in runs its own
+	git init -q "$TMP/wc-other" && git -C "$TMP/wc-other" config user.email o@x.invalid && git -C "$TMP/wc-other" config user.name O
+	_ST_RUN --exec -- git -C "$TMP/wc-other" commit -q --allow-empty -m "WC other"
+	_ST_EQ "a commit an --exec makes in another repository runs none of this one's hooks" "$(git -C "$TMP/wc-other" log -1 --format=%s 2>/dev/null)" "WC other"
+	_ST_RUN --exec -- sh -c 'D=$(git rev-parse --git-dir)/modules/wc-sm && git init -q --bare "$D" && echo "wc-sm hooks:[$(git --git-dir="$D" config --get core.hooksPath)]"'
+	_ST_OUT_HAS "nor does a submodule's, its git dir below the temp worktree's" 'wc-sm hooks:\[\]$'
+	git config --unset core.hooksPath && rm -rf wc-hooks wc-hook.txt "$TMP/wc-other"
+	# A repository path the override's glob would read as a pattern – a `[`, a `\` – gets it all the
+	# same, and prints as itself in the banner and in a hint's cd
+	local WC_ODD=$TMP/'wc-odd[1]\e[0m'
+	git init -q "$WC_ODD" && cd "$WC_ODD" && git config user.email o@x.invalid && git config user.name O
+	mkdir -p hk/_ sub && printf '*\n' > hk/_/.gitignore && printf '#!/bin/sh\nexit 1\n' > hk/_/pre-commit && chmod +x hk/_/pre-commit
+	echo s > sub/s.txt && git add sub && git commit -qm "WC odd base"
+	git config core.hooksPath hk/_
+	echo t >> sub/s.txt
+	_ST_RUN --commit --text "x" -- sub/s.txt
+	_ST_EQ "a hook under a repository path holding glob characters refuses it" "$RC:$(git log -1 --format=%s)" "1:WC odd base"
+	_ST_OUT_HAS "while the banner shows that path as itself" 'past commits .*wc-odd\[1\]\\e\[0m$'
+	git config --unset core.hooksPath
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "echo a > added.txt && git add added.txt && git commit -qm 'WC odd peer adds'"
+	export GIT_EDIT_ACTOR=wc-self
+	cd sub
+	_ST_RUN --commit --text "x" -- s.txt ../added.txt
+	_ST_OUT_HAS "as does a hint's cd" "Take what landed with 'cd '.*wc-odd\\[1\\]\\\\e\\[0m' && git restore --source=HEAD"
+	cd "$TMP/repo"
+	rm -rf "$WC_ODD"
+	# A tracked hooks directory sourcing an untracked helper, as husky 5 to 8 lay one out, runs too
+	mkdir -p wc-hk2 && printf '#!/bin/sh\n. "$(dirname "$0")/_/helper.sh"\n' > wc-hk2/pre-commit && chmod +x wc-hk2/pre-commit
+	_ST_RUN --commit --text "WC tracked hooks dir" -- wc-hk2/pre-commit
+	mkdir -p wc-hk2/_ && printf '*\n' > wc-hk2/_/.gitignore && printf 'true\n' > wc-hk2/_/helper.sh
+	git config core.hooksPath wc-hk2
+	echo h > wc-hook.txt
+	_ST_RUN --commit --text "WC past a tracked hooks dir" -- wc-hook.txt
+	_ST_EQ "a tracked hooks directory's untracked helper is found" "$RC:$(git log -1 --format=%s)" "0:WC past a tracked hooks dir"
+	git config --unset core.hooksPath && rm -rf wc-hk2/_
 	git config filter.wcupper.clean 'tr a-z A-Z' && echo '*.wcup filter=wcupper' >> .git/info/attributes && echo loud > wc.wcup
 	_ST_RUN --commit --text "WC filtered" -- wc.wcup
 	_ST_EQ "a file goes through its clean filter, as git add takes it" "$RC:$(git show HEAD:wc.wcup)" "0:LOUD"
@@ -5992,7 +6027,9 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "removing a file another caller added refuses" 'wc-peer-new.txt – wc-peer.*which added it'
 	_ST_OUT_HAS "as does an old binary" 'wc.bin – wc-peer'
 	_ST_OUT_HAS "and an old link" 'wc-ln – wc-peer'
-	_ST_OUT_HAS "offering to restore the addition rather than a carry" "Restore what was added with 'git restore --source=HEAD --worktree -- wc-peer-new.txt'"
+	_ST_OUT_HAS "offering to restore the addition and the old copies" "Take what landed with 'git restore --source=HEAD --worktree -- wc-ln wc-peer-new.txt wc.bin'"
+	_ST_OUT_LACKS "rather than a carry, which takes nothing from a file still as before it" '--carry='
+	_ST_OUT_HAS "and the status line names them" '^git-edit: error – .*landed: wc-ln, wc-peer-new.txt, wc.bin$'
 	git restore --source=HEAD --worktree -- wc-peer-new.txt wc.bin wc-ln
 	# A file lacking two landings is pointed at a carry from the older, which takes in both
 	printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
@@ -6008,7 +6045,25 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "a file lacking two landings is pointed at the older" "--carry=${WC_P1:0:12}"
 	_ST_RUN --carry="$WC_P1"
 	_ST_EQ "whose carry takes in both" "$RC:$(tr '\n' ' ' < wc-two.txt)" "0:o1 P1 o3 o4 o5 P2 o7 MINE "
+	printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
+	_ST_RUN --commit --text "x" -- wc-two.txt
+	_ST_OUT_HAS "a file still as before both is pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-two.txt'"
+	_ST_OUT_LACKS "never at a carry, which takes nothing in" '--carry='
 	git checkout -q -- wc-two.txt
+	# As is one whose later landing sits next to the earlier, where the merge conflicts, or a binary
+	printf 'a1\na2\na3\na4\n' > wc-adj.txt && printf 'v0\0bin' > wc-adj.bin
+	_ST_RUN --commit --text "WC adjacent base" -- wc-adj.txt wc-adj.bin
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'a1\nP1\na3\na4\n' > wc-adj.txt && printf 'v1\0bin' > wc-adj.bin && git commit -qam 'WC adj one'"
+	export GIT_EDIT_ACTOR=wc-other
+	_ST_RUN --exec -- sh -c "printf 'a1\nP1\nP2\na4\n' > wc-adj.txt && printf 'v2\0bin' > wc-adj.bin && git commit -qam 'WC adj two'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'a1\na2\na3\na4\n' > wc-adj.txt && printf 'v0\0bin' > wc-adj.bin
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-adj.txt wc-adj.bin
+	_ST_EQ "a copy still as before a landing another sits next to refuses, a binary too" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_OUT_HAS "both pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt'"
+	git checkout -q -- wc-adj.txt wc-adj.bin
 	# Outside a sparse checkout, a file's absence is no deletion
 	mkdir -p wc-out && echo out > wc-out/x.txt
 	_ST_RUN --commit --text "WC outside the cone" -- wc-out/x.txt
@@ -6029,6 +6084,99 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "a file the commit's hooks changed is named as such" 'still as the commit read them, which its hooks then changed: wc-hk.txt'
 	_ST_OUT_LACKS "never as taking a landing back" 'take the landing back'
 	git restore --source=HEAD --worktree -- wc-hk.txt
+	# A landing's rename is carried rather than left out, the carry following it
+	echo r1 > wc-rn.txt
+	_ST_RUN --commit --text "WC rename base" -- wc-rn.txt
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "git mv wc-rn.txt wc-rn2.txt && git commit -qm 'WC peer renames'"
+	export GIT_EDIT_ACTOR=wc-self
+	echo mine >> wc-rn.txt
+	_ST_RUN --commit --text "x" -- wc-rn.txt
+	_ST_OUT_HAS "a file a landing renamed is named so" 'wc-rn.txt – wc-peer.*which renamed it to wc-rn2.txt'
+	_ST_OUT_HAS "and pointed at the carry, which follows it" '--carry='
+	_ST_RUN --commit --text "x" -- wc-rn.txt wc-rn2.txt
+	_ST_OUT_HAS "as is its new name, the old one edited" 'wc-rn2.txt – wc-peer.*which renamed wc-rn.txt to it'
+	echo r1 > wc-rn.txt
+	_ST_RUN --commit --text "x" -- wc-rn.txt wc-rn2.txt
+	_ST_OUT_HAS "while untouched, the new name is pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-rn2.txt'"
+	_ST_OUT_HAS "and the old one left out" 'Leave out what was removed: wc-rn.txt'
+	_ST_OUT_LACKS "with no carry, which takes nothing in" '--carry='
+	rm -f wc-rn.txt && git checkout -q -- wc-rn2.txt
+	# A fold resumed after a pause still re-syncs the staging of a file it took
+	# whole, one whose name holds a tab too
+	local WC_PS WC_PSW WC_K WC_PN
+	for WC_PN in wc-ps.txt $'wc-p\ts.txt'; do
+		printf '1\n2\n3\n' > "$WC_PN"
+		_ST_RUN --commit --text "WC pause base" -- "$WC_PN"
+		WC_PS=$(git rev-parse HEAD)
+		printf '1\nL\n3\n' > "$WC_PN"
+		_ST_RUN --commit --text "WC pause later" -- "$WC_PN"
+		printf '1\nSTAGED\n3\n' > "$WC_PN" && git add -- "$WC_PN" && printf '1\nW\n3\n' > "$WC_PN"
+		_ST_RUN --amend-into="$WC_PS" --whole -- "$WC_PN"
+		for WC_K in 1 2; do
+			WC_PSW=$(print -r -- "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
+			[ -n "$WC_PSW" ] || break
+			printf '1\nW\n3\n' > "$WC_PSW/$WC_PN" && git -C "$WC_PSW" add -- "$WC_PN"
+			_ST_RUN --continue
+		done
+		_ST_EQ "a fold resumed after a pause re-syncs the file's own staging${${WC_PN:#wc-ps.txt}:+, a tab in its name}" "$RC:$(git status --porcelain -- "$WC_PN")" "0:"
+	done
+	# A fold's tip differs from what it read by what later commits replay – no hook at work
+	printf 'x\na\nb\nc\n' > wc-dv.txt
+	_ST_RUN --commit --text "WC dissolve base" -- wc-dv.txt
+	local WC_DV=$(git rev-parse HEAD)
+	printf 'x\na\nb\nc\nLATER\n' > wc-dv.txt
+	_ST_RUN --commit --text "WC dissolve later" -- wc-dv.txt
+	printf 'X2\na\nb\nc\n' > wc-dv.txt
+	_ST_RUN --amend-into="$WC_DV" --whole -- wc-dv.txt
+	_ST_OUT_HAS "a fold dissolving against a later commit says so" 'dissolved against a later commit'
+	_ST_OUT_LACKS "naming no hook, as none ran" 'hooks then changed'
+	git checkout -q -- wc-dv.txt
+	# A deletion folds from a subdirectory as from the top
+	mkdir -p wc-sd && echo g > wc-sd/gone.txt && echo k > wc-sd/keep.txt
+	_ST_RUN --commit --text "WC subdir base" -- wc-sd/gone.txt wc-sd/keep.txt
+	local WC_SD=$(git rev-parse HEAD)
+	echo z > wc-sd-next.txt
+	_ST_RUN --commit --text "WC subdir next" -- wc-sd-next.txt
+	rm wc-sd/gone.txt
+	cd wc-sd
+	_ST_RUN --amend-into="$WC_SD" --whole -- gone.txt
+	cd "$TMP/repo"
+	_ST_EQ "--whole folds a deletion named from a subdirectory" "$RC:$(git cat-file -e "$(git log -1 --format=%H --grep='^WC subdir base')":wc-sd/gone.txt 2>/dev/null && echo kept || echo gone)" "0:gone"
+	# Mid-merge, or on a file still unmerged, files taken whole refuse as git commit's partial one does
+	git checkout -q -b wc-mside && echo S > wc-mg.txt && git add wc-mg.txt && git commit -qm "WC merge side" && git checkout -q "$WC_BR"
+	echo M > wc-mg.txt && git add wc-mg.txt && git commit -qm "WC merge main"
+	git merge -q wc-mside >/dev/null 2>&1
+	_ST_RUN --commit --text "x" -- wc-mg.txt
+	_ST_OUT_HAS "a commit mid-merge refuses" 'A merge is in progress'
+	git merge --abort && git branch -q -D wc-mside
+	echo u > wc-um.txt
+	local WC_UB=$(git hash-object -w wc-um.txt)
+	printf '100644 %s 1\twc-um.txt\n100644 %s 2\twc-um.txt\n' "$WC_UB" "$WC_UB" | git update-index --index-info
+	_ST_RUN --commit --text "x" -- wc-um.txt
+	_ST_OUT_HAS "as does one on a file still unmerged" 'wc-um.txt is unmerged'
+	git rm -q --cached wc-um.txt && rm -f wc-um.txt
+	# A branch named as the state file is none in progress
+	git update-ref refs/heads/CHERRY_PICK_HEAD HEAD
+	echo cp > wc-cp.txt
+	_ST_RUN --commit --text "WC beside a branch named CHERRY_PICK_HEAD" -- wc-cp.txt
+	_ST_EQ "a branch named as a cherry-pick's state file blocks nothing" "$RC" "0"
+	git update-ref -d refs/heads/CHERRY_PICK_HEAD
+	# Where case tells no names apart: a spelling the tip holds exactly passes beside another, and
+	# two new names whose directories differ only in case refuse
+	git config core.ignorecase true
+	local WC_EA=$(echo a | git hash-object -w --stdin)
+	printf '100644 %s\twc-CS/a.txt\n100644 %s\twc-cs/b.txt\n' "$WC_EA" "$WC_EA" | git update-index --index-info
+	git commit -qm "WC both spellings"
+	mkdir -p wc-CS && echo n > wc-CS/new.txt
+	_ST_RUN --commit --text "WC new beside both" -- wc-CS/new.txt
+	_ST_EQ "a spelling the tip holds exactly passes beside another" "$RC" "0"
+	mkdir -p wc-q && echo x > wc-q/X.txt && mkdir -p WC-Q && echo y > WC-Q/y.txt
+	_ST_RUN --commit --text "x" -- wc-q/X.txt WC-Q/y.txt
+	_ST_OUT_HAS "two new names whose directories differ only in case refuse" 'WC-Q and wc-q differ only in case'
+	rm -rf wc-q WC-Q
+	git rm -q --cached wc-CS/a.txt wc-cs/b.txt wc-CS/new.txt && git commit -qm "WC drop both spellings" && rm -rf wc-CS
+	git config core.ignorecase "${WC_ICASE:-false}"
 	export GIT_EDIT_ACTOR=
 
 	# --- 114. a name git hands back reaches it as itself ---
@@ -6080,6 +6228,11 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --commit --text "PN under glob pathspecs" -- pn-i.txt
 	unset GIT_GLOB_PATHSPECS
 	_ST_EQ "a caller's GIT_GLOB_PATHSPECS leaves the re-sync intact" "$RC:$(git status --porcelain -- pn-i.txt)" "0:"
+	# While a command --exec runs for the caller still reads the caller's own pathspec setting
+	export GIT_LITERAL_PATHSPECS=1
+	_ST_RUN --exec -- sh -c 'git rm -q "pn-[i].txt" && git commit -qm "PN rm the bracketed name"'
+	unset GIT_LITERAL_PATHSPECS
+	_ST_EQ "a caller's GIT_LITERAL_PATHSPECS reaches an --exec command" "$RC:$(git ls-tree --name-only HEAD -- pn-i.txt)" "0:pn-i.txt"
 	# A conflicted name holding a quote reads as itself in the pause it causes
 	printf '1\n2\n3\n' > 'pn"c.txt' && git add -- ':(literal)pn"c.txt' && git commit -qm "PN quote base"
 	local PN_QB=$(git rev-parse HEAD)

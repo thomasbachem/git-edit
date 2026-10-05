@@ -414,9 +414,12 @@ refuses a file lacking what another
 caller's run of the last 7 days landed on it while the tip still carries it
 \(em merging the landing in would change the file and nothing at the tip \(em
 a file such a run removed, and the removal of one it added, naming the run
-and the
+and the remedy:
 .B "git edit \-\-carry=<old tip>"
-that merges the edits onto it. Runs under the caller's own label never count
+to merge edits onto what landed, a rename's too, a
+.B "git restore"
+where the file holds no edits of its own or is one the run added, and
+leaving out one it removed. Runs under the caller's own label never count
 \(em for an unlabeled caller, every unlabeled one \(em nor do edits made on
 the landed lines afterwards, which conflict rather than merge.
 .B \-\-base

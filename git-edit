@@ -64,8 +64,18 @@ if [ -z "$GIT_CONFIG_COUNT" ]; then
 	export GIT_CONFIG_KEY_2=core.quotePath GIT_CONFIG_VALUE_2=false
 fi
 # Pathspec semantics are git-edit's own – a caller's glob setting refuses the `:(literal)` names
-# it passes, a literal one reads them as file names
-unset GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS
+# it passes, a literal one reads them as file names – kept for what runs on the caller's behalf
+typeset -a _CALLER_PATHSPECS
+for _V in GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS; do
+	[ -n "${(P)_V+set}" ] && _CALLER_PATHSPECS+=("$_V=${(P)_V}")
+done
+unset _V GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS
+
+# Exports the caller's pathspec settings again, in the subshell of a command run on their behalf –
+# an `--exec` command or a verify check
+_CALLER_PATHSPECS_BACK () {
+	[ ${#_CALLER_PATHSPECS} -eq 0 ] || export "${_CALLER_PATHSPECS[@]}"
+}
 
 # Cap on the commits a stale SHA's resolution computes a patch id for – the author date
 # filter ahead of it normally leaves a handful, so this only bites on imported or scripted
@@ -1779,8 +1789,9 @@ _RECONCILE_CHECKOUT () {
 				elif [ -n "$SRC" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && { [ -e "$CO/$SRC" ] || [ -L "$CO/$SRC" ]; } && \
 				     [ "$(_WORKTREE_HASH "$CO" "$SRC" 2>/dev/null)" != "$(git rev-parse "${OLD}:${SRC}" 2>/dev/null)" ]; then
 					RENAMED+=("$SRC → $P")
-				# A file this run took whole, still as it was read – the commit's hooks changed it there
-				elif [ -n "$WHOLE_TREE" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
+				# A file `--commit` took whole, still as it was read – the commit's hooks changed it there,
+				# where a fold's tip differs by what later commits replayed onto it
+				elif [ ${#OPT_COMMIT} -gt 0 ] && [ -n "$WHOLE_TREE" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
 				     [ "$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)" = "$(git rev-parse -q --verify "${WHOLE_TREE}:${P}" 2>/dev/null)" ]; then
 					HOOKED+=("$P")
 				elif git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
@@ -2466,19 +2477,28 @@ GIT_EXEC () {
 	# exit path – success, failure or signal
 	_CLEANUP_HOOK="git worktree remove --force ${(q-)WT} 2>/dev/null; rm -rf ${(q-)WT}"
 
-	# A relative `core.hooksPath` the temp worktree lacks – an untracked one, as husky's `.husky/_`
-	# – is read from the checkout for this run, so the repo's hooks still run on what it commits
-	local HP=$(git config --get core.hooksPath 2>/dev/null) HOOKS_AT=""
-	if [ -n "$HP" ] && [[ "$HP" != (/*|"~"*) ]] && [ ! -d "$WT/$HP" ]; then
+	# A relative `core.hooksPath` is read from the checkout for this run – the temp worktree lacks an
+	# untracked one, as husky's `.husky/_`, and the untracked helpers a tracked one may source
+	local HP=$(git config --get core.hooksPath 2>/dev/null) HOOKS_AT="" GCD=${$(git rev-parse --git-common-dir 2>/dev/null):A}
+	if [ -n "$HP" ] && [[ "$HP" != (/*|"~"*) ]]; then
 		HOOKS_AT="$(git rev-parse --show-toplevel 2>/dev/null)/$HP"
 		[ -d "$HOOKS_AT" ] || HOOKS_AT=""
 	fi
 
 	cd "$WT" || exit 1
 
-	if [ -n "$HOOKS_AT" ]; then
-		local N=${GIT_CONFIG_COUNT:-0}
-		local -x GIT_CONFIG_COUNT=$(( N + 1 )) "GIT_CONFIG_KEY_${N}=core.hooksPath" "GIT_CONFIG_VALUE_${N}=${HOOKS_AT:A}"
+	# Through `includeIf`, so only this repository's git dirs read it – not another repo the
+	# command touches, nor a submodule
+	if [ -n "$HOOKS_AT" ] && [ -n "$GCD" ]; then
+		# A glob, so the path's own `[`, `*`, `?` or `\` escaped – and the worktrees one level deep, as
+		# a submodule's git dir sits below a linked worktree's
+		local INC=$(MKTEMP_FILE git-edit-hooks) N=${GIT_CONFIG_COUNT:-0} GPAT=${GCD//\\/\\\\}
+		GPAT=${${${${GPAT//\[/\\[}//\]/\\]}//\*/\\*}//\?/\\?}
+		_TEMP_FILES+=("$INC")
+		git config -f "$INC" core.hooksPath "${HOOKS_AT:A}"
+		local -x GIT_CONFIG_COUNT=$(( N + 2 )) \
+			"GIT_CONFIG_KEY_${N}=includeIf.gitdir:${GPAT}.path" "GIT_CONFIG_VALUE_${N}=$INC" \
+			"GIT_CONFIG_KEY_$(( N + 1 ))=includeIf.gitdir:${GPAT}/worktrees/*.path" "GIT_CONFIG_VALUE_$(( N + 1 ))=$INC"
 	fi
 
 	# Run the caller's command – no `eval`, the array passes straight through so quoting
@@ -2487,7 +2507,7 @@ GIT_EXEC () {
 	local RUN_START=$(date +%s)
 	# A labeled run is git-edit's own, already named by its action line
 	[ -z "$EXEC_LABEL" ] && PRINT_CMD "$* # (in $WT)"
-	"$@"
+	( _CALLER_PATHSPECS_BACK; "$@" )
 	local STATUS=$?
 
 	if [ $STATUS -ne 0 ]; then
@@ -2618,9 +2638,17 @@ _AT_TOP () {
 _WHOLE_PATHS () {
 	# Args: <path>... – fills the caller's WHOLE_PATHS, repo-relative and each once
 	local TOP=$(git rev-parse --show-toplevel) PREFIX=$(git rev-parse --show-prefix) GIVEN P AT_TIP X C
-	local ICASE=$(git config --type=bool core.ignorecase 2>/dev/null) LISTED=""
+	local ICASE=$(git config --type=bool core.ignorecase 2>/dev/null) LISTED="" OP
 	local -i I
 	local -a TIP_NAMES TIP_LOWER
+	local -A NEW_SPELT
+	# Taking files whole mid-merge splits the merge, the partial commit `git commit` refuses too
+	for OP in MERGE CHERRY_PICK REVERT; do
+		if [ -e "$(git rev-parse --git-path "${OP}_HEAD")" ]; then
+			PRINT_ERR "A ${${OP//_/-}:l} is in progress – finish it with git commit before taking files whole"
+			exit 1
+		fi
+	done
 	WHOLE_PATHS=()
 	for GIVEN in "$@"; do
 		if [[ "$GIVEN" == *$'\n'* ]]; then
@@ -2637,6 +2665,11 @@ _WHOLE_PATHS () {
 		fi
 		if [ -z "$P" ]; then
 			PRINT_ERR "$GIVEN names no file inside the repository"
+			exit 1
+		fi
+		# An unmerged file holds a resolution still to stage, as `git commit` refuses it too
+		if [ -n "$(git -C "$TOP" ls-files -u -- ":(literal)$P" 2>/dev/null)" ]; then
+			PRINT_ERR "$GIVEN is unmerged – resolve it and git add it first"
 			exit 1
 		fi
 		AT_TIP=$(git --literal-pathspecs ls-tree --full-tree HEAD -- "$P" 2>/dev/null | awk '{print $1}')
@@ -2675,17 +2708,19 @@ _WHOLE_PATHS () {
 			X=""
 			for C in "${(@s:/:)P}"; do
 				X+="${X:+/}$C"
+				# The tip spelling it exactly settles it, whatever other spelling sits beside it there
+				(( ${TIP_NAMES[(Ie)$X]} )) && continue
 				I=${TIP_LOWER[(Ie)${(L)X}]}
-				if (( I )) && [ "${TIP_NAMES[I]}" != "$X" ]; then
+				if (( I )); then
 					PRINT_ERR "$X differs from the tip's ${TIP_NAMES[I]} only in case – one name to this filesystem, so spell it as the tip does"
 					exit 1
 				fi
+				if [ -n "${NEW_SPELT[${(L)X}]}" ] && [ "${NEW_SPELT[${(L)X}]}" != "$X" ]; then
+					PRINT_ERR "$X and ${NEW_SPELT[${(L)X}]} differ only in case – one name to this filesystem"
+					exit 1
+				fi
+				NEW_SPELT[${(L)X}]=$X
 			done
-			I=${${(@L)WHOLE_PATHS}[(Ie)${(L)P}]}
-			if (( I )) && [ "${WHOLE_PATHS[I]}" != "$P" ]; then
-				PRINT_ERR "$P and ${WHOLE_PATHS[I]} differ only in case – one name to this filesystem"
-				exit 1
-			fi
 		fi
 		(( ${WHOLE_PATHS[(Ie)$P]} )) || WHOLE_PATHS+=("$P")
 	done
@@ -2748,12 +2783,14 @@ _AGO () {
 # the tip still carries, one a landing removed, or the removal of one it added – where a conflict
 # proves nothing, later edits on its lines conflicting too
 _GUARD_WHOLE_LANDINGS () {
-	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE
+	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE Q QOURS
+	local TOPDIR=$(git rev-parse --show-toplevel)
 	REF=$(git symbolic-ref -q HEAD) || return 0
 	[ -n "$JF" ] && [ -s "$JF" ] || return 0
-	local -i NOW=$(date +%s) K N I OLDEST_WHEN=0
+	local -i NOW=$(date +%s) K N I RI OLDEST_WHEN=0
 	local OLDEST_OLD=""
-	local -a J MOVES CHANGED QUERIES ANSWERS HITS M ADDED REMOVED
+	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED RF
+	local KIND
 	local -A MODE_OF
 	# Oldest first, as journaled – this caller's own landings are its to take back, an unlabeled
 	# caller's being every unlabeled one, which nothing tells apart
@@ -2803,48 +2840,69 @@ _GUARD_WHOLE_LANDINGS () {
 			AFTER=${ANSWERS[(K - 1) * N + 2 * I + 2]}
 			# A pruned tip tells nothing
 			[ -n "${ANSWERS[(K - 1) * N + 1]}" ] && [ -n "${ANSWERS[(K - 1) * N + 2]}" ] && [ "$BEFORE" != "$AFTER" ] || continue
-			GONE=""
+			# Each kind takes its own remedy – a merge carries only edits made beside a landing (or
+			# across its rename), while a file still as before it or one it added is restored whole
+			KIND=carry GONE=""
 			if [ -z "$OURS" ]; then
 				# A removal takes back only a file such a run added, which the checkout never got
 				[ -z "$BEFORE" ] && [ -n "$TIP" ] || continue
-				GONE=", which added it"
+				KIND=restore GONE=", which added it"
 			elif [ -z "$BEFORE" ]; then
 				continue
 			elif [ -z "$AFTER" ]; then
 				[ -z "$TIP" ] || continue
-				GONE=", which removed it"
+				KIND=leave GONE=", which removed it"
 			elif [ -z "$TIP" ] || [ "$OURS" = "$AFTER" ]; then
 				continue
-			# The landing's own before, which no merge need read – a binary or a link as much as text
-			elif [ "$OURS" = "$BEFORE" ] && [ "$TIP" = "$AFTER" ]; then
-				:
+			# The landing's own before, which no merge need read – a binary or a link as much as text,
+			# and a later landing on top where the tip still carries this one, or where the merge
+			# conflicts, as a copy holding no edits loses nothing to the restore
+			elif [ "$OURS" = "$BEFORE" ] && { [ "$TIP" = "$AFTER" ] || ! MERGED=$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER") || [ "$MERGED" = "$TIP" ]; }; then
+				KIND=restore GONE=", the file still as before it"
 			else
 				[ "${MODE_OF[$P]}" != 120000 ] || continue
 				MERGED=$(_MERGE_LANDING "$OURS" "$BEFORE" "$AFTER") && [ "$MERGED" != "$OURS" ] && \
 					[ "$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")" = "$TIP" ] || continue
 			fi
+			# An addition or removal that is one side of a rename takes the carry, which follows it –
+			# where the old side holds edits, as untouched the two sides restore and leave as they are
+			if [ "$KIND" != carry ] && [ -z "$BEFORE$OURS" -o -z "$AFTER" ]; then
+				RF=("${(@0)$(git diff -z -M --name-status --diff-filter=R "${M[2]}" "${M[3]}" 2>/dev/null)}")
+				for (( RI = 1; RI + 2 <= ${#RF}; RI += 3 )); do
+					if [ "${RF[RI + 1]}" = "$P" ]; then
+						[ "$OURS" != "$BEFORE" ] && KIND=carry GONE=", which renamed it to ${RF[RI + 2]}"
+					elif [ "${RF[RI + 2]}" = "$P" ]; then
+						Q=${RF[RI + 1]}
+						QOURS=$(git rev-parse -q --verify "$WHOLE_TREE:$Q" 2>/dev/null) || QOURS=$(_WORKTREE_HASH "$TOPDIR" "$Q" 2>/dev/null)
+						[ -n "$QOURS" ] && [ "$QOURS" != "$(git rev-parse -q --verify "${M[2]}:$Q" 2>/dev/null)" ] && \
+							KIND=carry GONE=", which renamed $Q to it"
+					fi
+				done
+			fi
 			WHO="${M[5]}'s"
 			[ "${M[5]}" = "-" ] && WHO="an unlabeled caller's"
 			HITS+=("$P – $WHO ${M[4]} run $(_AGO $(( NOW - M[1] ))) ago (${M[2]:0:7}..${M[3]:0:7})$GONE")
-			# A removal or an addition has nothing a merge could carry
-			if [ "$GONE" = ", which added it" ]; then
-				ADDED+=("$P")
-			elif [ -n "$GONE" ]; then
-				REMOVED+=("$P")
-			elif [ -z "$OLDEST_OLD" ] || (( M[1] < OLDEST_WHEN )); then
-				OLDEST_WHEN=${M[1]}
-				OLDEST_OLD=${M[2]}
-			fi
+			HIT_PATHS+=("$P")
+			case "$KIND" in
+				restore) RESTORE+=("$P") ;;
+				leave) REMOVED+=("$P") ;;
+				*)
+					if [ -z "$OLDEST_OLD" ] || (( M[1] < OLDEST_WHEN )); then
+						OLDEST_WHEN=${M[1]}
+						OLDEST_OLD=${M[2]}
+					fi
+					;;
+			esac
 			break
 		done
 	done
 	[ ${#HITS} -gt 0 ] || return 0
-	PRINT_ERR "Committed whole, ${#HITS} file(s) would take back what another caller landed on them:"
-	print -rl -- "${HITS[@]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	PRINT_ERR "Committed whole, ${#HITS} file(s) would take back what another caller landed: ${(j:, :)HIT_PATHS}"
+	print -rl -- "${HITS[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	[ -n "$OLDEST_OLD" ] && ECHO_E "\e[0;31m  Merge your edits onto what landed with 'git edit --carry=${OLDEST_OLD:0:12}', then run this again.\e[0m" >&2
-	if [ ${#ADDED} -gt 0 ]; then
+	if [ ${#RESTORE} -gt 0 ]; then
 		_AT_TOP "$(git rev-parse --show-toplevel)"
-		ECHO_E "\e[0;31m  Restore what was added with '${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${ADDED[@]}")', or leave it out.\e[0m" >&2
+		ECHO_E "\e[0;31m  Take what landed with '$(_LIT "${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${RESTORE[@]}")")', or leave it out.\e[0m" >&2
 	fi
 	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_LIT "$(_QUOTE_PATHS "${REMOVED[@]}")")\e[0m" >&2
 	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
@@ -2932,7 +2990,8 @@ _STAGED_TREE_FOR () {
 		DSTMODE=$(echo "$META" | awk '{print $2}')
 		DSTSHA=$(echo "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
-			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
+			# From the top, as `update-index` reads a path from where it runs, unlike a `--cacheinfo`
+			GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		fi
@@ -3370,7 +3429,7 @@ _SNAPSHOT_BUILD () {
 					P=${LINE%%$'\t'*}
 					LINE=${LINE#*$'\t'}
 					if [ "$LINE" = "-" ]; then
-						GIT_INDEX_FILE=$IDX git update-index --force-remove -- "$P" || { rm -f "$IDX"; return 1; }
+						GIT_INDEX_FILE=$IDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$P" || { rm -f "$IDX"; return 1; }
 					else
 						GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "${LINE%% *},${LINE#* },$P" || { rm -f "$IDX"; return 1; }
 					fi
@@ -3966,7 +4025,7 @@ GIT_SPLIT () {
 		DSTMODE=$(echo "$META" | awk '{print $2}')
 		DSTSHA=$(echo "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
-			GIT_INDEX_FILE=$TMPIDX git update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+			GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
 		fi
@@ -5272,7 +5331,9 @@ _SAVE_STATE () {
 		# And a mode change a continue let through – the landing must not refuse what a stop allowed
 		if [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then echo "allow_mode_change=1"; fi
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
-		if [ "$_CAPTURE_REWRITES" = "true" ]; then echo "capture=$_CAPTURE_DIR"; fi
+		if [ "$_CAPTURE_REWRITES" = "true" ]; then print -r -- "capture=$_CAPTURE_DIR"; fi
+		# And the files a run took whole, whose staging the landing re-syncs to what they folded
+		if [ ${#WHOLE_PATHS} -gt 0 ]; then print -r -- "whole=${(j: :)${(q)WHOLE_PATHS[@]}}"; fi
 	} > "$SF_NEW"
 	# Rewrites this run's own pause in place, and claims a free slot by a hard link – an exclusive
 	# create where the filesystem has none – so a parallel run's pause taken meanwhile refuses this one
@@ -5340,6 +5401,7 @@ _LOAD_STATE () {
 			fold)            STATE_FOLD=$VAL ;;
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
+			whole)           WHOLE_PATHS=("${(@Q)${(z)VAL}}") ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
 			tree)            STATE_TREE=$VAL ;;
 			amended)         STATE_AMENDED=$VAL ;;
@@ -5871,7 +5933,7 @@ _VERIFY_DIAGNOSE () {
 
 	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
 	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
-		if ! (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && eval "$CMD" </dev/null) >/dev/null 2>&1; then
+		if ! (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1; then
 			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
 			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
 			# Naming the cause without the remedy leaves the reader to find it in the page. The
@@ -5917,7 +5979,7 @@ _VERIFY_DIAGNOSE () {
 		[ "$SKIP" = "true" ] && continue
 		git -C "$WT" checkout -qf --detach "$X" 2>/dev/null || continue
 		CHECKED+=1
-		if (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && eval "$CMD" </dev/null) >/dev/null 2>&1; then
+		if (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1; then
 			FOUND=$X
 		fi
 	done
@@ -6059,7 +6121,7 @@ _VERIFY_REWRITE () {
 		# The subshell contains both the cd and the export naming the commit – exported, since a
 		# prefix assignment on the `eval` builtin never reaches the child it forks
 		RUN_T0=$SECONDS
-		OUT=$(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && eval "$VERIFY_CMD" </dev/null 2>&1)
+		OUT=$(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && _CALLER_PATHSPECS_BACK && eval "$VERIFY_CMD" </dev/null 2>&1)
 		RC=$?
 		# Taken here rather than at the diagnosis below, which the printing in
 		# between would pad – the walk budget is the failing run's own duration
