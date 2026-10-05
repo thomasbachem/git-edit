@@ -22,6 +22,8 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...
+\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
+\fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
@@ -381,12 +383,57 @@ where the paused commit is one \fIupstream\fR already carries in another form,
 .B git edit \-\-skip
 steps over it.
 .TP
+.B \-\-commit \-\-text \fImsg\fR \fB\-\-\fR \fIpath\fR...
+Commit each \fIpath\fR as it stands in the checkout, as
+.B "git commit \-\- <paths>"
+does \(em a new file needs no
+.BR "git add" ,
+a deleted one is removed, a moved one is named at both paths \(em on top of
+the tip. The tree is composed in a private index seeded from
+.BR HEAD ,
+each file read through its filters as
+.B "git add"
+reads it, so the shared index is neither read nor written and a file staged
+beside them stays staged. The commit is then made in a temporary worktree and
+landed as
+.B \-\-exec
+lands its result: the repo's hooks and
+.B edit.verifyCmd
+run on it, the branch moves only from the tip the files were composed on, and
+the journal and reflog name the caller. A file\-mode change refuses unless
+.B \-\-allow\-mode\-change
+says it is meant.
+.IP
+In a checkout other callers share, a rewrite one of them lands \(em a drop, a
+fold built elsewhere \(em changes a file at the tip without passing through
+the checkout, and a file edited on the old content and committed whole would
+take that change back. So
+.B \-\-commit
+refuses a file lacking what another
+.B GIT_EDIT_ACTOR
+caller's run of the last 7 days landed on it while the tip still carries it
+\(em merging the landing in would change the file and nothing at the tip \(em
+a file such a run removed, and the removal of one it added, naming the run
+and the
+.B "git edit \-\-carry=<old tip>"
+that merges the edits onto it. Runs under the caller's own label never count
+\(em for an unlabeled caller, every unlabeled one \(em nor do edits made on
+the landed lines afterwards, which conflict rather than merge.
+.B \-\-base
+names the commit the files rest on instead, refusing a path changed since
+\(em the tip's SHA where taking a landing back is the point.
+.B "\-\-amend\-into=<sha> \-\-whole"
+folds files taken the same way, under the same guard.
+.TP
 .B \-\-exec \fB\-\-\fR \fIcommand\fR...
 Run any \fIcommand\fR (e.g. a raw
 .BR "git rebase" )
 inside a fresh temporary worktree; the branch ref is CAS\-updated only if
 \fIcommand\fR moved HEAD. The escape hatch for cases the other modes do not
-cover.
+cover. A commit it makes runs the repo's hooks \(em under a relative
+.B core.hooksPath
+from the checkout, as the worktree lacks an untracked hooks directory such
+as husky's.
 .IP
 The pushed guard runs on the result here, since a wrapped \fIcommand\fR's
 targets are its own: a remote\-tracking ref that was an ancestor of the old tip
@@ -463,8 +510,10 @@ Inline message for
 .BR \-M ,
 .BR \-s / \-S ,
 .BR \-\-split ,
+.BR \-\-amend\-into ,
 or
-.BR \-\-amend\-into
+.BR \-\-commit ,
+which requires it
 (skips the editor).
 .B \-\-text \-
 reads the message from standard input. With
@@ -525,6 +574,14 @@ instead of the index's \(em composed apart from the shared index, a commit
 pinning the tip it was composed on; see
 .BR MODES .
 .TP
+.B \-\-whole
+With
+.BR \-\-amend\-into ,
+fold each \fIpath\fR whole from the checkout, as
+.B \-\-commit
+takes it, rather than what is staged; see
+.BR MODES .
+.TP
 .B \-\-snapshot
 With
 .BR \-\-amend\-into ,
@@ -552,6 +609,13 @@ before the \fIcommand\fR starts, naming what reached the branch since and the
 .B "git rebase \-\-onto"
 that carries those onto the result inside the run; see
 .BR MODES .
+With
+.B \-\-commit
+or
+.BR \-\-whole ,
+the commit the files rest on: a path changed between it and the tip refuses,
+in place of the check against other callers' landings, and the tip's own SHA
+takes a landing back on purpose.
 .TP
 .B \-\-dry\-run
 With

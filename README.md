@@ -47,6 +47,7 @@ Either way `man git-edit` works right away – the formula installs the page, an
 | `git edit -d <commit>...` | **Drop** commits or ranges. Their content stays in your checkout as uncommitted work |
 | `git edit -s <commit>...` | **Squash** into the oldest of them – `-s=<target>` into a named one, `-S` to demand the plumbing path instead of a rebase fallback |
 | `git edit --amend-into=<sha>` | **Fold** the staged changes into a past commit |
+| `git edit --commit --text <msg> -- <path>...` | **Commit** files whole from the checkout, as `git commit -- <paths>` does – composed apart from the shared index |
 | `git edit --split=<sha>` | **Split** one commit into two |
 | `git edit --reorder <commit>...` | **Reorder** a contiguous span, the arguments giving the new order oldest-first |
 | `git edit --move=<sha> --after=<anchor>` | **Move** one commit (`--before=<anchor>` likewise) – span and ordering derived |
@@ -74,6 +75,17 @@ Only staged changes are folded, and nothing is consumed until the final compare-
 Where later commits rewrote the lines beside the fold, a replay stops at each of them for a state written by hand. `--snapshot` merges the fold into every commit from the target up instead – each through `git merge-tree` against the pre-op tip, so a file moved since takes the fold under its old name – and keeps each commit's author and message. A conflict stops once per distinct content of its file, in a worktree laid out as any merge's, and that resolution serves every commit carrying the same, while rerere pre-fills a hunk already resolved at an earlier stop. Only a conflict over content resolves this way – a rename or deletion meeting the fold refuses, as does `--text`.
 
 Where the shared index is itself the hazard – a parallel session's uncommitted edits sit in the very file you are folding – `--tree` takes the fold's content from a tree composed apart from it: seed a private index from `HEAD` (`GIT_INDEX_FILE=… git read-tree HEAD`), place your blobs at `HEAD`'s modes, `write-tree`, and hand the result over as a commit on `HEAD`, which pins the tip it was composed on, so a tip that moved since is refused rather than have the diff carry a newer commit's reversal. The shared index is neither read nor written – its entries are reconciled afterwards as any rewrite's are, re-synced where they still hold the pre-op tip and named where they don't.
+
+## Committing whole files
+
+```
+git edit --commit --text "Subject" -- src/foo.js src/new.js   # commit these files as they stand
+git edit --amend-into=<sha> --whole -- src/foo.js             # or fold them whole into a past commit
+```
+
+`--commit` takes what `git commit -- <paths>` takes – each file as it stands, a new one with no `git add`, a deleted one removed, a moved one named at both paths – into a private index seeded from `HEAD`, read through the files' filters as `git add` reads them, and lands the commit the way `--exec` lands its result: the repo's hooks and `edit.verifyCmd` run on it, the branch moves only from the tip the files were composed on, and the journal and reflog name the caller. Files staged beside them stay staged and out of the commit. A file-mode change refuses unless `--allow-mode-change` says it is meant.
+
+A checkout other callers share has one more way to lose work: a rewrite one of them lands – a drop, a fold built elsewhere – changes a file at the tip without passing through the checkout, so a file edited on the old content and committed whole takes that change back. `--commit` and `--whole` refuse where a file lacks what another `GIT_EDIT_ACTOR` caller's run of the last 7 days landed on it and the tip still carries, would bring back a file such a run removed or remove one it added – naming the run and the `git edit --carry=<old tip>` that merges the edits onto it. Runs under the caller's own label never count – for an unlabeled caller, every unlabeled one – nor do edits made on the landed lines afterwards, which conflict rather than merge. `--base=<sha>` names the commit the files rest on instead, refusing any path changed since – the tip's own SHA where taking a landing back is the point.
 
 ## Rewording a whole span in one pass
 
@@ -168,22 +180,23 @@ git edit --continue                          # dispatch on the fresh trailer, ca
 
 `man git-edit` carries the rest under SCRIPTING: the pause states in full, what `rerere` replays into a later conflict, and the snapshot-map recipe for a mechanical change across many commits, which belongs in a single `--exec` rather than in one fold per commit.
 
-Worth putting in an agent's own instructions verbatim: *for any history-rewriting git command, reach for `git edit` – and for one it doesn't cover, `git edit --exec -- …` – so it can't disturb another session's working tree.*
+Worth putting in an agent's own instructions verbatim: *commit through `git edit --commit --text "…" -- <paths>`, and for any history-rewriting git command reach for `git edit` – for one it doesn't cover, `git edit --exec -- …` – so it can't disturb another session's working tree or take back what one landed.*
 
 ## Flags and standalone commands
 
 | | |
 | --- | --- |
 | `-m`, `--message` | Also edit the commit message after applying the changes |
-| `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` (the extracted commit's – the remainder keeps the original) and `--amend-into`, skipping the editor – `-` reads it from stdin |
+| `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` (the extracted commit's – the remainder keeps the original), `--amend-into` and `--commit`, which requires it, skipping the editor – `-` reads it from stdin |
 | `-C`, `--dir[=<path>]` | Run in a separate worktree (default `<repo>.git-edit`), as non-interactive runs do by themselves |
 | `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref – the landing then prints the push that publishes it, its `--force-with-lease` pinned to the upstream it replaced |
 | `--allow-new-path` | Let `--amend-into` fold a staged path into a commit that predates it |
-| `--allow-mode-change` | Let `--amend-into` fold a file-mode change – a flipped executable bit, which it otherwise refuses – and, on `--continue`, keep one a conflict resolution staged or the landing found nothing asked for |
+| `--allow-mode-change` | Let `--commit` take, or `--amend-into` fold, a file-mode change – a flipped executable bit, which it otherwise refuses – and, on `--continue`, keep one a conflict resolution staged or the landing found nothing asked for |
 | `--allow-other-actor` | Let `--undo` take back a run another `GIT_EDIT_ACTOR` caller made |
 | `--snapshot` | With `--amend-into`, merge the fold into each commit from its target up instead of replaying those above it – a conflict stops once per distinct content, its resolution serving every commit that carries the same |
 | `--tree=<tree-ish>` | With `--amend-into`, fold that tree's diff from `HEAD` instead of the index's – composed apart from the shared index; a commit pins the tip it was composed on |
-| `--base=<sha>` | With `--exec`, the tip its result was built on – needed where that result carries commits made before the run and takes commits off the branch, and refused where the branch has moved past it |
+| `--whole` | With `--amend-into`, fold the named files whole from the checkout, as `--commit` takes them, rather than what is staged |
+| `--base=<sha>` | With `--exec`, the tip its result was built on – needed where that result carries commits made before the run and takes commits off the branch, and refused where the branch has moved past it. With `--commit` or `--whole`, the commit the files rest on – a path changed since refuses, in place of the check against other callers' landings |
 | `--dry-run` | With `--exec`, build and report the result, and the landing pinned to its base, with nothing verified or applied |
 | `--verify=<cmd>` / `--verify-span` / `--no-verify-span` / `--no-verify` | Gate the rewrite on your own check, at the tip or across the span – step a standing span back down for one run, or skip a configured check |
 | `--skip` | With `--onto`, resume past the paused commit instead of through it |

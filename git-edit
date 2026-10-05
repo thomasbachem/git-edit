@@ -249,7 +249,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --exec [--base=<sha>] [--dry-run] -- <command>...\e[0m"
+	ECHO_E "\e[0;94m       git edit --commit --text <msg> -- <path>...          # commit these files whole from the checkout, at the tip\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto [--tree=<tree-ish>] # fold staged changes (or a composed tree) into <sha> (auto = the unpushed commit owning the lines)\e[0m"
+	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto --whole -- <path>... # fold these files whole from the checkout into <sha>\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha>                               # split <sha> by content (same-file halves)\e[0m"
 	ECHO_E "\e[0;94m       (pauses with a worktree at the commit – edit it back to the first commit's state, then --continue)\e[0m"
@@ -272,7 +274,17 @@ USAGE () {
 	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
 	ECHO_E "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
 	ECHO_E "\e[0;94m       --base=<sha>                    With --exec: the tip its result was built on – refused where the branch\e[0m"
-	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run\e[0m"
+	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run.\e[0m"
+	ECHO_E "\e[0;94m                                       With --commit or --whole: the commit the files rest on – one changed since\e[0m"
+	ECHO_E "\e[0;94m                                       refuses, in place of the 7-day check (the tip's SHA takes a landing back)\e[0m"
+	ECHO_E "\e[0;94m       --commit --text <msg> -- <path>...\e[0m"
+	ECHO_E "\e[0;94m                                       Commit <path>s as they stand in the checkout, as git commit -- <paths>\e[0m"
+	ECHO_E "\e[0;94m                                       does – a new file needs no git add, a deleted one goes – composed apart\e[0m"
+	ECHO_E "\e[0;94m                                       from the shared index and landed through --exec (hooks, gate, CAS);\e[0m"
+	ECHO_E "\e[0;94m                                       refuses a file lacking what another caller landed on it in the last\e[0m"
+	ECHO_E "\e[0;94m                                       7 days, and a mode change unless --allow-mode-change\e[0m"
+	ECHO_E "\e[0;94m       --whole                         With --amend-into: fold <path>s whole from the checkout, as --commit\e[0m"
+	ECHO_E "\e[0;94m                                       takes them, rather than what is staged\e[0m"
 	ECHO_E "\e[0;94m       --dry-run                       With --exec: build, then report the result and its pinned landing –\e[0m"
 	ECHO_E "\e[0;94m                                       neither verified nor applied\e[0m"
 	ECHO_E "\e[0;94m       --amend-into=<sha>|auto [--text <msg>] [-- <pathspec>...]\e[0m"
@@ -428,8 +440,9 @@ PRINT_ERR () {
 	# Remember the message for the status trailer in _GLOBAL_EXIT_TRAP
 	_LAST_ERROR="$MSG"
 
-	if [[ "$MSG" == *:* ]]; then
-		local PREFIX="${MSG%%:*}"
+	# Split at the first `: ` alone – a bare colon is a name's, as in `:x.txt`, or ends a lead-in
+	if [[ "$MSG" == *": "* ]]; then
+		local PREFIX="${MSG%%: *}"
 		local REST="${MSG#*: }"
 		ECHO_E "\n\e[1;91m${PREFIX}:\e[0m\e[0;31m ${REST}\e[0m" >&2
 	else
@@ -1546,7 +1559,13 @@ _RESYNC_STRANDED_ENTRIES () {
 		elif [ "$OLDENT" = "$IDXENT" ]; then
 			SYNC+=("$P")
 		# One staged as the new tip has it is in sync already
-		elif [ "$IDXENT" != "$(git ls-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
+		elif [ "$IDXENT" = "$(git ls-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
+			:
+		# A file this run took whole supersedes what was staged of it, an intent-to-add entry too,
+		# as `git commit -- <paths>` has it – left as it was, a plain commit takes the file back
+		elif (( ${WHOLE_PATHS[(Ie)$P]} )); then
+			SYNC+=("$P")
+		else
 			LEFT_ALONE+=("$P")
 		fi
 	done
@@ -2203,6 +2222,11 @@ _REFUSE_EXEC_BASE_MOVED () {
 	local BASE=$1
 	local ORIG_HEAD=$2
 	local BRANCH=${3#refs/heads/}
+	# `--commit` pins the tip it composed on, which the caller never named
+	if [ ${#OPT_COMMIT} -gt 0 ]; then
+		PRINT_ERR "$BRANCH moved to ${ORIG_HEAD:0:7} while the commit was composed on ${BASE:0:7} – nothing landed, so run it again"
+		return 0
+	fi
 	if ! git merge-base --is-ancestor "$BASE" "$ORIG_HEAD" 2>/dev/null; then
 		PRINT_ERR "$BRANCH was rewritten since --base ${BASE:0:7} – it is no longer an ancestor of the tip"
 		ECHO_E "\e[0;31m  Rebuild on the current tip, ${ORIG_HEAD:0:12}.\e[0m" >&2
@@ -2307,13 +2331,27 @@ GIT_EXEC () {
 	# exit path – success, failure or signal
 	_CLEANUP_HOOK="git worktree remove --force '$WT' 2>/dev/null; rm -rf '$WT'"
 
+	# A relative `core.hooksPath` the temp worktree lacks – an untracked one, as husky's `.husky/_`
+	# – is read from the checkout for this run, so the repo's hooks still run on what it commits
+	local HP=$(git config --get core.hooksPath 2>/dev/null) HOOKS_AT=""
+	if [ -n "$HP" ] && [[ "$HP" != (/*|"~"*) ]] && [ ! -d "$WT/$HP" ]; then
+		HOOKS_AT="$(git rev-parse --show-toplevel 2>/dev/null)/$HP"
+		[ -d "$HOOKS_AT" ] || HOOKS_AT=""
+	fi
+
 	cd "$WT" || exit 1
+
+	if [ -n "$HOOKS_AT" ]; then
+		local N=${GIT_CONFIG_COUNT:-0}
+		local -x GIT_CONFIG_COUNT=$(( N + 1 )) "GIT_CONFIG_KEY_${N}=core.hooksPath" "GIT_CONFIG_VALUE_${N}=${HOOKS_AT:A}"
+	fi
 
 	# Run the caller's command – no `eval`, the array passes straight through so quoting
 	# and special characters survive. The clock is read first: a result committed before it
 	# was built somewhere else, on a tip nothing here can name
 	local RUN_START=$(date +%s)
-	PRINT_CMD "$* # (in $WT)"
+	# A labeled run is git-edit's own, already named by its action line
+	[ -z "$EXEC_LABEL" ] && PRINT_CMD "$* # (in $WT)"
 	"$@"
 	local STATUS=$?
 
@@ -2394,7 +2432,7 @@ GIT_EXEC () {
 	# The reflog names the oldest commit a rewrite replaced, as most modes name their target –
 	# a run that only added commits on top replaced none, and those commits say what it did
 	local REPLACED=$(git rev-list --reverse --topo-order "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | head -1)
-	local LABEL="exec${REPLACED:+ ${REPLACED:0:7}}"
+	local LABEL="${EXEC_LABEL:-exec}${REPLACED:+ ${REPLACED:0:7}}"
 
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
@@ -2402,7 +2440,12 @@ GIT_EXEC () {
 	PRINT_CMD "$UPDATE"
 	if ! _MOVE_REF "$UPDATE" 2>/dev/null; then
 		PRINT_ERR "Ref '$REF' moved during exec – refusing to overwrite"
-		PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
+		# A `--commit` sits on the old tip, so landing it would take back what moved the branch
+		if [ ${#OPT_COMMIT} -gt 0 ]; then
+			PRINT_TEXT "Nothing landed – run it again to commit on the new tip." 33
+		else
+			PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
+		fi
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "$LABEL"
@@ -2416,6 +2459,297 @@ GIT_EXEC () {
 	# Update status trailer outputs (head moved, CAS succeeded)
 	EXEC_NEW_HEAD=$NEW_HEAD
 	EXEC_CHANGED=true
+}
+
+# Reads whole-file paths as `git commit -- <paths>` takes them, from where the caller stands –
+# each a file or link in the checkout, or one the tip has and the checkout lost
+_WHOLE_PATHS () {
+	# Args: <path>... – fills the caller's WHOLE_PATHS, repo-relative and each once
+	local TOP=$(git rev-parse --show-toplevel) PREFIX=$(git rev-parse --show-prefix) GIVEN P AT_TIP X C
+	local ICASE=$(git config --type=bool core.ignorecase 2>/dev/null) LISTED=""
+	local -i I
+	local -a TIP_NAMES TIP_LOWER
+	WHOLE_PATHS=()
+	for GIVEN in "$@"; do
+		if [[ "$GIVEN" == *$'\n'* ]]; then
+			PRINT_ERR "${(q-)GIVEN} has a newline in its name – commit it with git commit"
+			exit 1
+		fi
+		if [[ "$GIVEN" == /* ]]; then
+			P=${GIVEN:h:A}/${GIVEN:t}
+			[[ "$P" == "${TOP:A}/"?* ]] && P=${P#"${TOP:A}/"} || P=""
+		else
+			# Under a stand-in root, so a `..` past the top shows instead of normalizing away
+			P=${${:-/@top@/$PREFIX$GIVEN}:a}
+			[[ "$P" == /@top@/?* ]] && P=${P#/@top@/} || P=""
+		fi
+		if [ -z "$P" ]; then
+			PRINT_ERR "$GIVEN names no file inside the repository"
+			exit 1
+		fi
+		AT_TIP=$(git --literal-pathspecs ls-tree --full-tree HEAD -- "$P" 2>/dev/null | awk '{print $1}')
+		if [ -d "$TOP/$P" ] && [ ! -L "$TOP/$P" ]; then
+			if [ "$AT_TIP" = "160000" ]; then
+				PRINT_ERR "$GIVEN is a submodule – commit inside it"
+			else
+				PRINT_ERR "$GIVEN is a directory – name its files"
+			fi
+			exit 1
+		elif [ ! -e "$TOP/$P" ] && [ ! -L "$TOP/$P" ]; then
+			if [ -z "$AT_TIP" ]; then
+				PRINT_ERR "$GIVEN: no such file, in the checkout or at the tip"
+				exit 1
+			elif [ "$AT_TIP" = "040000" ]; then
+				PRINT_ERR "$GIVEN is a directory at the tip – name its files"
+				exit 1
+			# Outside a sparse checkout a file is absent by design, as `git commit` reads it too
+			elif [[ "$(git -C "$TOP" ls-files -t -- ":(literal)$P" 2>/dev/null)" == "S "* ]]; then
+				PRINT_ERR "$GIVEN lies outside the sparse checkout – its absence there is no deletion"
+				exit 1
+			fi
+		# As `git add` refuses one it does not track
+		elif [ -z "$AT_TIP" ] && [ -n "$(git -C "$TOP" ls-files --others --ignored --exclude-standard -- ":(literal)$P" 2>/dev/null)" ]; then
+			PRINT_ERR "$GIVEN is ignored, and the tip lacks it – git add would not take it either"
+			exit 1
+		fi
+		# A name a case-insensitive filesystem reads as one the tip spells otherwise – or as another
+		# one named here – would land both spellings, where `git commit` refuses it
+		if [ -z "$AT_TIP" ] && [ "$ICASE" = true ]; then
+			if [ -z "$LISTED" ]; then
+				TIP_NAMES=("${(@0)$(git ls-tree -r -t -z --name-only --full-tree HEAD 2>/dev/null)}")
+				TIP_LOWER=("${(@L)TIP_NAMES}")
+				LISTED=true
+			fi
+			X=""
+			for C in "${(@s:/:)P}"; do
+				X+="${X:+/}$C"
+				I=${TIP_LOWER[(Ie)${(L)X}]}
+				if (( I )) && [ "${TIP_NAMES[I]}" != "$X" ]; then
+					PRINT_ERR "$X differs from the tip's ${TIP_NAMES[I]} only in case – one name to this filesystem, so spell it as the tip does"
+					exit 1
+				fi
+			done
+			I=${${(@L)WHOLE_PATHS}[(Ie)${(L)P}]}
+			if (( I )) && [ "${WHOLE_PATHS[I]}" != "$P" ]; then
+				PRINT_ERR "$P and ${WHOLE_PATHS[I]} differ only in case – one name to this filesystem"
+				exit 1
+			fi
+		fi
+		(( ${WHOLE_PATHS[(Ie)$P]} )) || WHOLE_PATHS+=("$P")
+	done
+}
+
+# Composes the tip's tree with whole files from the checkout, in a private index – read as
+# `git add` reads them, filters, executable bit and links included, the shared index untouched
+_COMPOSE_WHOLE () {
+	# Args: <path>... – sets WHOLE_PATHS, WHOLE_HEAD and WHOLE_TREE
+	_WHOLE_PATHS "$@"
+	if ! WHOLE_HEAD=$(git rev-parse --verify -q HEAD); then
+		PRINT_ERR "No commit to build on – the branch has none yet"
+		exit 1
+	fi
+	local TOP=$(git rev-parse --show-toplevel) IDX=$(MKTEMP_FILE git-edit-index) ERR
+	_TEMP_FILES+=("$IDX")
+	# An empty file is no index – read-tree writes its own
+	rm -f "$IDX"
+	if ! ERR=$(cd "$TOP" && GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" 2>&1 && GIT_INDEX_FILE=$IDX git update-index --add --remove -- "${WHOLE_PATHS[@]}" 2>&1); then
+		PRINT_ERR "Could not take those files: ${ERR//$'\n'/ }"
+		exit 1
+	fi
+	WHOLE_TREE=$(GIT_INDEX_FILE=$IDX git write-tree)
+	rm -f "$IDX"
+	if [ "$WHOLE_TREE" = "$(git rev-parse "$WHOLE_HEAD^{tree}")" ]; then
+		PRINT_ERR "Nothing to take – each of the ${#WHOLE_PATHS} file(s) named is as the tip has it"
+		exit 1
+	fi
+}
+
+# Merges a landing's change into <ours> – the result's blob on stdout, or a failure where it
+# conflicts or cannot run, a binary say
+_MERGE_LANDING () {
+	# Args: <ours blob> <before blob> <after blob>
+	local OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) RC
+	_TEMP_FILES+=("$OURS" "$BASE" "$THEIRS")
+	git cat-file blob "$1" > "$OURS" && git cat-file blob "$2" > "$BASE" && git cat-file blob "$3" > "$THEIRS" && \
+		git merge-file -q "$OURS" "$BASE" "$THEIRS" 2>/dev/null
+	RC=$?
+	[ $RC -eq 0 ] && git hash-object --no-filters -- "$OURS"
+	rm -f "$OURS" "$BASE" "$THEIRS"
+	return $RC
+}
+
+# Renders seconds as their largest whole unit – 3d, 5h, 12m, 40s
+_AGO () {
+	# Args: <seconds>
+	if (( $1 >= 86400 )); then
+		print -r -- "$(( $1 / 86400 ))d"
+	elif (( $1 >= 3600 )); then
+		print -r -- "$(( $1 / 3600 ))h"
+	elif (( $1 >= 60 )); then
+		print -r -- "$(( $1 / 60 ))m"
+	else
+		print -r -- "${1}s"
+	fi
+}
+
+# Refuses whole files taking back another caller's landing of the last 7 days – a file lacking one
+# the tip still carries, one a landing removed, or the removal of one it added – where a conflict
+# proves nothing, later edits on its lines conflicting too
+_GUARD_WHOLE_LANDINGS () {
+	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE
+	REF=$(git symbolic-ref -q HEAD) || return 0
+	[ -n "$JF" ] && [ -s "$JF" ] || return 0
+	local -i NOW=$(date +%s) K N I OLDEST_WHEN=0
+	local OLDEST_OLD=""
+	local -a J MOVES CHANGED QUERIES ANSWERS HITS M ADDED REMOVED
+	local -A MODE_OF
+	# Oldest first, as journaled – this caller's own landings are its to take back, an unlabeled
+	# caller's being every unlabeled one, which nothing tells apart
+	for LINE in "${(@f)$(<"$JF")}"; do
+		J=(${=${LINE%%$'\t'*}})
+		[[ "${J[1]}" == <-> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] || continue
+		ACTOR=""
+		[[ "$LINE" == *$'\t'* ]] && ACTOR=${LINE##*$'\t'}
+		[ "$ACTOR" = "$_ACTOR" ] && continue
+		MOVES+=("${J[1]} ${J[3]} ${J[4]} ${J[5]:-run} ${ACTOR:--}")
+	done
+	[ ${#MOVES} -gt 0 ] || return 0
+	# Only content this commit changes can take a landing back – a file, a link or a removal
+	for P in "${(@0)$(git diff-tree -z -r --name-only --no-renames "$WHOLE_HEAD" "$WHOLE_TREE")}"; do
+		[ -n "$P" ] || continue
+		MODE=$(git --literal-pathspecs ls-tree --full-tree "$WHOLE_TREE" -- "$P" | awk '{print $1}')
+		[ "$MODE" = 160000 ] && continue
+		CHANGED+=("$P")
+		MODE_OF[$P]=$MODE
+	done
+	[ ${#CHANGED} -gt 0 ] || return 0
+	# One batch, read back by position – a move's two tips, then each path at both
+	for MOVE in "${MOVES[@]}"; do
+		M=(${=MOVE})
+		QUERIES+=("${M[2]}" "${M[3]}")
+		for P in "${CHANGED[@]}"; do
+			QUERIES+=("${M[2]}:$P" "${M[3]}:$P")
+		done
+	done
+	ANSWERS=("${(@f)$(print -rl -- "${QUERIES[@]}" | git cat-file --batch-check='%(objectname)')}")
+	if [ ${#ANSWERS} -ne ${#QUERIES} ]; then
+		PRINT_ERR "git cat-file answered ${#ANSWERS} of ${#QUERIES} lookups – refusing rather than guess"
+		exit 1
+	fi
+	for (( I = 1; I <= ${#ANSWERS}; I++ )); do
+		[[ "${ANSWERS[I]}" =~ '^[0-9a-f]{40,64}$' ]] || ANSWERS[I]=""
+	done
+	N=$(( 2 + 2 * ${#CHANGED} ))
+	for (( I = 1; I <= ${#CHANGED}; I++ )); do
+		P=${CHANGED[I]}
+		OURS=$(git rev-parse -q --verify "$WHOLE_TREE:$P" 2>/dev/null)
+		TIP=$(git rev-parse -q --verify "$WHOLE_HEAD:$P" 2>/dev/null)
+		# Oldest first, so the carry named takes in every later landing the file lacks as well
+		for (( K = 1; K <= ${#MOVES}; K++ )); do
+			M=(${=MOVES[K]})
+			BEFORE=${ANSWERS[(K - 1) * N + 2 * I + 1]}
+			AFTER=${ANSWERS[(K - 1) * N + 2 * I + 2]}
+			# A pruned tip tells nothing
+			[ -n "${ANSWERS[(K - 1) * N + 1]}" ] && [ -n "${ANSWERS[(K - 1) * N + 2]}" ] && [ "$BEFORE" != "$AFTER" ] || continue
+			GONE=""
+			if [ -z "$OURS" ]; then
+				# A removal takes back only a file such a run added, which the checkout never got
+				[ -z "$BEFORE" ] && [ -n "$TIP" ] || continue
+				GONE=", which added it"
+			elif [ -z "$BEFORE" ]; then
+				continue
+			elif [ -z "$AFTER" ]; then
+				[ -z "$TIP" ] || continue
+				GONE=", which removed it"
+			elif [ -z "$TIP" ] || [ "$OURS" = "$AFTER" ]; then
+				continue
+			# The landing's own before, which no merge need read – a binary or a link as much as text
+			elif [ "$OURS" = "$BEFORE" ] && [ "$TIP" = "$AFTER" ]; then
+				:
+			else
+				[ "${MODE_OF[$P]}" != 120000 ] || continue
+				MERGED=$(_MERGE_LANDING "$OURS" "$BEFORE" "$AFTER") && [ "$MERGED" != "$OURS" ] && \
+					[ "$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")" = "$TIP" ] || continue
+			fi
+			WHO="${M[5]}'s"
+			[ "${M[5]}" = "-" ] && WHO="an unlabeled caller's"
+			HITS+=("$P – $WHO ${M[4]} run $(_AGO $(( NOW - M[1] ))) ago (${M[2]:0:7}..${M[3]:0:7})$GONE")
+			# A removal or an addition has nothing a merge could carry
+			if [ "$GONE" = ", which added it" ]; then
+				ADDED+=("$P")
+			elif [ -n "$GONE" ]; then
+				REMOVED+=("$P")
+			elif [ -z "$OLDEST_OLD" ] || (( M[1] < OLDEST_WHEN )); then
+				OLDEST_WHEN=${M[1]}
+				OLDEST_OLD=${M[2]}
+			fi
+			break
+		done
+	done
+	[ ${#HITS} -gt 0 ] || return 0
+	PRINT_ERR "Committed whole, ${#HITS} file(s) would take back what another caller landed on them:"
+	print -rl -- "${HITS[@]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	[ -n "$OLDEST_OLD" ] && ECHO_E "\e[0;31m  Merge your edits onto what landed with 'git edit --carry=${OLDEST_OLD:0:12}', then run this again.\e[0m" >&2
+	[ ${#ADDED} -gt 0 ] && ECHO_E "\e[0;31m  Restore what was added with 'git restore --source=HEAD --worktree -- ${(j: :)${(q-)ADDED[@]}}', or leave it out.\e[0m" >&2
+	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: ${(j: :)${(q-)REMOVED[@]}}\e[0m" >&2
+	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
+	exit 1
+}
+
+# Guards whole files against the tip they were composed on – a `--base` names the commit they
+# rest on, refusing a path changed between it and the tip, and without one the journal's
+# landings of the last 7 days stand in for it
+_GUARD_WHOLE () {
+	if [ -z "$EXEC_BASE" ]; then
+		_GUARD_WHOLE_LANDINGS
+		return 0
+	fi
+	local P
+	local -a MOVED
+	for P in "${WHOLE_PATHS[@]}"; do
+		[ "$(git rev-parse -q --verify "$EXEC_BASE:$P" 2>/dev/null)" = "$(git rev-parse -q --verify "$WHOLE_HEAD:$P" 2>/dev/null)" ] || MOVED+=("$P")
+	done
+	[ ${#MOVED} -eq 0 ] && return 0
+	PRINT_ERR "Changed between --base ${EXEC_BASE:0:7} and the tip ${WHOLE_HEAD:0:7}, so committing whole would take that back: ${(j:, :)MOVED}"
+	ECHO_E "\e[0;31m  See what landed with 'git log --oneline ${EXEC_BASE:0:12}..${WHOLE_HEAD:0:12} -- <path>' and merge your edits onto it – or pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
+	exit 1
+}
+
+# Commits the composed tree from the `--exec` worktree, so the repo's hooks run on it
+_COMMIT_WHOLE_TREE () {
+	# Args: <tree> <message file>
+	git read-tree --reset -u "$1" && git commit -q --cleanup=whitespace -F "$2"
+}
+
+# Commits whole files at the tip – composed apart from the shared index and guarded, then landed
+# through `--exec` with its hooks, gate, CAS, journal and reconcile, pinned to the tip they read
+GIT_COMMIT_WHOLE () {
+	# Args: <path>...
+	if ! git symbolic-ref -q HEAD >/dev/null; then
+		PRINT_ERR "--commit requires being on a branch (got detached HEAD)"
+		exit 1
+	fi
+	_COMPOSE_WHOLE "$@"
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
+		local FLIPS=$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | grep '^ mode change')
+		if [ -n "$FLIPS" ]; then
+			PRINT_ERR "A file-mode change rides along – a lost executable bit, most often – so nothing landed"
+			print -r -- "$FLIPS" | sed "s/^ /${_RED}    /;s/\$/${_OFF}/" >&2
+			ECHO_E "\e[0;31m  Restore the mode with chmod, or pass --allow-mode-change where the change is meant.\e[0m" >&2
+			exit 1
+		fi
+	fi
+	_GUARD_WHOLE
+	local MSG=$(MKTEMP_FILE git-edit-message)
+	_TEMP_FILES+=("$MSG")
+	print -r -- "$TEXT_VALUE" > "$MSG"
+	PRINT_ACTION "Committing ${#WHOLE_PATHS} whole file(s) on %s..." "$WHOLE_HEAD"
+	EXEC_BASE=$WHOLE_HEAD
+	EXEC_LABEL=commit
+	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
+	if [ "$EXEC_CHANGED" = true ]; then
+		git --no-pager -c core.quotePath=false show --stat --summary --format='%h %s' "$EXEC_NEW_HEAD"
+	fi
 }
 
 # Builds the tree a scoped fold carries – the base commit's tree with only the
@@ -2567,9 +2901,18 @@ GIT_AMEND_INTO () {
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
 		local MODE_FLIPS=$(git diff "${AMEND_SOURCE[@]}" --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | grep '^ mode change')
 		if [ -n "$MODE_FLIPS" ]; then
-			PRINT_ERR "The fold would change a file mode – a literal mode in 'git update-index --cacheinfo', taking the executable bit with it?"
+			# Whole files take their mode from the checkout, where a chmod is the cause
+			if [ ${#OPT_WHOLE} -gt 0 ]; then
+				PRINT_ERR "A file-mode change rides along – a lost executable bit, most often – so nothing folded"
+			else
+				PRINT_ERR "The fold would change a file mode – a literal mode in 'git update-index --cacheinfo', taking the executable bit with it?"
+			fi
 			print -r -- "$MODE_FLIPS" | sed "s/^ /${_RED}  /;s/\$/${_OFF}/" >&2
-			ECHO_E "\e[0;31m  Take the mode from 'git ls-tree HEAD -- <path>' instead – or pass --allow-mode-change to fold it anyway.\e[0m" >&2
+			if [ ${#OPT_WHOLE} -gt 0 ]; then
+				ECHO_E "\e[0;31m  Restore the mode with chmod, or pass --allow-mode-change where the change is meant.\e[0m" >&2
+			else
+				ECHO_E "\e[0;31m  Take the mode from 'git ls-tree HEAD -- <path>' instead – or pass --allow-mode-change to fold it anyway.\e[0m" >&2
+			fi
 			exit 1
 		fi
 	fi
@@ -6786,7 +7129,7 @@ zmodload zsh/zutil
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
 	USAGE
 	PRINT_ERR "Unknown option: $1"
 	exit 1
@@ -6891,14 +7234,27 @@ if [ ${#OPT_SNAPSHOT} -gt 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ]; then
 	PRINT_ERR "--snapshot only applies to --amend-into"
 	exit 1
 fi
-# Resolve --base's value – the tip an --exec result was built on, both `--base=<sha>` and
-# `--base <sha>` forms. Hex only: a name like HEAD resolves to wherever the branch is now, the
-# very tip the flag exists to check the build against
-EXEC_BASE=""
-if [ ${#OPT_BASE} -gt 0 ]; then
-	if [ ${#OPT_EXEC} -eq 0 ]; then
+if [ ${#OPT_WHOLE} -gt 0 ]; then
+	if [ ${#OPT_AMEND_INTO} -eq 0 ]; then
 		USAGE
-		PRINT_ERR "--base only applies to --exec"
+		PRINT_ERR "--whole only applies to --amend-into – a new commit of whole files takes --commit"
+		exit 1
+	fi
+	if [ ${#OPT_TREE} -gt 0 ]; then
+		PRINT_ERR "--whole and --tree cannot be combined – --whole composes the tree from the files itself"
+		exit 1
+	fi
+fi
+# Resolve --base's value – the tip an --exec result was built on, or the commit whole files rest
+# on, both `--base=<sha>` and `--base <sha>` forms. Hex only: a name like HEAD resolves to
+# wherever the branch is now, the very tip the flag exists to check the build against
+EXEC_BASE=""
+# Set by `--commit` alone – one in the caller's environment would rename every exec run
+EXEC_LABEL=""
+if [ ${#OPT_BASE} -gt 0 ]; then
+	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_WHOLE} -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--base only applies to --exec, --commit and --whole"
 		exit 1
 	fi
 	if [[ ${#OPT_BASE} -gt 1 ]]; then
@@ -7223,6 +7579,36 @@ if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_EXEC} -gt 0 ]; then
 	exit 1
 fi
 
+# `--commit` dispatches ahead of `--exec`, which lands what it composes – its positional args
+# being the files to take whole rather than commits
+if [ ${#OPT_COMMIT} -gt 0 ]; then
+	# The `git commit` habit, where `-m` here asks to edit a past commit's message
+	if [ ${#OPT_MESSAGE} -gt 0 ]; then
+		PRINT_ERR "--commit takes its message as --text \"…\" – -m is git edit's --message, for a past commit"
+		exit 1
+	fi
+	if [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o ${#OPT_ONTO} -gt 0 -o ${#OPT_EDIT} -gt 0 ]; then
+		USAGE
+		PRINT_ERR "Option --commit cannot be combined with other modes – folding whole files into a past commit takes --amend-into=<sha> --whole"
+		exit 1
+	fi
+	if [ "$1" = "--" ]; then
+		shift
+	fi
+	if [ $# -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--commit needs the files to take: git edit --commit --text \"…\" -- <path>..."
+		exit 1
+	fi
+	if [ -z "$TEXT_VALUE" ]; then
+		PRINT_ERR "--commit needs a message: --text \"…\", or --text - to read it from stdin"
+		exit 1
+	fi
+	GIT_COMMIT_WHOLE "$@"
+	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
+	exit 0
+fi
+
 
 # `--exec` short-circuits everything below, its positional args being the wrapped command
 # rather than commits – set up an isolated temp worktree, run the command there, and
@@ -7493,6 +7879,21 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		shift
 	fi
 	AMEND_PATHSPECS=("$@")
+	# Whole files compose the `--tree` themselves, from the checkout – pinned to the tip they read
+	if [ ${#OPT_WHOLE} -gt 0 ]; then
+		if [ ${#AMEND_PATHSPECS[@]} -eq 0 ]; then
+			USAGE
+			PRINT_ERR "--whole needs the files to take: git edit --amend-into=<sha> --whole -- <path>..."
+			exit 1
+		fi
+		_COMPOSE_WHOLE "${AMEND_PATHSPECS[@]}"
+		_GUARD_WHOLE
+		AMEND_TREE=$(git commit-tree "$WHOLE_TREE" -p "$WHOLE_HEAD" -m "git edit: whole files composed on ${WHOLE_HEAD:0:7}")
+		AMEND_PATHSPECS=()
+		for WHOLE_PATH in "${WHOLE_PATHS[@]}"; do
+			AMEND_PATHSPECS+=(":(top,literal)$WHOLE_PATH")
+		done
+	fi
 	# The fold's source, as `git diff` reads it – the staged index, or a `--tree` composed apart
 	# from it against `HEAD`; a commit given there pins the tip it was composed on, so a tip
 	# that moved since is refused rather than have the diff carry a newer commit's reversal
@@ -7524,7 +7925,9 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		PRINT_ERR "Unknown <sha>: $AMEND_INTO_TARGET"
 		exit 1
 	fi
-	if [ -n "$AMEND_TREE" ]; then
+	if [ ${#OPT_WHOLE} -gt 0 ]; then
+		PRINT_ACTION "Amending ${#WHOLE_PATHS} whole file(s) into %s..." "$AMEND_INTO_TARGET"
+	elif [ -n "$AMEND_TREE" ]; then
 		PRINT_ACTION "Amending --tree $AMEND_TREE_GIVEN into %s..." "$AMEND_INTO_TARGET"
 	else
 		PRINT_ACTION "Amending staged changes into %s..." "$AMEND_INTO_TARGET"

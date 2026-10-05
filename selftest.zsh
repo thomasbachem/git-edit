@@ -5713,6 +5713,277 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --continue
 	_ST_EQ "and lands once resolved" "$RC:$(git show 'HEAD~1:Über.txt' | head -1)" "0:X"
 
+	# --- 113. --commit and --whole take files whole from the checkout ---
+	# As `git commit -- <paths>` takes them, composed apart from the shared index – refused where
+	# another caller's landing would go back out with them
+	_ST_SCENARIO "\e[1;96m[113] --commit and --whole take files whole from the checkout\e[0m"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'a\nb\nc\nd\ne\nf\ng\nh\n' > wc.txt && printf '#!/bin/sh\n' > wc.sh && chmod +x wc.sh
+	echo staged > wc-staged.txt && git add wc-staged.txt
+	_ST_RUN --commit --text "WC add whole files" -- wc.txt wc.sh
+	_ST_EQ "new files land whole, with no git add" "$RC:$(git log -1 --format=%s):$(git show HEAD:wc.txt | wc -l | tr -d ' ')" "0:WC add whole files:8"
+	_ST_EQ "an executable one keeps its bit" "$(git ls-tree HEAD -- wc.sh | awk '{print $1}')" "100755"
+	_ST_EQ "the reflog names it a commit, with its caller" "$(git reflog show -1 --format=%gs "$(git symbolic-ref -q HEAD)")" "git edit: commit [wc-self]"
+	_ST_OUT_HAS "the run names what it commits" 'Committing 2 whole file(s) on'
+	_ST_OUT_LACKS "with no internal command shown" '_COMMIT_WHOLE_TREE'
+	_ST_CHECK "the checkout is clean there" test -z "$(git status --porcelain -- wc.txt wc.sh)"
+	_ST_EQ "a staged file it was not named stays staged and out" "$(git show :wc-staged.txt):$(git cat-file -e HEAD:wc-staged.txt 2>/dev/null && echo in || echo out)" "staged:out"
+	git restore --staged -- wc-staged.txt && rm -f wc-staged.txt
+	export EXEC_LABEL=stray
+	_ST_RUN --exec -- git commit --allow-empty -qm "WC empty"
+	unset EXEC_LABEL
+	_ST_EQ "an EXEC_LABEL in the caller's environment renames no exec run" "$RC:$(git reflog show -1 --format=%gs "$(git symbolic-ref -q HEAD)")" "0:git edit: exec [wc-self]"
+	_ST_OUT_HAS "nor hides its command" 'git commit --allow-empty -qm WC empty # (in '
+	mkdir -p wc-sub && echo inner > wc-sub/in.txt && echo i >> wc.txt && rm wc.sh
+	cd wc-sub
+	_ST_RUN --commit --text "WC change, remove, add" -- ../wc.txt ../wc.sh in.txt
+	cd "$TMP/repo"
+	_ST_EQ "a change, a removal and an addition land, read from where the caller stands" "$RC:$(git show HEAD:wc.txt | tail -1):$(git cat-file -e HEAD:wc.sh 2>/dev/null && echo kept || echo gone):$(git show HEAD:wc-sub/in.txt)" "0:i:gone:inner"
+	_ST_CHECK "the checkout is clean there too" test -z "$(git status --porcelain -- wc.txt wc.sh wc-sub)"
+	mv wc-sub/in.txt wc-sub/moved.txt && ln -s wc.txt wc-link
+	_ST_RUN --commit --text "WC move and link" -- wc-sub/in.txt wc-sub/moved.txt wc-link
+	_ST_EQ "a plain mv lands named at both paths, a link as a link" "$RC:$(git cat-file -e HEAD:wc-sub/in.txt 2>/dev/null && echo kept || echo gone):$(git show HEAD:wc-sub/moved.txt):$(git ls-tree HEAD -- wc-link | awk '{print $1}')" "0:gone:inner:120000"
+	# Refusals, each before anything lands
+	local WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit -- wc.txt
+	_ST_OUT_HAS "a commit without --text refuses" 'needs a message'
+	_ST_RUN --commit -m "x" -- wc.txt
+	_ST_OUT_HAS "and one given -m, as git commit takes it, points at --text" 'takes its message as --text'
+	_ST_RUN --commit --text "x"
+	_ST_OUT_HAS "and one without files" 'needs the files to take'
+	_ST_RUN --commit --text "x" -- wc-sub
+	_ST_OUT_HAS "a directory refuses, naming the files instead" 'is a directory – name its files'
+	_ST_RUN --commit --text "x" -- wc-nope.txt
+	_ST_OUT_HAS "a path neither the checkout nor the tip has refuses" 'no such file'
+	_ST_RUN --commit --text "x" -- ':wc-nope.txt'
+	_ST_OUT_HAS "and its error keeps a colon-led name whole" '^:wc-nope\.txt: no such file'
+	_ST_RUN --commit --text "x" -- ../wc-outside.txt
+	_ST_OUT_HAS "a path outside the repository refuses" 'names no file inside the repository'
+	echo wc-ignored.txt >> .git/info/exclude && echo x > wc-ignored.txt
+	_ST_RUN --commit --text "x" -- wc-ignored.txt
+	_ST_OUT_HAS "an ignored file the tip lacks refuses" 'is ignored'
+	_ST_RUN --commit --text "x" -- wc.txt
+	_ST_OUT_HAS "files as the tip has them refuse" 'Nothing to take'
+	chmod +x wc.txt && echo j >> wc.txt
+	_ST_RUN --commit --text "x" -- wc.txt
+	_ST_OUT_HAS "a mode change refuses" 'file-mode change rides along'
+	_ST_RUN --commit --text "x" --reorder -- wc.txt
+	_ST_OUT_HAS "--commit takes no other mode beside it" 'cannot be combined'
+	_ST_RUN --whole -- wc.txt
+	_ST_OUT_HAS "--whole without --amend-into refuses" 'only applies to --amend-into'
+	# Where case tells no names apart, a second spelling would land beside the first
+	local WC_ICASE=$(git config core.ignorecase) WC_BR=$(git symbolic-ref --short HEAD)
+	git config core.ignorecase true
+	mkdir -p WC-SUB && echo n > WC-SUB/new.txt
+	_ST_RUN --commit --text "x" -- WC-SUB/new.txt
+	_ST_OUT_HAS "a name the tip spells otherwise refuses where case tells none apart" "WC-SUB differs from the tip's wc-sub only in case"
+	echo n > wc-new.txt && echo n > WC-NEW.txt
+	_ST_RUN --commit --text "x" -- wc-new.txt WC-NEW.txt
+	_ST_OUT_HAS "as do two names here differing only in case" 'WC-NEW.txt and wc-new.txt differ only in case'
+	rm -f WC-SUB/new.txt wc-new.txt WC-NEW.txt && rmdir WC-SUB 2>/dev/null
+	git config core.ignorecase "${WC_ICASE:-false}"
+	git checkout -q --detach
+	_ST_RUN --commit --text "x" -- wc.txt
+	_ST_OUT_HAS "a detached HEAD refuses" 'requires being on a branch'
+	git checkout -q "$WC_BR"
+	_ST_EQ "no refusal moved the branch" "$(git rev-parse HEAD)" "$WC_TIP"
+	_ST_RUN --commit --text "WC take the bit" --allow-mode-change -- wc.txt
+	_ST_EQ "--allow-mode-change lets it through" "$RC:$(git ls-tree HEAD -- wc.txt | awk '{print $1}')" "0:100755"
+	# The repo's hooks run on it, and its filters, as `git commit` runs them
+	local WC_HOOK=$(git rev-parse --git-path hooks/pre-commit)
+	printf '#!/bin/sh\ngit diff --cached --name-only | grep -q wc-hook && exit 1\nexit 0\n' > "$WC_HOOK" && chmod +x "$WC_HOOK"
+	echo x > wc-hook.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-hook.txt
+	_ST_EQ "a pre-commit hook refusing it leaves the branch" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	rm -f "$WC_HOOK" wc-hook.txt
+	# A relative hooks path the temp worktree lacks – husky's untracked `.husky/_`, say – runs from
+	# the checkout, where it would otherwise go unrun
+	mkdir -p wc-hooks/_ && printf '*\n' > wc-hooks/_/.gitignore
+	printf '#!/bin/sh\nexit 1\n' > wc-hooks/_/pre-commit && chmod +x wc-hooks/_/pre-commit
+	git config core.hooksPath wc-hooks/_
+	echo x > wc-hook.txt
+	_ST_RUN --commit --text "x" -- wc-hook.txt
+	_ST_EQ "a hook under a relative path only the checkout has refuses it" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_RUN --exec -- git commit --allow-empty -qm "WC exec past the hook"
+	_ST_EQ "as it refuses a commit an --exec makes" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	git config --unset core.hooksPath && rm -rf wc-hooks wc-hook.txt
+	git config filter.wcupper.clean 'tr a-z A-Z' && echo '*.wcup filter=wcupper' >> .git/info/attributes && echo loud > wc.wcup
+	_ST_RUN --commit --text "WC filtered" -- wc.wcup
+	_ST_EQ "a file goes through its clean filter, as git add takes it" "$RC:$(git show HEAD:wc.wcup)" "0:LOUD"
+	# A landing the checkout never got, as a rewrite lands one, makes a whole file a revert
+	local WC_BEFORE=$(git rev-parse HEAD)
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'a\nB\nc\nd\ne\nf\ng\nh\ni\nj\n' > wc.txt && git commit -qam 'WC peer lands'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'a\nb\nc\nd\ne\nf\nG-mine\nh\ni\nj\n' > wc.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc.txt
+	_ST_OUT_HAS "a whole file lacking another caller's landing refuses, naming the run" "wc.txt – wc-peer's exec run"
+	_ST_OUT_LACKS "under a lead-in printed once" 'on them: Committed whole'
+	_ST_OUT_HAS "and the carry that merges the edits onto it" "--carry=${WC_BEFORE:0:12}"
+	_ST_RUN --amend-into="$WC_TIP" --whole -- wc.txt
+	_ST_OUT_HAS "a whole-file fold refuses the same" 'would take back'
+	_ST_RUN --commit --text "x" --base="$WC_BEFORE" -- wc.txt
+	_ST_OUT_HAS "as does a --base the file changed since" 'Changed between --base'
+	_ST_EQ "none of them moved the branch" "$(git rev-parse HEAD)" "$WC_TIP"
+	_ST_RUN --carry="$WC_BEFORE"
+	_ST_RUN --commit --text "WC mine on the peer's" -- wc.txt
+	_ST_EQ "once carried it lands with both" "$RC:$(git show HEAD:wc.txt | sed -n '2p;7p' | tr '\n' ' ')" "0:B G-mine "
+	printf 'a\nb\nc\nd\ne\nf\nG-mine\nh\ni\nj\n' > wc.txt
+	_ST_RUN --commit --text "WC take it back on purpose" --base="$(git rev-parse HEAD)" -- wc.txt
+	_ST_EQ "the tip's SHA as --base takes a landing back on purpose" "$RC:$(git show HEAD:wc.txt | sed -n 2p)" "0:b"
+	_ST_RUN --exec -- sh -c "printf 'a\nb\nC\nd\ne\nf\nG-mine\nh\ni\nj\n' > wc.txt && git commit -qam 'WC my own landing'"
+	printf 'a\nb\nc\nd\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt
+	_ST_RUN --commit --text "WC past my own landing" -- wc.txt
+	_ST_EQ "this caller's own landing does not count" "$RC" "0"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'a\nb\nc\nD\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt && git commit -qam 'WC peer lands D'"
+	export GIT_EDIT_ACTOR=wc-other
+	_ST_RUN --exec -- sh -c "printf 'a\nb\nc\nd\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt && git commit -qam 'WC another takes it back'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'A\nb\nc\nd\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt
+	_ST_RUN --commit --text "WC past a landing taken back" -- wc.txt
+	_ST_EQ "a landing the tip no longer carries does not count" "$RC" "0"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'A\nb\nc\nD-peer\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt && git commit -qam 'WC peer lands a line'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'A\nb\nc\nD-reworked\ne\nf\nG-mine\nH\ni\nj\n' > wc.txt
+	_ST_RUN --commit --text "WC rework the peer's line" -- wc.txt
+	_ST_EQ "edits on a landed line, made after it, do not count" "$RC:$(git show HEAD:wc.txt | sed -n 4p)" "0:D-reworked"
+	export GIT_EDIT_ACTOR=
+	_ST_RUN --exec -- sh -c "printf 'A\nb\nc\nD-reworked\ne\nF\nG-mine\nH\ni\nj\n' > wc.txt && git commit -qam 'WC unlabeled lands'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'A\nb\nc\nD-reworked\ne\nf\nG-mine\nH\nI\nj\n' > wc.txt
+	_ST_RUN --commit --text "x" -- wc.txt
+	_ST_OUT_HAS "an unlabeled landing counts" "wc.txt – an unlabeled caller's exec run"
+	local WC_JF="$(git rev-parse --git-common-dir)/git-edit-journal"
+	local WC_LAST=$(tail -1 "$WC_JF")
+	{ sed '$d' "$WC_JF"; print -r -- "$(( ${WC_LAST%% *} - 8 * 86400 )) ${WC_LAST#* }"; } > "$WC_JF.tmp" && mv "$WC_JF.tmp" "$WC_JF"
+	_ST_RUN --commit --text "WC past a landing 8 days old" -- wc.txt
+	_ST_EQ "one older than 7 days does not" "$RC:$(git show HEAD:wc.txt | sed -n 6p)" "0:f"
+	# An unlabeled caller's own runs are every unlabeled one, which nothing tells apart
+	export GIT_EDIT_ACTOR=
+	_ST_RUN --exec -- sh -c "printf 'A\nb\nc\nD-reworked\ne\nf\nG-mine\nH\nI\nJ\n' > wc.txt && git commit -qam 'WC unlabeled lands J'"
+	printf 'A\nb\nc\nD-reworked\nE\nf\nG-mine\nH\nI\nj\n' > wc.txt
+	_ST_RUN --commit --text "WC unlabeled past an unlabeled landing" -- wc.txt
+	_ST_EQ "an unlabeled caller counts no unlabeled run" "$RC:$(git show HEAD:wc.txt | sed -n '5p;10p' | tr '\n' ' ')" "0:E j "
+	export GIT_EDIT_ACTOR=wc-self
+	echo x > wc-gone.txt
+	_ST_RUN --commit --text "WC add a file a peer removes" -- wc-gone.txt
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "git rm -q wc-gone.txt && git commit -qm 'WC peer removes it'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'x\nmine\n' > wc-gone.txt
+	_ST_RUN --commit --text "x" -- wc-gone.txt
+	_ST_OUT_HAS "a file another caller's landing removed refuses to come back" 'which removed it'
+	rm -f wc-gone.txt
+	# A name git would read as a pattern is taken as itself – committed, re-synced, guarded, hinted
+	printf 'g\n' > 'wc-[g].txt' && printf 'g\n' > wc-g.txt && printf 'c\nx\ny\nz\n' > ':wc-colon.txt'
+	_ST_RUN --commit --text "WC odd names" -- 'wc-[g].txt' wc-g.txt ':wc-colon.txt'
+	printf 'g\nmine\n' > 'wc-[g].txt' && printf 'g\nwip\n' > wc-g.txt && printf 'c\nx\ny\nz\nmine\n' > ':wc-colon.txt'
+	_ST_RUN --commit --text "WC odd names again" -- 'wc-[g].txt' ':wc-colon.txt'
+	_ST_EQ "a name like a pattern commits as itself" "$RC:$(git show --name-only --format= HEAD | sort | tr '\n' ' ')" "0::wc-colon.txt wc-[g].txt "
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'C\nx\ny\nz\nmine\n' > ./:wc-colon.txt && git commit -qam 'WC peer on an odd name'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'c\nx\ny\nz\nmine\nmore\n' > ':wc-colon.txt'
+	_ST_RUN --commit --text "x" -- ':wc-colon.txt'
+	_ST_OUT_HAS "the guard reads such a name too" ':wc-colon.txt – wc-peer'
+	rm -f ':wc-colon.txt'
+	_ST_RUN --commit --text "WC remove an odd name" -- ':wc-colon.txt'
+	_ST_EQ "and a removal finds it at the tip" "$RC:$(git cat-file -e 'HEAD::wc-colon.txt' 2>/dev/null && echo kept || echo gone)" "0:gone"
+	_ST_RUN --exec -- sh -c "printf 'g\nmine\nlanded\n' > 'wc-[g].txt' && git commit -qam 'WC land beside the checkout'"
+	git checkout -q -- ':(literal)wc-[g].txt' && printf 'g\nmine\nlanded\nfolded\n' > 'wc-[g].txt' && echo f > ':wc-fold.txt'
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- 'wc-[g].txt' ':wc-fold.txt'
+	_ST_EQ "--whole folds such names as themselves" "$RC:$(git show 'HEAD:wc-[g].txt' | tail -1):$(git show 'HEAD::wc-fold.txt'):$(git show HEAD:wc-g.txt | tail -1)" "0:folded:f:g"
+	# A tip moving while the files are read refuses – a clean filter landing a commit stands in for
+	# the peer, running between the read of the tip and the landing
+	git config filter.wcmove.clean "sh -c '[ -e \"$TMP/wc-moved\" ] || { touch \"$TMP/wc-moved\" && git update-ref HEAD \"\$(git commit-tree HEAD^{tree} -p HEAD -m \"WC peer lands mid-run\")\"; }; cat'"
+	echo '*.wcmove filter=wcmove' >> .git/info/attributes && echo race > wc.wcmove
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc.wcmove
+	_ST_EQ "a tip moving while the files are read refuses, the landing kept" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD~1)" "1:WC peer lands mid-run:$WC_TIP"
+	_ST_OUT_HAS "saying so" 'while the commit was composed'
+	git config --unset filter.wcmove.clean && rm -f wc.wcmove
+	# A hook landing a commit stands in for a peer landing while the commit is made
+	printf '#!/bin/sh\n[ -e "%s" ] && exit 0\ntouch "%s"\ngit update-ref "refs/heads/%s" "$(git commit-tree HEAD^{tree} -p HEAD -m "WC peer lands mid-commit")"\n' \
+		"$TMP/wc-hooked" "$TMP/wc-hooked" "$WC_BR" > "$WC_HOOK" && chmod +x "$WC_HOOK"
+	echo race > wc-race.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-race.txt
+	_ST_EQ "a tip moving while the commit is made refuses, the landing kept" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD~1)" "1:WC peer lands mid-commit:$WC_TIP"
+	_ST_OUT_HAS "asking for a rerun rather than offering the stale commit" 'Nothing landed – run it again'
+	rm -f "$WC_HOOK" wc-race.txt
+	# The repo's gate runs on it, and a path names it from anywhere
+	git config edit.verifyCmd "! grep -q REJECT wc-gate.txt"
+	echo REJECT > wc-gate.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-gate.txt
+	_ST_EQ "a commit the repo's gate rejects never lands" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_RUN --commit --text "WC past the gate" --no-verify -- "$TMP/repo/wc-gate.txt"
+	git config --unset edit.verifyCmd
+	_ST_EQ "--no-verify lands it, named by its absolute path" "$RC:$(git show HEAD:wc-gate.txt)" "0:REJECT"
+	# A fold takes files whole the same way
+	local WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
+	echo 'inner, folded' > wc-sub/moved.txt
+	_ST_RUN --amend-into="$WC_TARGET" --whole -- wc-sub/moved.txt
+	_ST_EQ "--whole folds a file whole into a past commit" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded"
+	_ST_CHECK "leaving the checkout clean there" test -z "$(git status --porcelain -- wc-sub)"
+	echo 'inner, folded again' > wc-sub/moved.txt
+	WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
+	cd wc-sub
+	_ST_RUN --amend-into="$WC_TARGET" --whole -- moved.txt
+	cd "$TMP/repo"
+	_ST_EQ "--whole takes a path as named from a subdirectory" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded again"
+	# A file taken whole supersedes its own staging, an intent-to-add entry too, as git commit has it
+	echo ita > wc-ita.txt && git add -N wc-ita.txt
+	_ST_RUN --commit --text "WC intent to add" -- wc-ita.txt
+	_ST_EQ "an intent-to-add entry follows the commit" "$RC:$(git status --porcelain -- wc-ita.txt)" "0:"
+	echo staged >> wc-ita.txt && git add wc-ita.txt && echo edited >> wc-ita.txt
+	_ST_RUN --commit --text "WC past its own staging" -- wc-ita.txt
+	_ST_EQ "as does a version of it staged before" "$RC:$(git status --porcelain -- wc-ita.txt)" "0:"
+	# The guard reads what no merge can – an addition the checkout never got, a binary, a link
+	printf '\0bin1' > wc.bin && ln -s wc.txt wc-ln
+	_ST_RUN --commit --text "WC bin and link" -- wc.bin wc-ln
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "echo peer > wc-peer-new.txt && printf '\0bin2' > wc.bin && ln -sf wc-g.txt wc-ln && git add -A wc-peer-new.txt wc.bin wc-ln && git commit -qm 'WC peer adds and changes'"
+	export GIT_EDIT_ACTOR=wc-self
+	_ST_RUN --commit --text "x" -- wc-peer-new.txt wc.bin wc-ln
+	_ST_OUT_HAS "removing a file another caller added refuses" 'wc-peer-new.txt – wc-peer.*which added it'
+	_ST_OUT_HAS "as does an old binary" 'wc.bin – wc-peer'
+	_ST_OUT_HAS "and an old link" 'wc-ln – wc-peer'
+	_ST_OUT_HAS "offering to restore the addition rather than a carry" "Restore what was added with 'git restore --source=HEAD --worktree -- wc-peer-new.txt'"
+	git restore --source=HEAD --worktree -- wc-peer-new.txt wc.bin wc-ln
+	# A file lacking two landings is pointed at a carry from the older, which takes in both
+	printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
+	_ST_RUN --commit --text "WC two base" -- wc-two.txt
+	local WC_P1=$(git rev-parse HEAD)
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\no6\no7\no8\n' > wc-two.txt && git commit -qam 'WC p1'"
+	export GIT_EDIT_ACTOR=wc-other
+	_ST_RUN --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\nP2\no7\no8\n' > wc-two.txt && git commit -qam 'WC p2'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'o1\no2\no3\no4\no5\no6\no7\nMINE\n' > wc-two.txt
+	_ST_RUN --commit --text "x" -- wc-two.txt
+	_ST_OUT_HAS "a file lacking two landings is pointed at the older" "--carry=${WC_P1:0:12}"
+	_ST_RUN --carry="$WC_P1"
+	_ST_EQ "whose carry takes in both" "$RC:$(tr '\n' ' ' < wc-two.txt)" "0:o1 P1 o3 o4 o5 P2 o7 MINE "
+	git checkout -q -- wc-two.txt
+	# Outside a sparse checkout, a file's absence is no deletion
+	mkdir -p wc-out && echo out > wc-out/x.txt
+	_ST_RUN --commit --text "WC outside the cone" -- wc-out/x.txt
+	git sparse-checkout set wc-sub 2>/dev/null
+	_ST_RUN --commit --text "x" -- wc-out/x.txt
+	git sparse-checkout disable 2>/dev/null
+	_ST_OUT_HAS "a file outside a sparse checkout refuses rather than land as removed" 'outside the sparse checkout'
+	_ST_CHECK "and stays at the tip" git cat-file -e HEAD:wc-out/x.txt
+	chmod +x wc-two.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- wc-two.txt
+	_ST_OUT_HAS "a whole-file fold's mode change names the chmod" 'Restore the mode with chmod'
+	chmod -x wc-two.txt
+	export GIT_EDIT_ACTOR=
+
 	# --- Summary ---
 	local TOTAL=$((PASS+FAIL))
 	echo ""
