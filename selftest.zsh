@@ -1193,11 +1193,16 @@ GIT_SELFTEST () {
 	_ST_RUN --exec -- git commit --amend -m "XB reworded by exec"
 	_ST_EQ "exec exits 0" "$RC" "0"
 	_ST_EQ "the reword landed" "$(git log -1 --format=%s)" "XB reworded by exec"
-	# A multi-arg `[ -n ... ]` here made every branch exec claim a detached `HEAD`,
-	# and leaked the shell's own usage error into the output
+	# A multi-arg `[ -n ... ]` here leaked the shell's own usage error into the output
 	_ST_OUT_LACKS "no raw shell error leaks" 'too many arguments'
-	_ST_OUT_LACKS "does not claim a detached HEAD" 'Detached HEAD updated'
 	_ST_OUT_HAS "names the branch it rewrote" 'Branch.*rewritten'
+	# A detached `HEAD` is the checkout's own, out of reach of a CAS run in the temp worktree
+	local XD_BR=$(git symbolic-ref --short HEAD) XD_TIP=$(git rev-parse HEAD)
+	git checkout -q --detach
+	_ST_RUN --exec -- git commit --allow-empty -qm "XD on a detached HEAD"
+	_ST_EQ "exec on a detached HEAD refuses, moving nothing" "$RC:$(git rev-parse HEAD)" "1:$XD_TIP"
+	_ST_OUT_HAS "saying a branch is needed" 'requires being on a branch'
+	git checkout -q "$XD_BR"
 	# Only a content-changing exec reaches the per-path hint – and the hint re-syncs the index
 	# entries the ref move stranded, but only those still equal to the pre-rewrite tip: a peer's
 	# staging on a changed path (xd) is left alone and named, a removed path (xe) lingers

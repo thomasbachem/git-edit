@@ -2386,12 +2386,12 @@ _REFUSE_EXEC_BLANK_LINES () {
 GIT_EXEC () {
 	local ORIG_HEAD=$(git rev-parse HEAD)
 	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
-	local REF
-	if [ -n "$BRANCH" ]; then
-		REF="refs/heads/$BRANCH"
-	else
-		REF="HEAD"
+	# The CAS runs in the temp worktree, where `HEAD` names that worktree's own, never the checkout's
+	if [ -z "$BRANCH" ]; then
+		PRINT_ERR "--exec requires being on a branch (got detached HEAD)"
+		exit 1
 	fi
+	local REF="refs/heads/$BRANCH"
 	# Defaults for the status trailer, updated below if `HEAD` changes
 	EXEC_NEW_HEAD=$ORIG_HEAD
 	EXEC_REF=$REF
@@ -2537,11 +2537,7 @@ GIT_EXEC () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "$LABEL"
 
-	if [ -n "$BRANCH" ]; then
-		_PRINT_REWRITE_APPLY_HINT "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
-	else
-		PRINT_TEXT "Detached HEAD updated to %s." 32 "$NEW_HEAD"
-	fi
+	_PRINT_REWRITE_APPLY_HINT "$BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
 
 	# Update status trailer outputs (head moved, CAS succeeded)
 	EXEC_NEW_HEAD=$NEW_HEAD
