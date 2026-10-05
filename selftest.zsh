@@ -1306,6 +1306,14 @@ GIT_SELFTEST () {
 	_ST_OUT_HAS "an entry staged apart from both tips is named" 'left alone.*xp\.txt'
 	_ST_OUT_LACKS "under no headline calling the index re-synced" 'your checkout is current'
 	git reset -q -- xp.txt
+	# A hint's paths run from the checkout's top – pasted in a subdirectory as printed, `xs.txt`
+	# would name the subdirectory's own file
+	mkdir -p xsub && echo xs > xs.txt && echo own > xsub/xs.txt && git add xs.txt xsub/xs.txt && git commit -qm "XS base"
+	cd xsub
+	_ST_RUN --exec -- sh -c 'echo landed > xs.txt && git commit -qam "XS lands"'
+	cd "$TMP/repo"
+	_ST_OUT_HAS "a hint printed in a subdirectory goes to the top first" 'Reconcile those paths.*cd .* && git restore --source=HEAD --worktree -- xs\.txt'
+	git restore --source=HEAD --worktree -- xs.txt
 
 	# --- 40. a continue names the untracked files it absorbs ---
 	_ST_SCENARIO "\e[1;96m[40] untracked absorption is named\e[0m"

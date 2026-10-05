@@ -1715,7 +1715,8 @@ _RECONCILE_CHECKOUT () {
 		PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "${(j: :)${(q-)RESYNCED[@]}}"
 	fi
 	if [ ${#LOCKED[@]} -gt 0 ]; then
-		PRINT_TEXT "Index locked – entries still on the $FORMER tip, re-sync them once it is free (git restore --staged -- <paths>): %s" 33 "$(_QUOTE_PATHS "${LOCKED[@]}")"
+		_AT_TOP "$CO"
+		PRINT_TEXT "Index locked – entries still on the $FORMER tip, re-sync them once it is free (%s): %s" 33 "${REPLY}git restore --staged -- <paths>" "$(_QUOTE_PATHS "${LOCKED[@]}")"
 	fi
 	if [ ${#LEFT_ALONE[@]} -gt 0 ]; then
 		PRINT_TEXT "Index entries left alone – they differ from the $FORMER tip (a peer's staging, or your own): %s" 33 "${(j: :)${(q-)LEFT_ALONE[@]}}"
@@ -1768,7 +1769,8 @@ _RECONCILE_CHECKOUT () {
 	fi
 	if [ ${#HOOKED[@]} -gt 0 ]; then
 		PRINT_TEXT "Worktree files still as the commit read them, which its hooks then changed: %s" 33 "${(j: :)${(q-)HOOKED[@]}}"
-		PRINT_TEXT "Take the hooks' version with: %s" 33 "git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${HOOKED[@]}")"
+		_AT_TOP "$CO"
+		PRINT_TEXT "Take the hooks' version with: %s" 33 "${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${HOOKED[@]}")"
 	fi
 	if [ ${#REVERTING[@]} -gt 0 ]; then
 		PRINT_TEXT "Worktree files left alone with uncommitted edits on the $FORMER content – committed whole, they take the $NOUN back there: %s" 33 "${(j: :)${(q-)REVERTING[@]}}"
@@ -1803,7 +1805,8 @@ _RECONCILE_CHECKOUT () {
 		local CHMOD=""
 		[ ${#TO_X[@]} -gt 0 ] && CHMOD="chmod +x -- ${(j: :)${(q-)TO_X[@]}}"
 		[ ${#TO_NOX[@]} -gt 0 ] && CHMOD="${CHMOD:+$CHMOD && }chmod -x -- ${(j: :)${(q-)TO_NOX[@]}}"
-		PRINT_TEXT "Match the committed mode: %s" 33 "$CHMOD"
+		_AT_TOP "$CO"
+		PRINT_TEXT "Match the committed mode: %s" 33 "$REPLY$CHMOD"
 	fi
 	if [ ${#STALE[@]} -eq 0 ] && [ ${#GONE[@]} -eq 0 ]; then
 		# "Index re-synced" holds only where no entry was left alone or locked out
@@ -1818,7 +1821,8 @@ _RECONCILE_CHECKOUT () {
 	local CMD=""
 	[ ${#STALE[@]} -gt 0 ] && CMD="git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${STALE[@]}")"
 	[ ${#GONE[@]} -gt 0 ] && CMD="${CMD:+$CMD && }git clean -f -- $(_QUOTE_PATHS "${GONE[@]}")"
-	PRINT_TEXT "Reconcile those paths (discards what the $NOUN left there): %s" 33 "$CMD"
+	_AT_TOP "$CO"
+	PRINT_TEXT "Reconcile those paths (discards what the $NOUN left there): %s" 33 "$REPLY$CMD"
 }
 
 # Reports what a worktree-isolated rewrite left behind in the branch's checkout – re-syncs the
@@ -1858,7 +1862,10 @@ _PRINT_REWRITE_APPLY_HINT () {
 			if [ ${#CHANGED[@]} -gt 10 ]; then
 				PRINT_TEXT "  … and %s more" 90 "$(( ${#CHANGED[@]} - 10 ))"
 			fi
-			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "git restore --source=HEAD --staged --worktree -- $(_QUOTE_PATHS "${CHANGED[@]}")"
+			local DROP_CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
+			REPLY=""
+			[ -n "$DROP_CO" ] && _AT_TOP "$DROP_CO"
+			PRINT_TEXT "Keep it, or discard those paths with: %s" 32 "${REPLY}git restore --source=HEAD --staged --worktree -- $(_QUOTE_PATHS "${CHANGED[@]}")"
 			return
 		fi
 		local CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
@@ -2557,6 +2564,14 @@ _QUOTE_PATHS () {
 	print -r -- "${(j: :)OUT}"
 }
 
+# Puts into `REPLY` the `cd` a printed command needs first, its paths running from <checkout>'s top
+# – none where the caller stands there, a path pasted from a subdirectory naming another file
+_AT_TOP () {
+	# Args: <checkout>
+	REPLY=""
+	[ "${_START_DIR:A}" = "${1:A}" ] || REPLY="cd ${(q-)1} && "
+}
+
 # Reads whole-file paths as `git commit -- <paths>` takes them, from where the caller stands –
 # each a file or link in the checkout, or one the tip has and the checkout lost
 _WHOLE_PATHS () {
@@ -2786,8 +2801,11 @@ _GUARD_WHOLE_LANDINGS () {
 	PRINT_ERR "Committed whole, ${#HITS} file(s) would take back what another caller landed on them:"
 	print -rl -- "${HITS[@]}" | sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	[ -n "$OLDEST_OLD" ] && ECHO_E "\e[0;31m  Merge your edits onto what landed with 'git edit --carry=${OLDEST_OLD:0:12}', then run this again.\e[0m" >&2
-	[ ${#ADDED} -gt 0 ] && ECHO_E "\e[0;31m  Restore what was added with 'git restore --source=HEAD --worktree -- ${(j: :)${(q-)ADDED[@]}}', or leave it out.\e[0m" >&2
-	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: ${(j: :)${(q-)REMOVED[@]}}\e[0m" >&2
+	if [ ${#ADDED} -gt 0 ]; then
+		_AT_TOP "$(git rev-parse --show-toplevel)"
+		ECHO_E "\e[0;31m  Restore what was added with '${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${ADDED[@]}")', or leave it out.\e[0m" >&2
+	fi
+	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_QUOTE_PATHS "${REMOVED[@]}")\e[0m" >&2
 	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
 	exit 1
 }
