@@ -26,6 +26,10 @@ GIT_SELFTEST () {
 	local TMP
 	TMP=$(MKTEMP_DIR git-edit-selftest) || exit 1
 	_CLEANUP_HOOK="rm -rf ${(q-)TMP}"
+	# The temp files and worktrees every run of the script makes stay inside the scratch dir, so
+	# suites running side by side – `--jobs`, or a platform each – never count each other's
+	export TMPDIR=$TMP/tmp
+	mkdir -p "$TMPDIR"
 	local PASS=0
 	local FAIL=0
 	local OUT RC
@@ -2959,8 +2963,14 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	local VS_TOTAL=$(git rev-list --count "$(git rev-parse ':/VF base')^..HEAD")
 	local VS_WITH=$(git rev-list --count "$(git rev-parse ':/VS runner')^..HEAD")
 	_ST_OUT_HAS "the span verified only where the runner exists" "Verified $VS_WITH of $VS_TOTAL commit(s)"
+	git config --unset edit.verifyCmd
+	git reset -q --hard
+
+	# --- 60b. A verify pause on a drop, and what its resume keeps ---
 	# The drop/squash dispatch path records the result too – a spanned drop
 	# whose worktree was inspected away still applies whole on the override
+	_ST_SCENARIO "\e[1;96m[60b] a verify pause on a drop, and what its resume keeps\e[0m"
+	git reset -q --hard
 	printf '#!/bin/sh\n! grep -q BAD vd.txt\n' > "$TMP/vdcheck.sh" && chmod +x "$TMP/vdcheck.sh"
 	git config edit.verifyCmd "$TMP/vdcheck.sh"
 	printf 'vd\n' > vd.txt && git add vd.txt && git commit -qm "VD one"
@@ -3152,9 +3162,12 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "and --no-verify is the stated escape" "$RC" "0"
 	git config --unset edit.verifyCmd
 
+	# --- 60c. A verify failure is placed, and the tier says what it checked ---
 	# A failure raises two questions the report has to answer – whether the rewrite caused it,
 	# and where the span heals, so the fold below needs a line a later commit adds, failing at
 	# the amended commit and passing again at the commit carrying that line
+	_ST_SCENARIO "\e[1;96m[60c] a verify failure is placed, and the tier says what it checked\e[0m"
+	git reset -q --hard
 	printf '#!/bin/sh\ngrep -q USE nv_app.txt 2>/dev/null || exit 0\ngrep -q NEEDED nv_boot.txt\n' > "$TMP/need.sh"
 	chmod +x "$TMP/need.sh"
 	git config edit.verifyCmd "$TMP/need.sh"
@@ -4763,6 +4776,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_LACKS "and not the one before" '\[69\] '
 	_ST_OUT_LACKS "nor the one after" '\[71\] '
 	_ST_OUT_HAS "its trailer naming the pick" '^git-edit: ok – selftest [0-9]*/[0-9]* passed – scenario 70 (1 of [0-9]*)$'
+	local ST_N70=$(print -r -- "$OUT" | sed -n 's/^git-edit: ok .* selftest \([0-9]*\)\/.*/\1/p')
 	_ST_RUN --selftest 70
 	_ST_EQ "the value may follow as its own word" "$RC" "0"
 	_ST_OUT_HAS "to the same run" 'passed – scenario 70 (1 of'
@@ -4770,6 +4784,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a pick needing another runs" "$RC" "0"
 	_ST_EQ "that one first, then its own, nothing past" \
 		"$(print -r -- "$OUT" | command grep -o '\[[0-9]*\] [a-z]*' | tr '\n' '|')" "[1] reword|[2] undo|"
+	local ST_N12=$(print -r -- "$OUT" | sed -n 's/^git-edit: ok .* selftest \([0-9]*\)\/.*/\1/p')
 	_ST_RUN --selftest=999
 	_ST_EQ "a scenario the suite lacks refuses" "$RC" "1"
 	_ST_OUT_HAS "naming it" "scenario '999', which the suite does not have"
@@ -4782,6 +4797,70 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --selftest=1 --selftest=2
 	_ST_EQ "a second --selftest refuses" "$RC" "1"
 	_ST_OUT_HAS "as any repeat does" '--selftest given twice'
+	# `--jobs` runs the units the needs tie together side by side, then prints them in suite order
+	# under one count – the sum of what each counts alone
+	_ST_RUN --selftest=1-2,70 --jobs=2
+	_ST_EQ "a pick spread over jobs runs" "$RC" "0"
+	_ST_EQ "each scenario once, in suite order" "$(print -r -- "$OUT" | command grep -o '^\[[0-9a-z]*\]' | tr '\n' ' ')" "[1] [2] [70] "
+	_ST_EQ "under one trailer" "$(print -r -- "$OUT" | command grep -c '^git-edit: ')" "1"
+	_ST_OUT_HAS "counting what the runs alone counted" \
+		"^git-edit: ok – selftest $(( ST_N12 + ST_N70 ))/$(( ST_N12 + ST_N70 )) passed – scenarios 1-2, 70 (3 of [0-9]*), 2 jobs\$"
+	_ST_RUN --jobs=2 --status
+	_ST_EQ "--jobs without --selftest refuses" "$RC" "1"
+	_ST_OUT_HAS "saying where it belongs" '--jobs only applies to --selftest'
+	_ST_RUN --selftest=70 --jobs=0
+	_ST_EQ "a count below one refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it" '--jobs takes a count of 1 or more (got: 0)'
+	_ST_RUN --selftest= --jobs=2
+	_ST_EQ "an empty pick refuses over jobs too" "$RC" "1"
+	_ST_OUT_HAS "as it does alone" 'leave the value off for the full suite'
+	# A stand-in for the script plays the units – one holding two the suite runs apart, then one
+	# failing, then one dying without a trailer
+	print -rl -- '#!/bin/sh' 'case "$1" in' \
+		'--selftest=1,2) printf "%s\n" "[1] one" "  PASS a" "[2] two" "  PASS b" "" "git-edit: ok – selftest 2/2 passed" ;;' \
+		'--selftest=1,3) printf "%s\n" "[1] one" "  PASS a" "[3] three" "  PASS c" "git-edit: ok – selftest 2/2 passed" ;;' \
+		'--selftest=2) printf "%s\n" "[2] two" "  PASS b" "git-edit: ok – selftest 1/1 passed" ;;' \
+		'*) [ -n "$ST_JOBS_DIE" ] && { echo died; exit 3; }' \
+		'printf "%s\n" "[3] three" "  FAIL c" "git-edit: error – selftest 1/1 failed"; exit 1 ;;' 'esac' > "$TMP/jobs-stand-in"
+	chmod +x "$TMP/jobs-stand-in"
+	printf '%s\n' pre "$ST_P1" one "${ST_P2% \# needs 1}" two "$ST_P3 # needs 1" three "$ST_PS" post > "$TMP/pick-weave.zsh"
+	OUT=$(_COLOR=false; _SELFTEST_JOBS "$TMP/jobs-stand-in" "$TMP/pick-weave.zsh" --selftest 2 2>&1)
+	_ST_EQ "a unit holding two scenarios the suite runs apart prints each in its place" \
+		"$(print -r -- "$OUT" | command grep -E '^(\[|  (PASS|FAIL) |git-edit: )' | tr '\n' '|')" \
+		"[1] one|  PASS a|[2] two|  PASS b|[3] three|  PASS c|git-edit: ok – selftest 3/3 passed – 2 jobs|"
+	OUT=$(_COLOR=false; _SELFTEST_JOBS "$TMP/jobs-stand-in" "$TMP/pick.zsh" --selftest 2 2>&1)
+	RC=$?
+	_ST_EQ "a unit's failure fails the run" "$RC" "1"
+	_ST_EQ "its lines in suite order, each unit's own trailer gone" \
+		"$(print -r -- "$OUT" | command grep -E '^(\[|  (PASS|FAIL) |git-edit: )' | tr '\n' '|')" \
+		"[1] one|  PASS a|[2] two|  PASS b|[3] three|  FAIL c|git-edit: error – selftest 1/3 failed – 2 jobs|"
+	_ST_OUT_HAS "keeping every unit's output" "Every unit's output kept in"
+	OUT=$(export ST_JOBS_DIE=1 _COLOR=false; _SELFTEST_JOBS "$TMP/jobs-stand-in" "$TMP/pick.zsh" --selftest 2 2>&1)
+	RC=$?
+	_ST_EQ "a unit ending without a result fails it too" "$RC" "1"
+	_ST_OUT_HAS "named with its exit" 'Scenarios 3 ended without a result – exit 3'
+	_ST_OUT_HAS "and counted as one failure" '^git-edit: error – selftest 1/3 failed – 2 jobs$'
+	# The script's own handlers come back once the units are done, its report included in their reach
+	( _COLOR=false; trap - TERM; _SELFTEST_JOBS "$TMP/jobs-stand-in" "$TMP/pick.zsh" --selftest 2 >/dev/null 2>&1; trap > "$TMP/jobs-traps" )
+	_ST_EQ "the runner hands TERM back to the script's own handler" "$(grep -c '_ON_TERMINATION TERM 143' "$TMP/jobs-traps")" "1"
+	# A TERM reaching the runner alone, as a timeout sends one, takes the units along – each runs
+	# below a subshell, where they once ran on past its kill – and its temp dir, wherever that is
+	mkdir -p "$TMP/jobs-pids" "$TMP/jobs tmp"
+	printf '#!/bin/sh\necho $$ > "%s/${1#--selftest=}"\nexec sleep 600\n' "$TMP/jobs-pids" > "$TMP/jobs-sleeper"
+	chmod +x "$TMP/jobs-sleeper"
+	( _COLOR=false; TMPDIR="$TMP/jobs tmp"; _SELFTEST_JOBS "$TMP/jobs-sleeper" "$TMP/pick.zsh" --selftest 2 ) >/dev/null 2>&1 &
+	local ST_JR=$! ST_JW=0
+	until { [ -s "$TMP/jobs-pids/1,2" ] && [ -s "$TMP/jobs-pids/3" ]; } || (( ++ST_JW > 100 )); do sleep 0.1; done
+	kill -TERM $ST_JR
+	wait $ST_JR
+	_ST_EQ "a TERM to the runner alone stops it" "$?" "130"
+	local ST_JU=$(<"$TMP/jobs-pids/1,2") ST_JV=$(<"$TMP/jobs-pids/3")
+	ST_JW=0
+	while { kill -0 "$ST_JU" || kill -0 "$ST_JV"; } 2>/dev/null && (( ++ST_JW <= 50 )); do sleep 0.1; done
+	_ST_CHECK "and the units it was running with it" \
+		sh -c "[ -n '$ST_JU' ] && [ -n '$ST_JV' ] && ! kill -0 '$ST_JU' 2>/dev/null && ! kill -0 '$ST_JV' 2>/dev/null"
+	kill "$ST_JU" "$ST_JV" 2>/dev/null
+	_ST_EQ "and its temp dir, a space in its path" "$(ls "$TMP/jobs tmp" | wc -l | tr -d ' ')" "0"
 	# The picks above run one level down – a level further means a pick reached this scenario
 	OUT=$(GIT_EDIT_SELFTEST_DEPTH=2 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --selftest=70 </dev/null 2>&1)
 	RC=$?
@@ -5975,13 +6054,33 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	git config filter.wcupper.clean 'tr a-z A-Z' && echo '*.wcup filter=wcupper' >> .git/info/attributes && echo loud > wc.wcup
 	_ST_RUN --commit --text "WC filtered" -- wc.wcup
 	_ST_EQ "a file goes through its clean filter, as git add takes it" "$RC:$(git show HEAD:wc.wcup)" "0:LOUD"
-	# A landing the checkout never got, as a rewrite lands one, makes a whole file a revert
+	# A fold takes files whole the same way
+	local WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
+	echo 'inner, folded' > wc-sub/moved.txt
+	_ST_RUN --amend-into="$WC_TARGET" --whole -- wc-sub/moved.txt
+	_ST_EQ "--whole folds a file whole into a past commit" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded"
+	_ST_CHECK "leaving the checkout clean there" test -z "$(git status --porcelain -- wc-sub)"
+	echo 'inner, folded again' > wc-sub/moved.txt
+	WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
+	cd wc-sub
+	_ST_RUN --amend-into="$WC_TARGET" --whole -- moved.txt
+	cd "$TMP/repo"
+	_ST_EQ "--whole takes a path as named from a subdirectory" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded again"
+
+	# --- 113b. A whole file lacking another caller's landing refuses ---
+	# A landing the checkout never got, as a rewrite lands one, makes a whole file a revert – on
+	# the file as 113 leaves it, committed here where a run starts without 113
+	_ST_SCENARIO "\e[1;96m[113b] a whole file lacking another caller's landing refuses\e[0m"
+	export GIT_EDIT_ACTOR=wc-self
+	local WC_BR=$(git symbolic-ref --short HEAD) WC_HOOK=$(git rev-parse --git-path hooks/pre-commit)
+	printf 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n' > wc.txt && git add wc.txt
+	git diff --cached --quiet -- wc.txt || git commit -qm "WC guard base"
 	local WC_BEFORE=$(git rev-parse HEAD)
 	export GIT_EDIT_ACTOR=wc-peer
 	_ST_RUN --exec -- sh -c "printf 'a\nB\nc\nd\ne\nf\ng\nh\ni\nj\n' > wc.txt && git commit -qam 'WC peer lands'"
 	export GIT_EDIT_ACTOR=wc-self
 	printf 'a\nb\nc\nd\ne\nf\nG-mine\nh\ni\nj\n' > wc.txt
-	WC_TIP=$(git rev-parse HEAD)
+	local WC_TIP=$(git rev-parse HEAD)
 	_ST_RUN --commit --text "x" -- wc.txt
 	_ST_OUT_HAS "a whole file lacking another caller's landing refuses, naming the run" "wc.txt – wc-peer's exec run"
 	_ST_OUT_LACKS "under a lead-in printed once" 'on them: Committed whole'
@@ -6099,19 +6198,12 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --commit --text "WC past the gate" --no-verify -- "$TMP/repo/wc-gate.txt"
 	git config --unset edit.verifyCmd
 	_ST_EQ "--no-verify lands it, named by its absolute path" "$RC:$(git show HEAD:wc-gate.txt)" "0:REJECT"
-	# A fold takes files whole the same way
-	local WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
-	echo 'inner, folded' > wc-sub/moved.txt
-	_ST_RUN --amend-into="$WC_TARGET" --whole -- wc-sub/moved.txt
-	_ST_EQ "--whole folds a file whole into a past commit" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded"
-	_ST_CHECK "leaving the checkout clean there" test -z "$(git status --porcelain -- wc-sub)"
-	echo 'inner, folded again' > wc-sub/moved.txt
-	WC_TARGET=$(git log -1 --format=%H --grep='^WC move and link')
-	cd wc-sub
-	_ST_RUN --amend-into="$WC_TARGET" --whole -- moved.txt
-	cd "$TMP/repo"
-	_ST_EQ "--whole takes a path as named from a subdirectory" "$RC:$(git show "$(git log -1 --format=%H --grep='^WC move and link')":wc-sub/moved.txt)" "0:inner, folded again"
+
+	# --- 113c. Files taken whole against landings the checkout lacks, by kind ---
 	# A file taken whole supersedes its own staging, an intent-to-add entry too, as git commit has it
+	_ST_SCENARIO "\e[1;96m[113c] files taken whole against landings the checkout lacks, by kind\e[0m"
+	export GIT_EDIT_ACTOR=wc-self
+	local WC_HOOK=$(git rev-parse --git-path hooks/pre-commit)
 	echo ita > wc-ita.txt && git add -N wc-ita.txt
 	_ST_RUN --commit --text "WC intent to add" -- wc-ita.txt
 	_ST_EQ "an intent-to-add entry follows the commit" "$RC:$(git status --porcelain -- wc-ita.txt)" "0:"
@@ -6160,7 +6252,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --exec -- sh -c "printf 'a1\nP1\nP2\na4\n' > wc-adj.txt && printf 'v2\0bin' > wc-adj.bin && git commit -qam 'WC adj two'"
 	export GIT_EDIT_ACTOR=wc-self
 	printf 'a1\na2\na3\na4\n' > wc-adj.txt && printf 'v0\0bin' > wc-adj.bin
-	WC_TIP=$(git rev-parse HEAD)
+	local WC_TIP=$(git rev-parse HEAD)
 	_ST_RUN --commit --text "x" -- wc-adj.txt wc-adj.bin
 	_ST_EQ "a copy still as before a landing another sits next to refuses, a binary too" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 	_ST_OUT_HAS "both pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt'"
@@ -6259,7 +6351,12 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --amend-into="$WC_SD" --whole -- gone.txt
 	cd "$TMP/repo"
 	_ST_EQ "--whole folds a deletion named from a subdirectory" "$RC:$(git cat-file -e "$(git log -1 --format=%H --grep='^WC subdir base')":wc-sd/gone.txt 2>/dev/null && echo kept || echo gone)" "0:gone"
+
+	# --- 113d. Files taken whole mid-merge, by case, past landings that moved lines ---
 	# Mid-merge, or on a file still unmerged, files taken whole refuse as git commit's partial one does
+	_ST_SCENARIO "\e[1;96m[113d] files taken whole mid-merge, by case, past landings that moved lines\e[0m"
+	export GIT_EDIT_ACTOR=wc-self
+	local WC_BR=$(git symbolic-ref --short HEAD) WC_ICASE=$(git config core.ignorecase)
 	git checkout -q -b wc-mside && echo S > wc-mg.txt && git add wc-mg.txt && git commit -qm "WC merge side" && git checkout -q "$WC_BR"
 	echo M > wc-mg.txt && git add wc-mg.txt && git commit -qm "WC merge main"
 	git merge -q wc-mside >/dev/null 2>&1
@@ -6304,7 +6401,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --exec -- sh -c "sed 's/^A3\$/r3/' wc-rv.txt > t && mv t wc-rv.txt && git commit -qam 'WC rv B'"
 	export GIT_EDIT_ACTOR=wc-self
 	sed 's/^r10$/C10/' "$TMP/wc-rv-stale" > wc-rv.txt
-	WC_TIP=$(git rev-parse HEAD)
+	local WC_TIP=$(git rev-parse HEAD)
 	_ST_RUN --commit --text "x" -- wc-rv.txt
 	_ST_EQ "a copy lacking a landing that undid an earlier one refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 	_ST_OUT_HAS "naming that landing" "wc-rv.txt – wc-other's exec run"

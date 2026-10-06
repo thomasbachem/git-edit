@@ -63,13 +63,13 @@ unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEN
 	ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER \
 	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
 	OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT \
-	OPT_EXEC OPT_HELP OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER \
-	OPT_RESQUASH OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS \
-	OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH \
-	ORIG_HEAD OUR_TOPLEVEL PARSE_ERR PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD \
-	REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD \
-	RESUME_STRAY RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA \
-	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
+	OPT_EXEC OPT_HELP OPT_JOBS OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO \
+	OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH \
+	OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES \
+	ORIG_BRANCH ORIG_HEAD OUR_TOPLEVEL PARSE_ERR PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE \
+	REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS \
+	RESUME_GD RESUME_STRAY RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_JOBS SELFTEST_SCOPE \
+	SELFTEST_TEXT SHA SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
 	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY \
 	STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED \
@@ -428,7 +428,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --move=<a> --move=<b>... --after|--before=<sha> # several as one block, in one replay\e[0m"
 	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --abort                        # resume / cancel after a conflict\e[0m"
-	ECHO_E "\e[0;94m       git edit --undo | --status | --carry[=<sha>] | --selftest[=<ids>] | --version\e[0m"
+	ECHO_E "\e[0;94m       git edit --undo | --status | --carry[=<sha>] | --selftest[=<ids>] [--jobs[=<n>]] | --version\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
 	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing (at a terminal – an edit without\e[0m"
@@ -502,6 +502,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
 	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the built-in end-to-end test suite in a scratch repo – =83-87,90 runs those\e[0m"
 	ECHO_E "\e[0;94m                                       scenarios alone, with the ones they need, for development (commits and releases take all)\e[0m"
+	ECHO_E "\e[0;94m       --jobs[=<n>]                    With --selftest, run its scenarios <n> at a time (default: one a core)\e[0m"
 	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into/--commit; '-' reads stdin\e[0m"
 	ECHO_E "\e[0;94m                                       (--split: the extracted commit's – the remainder keeps the original)\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
@@ -8043,6 +8044,126 @@ _SELFTEST_PICK () {
 	KEPT+=("${(@)SUITE[SUMMARY,-1]}")
 	SELFTEST_TEXT=${(F)KEPT}
 	SELFTEST_SCOPE="scenario${${${#WANT}:#1}:+s} ${(j:, :)RUNS} (${#WANT} of ${#IDS})"
+	# What `--jobs` splits the pick by – its scenarios in suite order, what each needs, its length
+	typeset -ga SELFTEST_IDS
+	typeset -gA SELFTEST_NEEDS SELFTEST_SIZE
+	SELFTEST_IDS=() SELFTEST_NEEDS=() SELFTEST_SIZE=()
+	for (( I = 1; I <= ${#IDS}; I++ )); do
+		ID=${IDS[I]}
+		(( ${+WANT[$ID]} )) || continue
+		SELFTEST_IDS+=("$ID")
+		SELFTEST_NEEDS[$ID]=${NEEDS[$ID]}
+		if (( I < ${#IDS} )); then
+			SELFTEST_SIZE[$ID]=$(( ${AT[${IDS[I+1]}]} - ${AT[$ID]} ))
+		else
+			SELFTEST_SIZE[$ID]=$(( SUMMARY - ${AT[$ID]} ))
+		fi
+	done
+}
+
+# Runs a pick of the suite – all of it by default – <jobs> processes at once, each one a
+# `--selftest=<ids>` of a scenario with the ones it needs, in a temp dir of its own, the longest
+# first, then prints their output in suite order under one count and trailer, as a serial run would
+_SELFTEST_JOBS () {
+	# Args: <script> <suite file> <the `--selftest` option as given> <jobs>
+	local SELF=$1 FILE=$2 PICK=${${3#--selftest}#=} ID N A B R LINE JT
+	local -i JOBS=$4 RUNNING=0 NEXT=1 DONE=0 TOTAL=0 FAILED=0 P T
+	local -a ORDER QUEUE
+	local -A ROOT MEMBERS WEIGHT PID_OF
+	# A bare `--selftest` is the whole suite, an empty pick refused as a run alone refuses it
+	[ "$3" = --selftest ] && PICK=-
+	_SELFTEST_PICK "$FILE" "$PICK" || return 1
+	# The whole suite says nothing of what ran, as a serial run of it doesn't
+	[ "$3" = --selftest ] && SELFTEST_SCOPE=""
+	# One unit per set of scenarios the needs tie together, so each runs once and its needs with it
+	for ID in "${SELFTEST_IDS[@]}"; do ROOT[$ID]=$ID; done
+	for ID in "${SELFTEST_IDS[@]}"; do
+		for N in ${(s:,:)SELFTEST_NEEDS[$ID]}; do
+			A=$ID; while [ "${ROOT[$A]}" != "$A" ]; do A=${ROOT[$A]}; done
+			B=$N; while [ "${ROOT[$B]}" != "$B" ]; do B=${ROOT[$B]}; done
+			[ "$A" != "$B" ] && ROOT[$A]=$B
+		done
+	done
+	for ID in "${SELFTEST_IDS[@]}"; do
+		R=$ID; while [ "${ROOT[$R]}" != "$R" ]; do R=${ROOT[$R]}; done
+		(( ${+MEMBERS[$R]} )) || ORDER+=("$R")
+		MEMBERS[$R]+="${MEMBERS[$R]:+,}$ID"
+		WEIGHT[$R]=$(( ${WEIGHT[$R]:-0} + ${SELFTEST_SIZE[$ID]} ))
+	done
+	# The longest first, so the slowest never starts last – its line count standing in for its time
+	QUEUE=(${(f)"$(for R in "${ORDER[@]}"; do print -r -- "${WEIGHT[$R]} $R"; done | sort -rn | awk '{print $2}')"})
+	JT=$(MKTEMP_DIR git-edit-jobs) || return 1
+	PRINT_TEXT "Running %s in %s units, %s at a time" 33 "${SELFTEST_SCOPE:-the suite}" "${#QUEUE}" "$JOBS"
+	# An interrupt takes the units still running along, and their temp dirs with them – each unit
+	# by the process id its subshell noted, as a kill of the subshell alone leaves it running
+	trap 'for R in ${(k)PID_OF}; do [ -s "$JT/$R.pid" ] && kill -TERM "$(<"$JT/$R.pid")"; kill -TERM "${PID_OF[$R]}"; done 2>/dev/null; rm -rf -- "$JT"; exit 130' INT TERM HUP
+	while (( DONE < ${#QUEUE} )); do
+		while (( RUNNING < JOBS && NEXT <= ${#QUEUE} )); do
+			R=${QUEUE[NEXT]}
+			# At the depth this run started at, as a pick alone runs – the suite keeps its temp files apart
+			( GIT_EDIT_SELFTEST_DEPTH=${GIT_EDIT_SELFTEST_DEPTH:-0} \
+				"$SELF" --selftest="${MEMBERS[$R]}" </dev/null >"$JT/$R.out" 2>&1 &
+				print -r -- $! > "$JT/$R.pid"
+				wait $!
+				print -r -- $? > "$JT/$R.rc.part" && mv "$JT/$R.rc.part" "$JT/$R.rc" ) &
+			# Quoted, as zsh stores a bare `$!` in an element as those two characters
+			PID_OF[$R]="$!"
+			RUNNING+=1 NEXT+=1
+		done
+		for R in ${(k)PID_OF}; do
+			[ -f "$JT/$R.rc" ] || continue
+			unset "PID_OF[$R]"
+			RUNNING+=-1 DONE+=1
+		done
+		(( DONE < ${#QUEUE} )) && sleep 0.2
+	done
+	wait 2>/dev/null
+	# The script's own handlers back, so a signal during the report still runs its exit
+	_TRAP_TERMINATION
+	local -a DIED
+	local -A TEXT_OF
+	for R in "${ORDER[@]}"; do
+		# A unit's lines filed under the scenario header opening them, as one unit can hold two the
+		# suite runs apart – its banner, summary and trailer dropped, a failed one's hint at a need kept
+		ID=${MEMBERS[$R]%%,*}
+		for LINE in "${(@f)$(LC_ALL=C sed -E '/^(git edit – |Selftest scratch repo: |Running scenario|Selftest: |git-edit: |$)/d' "$JT/$R.out")}"; do
+			[ -n "$LINE" ] || continue
+			[[ "$LINE" =~ '^\[([0-9]+[a-z]?)\] ' && ",${MEMBERS[$R]}," == *",${match[1]},"* ]] && ID=${match[1]}
+			TEXT_OF[$ID]+=$LINE$'\n'
+		done
+		LINE=$(LC_ALL=C grep -a '^git-edit: ' "$JT/$R.out" | tail -1)
+		if [[ "$LINE" =~ ' selftest ([0-9]+)/([0-9]+) (passed|failed)' ]]; then
+			P=${match[1]} T=${match[2]}
+			TOTAL+=$T
+			[ "${match[3]}" = failed ] && FAILED+=$P
+		else
+			# No trailer is no verdict – the unit died, and counts as a failure
+			FAILED+=1 TOTAL+=1
+			DIED+=("$R")
+		fi
+	done
+	# A unit writes to a file, so a terminal gets its colors back here
+	local -a TINT=(-e '')
+	[ "$_COLOR" = true ] && TINT=(-e $'s/^\\[[0-9]+[a-z]?\\] .*/\e[1;96m&\e[0m/' \
+		-e $'s/^  PASS /  \e[0;32mPASS\e[0m /' -e $'s/^  FAIL /  \e[1;31mFAIL\e[0m /')
+	for ID in "${SELFTEST_IDS[@]}"; do print -rn -- "${TEXT_OF[$ID]}"; done | LC_ALL=C sed -E "${TINT[@]}"
+	for R in "${DIED[@]}"; do
+		PRINT_TEXT "Scenarios %s ended without a result – exit %s:" 31 "${MEMBERS[$R]}" "$(<"$JT/$R.rc")"
+		tail -5 "$JT/$R.out" | _CARET_LINES | LC_ALL=C sed 's/^/  | /'
+	done
+	echo ""
+	if (( FAILED == 0 )); then
+		PRINT_TEXT "%s" 32 "Selftest: all $TOTAL checks passed."
+		rm -rf "$JT"
+		echo "git-edit: ok – selftest $TOTAL/$TOTAL passed – ${SELFTEST_SCOPE:+$SELFTEST_SCOPE, }$JOBS jobs"
+		_STATUS_EMITTED=true
+		return 0
+	fi
+	PRINT_TEXT "%s" 31 "Selftest: $FAILED of $TOTAL checks FAILED."
+	PRINT_TEXT "Every unit's output kept in %s" 33 "$JT"
+	echo "git-edit: error – selftest $FAILED/$TOTAL failed – ${SELFTEST_SCOPE:+$SELFTEST_SCOPE, }$JOBS jobs"
+	_STATUS_EMITTED=true
+	return 1
 }
 
 
@@ -8078,7 +8199,7 @@ zmodload zsh/zutil
 # Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
 # where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer
 PARSE_ERR=$(MKTEMP_FILE git-edit-parse 2>/dev/null) && _TEMP_FILES+=("$PARSE_ERR")
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
 	USAGE
 	PARSE_MSG=""
 	[ -n "$PARSE_ERR" ] && PARSE_MSG=$(<"$PARSE_ERR")
@@ -8114,6 +8235,7 @@ for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 
 		--before OPT_BEFORE 2 'names one commit' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
 		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
 		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios' \
+		--jobs OPT_JOBS 1 'takes one count' \
 		--carry OPT_CARRY 1 'names one old tip'; do
 	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
 		PRINT_ERR "$REPEAT_OPT given twice – it $REPEAT_WHAT, and only the last would count"
@@ -8390,6 +8512,10 @@ fi
 # `--undo`, `--status`, `--carry` and `--selftest` are standalone commands – no positionals, no
 # mode flags, dispatched before any commit parsing, and stray arguments are refused rather than
 # ignored, since `--undo <sha>` would otherwise undo whatever happens to be last
+if [ ${#OPT_JOBS} -gt 0 ] && [ ${#OPT_SELFTEST} -eq 0 ]; then
+	PRINT_ERR "--jobs only applies to --selftest"
+	exit 1
+fi
 if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_CARRY} -gt 0 ] || [ ${#OPT_SELFTEST} -gt 0 ]; then
 	if [ $# -gt 0 ]; then
 		USAGE
@@ -8424,6 +8550,21 @@ if [ ${#OPT_SELFTEST} -gt 0 ]; then
 	if (( ${GIT_EDIT_SELFTEST_DEPTH:-0} >= 2 )); then
 		PRINT_ERR "A selftest two levels inside another – a pick reached the scenario that runs picks"
 		exit 1
+	fi
+	# `--jobs` hands the suite to units run side by side, ahead of the depth count each of them
+	# keeps for itself – `=<n>` at a time, else one a core
+	if [ ${#OPT_JOBS} -gt 0 ]; then
+		SELFTEST_JOBS=${${OPT_JOBS[1]#--jobs}#=}
+		if [ -z "$SELFTEST_JOBS" ]; then
+			SELFTEST_JOBS=$(getconf _NPROCESSORS_ONLN 2>/dev/null)
+			[[ "$SELFTEST_JOBS" == <1-> ]] || SELFTEST_JOBS=4
+		fi
+		if [[ "$SELFTEST_JOBS" != <1-> ]]; then
+			PRINT_ERR "--jobs takes a count of 1 or more (got: $SELFTEST_JOBS)"
+			exit 1
+		fi
+		_SELFTEST_JOBS "${0:A}" "$SELFTEST_FILE" "${OPT_SELFTEST[1]}" "$SELFTEST_JOBS"
+		exit $?
 	fi
 	export GIT_EDIT_SELFTEST_DEPTH=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} + 1 ))
 	# `--selftest=<pick>` loads the suite cut down to those scenarios, `--selftest 83` arriving

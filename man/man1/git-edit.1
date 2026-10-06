@@ -24,7 +24,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
-\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] | \fB\-\-version\fR
+\fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] [\fB\-\-jobs\fR[\fB=\fR\fIn\fR]] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
 .B git edit
@@ -159,7 +159,8 @@ A mode or option that takes one value \(em
 .BR \-\-verify ,
 .BR \-\-base ,
 .BR \-C / \-\-dir ,
-.B \-\-selftest
+.BR \-\-selftest ,
+.B \-\-jobs
 or
 .B \-\-carry
 \(em refuses to be given twice, where only one value would count.
@@ -876,6 +877,18 @@ scenario names in a
 mark, and its trailer says what ran. That is for runs during development:
 scenarios share one repository, so a pick proves only what it ran, and a
 commit or a release takes the whole suite.
+.TP
+.BR \-\-jobs [ =\fIn\fR ]
+With
+.BR \-\-selftest ,
+run the scenarios
+.I n
+at a time \(em one a core by default. Each runs with the ones its
+.B # needs
+mark names, in a scratch repository of its own, and their output prints in
+suite order under one count and trailer. A scenario that fails here but
+passes in a serial run reads state an earlier one left, and its mark should
+name that one.
 .PP
 Independently, each mutating run sweeps temp worktrees left in
 .B TMPDIR
@@ -904,7 +917,7 @@ git\-edit: ok \(en refs/heads/main unchanged
 git\-edit: ok \(en dry run built <new-sha> on <old-sha>, refs/heads/main unchanged
 git\-edit: ok \(en carried <n> path(s) across <old-sha>..<new-sha>
 git\-edit: ok \(en no operation in flight
-git\-edit: ok \(en selftest <passed>/<total> passed
+git\-edit: ok \(en selftest <passed>/<total> passed[ \(en <what ran>]
 git\-edit: error \(en <reason>
 git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
