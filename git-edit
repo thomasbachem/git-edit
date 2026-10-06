@@ -54,37 +54,38 @@ set -o pipefail
 # it, a `TARGET` joining a squash or an `OPT_DROP` posing as `-d` – so each starts unset, a list
 # scenario 118 holds to the script
 unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF AMEND_SOURCE \
-	AMEND_TREE AMEND_TREE_GIVEN AUTO_OPEN_EDITOR C CMD COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
-	COMMITS_RESOLVED COMMITS_TOPO D DIR_HAS_EQUALS EDITOR_BASE EDITOR_FIRST EDIT_BRANCH EDIT_TARGET \
-	EDIT_WT EXEC_BASE EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_REF \
-	ISOLATE_WHY IS_REF LEFT_ALONE LOCKED MARKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
-	MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET \
-	MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD ONTO_NEW_HEAD ONTO_REF \
-	ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE \
-	OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO OPT_BASE OPT_BEFORE \
-	OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT OPT_EXEC OPT_HELP \
-	OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER OPT_RESQUASH \
-	OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE \
-	OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD \
-	OUR_TOPLEVEL PREV_NEW PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT \
-	RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD RESUME_STRAY RESYNCED S \
-	SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA SPLIT_NEW_HEAD SPLIT_REF \
-	SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION STATE_ALLOW_MODE_CHANGE STATE_AMENDED \
-	STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES STATE_FIXUP STATE_FOLD STATE_FORK \
-	STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY STATE_OPERATION STATE_ORIG_HEAD \
-	STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
-	STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD \
-	STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP T \
-	TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA VERIFY_VALUE WHOLE_HEAD WHOLE_IDX \
-	WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_DEFAULT WT_GITDIR WT_OURS WT_OUT WT_STATUS \
-	WT_STRAY _ACTOR _BANNER_REPO _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS \
-	_CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM _HOOK_RUN_PROBED \
-	_LANDED_MOVE _LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD \
-	_REAL_EDITOR _REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR \
-	_RERERE_OPTOUT _RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET \
-	_REWORDED_TIP _REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
-	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATE_PATH _STATUS_EMITTED \
-	_TEMP_FILES _TEMP_WORKTREES _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER _VERIFY_NO_RESUME
+	AMEND_TREE AMEND_TREE_GIVEN ARG_SCAN AUTO_OPEN_EDITOR C CMD COMMANDLINE COMMIT COMMITS \
+	COMMITS_DESIRED COMMITS_RESOLVED COMMITS_TOPO D DIR_HAS_EQUALS EDITOR_BASE EDITOR_FIRST \
+	EDIT_BRANCH EDIT_TARGET EDIT_WT EXEC_BASE EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL \
+	EXEC_NEW_HEAD EXEC_REF ISOLATE_WHY IS_REF LEFT_ALONE LOCKED MARKED MEANT_MODES MOVE_ANCHOR \
+	MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST \
+	MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD \
+	ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER \
+	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
+	OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT \
+	OPT_EXEC OPT_HELP OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER \
+	OPT_RESQUASH OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS \
+	OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH \
+	ORIG_HEAD OUR_TOPLEVEL PARSE_ERR PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD \
+	REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD \
+	RESUME_STRAY RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA \
+	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
+	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
+	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY \
+	STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED \
+	STATE_RRPRE STATE_RRPRE_SET STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE \
+	STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN \
+	STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_APART TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL \
+	TREE_BASE TREE_SHA VERIFY_APART VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS WHOLE_TREE \
+	WORKTREE_ABS WORKTREE_DIR WT_DEFAULT WT_GITDIR WT_OURS WT_OUT WT_STATUS WT_STRAY _ACTOR \
+	_BANNER_REPO _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS _CAPTURE_PIN_ARGS \
+	_CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM _HOOK_RUN_PROBED _LANDED_MOVE \
+	_LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR \
+	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
+	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
+	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES _SNAPSHOT_STAGES \
+	_SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATE_PATH _STATUS_EMITTED _TEMP_FILES \
+	_TEMP_WORKTREES _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER _VERIFY_NO_RESUME
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_ISOLATE GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_PROGRESS; do
@@ -97,19 +98,17 @@ GIT_EDIT_VERSION="1.7.0"
 
 # Suspend background maintenance for this process and every git it spawns – from git 2.54
 # `rerere gc` runs detached per commit, and its `MERGE_RR.lock` kills a rebase reaching its
-# next conflict, wedging every later continue on "you have staged changes" – and have them print
-# a non-ASCII path as itself, since its quoted form read back (`"\303\234ber.txt"`) names no file
-if [ -z "$GIT_CONFIG_COUNT" ]; then
-	export GIT_CONFIG_COUNT=6
-	export GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false
-	export GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
-	export GIT_CONFIG_KEY_2=core.quotePath GIT_CONFIG_VALUE_2=false
-	# And output the script parses stays as it reads it – no signature lines in a `git log`, and
-	# todo lines a sequence editor matches by a full `pick <7 hex>`
-	export GIT_CONFIG_KEY_3=log.showSignature GIT_CONFIG_VALUE_3=false
-	export GIT_CONFIG_KEY_4=rebase.abbreviateCommands GIT_CONFIG_VALUE_4=false
-	export GIT_CONFIG_KEY_5=core.abbrev GIT_CONFIG_VALUE_5=7
-fi
+# next conflict, wedging every later continue on "you have staged changes" – and keep what the
+# script parses as it reads it, a non-ASCII path as itself (its quoted form names no file), no
+# signature lines in a `git log`, a full `pick <7 hex>` in todo lines and paths from the top
+# Appended to what `git -c` passes, which outranks every other source – a caller's own `-c` and
+# `GIT_CONFIG_COUNT` included, so a pin there would lose to both
+for _K _V in maintenance.auto false gc.auto 0 core.quotePath false log.showSignature false \
+		rebase.abbreviateCommands false core.abbrev 7 diff.relative false; do
+	GIT_CONFIG_PARAMETERS+="${GIT_CONFIG_PARAMETERS:+ }'$_K=$_V'"
+done
+export GIT_CONFIG_PARAMETERS
+unset _K _V
 # Pathspec semantics are git-edit's own – a caller's glob setting refuses the `:(literal)` names
 # it passes, a literal one reads them as file names – kept for what runs on the caller's behalf
 typeset -a _CALLER_PATHSPECS
@@ -187,6 +186,12 @@ _CARET () {
 # Prints the closing status line verbatim and on one line, whatever a name or message in it holds
 _EMIT_TRAILER () {
 	# Args: <line>
+	# Rerere's notes first, so the trailer stays last – only where no pause keeps the scope open
+	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
+		[[ "$1" == "git-edit: ok"* ]]
+		_RERERE_SCOPE_END $?
+		_RERERE_SCOPE_OWNED=""
+	fi
 	_CARET "${1//$'\n'/ }"
 	print -r -- "$REPLY"
 }
@@ -353,6 +358,7 @@ _GLOBAL_EXIT_TRAP () {
 	_TEMP_WORKTREES=()
 	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
 		_RERERE_SCOPE_END $CODE
+		_RERERE_SCOPE_OWNED=""
 	fi
 	# A held-back rewrite delivery outlives the run only with the pause it belongs to
 	if [ -n "$_CAPTURE_DIR" ] && ! grep -qxF "capture=$_CAPTURE_DIR" "$SF" 2>/dev/null; then
@@ -739,11 +745,10 @@ EMIT_DRY_RUN () {
 }
 
 EMIT_CONFLICT () {
-	# Args: <worktree-path> [<unmerged-files-comma-separated>]
+	# Args: <worktree-path> [<unmerged files, one per line>]
 	local FILES_PART=""
 	if [ -n "$2" ]; then
-		# Replace commas with ", " for readability
-		FILES_PART=" ($(print -r -- "$2" | sed 's/,/, /g'))"
+		FILES_PART=" (${(j:, :)${(f)2}})"
 	fi
 	_EMIT_TRAILER "git-edit: conflict – resolve in $1$FILES_PART; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
@@ -926,7 +931,7 @@ _PRINT_CONFLICT_DETAIL () {
 	if [ -z "$UNMERGED" ] && [ -d "$GITDIR/rebase-merge" ]; then
 		if git -C "$WT" diff --cached --quiet HEAD 2>/dev/null; then
 			PRINT_TEXT "No conflicted files – the current step became empty: its changes are already upstream, or a resolution replayed within this run produced them. Skipping drops that commit. Then continue:" 33 >&2
-			ECHO_E "\e[0;33m  git -C $WT rebase --skip\e[0m" >&2
+			ECHO_E "\e[0;33m  $(_LIT "git -C ${(q-)WT} rebase --skip")\e[0m" >&2
 			ECHO_E "\e[0;33m  git edit --continue\e[0m" >&2
 		else
 			PRINT_TEXT "No conflicted files, yet staged changes remain – the continue failed without leaving a conflict. Retry: git edit --continue" 33 >&2
@@ -943,8 +948,8 @@ _PRINT_CONFLICT_DETAIL () {
 		fi
 	fi
 
-	# Emit comma-separated unmerged list on stdout for the trailer
-	print -r -- "$UNMERGED" | tr '\n' ',' | sed 's/,$//'
+	# The unmerged list on stdout for the trailer
+	print -r -- "$UNMERGED"
 }
 
 # Names the file-mode changes a rewrite landed, tip vs pre-op tip – a diffstat shows line
@@ -955,7 +960,7 @@ _PRINT_MODE_CHANGES () {
 	# Not `LINES` – that name is zsh's tied terminal-height integer, which
 	# rejects the assignment as a math error
 	local MODE_LINES
-	MODE_LINES=$(git diff --summary "$1" "$2" 2>/dev/null | grep '^ mode change')
+	MODE_LINES=$(git diff --summary "$1" "$2" 2>/dev/null | LC_ALL=C grep -a '^ mode change')
 	[ -z "$MODE_LINES" ] && return 0
 	PRINT_TEXT "Mode changes landed:" 33
 	print -r -- "$MODE_LINES" | _CARET_LINES | LC_ALL=C sed "s/^ /  /;s/^/${_DIM}/;s/\$/${_OFF}/"
@@ -995,7 +1000,7 @@ _IS_PUSHED () {
 _GUARD_UNPUSHED () {
 	[ ${#OPT_ALLOW_PUSHED} -gt 0 ] && return 0
 	local C=$1
-	local CONTAINING=$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ' | sed 's/^[* ]*//' | head -3 | tr '\n' ' ' | sed 's/ $//')
+	local CONTAINING=$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ' | LC_ALL=C sed 's/^[* ]*//' | head -3 | tr '\n' ' ' | LC_ALL=C sed 's/ $//')
 	if [ -n "$CONTAINING" ]; then
 		PRINT_ERR "Commit ${C:0:7} is already pushed (on: $CONTAINING)"
 		ECHO_E "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
@@ -1169,8 +1174,8 @@ _RECORD_REF_MOVE () {
 	_LANDED_MOVE="$1 moved $2 → $3"
 	local JF=$(_JOURNAL_FILE_PATH)
 	local TAB=$'\t'
-	[ -n "$JF" ] && echo "$(date +%s) $1 $2 $3 $4${_ACTOR:+$TAB$_ACTOR}" >> "$JF"
-	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $1 $2 $3)\e[0m"
+	[ -n "$JF" ] && print -r -- "$(date +%s) $1 $2 $3 $4${_ACTOR:+$TAB$_ACTOR}" >> "$JF"
+	ECHO_E "\e[0;90mUndo: git edit --undo  (or: git update-ref $(_LIT "${(q-)1}") $2 $3)\e[0m"
 	_PRINT_FORCE_PUSH "$1" "$2" "$3"
 	_CAPTURE_COLLECT "$2" "$3"
 
@@ -1186,10 +1191,10 @@ _RECORD_REF_MOVE () {
 		# Compared whole, as the stale-SHA resolver compares one – a `|` or backslash in it included
 		CAND=$(git log --format='%H%x09%s' "$2..$3" 2>/dev/null | S=$TSUBJ awk '{ sha = $1; sub(/^[^\t]*\t/, ""); if ($0 == ENVIRON["S"]) print sha }')
 		PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
-		if [ -n "$CAND" ] && [ "$(echo "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
-			ECHO_E "\e[0;33m  git tag -f $TAG ${CAND:0:12}  # same subject: ${TSUBJ//\\/$_LITB}\e[0m"
+		if [ -n "$CAND" ] && [ "$(print -r -- "$CAND" | wc -l | tr -d ' ')" = "1" ]; then
+			ECHO_E "\e[0;33m  git tag -f $(_LIT "${(q-)TAG}") ${CAND:0:12}  # same subject: ${TSUBJ//\\/$_LITB}\e[0m"
 		else
-			ECHO_E "\e[0;33m  git tag -f $TAG <its counterpart in the new span>\e[0m"
+			ECHO_E "\e[0;33m  git tag -f $(_LIT "${(q-)TAG}") <its counterpart in the new span>\e[0m"
 		fi
 	done
 
@@ -1229,11 +1234,11 @@ _RECORD_REF_MOVE () {
 		fi
 		PRINT_TEXT "Branch %s points into the rewritten span – if it should follow the rewrite:" 33 "${BREF#refs/heads/}"
 		if [ "${HIT#* }" = "patch-id" ]; then
-			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same change: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
+			ECHO_E "\e[0;33m  git branch -f $(_LIT "${(q-)${BREF#refs/heads/}}") ${HIT:0:12}  # same change: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 		elif [ -n "$HIT" ]; then
-			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} ${HIT:0:12}  # same subject: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
+			ECHO_E "\e[0;33m  git branch -f $(_LIT "${(q-)${BREF#refs/heads/}}") ${HIT:0:12}  # same subject: $(_LIT "$(git log -1 --format=%s "$BSHA")")\e[0m"
 		else
-			ECHO_E "\e[0;33m  git branch -f ${BREF#refs/heads/} <its counterpart in the new span>\e[0m"
+			ECHO_E "\e[0;33m  git branch -f $(_LIT "${(q-)${BREF#refs/heads/}}") <its counterpart in the new span>\e[0m"
 		fi
 		NAMED=true
 	done
@@ -1393,7 +1398,7 @@ _CAPTURE_REMOVE () {
 _CAPTURE_RECORD () {
 	# Args: <old> <new>
 	[ "$_CAPTURE_REWRITES" = "true" ] || return 0
-	echo "$1 $2" >> "$_CAPTURE_DIR/extra"
+	print -r -- "$1 $2" >> "$_CAPTURE_DIR/extra"
 }
 
 # Moves pairs a plumbing step recorded ahead of the rebase into the held-back list, which persists –
@@ -1442,16 +1447,16 @@ _CAPTURE_DISCARD () {
 # git-edit's own, run after every pick, and no step a resolver has to reason about
 _REBASE_TODO_LEFT () {
 	# Args: <git dir holding the rebase>
-	grep -vE '^(#|$)' "$1/rebase-merge/git-rebase-todo" 2>/dev/null | sed '/git-edit-capture\..*step\.sh/d'
+	LC_ALL=C grep -avE '^(#|$)' "$1/rebase-merge/git-rebase-todo" 2>/dev/null | LC_ALL=C sed '/git-edit-capture\..*step\.sh/d'
 }
 
 # Numbers a stopped rebase's current step and its total as `msgnum` and `end` do, but without the
 # capture steps, which would double both and keep the last pick from ever reading as final
 _REBASE_STEP () {
 	# Args: <git dir holding the rebase> – prints "<now> <end>"
-	local NOW=$(sed '/git-edit-capture\..*step\.sh/d' "$1/rebase-merge/done" 2>/dev/null | grep -c .)
+	local NOW=$(LC_ALL=C sed '/git-edit-capture\..*step\.sh/d' "$1/rebase-merge/done" 2>/dev/null | LC_ALL=C grep -ac .)
 	local LEFT=$(_REBASE_TODO_LEFT "$1" | grep -c .)
-	echo "$NOW $((NOW + LEFT))"
+	print -r -- "$NOW $((NOW + LEFT))"
 }
 
 # Reverts the last journaled ref move, CAS-guarded – refuses where the branch has moved
@@ -1469,10 +1474,10 @@ GIT_UNDO () {
 		RUN_ACTOR=${LAST##*$'\t'}
 		LAST=${LAST%$'\t'*}
 	fi
-	local REF=$(echo "$LAST" | awk '{print $2}')
-	local OLD=$(echo "$LAST" | awk '{print $3}')
-	local NEW=$(echo "$LAST" | awk '{print $4}')
-	local LABEL=$(echo "$LAST" | cut -d' ' -f5-)
+	local REF=$(print -r -- "$LAST" | awk '{print $2}')
+	local OLD=$(print -r -- "$LAST" | awk '{print $3}')
+	local NEW=$(print -r -- "$LAST" | awk '{print $4}')
+	local LABEL=$(print -r -- "$LAST" | cut -d' ' -f5-)
 
 	# Only a pause on the branch it would move is in the way, whose landing the undo would strand
 	if _STATE_EXISTS; then
@@ -1500,9 +1505,9 @@ GIT_UNDO () {
 		exit 1
 	fi
 	# Pop the undone entry off the journal via a temp file, GNU sed reading `-i ''` as a file name
-	{ sed -e '$d' "$JF" > "$JF.$$" && mv "$JF.$$" "$JF"; } 2>/dev/null
+	{ LC_ALL=C sed -e '$d' "$JF" > "$JF.$$" && mv "$JF.$$" "$JF"; } 2>/dev/null
 
-	if ! git diff --quiet "$OLD" "$NEW" 2>/dev/null; then
+	if ! git diff --ignore-submodules=dirty --quiet "$OLD" "$NEW" 2>/dev/null; then
 		PRINT_TEXT "Trees differ between the two tips – re-sync the index with %s if this is your checkout's branch." 33 "git reset"
 	fi
 	PRINT_TEXT "%s" 32 "Undid: $LABEL"
@@ -1525,6 +1530,14 @@ _CHANGED_SPANS () {
 	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$1" "$2" 2>/dev/null | \
 		LC_ALL=C sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p' | \
 		awk 'NF { c = (NF < 2) ? 1 : $2; if (c == 0) print 2 * $1 + 1, 2 * $1 + 1; else print 2 * $1, 2 * ($1 + c - 1) }'
+}
+
+# Answers whether a rename's destination can take the carry – absent from the checkout, or holding
+# byte for byte what checking the rewrite out writes there, as a clean filter can hash an edit away
+_CARRY_DEST_FREE () {
+	# Args: <checkout> <new tip> <path>
+	[ ! -e "$1/$3" ] && [ ! -L "$1/$3" ] && return 0
+	[ ! -L "$1/$3" ] && [ -f "$1/$3" ] && git -C "$1" cat-file --filters "${2}:$3" 2>/dev/null | cmp -s - "$1/$3"
 }
 
 # Merges the checkout's uncommitted edits onto what a rewrite landed – each path it changed whose
@@ -1573,23 +1586,24 @@ GIT_CARRY () {
 	local -a RENAME_FIELDS
 	# NUL-separated, status, source and destination each – a quote, backslash or tab in a name
 	# comes back C-quoted in the line form
-	RENAME_FIELDS=(${(0)"$(git diff -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
+	RENAME_FIELDS=(${(0)"$(git diff --ignore-submodules=dirty -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
 	for (( I = 1; I + 2 <= ${#RENAME_FIELDS[@]}; I += 3 )); do
 		RENAMED_FROM[${RENAME_FIELDS[I + 2]}]=${RENAME_FIELDS[I + 1]}
 		RENAMED_TO[${RENAME_FIELDS[I + 1]}]=${RENAME_FIELDS[I + 2]}
 	done
 	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) MERGED=$(MKTEMP_FILE git-edit-merged)
 	_TEMP_FILES+=("$BASE" "$THEIRS" "$MERGED")
-	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
+	for P in ${(0)"$(git diff --ignore-submodules=dirty -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
 		# A submodule's worktree is a repository of its own
 		[ -d "$CO/$P" ] && [ ! -L "$CO/$P" ] && continue
 		SRC=$P
 		if ! git cat-file -e "$NEW:$P" 2>/dev/null; then
-			# A rename's source goes with its new path, unless that path is in the checkout already
+			# A rename's source goes with its new path, unless that path is in the checkout already –
+			# as anything but what the rewrite landed there, which a rename this checkout landed leaves
 			[ -e "$CO/$P" ] || [ -L "$CO/$P" ] || continue
 			[ "$(_WORKTREE_HASH "$CO" "$P")" = "$(git rev-parse "${OLD}:${P}" 2>/dev/null)" ] && continue
-			[ -n "${RENAMED_TO[$P]}" ] && [ ! -e "$CO/${RENAMED_TO[$P]}" ] && continue
+			[ -n "${RENAMED_TO[$P]}" ] && _CARRY_DEST_FREE "$CO" "$NEW" "${RENAMED_TO[$P]}" && continue
 			if [ -n "${RENAMED_TO[$P]}" ]; then
 				LEFT+=("$P – renamed to ${RENAMED_TO[$P]}, which the checkout holds already")
 			else
@@ -1597,7 +1611,8 @@ GIT_CARRY () {
 			fi
 			continue
 		fi
-		[ -n "${RENAMED_FROM[$P]}" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && SRC=${RENAMED_FROM[$P]}
+		[ -n "${RENAMED_FROM[$P]}" ] && { [ -e "$CO/${RENAMED_FROM[$P]}" ] || [ -L "$CO/${RENAMED_FROM[$P]}" ]; } \
+			&& _CARRY_DEST_FREE "$CO" "$NEW" "$P" && SRC=${RENAMED_FROM[$P]}
 		[ -e "$CO/$SRC" ] || [ -L "$CO/$SRC" ] || continue
 		# Edits need a pre-rewrite blob to have been made on, and a stale or current file has none
 		git cat-file -e "$OLD:$SRC" 2>/dev/null || continue
@@ -1638,13 +1653,13 @@ GIT_CARRY () {
 		[ "$SRC" = "$P" ] || mkdir -p "$CO/${P:h}"
 		cp -p "$CO/$SRC" "$TMPF" && cat "$MERGED" > "$TMPF" || { rm -f "$TMPF"; LEFT+=("$P – not writable"); continue; }
 		if [ "$SRC" != "$P" ]; then
-			if [ "$(git ls-tree "$NEW" -- "$P" | awk '{print $1}')" = 100755 ]; then
+			if [ "$(git ls-tree --full-tree "$NEW" -- "$P" | awk '{print $1}')" = 100755 ]; then
 				chmod +x "$TMPF"
 			else
 				chmod -x "$TMPF"
 			fi
 		fi
-		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS_HASH" ] || { [ "$SRC" != "$P" ] && [ -e "$CO/$P" ]; }; then
+		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS_HASH" ] || { [ "$SRC" != "$P" ] && ! _CARRY_DEST_FREE "$CO" "$NEW" "$P"; }; then
 			rm -f "$TMPF"
 			LEFT+=("$P – changed while carrying")
 			continue
@@ -1727,7 +1742,7 @@ GIT_STATUS_REPORT () {
 		if [ -n "$JF" ] && [ -s "$JF" ]; then
 			local LAST=$(tail -1 "$JF")
 			LAST=${LAST%$'\t'*}
-			PRINT_TEXT "No operation in flight. Last completed: %s (%s → %s)" 32 "$(echo "$LAST" | cut -d' ' -f5-)" "$(echo "$LAST" | awk '{print substr($3,1,7)}')" "$(echo "$LAST" | awk '{print substr($4,1,7)}')"
+			PRINT_TEXT "No operation in flight. Last completed: %s (%s → %s)" 32 "$(print -r -- "$LAST" | cut -d' ' -f5-)" "$(print -r -- "$LAST" | awk '{print substr($3,1,7)}')" "$(print -r -- "$LAST" | awk '{print substr($4,1,7)}')"
 		else
 			PRINT_TEXT "%s" 32 "No operation in flight."
 		fi
@@ -1803,7 +1818,7 @@ _RESYNC_FOLDED () {
 	local -a PAIRS
 	shift 2
 	for P in "$@"; do
-		PAIRS+=("$P" "$(git ls-tree "$TREE" -- ":(literal)$P" 2>/dev/null | awk '{print $1" "$3}')")
+		PAIRS+=("$P" "$(git ls-tree --full-tree "$TREE" -- ":(literal)$P" 2>/dev/null | awk '{print $1" "$3}')")
 	done
 	_RESET_IF_STAGED_AS "$CO" "${PAIRS[@]}"
 	(( ${#RESET_KEPT} )) && PRINT_TEXT "Left staged, changed since the fold read it: %s" 33 "${(j:, :)RESET_KEPT}"
@@ -1822,9 +1837,9 @@ _RESYNC_STRANDED_ENTRIES () {
 	local -x GIT_LITERAL_PATHSPECS=1
 	RESYNCED=(); LEFT_ALONE=(); LOCKED=()
 	# NUL-separated, as a quote, backslash or tab in a name comes back C-quoted in the line form
-	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
+	for P in ${(0)"$(git diff --ignore-submodules=dirty -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
-		OLDENT=$(git ls-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
+		OLDENT=$(git ls-tree --full-tree "$OLD" -- "$P" 2>/dev/null | awk '{print $1" "$3}')
 		IDXALL=$(git -C "$CO" ls-files -s -- "$P" 2>/dev/null)
 		IDXENT=$(print -r -- "$IDXALL" | awk 'NF && $3 == 0 {print $1" "$2}')
 		# A conflicted path is mid-merge – a reset would discard its stages
@@ -1833,7 +1848,7 @@ _RESYNC_STRANDED_ENTRIES () {
 		elif [ "$OLDENT" = "$IDXENT" ]; then
 			PAIRS+=("$P" "$IDXENT")
 		# One staged as the new tip has it is in sync already
-		elif [ "$IDXENT" = "$(git ls-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
+		elif [ "$IDXENT" = "$(git ls-tree --full-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
 			:
 		# A file this run took whole supersedes what was staged of it, an intent-to-add entry too,
 		# as `git commit -- <paths>` has it – left as it was, a plain commit takes the file back –
@@ -1912,7 +1927,7 @@ _RECONCILE_CHECKOUT () {
 	local -a RENAME_FIELDS
 	# NUL-separated, status, source and destination each – a quote, backslash or tab in a name
 	# comes back C-quoted in the line form
-	RENAME_FIELDS=(${(0)"$(git diff -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
+	RENAME_FIELDS=(${(0)"$(git diff --ignore-submodules=dirty -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
 	for (( I = 1; I + 2 <= ${#RENAME_FIELDS[@]}; I += 3 )); do
 		RENAMED_FROM[${RENAME_FIELDS[I + 2]}]=${RENAME_FIELDS[I + 1]}
 		RENAMED_TO[${RENAME_FIELDS[I + 1]}]=${RENAME_FIELDS[I + 2]}
@@ -1930,10 +1945,10 @@ _RECONCILE_CHECKOUT () {
 	fi
 	# A path the rewrite removed lingers untracked once its entry is gone, so it takes a
 	# `clean` where the others take a restore
-	for P in ${(0)"$(git diff -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
+	for P in ${(0)"$(git diff --ignore-submodules=dirty -z --name-only --no-renames "$OLD" "$NEW" 2>/dev/null)"}; do
 		[ -z "$P" ] && continue
 		if git cat-file -e "$NEW:$P" 2>/dev/null; then
-			if ! git -C "$CO" diff --quiet HEAD -- "$P" 2>/dev/null; then
+			if ! git -C "$CO" diff --ignore-submodules=dirty --quiet HEAD -- "$P" 2>/dev/null; then
 				# Only the pre-rewrite blob itself is stale content a restore reclaims – a
 				# worktree matching neither tip carries edits on top, a peer's or your own,
 				# and naming those for reconciling would prescribe discarding them. The new
@@ -1942,7 +1957,7 @@ _RECONCILE_CHECKOUT () {
 				# checkout never got – told apart, since "uncommitted edits" on a file just
 				# committed whole invites committing "the rest"
 				SRC=${RENAMED_FROM[$P]}
-				if git -C "$CO" -c core.fileMode=false diff --quiet HEAD -- "$P" 2>/dev/null; then
+				if git -C "$CO" -c core.fileMode=false diff --ignore-submodules=dirty --quiet HEAD -- "$P" 2>/dev/null; then
 					MODE_ONLY+=("$P")
 				elif [ -n "$SRC" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && { [ -e "$CO/$SRC" ] || [ -L "$CO/$SRC" ]; } && \
 				     [ "$(_WORKTREE_HASH "$CO" "$SRC" 2>/dev/null)" != "$(git rev-parse "${OLD}:${SRC}" 2>/dev/null)" ]; then
@@ -1952,7 +1967,7 @@ _RECONCILE_CHECKOUT () {
 				elif [ ${#OPT_COMMIT} -gt 0 ] && [ -n "$WHOLE_TREE" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
 				     [ "$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)" = "$(git rev-parse -q --verify "${WHOLE_TREE}:${P}" 2>/dev/null)" ]; then
 					HOOKED+=("$P")
-				elif git -C "$CO" diff --quiet "$OLD" -- "$P" 2>/dev/null; then
+				elif git -C "$CO" diff --ignore-submodules=dirty --quiet "$OLD" -- "$P" 2>/dev/null; then
 					STALE+=("$P")
 				elif [ ! -L "$CO/$P" ] && git cat-file -e "$OLD:$P" 2>/dev/null && \
 				     _EDITS_LACK_REWRITE "$CO/$P" "$(git rev-parse "${OLD}:${P}")" "$(git rev-parse "${NEW}:${P}")"; then
@@ -2058,7 +2073,8 @@ _PRINT_REWRITE_APPLY_HINT () {
 	# otherwise fold into its destination
 	local -a CHANGED
 	if [ -n "$2" ] && [ -n "$3" ]; then
-		CHANGED=(${(0)"$(git diff -z --name-only --no-renames "$2" "$3" 2>/dev/null)"})
+		# A gitlink by its commit, whatever `submodule.<name>.ignore` hides from a plain diff
+		CHANGED=(${(0)"$(git diff --ignore-submodules=dirty -z --name-only --no-renames "$2" "$3" 2>/dev/null)"})
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
 		# A drop is the one rewrite whose leftover paths are the point rather than staleness –
@@ -2085,7 +2101,7 @@ _PRINT_REWRITE_APPLY_HINT () {
 			"Branch $BRANCH $MOVED – your checkout still holds the $FORMER content of:" \
 			"Branch $BRANCH $MOVED – index re-synced, your checkout is current."
 	else
-		PRINT_TEXT "Branch %s $MOVED – run %s in your main checkout when ready to apply." 32 "$BRANCH" "git reset --hard"
+		PRINT_TEXT "Branch %s $MOVED – your checkout was left as it was." 32 "$BRANCH"
 	fi
 }
 
@@ -2119,7 +2135,9 @@ _GC_ORPHANED_WORKTREES () {
 		if [ ! -d "$DIR" ] || [ ! -f "$DIR/.git" ]; then
 			continue
 		fi
-		GITDIR=$(sed -n 's/^gitdir: //p' "$DIR/.git" 2>/dev/null)
+		GITDIR=$(LC_ALL=C sed -n 's/^gitdir: //p' "$DIR/.git" 2>/dev/null)
+		# A relative pointer (`worktree.useRelativePaths`) runs from the worktree, not from here
+		[[ -z "$GITDIR" || "$GITDIR" == /* ]] || GITDIR=$DIR/$GITDIR
 		if [ -z "$GITDIR" ] || [ -e "$GITDIR" ]; then
 			continue
 		fi
@@ -2190,7 +2208,7 @@ _REQUIRE_PLAIN_GIT_ENV () {
 # apply time, which is safe but strands work that was resolvable a moment earlier
 _REQUIRE_NO_INFLIGHT () {
 	_STATE_EXISTS || return 0
-	local SB=$(sed -n 's/^branch=//p' "$(_STATE_FILE_PATH)" 2>/dev/null | head -1) HERE=$(git symbolic-ref -q HEAD)
+	local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$(_STATE_FILE_PATH)" 2>/dev/null | head -1) HERE=$(git symbolic-ref -q HEAD)
 	SB=${SB#refs/heads/}
 	# Neither mode pauses, so neither needs the slot – only a pause on its own branch is in the way,
 	# whose landing it would strand
@@ -2288,9 +2306,10 @@ GIT_UNSTASH () {
 GIT_RUN_AND_HANDLE_CONFLICTS () {
 	local OUTPUT STATUS # Needs to be separate for `$?` to work properly
 	_RERERE_SCOPE_BEGIN
-	# Pin C locale: the conflict branches below match git's English wording, and
-	# homebrew git localizes its output whenever the locale environment is empty
-	OUTPUT=$( export LC_ALL=C; eval "$*" 2>&1 | tee /dev/stderr )
+	# Pin C locale – the conflict branches below match git's English wording, and homebrew git
+	# localizes its output whenever the locale environment is empty – and `tee -a`, as Linux
+	# reopens the file a redirected stderr names, which a plain `tee` would truncate
+	OUTPUT=$( export LC_ALL=C; eval "$*" 2>&1 | tee -a /dev/stderr )
 	STATUS=$?
 
 	if [[ $STATUS -ne 0 ]]; then
@@ -2431,7 +2450,7 @@ GIT_REBASE_DROP () {
 	done
 	# `-i` with its suffix attached, the one in-place form BSD and GNU sed both read – the backup
 	# goes with the rebase's state directory
-	GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT" \
+	GIT_SEQUENCE_EDITOR=$'LC_ALL=C sed -i.git-edit'"$SED_SCRIPT" \
 	GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 }
 
@@ -2486,12 +2505,12 @@ GIT_REBASE_SQUASH () {
 
 	# Execute rebase
 	if [[ -n "$TEXT_MSG_FILE" ]]; then
-		GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_SEQUENCE_EDITOR=$'LC_ALL=C sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
 		GIT_EDITOR="cp ${(qq)TEXT_MSG_FILE}" \
 		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 		rm -f "$TEXT_MSG_FILE"
 	else
-		GIT_SEQUENCE_EDITOR=$'sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
+		GIT_SEQUENCE_EDITOR=$'LC_ALL=C sed -i.git-edit'"$SED_SCRIPT"$' -e "/^pick '"${TARGET:0:7}"'/a'"$APPEND_BLOCK"'"' \
 		GIT_RUN_AND_HANDLE_CONFLICTS "git ${CMD[*]}"
 	fi
 }
@@ -2507,7 +2526,7 @@ GIT_REBASE_BEGIN_EDIT () {
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
-	GIT_SEQUENCE_EDITOR=$'sed -i.git-edit -e "s/^pick '"${COMMIT:0:7}"'/edit '"${COMMIT:0:7}"'/"' \
+	GIT_SEQUENCE_EDITOR=$'LC_ALL=C sed -i.git-edit -e "s/^pick '"${COMMIT:0:7}"'/edit '"${COMMIT:0:7}"'/"' \
 	git "${CMD[@]}" || ABORT
 }
 
@@ -3264,7 +3283,7 @@ GIT_COMMIT_WHOLE () {
 	fi
 	_COMPOSE_WHOLE "$@"
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
-		local FLIPS=$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | grep '^ mode change')
+		local FLIPS=$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | LC_ALL=C grep -a '^ mode change')
 		if [ -n "$FLIPS" ]; then
 			PRINT_ERR "A file-mode change rides along – a lost executable bit, most often – so nothing landed"
 			print -r -- "$FLIPS" | _CARET_LINES | LC_ALL=C sed "s/^ /${_RED}    /;s/\$/${_OFF}/" >&2
@@ -3310,8 +3329,8 @@ _STAGED_TREE_FOR () {
 		META=${RAW[I]}
 		PATHNAME=${RAW[I+1]}
 		[ -z "$META" ] && continue
-		DSTMODE=$(echo "$META" | awk '{print $2}')
-		DSTSHA=$(echo "$META" | awk '{print $4}')
+		DSTMODE=$(print -r -- "$META" | awk '{print $2}')
+		DSTSHA=$(print -r -- "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
 			# From the top, as `update-index` reads a path from where it runs, unlike a `--cacheinfo`
 			GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
@@ -3377,7 +3396,7 @@ GIT_AMEND_INTO () {
 	# scoping the success sync to exactly these entries
 	local -a STAGED_PATHS
 	STAGED_PATHS=(${(0)"$(git diff "${AMEND_SOURCE[@]}" --name-only -z -- "${AMEND_PATHSPECS[@]}")"})
-	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | sed 's/,$//')
+	local STAGED_FILES=$(printf '%s\n' "${STAGED_PATHS[@]}" | tr '\n' ',' | LC_ALL=C sed 's/,$//')
 
 	# Pre-flight – a staged path the target predates is refused where a later commit introduces
 	# it, since folding beneath that introduction replays it as an add/add conflict of the
@@ -3439,7 +3458,7 @@ GIT_AMEND_INTO () {
 	# cause is a literal mode typed into `update-index --cacheinfo`, stripping an executable
 	# bit, and it would ride into history invisibly, a diffstat counting lines only
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
-		local MODE_FLIPS=$(git diff "${AMEND_SOURCE[@]}" --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | grep '^ mode change')
+		local MODE_FLIPS=$(git diff "${AMEND_SOURCE[@]}" --summary -- "${AMEND_PATHSPECS[@]}" 2>/dev/null | LC_ALL=C grep -a '^ mode change')
 		if [ -n "$MODE_FLIPS" ]; then
 			# Whole files take their mode from the checkout, where a chmod is the cause
 			if [ ${#OPT_WHOLE} -gt 0 ]; then
@@ -3952,7 +3971,7 @@ _CONTINUE_SNAPSHOT () {
 		if [ -n "$UNMERGED" ]; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Unresolved paths remain – resolve and stage them, then 'git edit --continue'"
-			EMIT_CONFLICT "$WT" "${UNMERGED//$'\n'/,}"
+			EMIT_CONFLICT "$WT" "$UNMERGED"
 			exit 2
 		fi
 		_GUARD_RESOLUTION_CLEAN "$WT" "$STATE_FOLD"
@@ -4023,13 +4042,13 @@ _BLAME_AMEND_TARGETS () {
 			# "@@ -<start>[,<count>]" – an absent count means one line, 0 means
 			# a pure insertion
 			START=${${HUNK#@@ -}%%[, ]*}
-			COUNT=$(echo "$HUNK" | sed -nE 's/^@@ -[0-9]+,([0-9]+).*/\1/p')
+			COUNT=$(print -r -- "$HUNK" | LC_ALL=C sed -nE 's/^@@ -[0-9]+,([0-9]+).*/\1/p')
 			[ -z "$COUNT" ] && COUNT=1
 			[ "$COUNT" = "0" ] && continue
 			LARGS+=(-L "$START,+$COUNT")
-		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- ":(literal)$P" 2>/dev/null | grep -E '^@@')
+		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- ":(literal)$P" 2>/dev/null | LC_ALL=C grep -aE '^@@')
 		[ ${#LARGS[@]} -eq 0 ] && continue
-		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | grep -oE '^[0-9a-f]{40}'
+		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | LC_ALL=C grep -aoE '^[0-9a-f]{40,64}'
 	done | sort -u
 }
 
@@ -4140,7 +4159,7 @@ _PRINT_AMENDED_SUMMARY () {
 	[ -z "$AMENDED" ] && AMENDED=$(git rev-parse "$1~$2" 2>/dev/null)
 	[ -z "$AMENDED" ] && return 0
 	if [ -n "$3" ]; then
-		PRINT_TEXT "Folded %s" 32 "$(echo "$3" | sed 's/,/, /g')"
+		PRINT_TEXT "Folded %s" 32 "$(print -r -- "$3" | LC_ALL=C sed 's/,/, /g')"
 	else
 		PRINT_TEXT "%s" 32 "Amended commit"
 	fi
@@ -4404,8 +4423,8 @@ GIT_SPLIT () {
 	for (( I = 1; I < ${#RAW[@]}; I += 2 )); do
 		META=${RAW[I]} PATHNAME=${RAW[I+1]}
 		[ -z "$META" ] && continue
-		DSTMODE=$(echo "$META" | awk '{print $2}')
-		DSTSHA=$(echo "$META" | awk '{print $4}')
+		DSTMODE=$(print -r -- "$META" | awk '{print $2}')
+		DSTSHA=$(print -r -- "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
 			GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
 		else
@@ -4562,9 +4581,9 @@ _CONTINUE_SPLIT () {
 		local MP M1 MB MX
 		for MP in ${(0)"$(git diff-tree -r -z --name-only "$X^^{tree}" "$TREE1")"}; do
 			[ -z "$MP" ] && continue
-			M1=$(git ls-tree "$TREE1" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
-			MB=$(git ls-tree "$X^" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
-			MX=$(git ls-tree "$X" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
+			M1=$(git ls-tree --full-tree "$TREE1" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
+			MB=$(git ls-tree --full-tree "$X^" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
+			MX=$(git ls-tree --full-tree "$X" -- ":(literal)$MP" 2>/dev/null | cut -d' ' -f1)
 			if [ -n "$M1" ] && [ "$M1" != "$MB" ] && [ "$M1" != "$MX" ]; then
 				MODE_STRAYS+=("$MP: authored $M1, ${X:0:7} carries ${MX:-none}, its parent ${MB:-none}")
 			fi
@@ -5156,12 +5175,12 @@ _GUARD_ONTO_CHECKOUT_CLEAN () {
 	[ -n "$4" ] && [ "$(git -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ] && return 0
 
 	local -a AFFECTED DIRTY BLOCKED
-	AFFECTED=("${(@f)$(git -C "$DIR" diff --name-only "$FROM" "$UPSTREAM" 2>/dev/null)}")
+	AFFECTED=("${(@f)$(git -C "$DIR" diff --ignore-submodules=dirty --name-only "$FROM" "$UPSTREAM" 2>/dev/null)}")
 	[ -z "${AFFECTED[1]}" ] && return 0
 	# Unstaged, staged, and untracked all block a two-way merge onto that path
 	DIRTY=("${(@f)$(
-		git -C "$DIR" diff --name-only 2>/dev/null
-		git -C "$DIR" diff --cached --name-only 2>/dev/null
+		git -C "$DIR" diff --ignore-submodules=dirty --name-only 2>/dev/null
+		git -C "$DIR" diff --ignore-submodules=dirty --cached --name-only 2>/dev/null
 		git -C "$DIR" ls-files --others --exclude-standard 2>/dev/null
 	)}")
 	[ -z "${DIRTY[1]}" ] && return 0
@@ -5226,8 +5245,8 @@ _PRINT_ONTO_SUMMARY () {
 	else
 		PRINT_TEXT "Replanted %s commit(s) onto %s:" 32 "${LANDED:-0}" "$ONTO_UPSTREAM"
 	fi
-	git log --reverse --format='  %h %s' "$UPSTREAM..$NEW_HEAD" 2>/dev/null | head -12 | \
-		sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git log --reverse --format='  %h %s' "$UPSTREAM..$NEW_HEAD" 2>/dev/null | head -12 | _CARET_LINES | \
+		LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 
 	# A shorter result reads as lost work unless the shortfall is accounted for, and its two
 	# causes are not interchangeable – the rebase drops what the upstream already carries,
@@ -5949,11 +5968,11 @@ _VERIFY_SAVE_LOG () {
 		return 0
 	fi
 	{
-		echo "commit: $1"
-		echo "command: $2"
-		echo "exit: $3"
-		echo "seconds: $4"
-		echo
+		print -r -- "commit: $1"
+		print -r -- "command: $2"
+		print -r -- "exit: $3"
+		print -r -- "seconds: $4"
+		print -r -- ""
 		print -r -- "$5"
 	} > "$LF" 2>/dev/null || return 0
 	PRINT_TEXT "Full output: %s" 33 "$LF"
@@ -5969,7 +5988,7 @@ _CLEAR_STATE () {
 	local SF=${_STATE_PATH:-$(_STATE_FILE_PATH)}
 	[ -n "$SF" ] || return 0
 	# The capture dir a pause recorded goes with its state, as does this run's own
-	_CAPTURE_REMOVE "$(sed -n 's/^capture=//p' "$SF" 2>/dev/null | head -1)"
+	_CAPTURE_REMOVE "$(LC_ALL=C sed -n 's/^capture=//p' "$SF" 2>/dev/null | head -1)"
 	_CAPTURE_REMOVE "$_CAPTURE_DIR"
 	rm -f "$SF" "$SF-msg" "$SF-verify"
 	# The slot is free from here, so a pause a parallel run records next is not this one's
@@ -6148,11 +6167,11 @@ _MARKED_PATHS () {
 		RE="^(<{$N}|={$N}|>{$N})( |\$)"
 		# Read whole – piped into `grep -q`, `git show` died at an early marker once the blob
 		# outgrew the pipe buffer, and `pipefail` read that as a clean file
-		STAGED=$(git -C "$WT" show ":0:$FILE" 2>/dev/null | grep -E "$RE")
+		STAGED=$(git -C "$WT" show ":0:$FILE" 2>/dev/null | LC_ALL=C grep -aE "$RE")
 		[ -n "$STAGED" ] || continue
 		OWN=""
 		for SIDE in "${SIDES[@]}"; do
-			OWN+=$(git -C "$WT" show "$SIDE:$FILE" 2>/dev/null | grep -E "$RE")$'\n'
+			OWN+=$(git -C "$WT" show "$SIDE:$FILE" 2>/dev/null | LC_ALL=C grep -aE "$RE")$'\n'
 		done
 		[ -n "$(LC_ALL=C comm -23 <(print -r -- "$STAGED" | LC_ALL=C sort -u) <(print -r -- "$OWN" | LC_ALL=C sort -u))" ] && MARKED+=("$FILE")
 	done
@@ -6173,7 +6192,7 @@ _GUARD_RESOLUTION_CLEAN () {
 		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
 		printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Strip them in $WT, re-stage, then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
-		EMIT_CONFLICT "$WT" "${(j:,:)BAD}"
+		EMIT_CONFLICT "$WT" "${(F)BAD}"
 		exit 2
 	fi
 }
@@ -6190,7 +6209,7 @@ _NOTE_RESOLVED_TREE () {
 # Appends a key=value line to this run's own pause, never a parallel run's – the loader takes a
 # key's last line, so a later value replaces an earlier one and an empty one clears it
 _STATE_NOTE () {
-	[ -n "$_STATE_OWNED" ] && [ -f "$_STATE_OWNED" ] && echo "$1" >> "$_STATE_OWNED"
+	[ -n "$_STATE_OWNED" ] && [ -f "$_STATE_OWNED" ] && print -r -- "$1" >> "$_STATE_OWNED"
 	return 0
 }
 
@@ -6198,7 +6217,7 @@ _STATE_NOTE () {
 # so the commit search can look one up as it stands
 _MODE_LINES () {
 	# Args: <worktree> <from> <to>
-	git -C "$1" -c core.quotePath=false diff --summary "$2" "$3" 2>/dev/null | grep '^ mode change'
+	git -C "$1" -c core.quotePath=false diff --summary "$2" "$3" 2>/dev/null | LC_ALL=C grep -a '^ mode change'
 	return 0
 }
 
@@ -6279,7 +6298,7 @@ _GUARD_STOP_MODES () {
 	printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	ECHO_E "\e[0;31m  Restore it, then 'git edit --continue' – or pass --allow-mode-change to keep it:\e[0m" >&2
 	printf '%s\n' "${FIX[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
-	EMIT_CONFLICT "$WT" "${(j:,:)BADPATHS}"
+	EMIT_CONFLICT "$WT" "${(F)BADPATHS}"
 	exit 2
 }
 
@@ -6974,7 +6993,7 @@ _READ_MESSAGE_FROM_EDITOR () {
 }
 
 # Whether `git replay` can rebuild a span, probed once per run – absent before git 2.44,
-# and from 2.55 it updates refs by default, where `--ref-action=print` keeps it a pure
+# and from 2.53 it updates refs by default, where `--ref-action=print` keeps it a pure
 # computation, the flag traveling in `_REPLAY_FLAGS`
 _REPLAY_PROBED=""
 _REPLAY_FLAGS=()
@@ -7239,7 +7258,7 @@ GIT_REWORD () {
 		_PRINT_COMMIT_LINE "$NEW_TARGET" '  %h %s'
 		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
 		if [ "$BODY_LINES" -gt 0 ]; then
-			git log -1 --format='%b' "$NEW_TARGET" | grep . | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
+			git log -1 --format='%b' "$NEW_TARGET" | LC_ALL=C grep -a . | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
 		fi
 		# Name the subject that was replaced – a symbolic target resolves once at invocation, so a
 		# commit landing between the caller's read and this call is silently reworded instead,
@@ -7281,7 +7300,7 @@ GIT_REWORD_BATCH () {
 	for L in "${REC_LINES[@]}"; do
 		if [[ "$L" == '--- '* ]]; then
 			[ "$have" -eq 1 ] && { REC_REFS+=("$cur_ref"); REC_MSGS+=("$cur_msg"); }
-			cur_ref=$(print -r -- "${L#--- }" | sed 's/[[:space:]]*$//')
+			cur_ref=$(print -r -- "${L#--- }" | LC_ALL=C sed 's/[[:space:]]*$//')
 			cur_msg=""
 			have=1
 		elif [ "$have" -eq 1 ]; then
@@ -7457,9 +7476,9 @@ _PRINT_LOST_BODY () {
 	# Args: <noun for the old message> <commit> <new message>
 	local NOUN=$1 C=$2 NEW=$3
 	local TRIM='s/^[[:space:]]*//;s/[[:space:]]*$//'
-	local OLD_BODY=$(git log -1 --format='%b' "$C" 2>/dev/null | sed "$TRIM" | grep .)
+	local OLD_BODY=$(git log -1 --format='%b' "$C" 2>/dev/null | LC_ALL=C sed "$TRIM" | LC_ALL=C grep -a .)
 	[ -n "$OLD_BODY" ] || return 0
-	local LOST=$(print -r -- "$OLD_BODY" | grep -Fxv -f <(print -r -- "$NEW" | sed "$TRIM" | grep .))
+	local LOST=$(print -r -- "$OLD_BODY" | LC_ALL=C grep -aFxv -f <(print -r -- "$NEW" | LC_ALL=C sed "$TRIM" | LC_ALL=C grep -a .))
 	[ -n "$LOST" ] || return 0
 	local OLD_LINES=$(print -r -- "$OLD_BODY" | grep -c .)
 	local LOST_LINES=$(print -r -- "$LOST" | grep -c .)
@@ -7665,7 +7684,7 @@ _FOLD_EDITOR_CMD () {
 	local GITDIR=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)
 	if [ -z "$GITDIR" ]; then
 		# Unresolved, the guard matches nothing and the message goes silently –
-		# the very loss it exists to prevent, so refuse instead (needs git 2.13)
+		# the very loss it exists to prevent, so refuse instead
 		PRINT_ERR "Cannot resolve the git dir for ${2:-the current directory} – 'rev-parse --absolute-git-dir' failed"
 		ECHO_E "\e[0;31m  The fold's message can't be applied without it. Reword afterwards: git edit -M --text=\"…\" <sha>\e[0m" >&2
 		exit 1
@@ -7926,8 +7945,22 @@ _SELFTEST_PICK () {
 
 # Remember full original command line
 COMMANDLINE="git edit"
+# Only `--text=` and `--verify=` leave the `=` zparseopts keeps – a value given apart keeps its own,
+# and neither a value nor a word past `--` (an `--exec` command's own `--verify`) is a flag
+TEXT_APART=false
+VERIFY_APART=false
+ARG_SCAN=flags
 for ARG in "$@"; do
 	COMMANDLINE+=" $(printf '%q' "$ARG")"
+	if [ "$ARG_SCAN" = value ]; then ARG_SCAN=flags; continue; fi
+	[ "$ARG_SCAN" = flags ] || continue
+	case "$ARG" in
+		--)         ARG_SCAN=done ;;
+		--text)     TEXT_APART=true ARG_SCAN=value ;;
+		--text=*)   TEXT_APART=false ;;
+		--verify)   VERIFY_APART=true ARG_SCAN=value ;;
+		--verify=*) VERIFY_APART=false ;;
+	esac
 done
 
 zmodload zsh/zutil
@@ -7936,11 +7969,23 @@ zmodload zsh/zutil
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION; then
+
+# Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
+# where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer
+PARSE_ERR=$(MKTEMP_FILE git-edit-parse 2>/dev/null) && _TEMP_FILES+=("$PARSE_ERR")
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
 	USAGE
-	PRINT_ERR "Unknown option: $1"
+	PARSE_MSG=""
+	[ -n "$PARSE_ERR" ] && PARSE_MSG=$(<"$PARSE_ERR")
+	PARSE_MSG=${PARSE_MSG#*zparseopts:*: }
+	case "$PARSE_MSG" in
+		"bad option: "*)                   PRINT_ERR "Unknown option: ${PARSE_MSG#bad option: }" ;;
+		"missing argument for option: "*)  PRINT_ERR "Option ${PARSE_MSG#missing argument for option: } needs a value" ;;
+		*)                                 PRINT_ERR "Cannot parse the options: ${PARSE_MSG:-$*}" ;;
+	esac
 	exit 1
 fi
+[ -n "$PARSE_ERR" ] && rm -f "$PARSE_ERR"
 
 # -h/--help/help
 if [[ ${#OPT_HELP} -gt 0 || $1 == "help" ]]; then
@@ -7954,16 +7999,17 @@ if [ ${#OPT_VERSION} -gt 0 ]; then
 	exit 0
 fi
 
-# An option taking one value, given twice, kept the last alone – a fold landing on the wrong
+# An option taking one value, given twice, kept one alone – a fold landing on the wrong
 # commit or folding the wrong tree, a message or a check dropped with nothing said – so a repeat
-# refuses. `-s` and `-C` hold their value in the element they name, the others take it as a
-# second one. `--move` alone may repeat, by design
+# refuses. `-s`, `-C`, `--selftest` and `--carry` hold their value in the element they name, the
+# others take it as a second one. `--move` alone may repeat, by design
 for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 2 'names one commit' \
 		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' \
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
 		--before OPT_BEFORE 2 'names one commit' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
 		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
-		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios'; do
+		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios' \
+		--carry OPT_CARRY 1 'names one old tip'; do
 	if (( ${#${(P)REPEAT_ARR}} > REPEAT_MAX )); then
 		PRINT_ERR "$REPEAT_OPT given twice – it $REPEAT_WHAT, and only the last would count"
 		exit 1
@@ -7984,7 +8030,8 @@ SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
 # `zparseopts` splits both into [--text, value], the `=value` form keeping its leading `=`
 if [ ${#OPT_TEXT} -gt 0 ]; then
 	if [[ ${#OPT_TEXT} -gt 1 ]]; then
-		TEXT_VALUE=${OPT_TEXT[2]#=}
+		TEXT_VALUE=${OPT_TEXT[2]}
+		[ "$TEXT_APART" = true ] || TEXT_VALUE=${TEXT_VALUE#=}
 	fi
 	if [ "$TEXT_VALUE" = "-" ]; then
 		TEXT_VALUE=$(cat)
@@ -8006,7 +8053,8 @@ fi
 # Resolve --verify's command – both `--verify=<cmd>` and `--verify <cmd>` forms
 if [ ${#OPT_VERIFY} -gt 0 ]; then
 	if [[ ${#OPT_VERIFY} -gt 1 ]]; then
-		VERIFY_VALUE=${OPT_VERIFY[2]#=}
+		VERIFY_VALUE=${OPT_VERIFY[2]}
+		[ "$VERIFY_APART" = true ] || VERIFY_VALUE=${VERIFY_VALUE#=}
 	fi
 	if [ -z "$VERIFY_VALUE" ]; then
 		PRINT_ERR "--verify needs a command (--verify=<cmd>)"
@@ -8135,7 +8183,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		# Config added mid-pause reaches the existing worktree here – links are created only at
 		# worktree setup and re-ensuring is idempotent, while a mode that saved no maindir falls
 		# back to the worktree's own registration
-		_LINK_WORKTREE_EXTRAS "$STATE_WORKTREE" "${STATE_MAINDIR:-$(git -C "$STATE_WORKTREE" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')}"
+		_LINK_WORKTREE_EXTRAS "$STATE_WORKTREE" "${STATE_MAINDIR:-$(git -C "$STATE_WORKTREE" worktree list --porcelain 2>/dev/null | LC_ALL=C sed -n '1s/^worktree //p')}"
 		# A verify pause is not a content-edit pause – the result is already built, and both the
 		# re-verify and the restore below check out with `-f`, so work authored here would vanish
 		# Tracked files only, never a submodule pointer, or an unrelated dirty one refuses forever
@@ -8748,7 +8796,7 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		# Messages name the value as given – a full SHA shortened, anything else verbatim – where
 		# the plumbing takes the resolved tree, whose SHA the caller never typed
 		AMEND_TREE_GIVEN=$AMEND_TREE
-		[[ "$AMEND_TREE_GIVEN" =~ '^[0-9a-f]{40}$' ]] && AMEND_TREE_GIVEN=${AMEND_TREE_GIVEN:0:7}
+		[[ "$AMEND_TREE_GIVEN" =~ '^[0-9a-f]{40,64}$' ]] && AMEND_TREE_GIVEN=${AMEND_TREE_GIVEN:0:7}
 		TREE_BASE=$(git rev-parse --quiet --verify "$AMEND_TREE^{commit}^" 2>/dev/null)
 		TREE_SHA=$(git rev-parse --quiet --verify "$AMEND_TREE^{tree}" 2>/dev/null)
 		if [ -z "$TREE_SHA" ]; then
@@ -8860,6 +8908,8 @@ fi
 
 # Parse/expand arguments (commits or ranges)
 for ARG in "$@"; do
+	# A `--` ahead of the commits only marks where the flags end
+	[ "$ARG" = "--" ] && continue
 	# Check if the argument is a standard ".." range (excluding "..." symmetric diff)
 	if [[ "$ARG" == *".."* && "$ARG" != *"..."* ]]; then
 		local S="${${ARG%%..*}:-HEAD}"
@@ -8928,7 +8978,7 @@ fi
 if [ ${#OPT_REORDER} -gt 0 ]; then
 	# Reorder (`--reorder`) – contiguous span, args give the new order
 	ACTION="reorder"
-	if [[ "$COMMANDLINE" == *".."* ]]; then
+	if (( ${#${(M)@:#*..*}} )); then
 		PRINT_ERR "--reorder takes single commits in the desired order (no ranges)"
 		exit 1
 	fi
@@ -9068,6 +9118,12 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 	_REQUIRE_NO_INFLIGHT
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_ERR "Pass --text with 'git edit --continue' – the message is applied at the amend"
+		exit 1
+	fi
+	# `-m` opens the editor once the edit is amended, which this pause leaves to `--continue`
+	if [ ${#OPT_MESSAGE} -gt 0 ]; then
+		PRINT_ERR "-m opens an editor on the message, which this run has no terminal for"
+		ECHO_E "\e[0;31m  Leave out -m, then pass the message to the continue: git edit --continue --text \"…\"\e[0m" >&2
 		exit 1
 	fi
 	EDIT_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
