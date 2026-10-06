@@ -1303,6 +1303,17 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS "and does not call the entry a differing one" 'Index entries left alone'
 	_ST_CHECK "the entry is still stranded" sh -c "! git diff --cached --quiet -- xj.txt"
 	git reset -q --hard
+	# The lock is taken where the index lives – a hard link from a temp dir on another filesystem,
+	# as Linux's tmpfs `/tmp` is, failed every re-sync as "locked"
+	mkdir -p "$TMP/shim-noln"
+	printf '#!/bin/sh\necho "ln: Cross-device link" >&2\nexit 1\n' > "$TMP/shim-noln/ln"
+	chmod +x "$TMP/shim-noln/ln"
+	echo "xln" > xln.txt && git add xln.txt && git commit -qm "XLN to change"
+	PATH="$TMP/shim-noln:$PATH" _ST_RUN --exec -- sh -c 'echo changed > xln.txt && git add xln.txt && git commit -q --amend --no-edit'
+	_ST_EQ "an exec lands where no hard link can be made" "$RC:$(git show HEAD:xln.txt)" "0:changed"
+	_ST_OUT_LACKS "and still re-syncs" 'Index locked'
+	_ST_CHECK "leaving nothing stranded" git diff --cached --quiet -- xln.txt
+	git reset -q --hard
 	# An entry staged apart from both tips stays put, so no headline may call the index re-synced
 	echo xp > xp.txt && git add xp.txt && git commit -qm "XP base"
 	echo peer > xp.txt && git add xp.txt && echo new > xp.txt
@@ -5980,6 +5991,15 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "a tip moving while the files are read refuses, the landing kept" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD~1)" "1:WC peer lands mid-run:$WC_TIP"
 	_ST_OUT_HAS "saying so" 'while the commit was composed'
 	git config --unset filter.wcmove.clean && rm -f wc.wcmove
+	# A peer staging the file while it is read keeps that staging – its entry is taken before the read
+	local WC_PEERBLOB=$(print -r -- "peer staged" | git hash-object -w --stdin)
+	git config filter.wcpeer.clean "sh -c '[ -e \"$TMP/wc-stage-now\" ] && rm \"$TMP/wc-stage-now\" && env -u GIT_INDEX_FILE git update-index --cacheinfo 100644,$WC_PEERBLOB,wc.wcpeer; cat'"
+	echo '*.wcpeer filter=wcpeer' >> .git/info/attributes && echo base > wc.wcpeer
+	_ST_RUN --commit --text "WC peer-staged base" -- wc.wcpeer
+	echo mine > wc.wcpeer && touch "$TMP/wc-stage-now"
+	_ST_RUN --commit --text "WC mine over a peer's staging" -- wc.wcpeer
+	_ST_EQ "a peer staging the file mid-read keeps its staging" "$RC:$(git ls-files -s wc.wcpeer | cut -d' ' -f2)" "0:$WC_PEERBLOB"
+	git config --unset filter.wcpeer.clean && git reset -q -- wc.wcpeer
 	# A hook landing a commit stands in for a peer landing while the commit is made
 	printf '#!/bin/sh\n[ -e "%s" ] && exit 0\ntouch "%s"\ngit update-ref "refs/heads/%s" "$(git commit-tree HEAD^{tree} -p HEAD -m "WC peer lands mid-commit")"\n' \
 		"$TMP/wc-hooked" "$TMP/wc-hooked" "$WC_BR" > "$WC_HOOK" && chmod +x "$WC_HOOK"
@@ -6192,6 +6212,151 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	rm -rf wc-q WC-Q
 	git rm -q --cached wc-CS/a.txt wc-cs/b.txt wc-CS/new.txt && git commit -qm "WC drop both spellings" && rm -rf wc-CS
 	git config core.ignorecase "${WC_ICASE:-false}"
+	export GIT_EDIT_ACTOR=wc-self
+	# A landing undoing an earlier one counts too – a copy read between them takes it back
+	printf 'r%s\n' {1..12} > wc-rv.txt
+	_ST_RUN --commit --text "WC revert base" -- wc-rv.txt
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "sed 's/^r3\$/A3/' wc-rv.txt > t && mv t wc-rv.txt && git commit -qam 'WC rv A'"
+	git show HEAD:wc-rv.txt > "$TMP/wc-rv-stale"
+	export GIT_EDIT_ACTOR=wc-other
+	_ST_RUN --exec -- sh -c "sed 's/^A3\$/r3/' wc-rv.txt > t && mv t wc-rv.txt && git commit -qam 'WC rv B'"
+	export GIT_EDIT_ACTOR=wc-self
+	sed 's/^r10$/C10/' "$TMP/wc-rv-stale" > wc-rv.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-rv.txt
+	_ST_EQ "a copy lacking a landing that undid an earlier one refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_OUT_HAS "naming that landing" "wc-rv.txt – wc-other's exec run"
+	git checkout -q -- wc-rv.txt
+	# A stale copy edited beside a landed line lacks it, an edit there on the landed content doesn't
+	printf 'j%s\n' {1..9} > wc-aj.txt
+	_ST_RUN --commit --text "WC adjacent-line base" -- wc-aj.txt
+	cp wc-aj.txt "$TMP/wc-aj-stale"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "sed 's/^j5\$/P5/' wc-aj.txt > t && mv t wc-aj.txt && git commit -qam 'WC aj land'"
+	export GIT_EDIT_ACTOR=wc-self
+	sed 's/^j6$/C6/' "$TMP/wc-aj-stale" > wc-aj.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-aj.txt
+	_ST_EQ "a stale copy edited beside a landed line refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	git show HEAD:wc-aj.txt | sed 's/^j6$/C6/' > wc-aj.txt
+	_ST_RUN --commit --text "WC beside the landed line" -- wc-aj.txt
+	_ST_EQ "while one edited beside it on the landed content lands" "$RC:$(git show HEAD:wc-aj.txt | sed -n '5p;6p' | tr '\n' ' ')" "0:P5 C6 "
+	# Edits overlap a landing by where they sit, not by what they say – a blank line both remove
+	# elsewhere shares no position, and a line the landing inserted, edited since, shares its own
+	printf 'a\nb\n\nc\n\nd\n' > wc-bl.txt
+	_ST_RUN --commit --text "WC blank base" -- wc-bl.txt
+	cp wc-bl.txt "$TMP/wc-bl-stale"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'a\nB\nc\n\nd\n' > wc-bl.txt && git commit -qam 'WC bl land'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'a\nb\n\nC\nd\n' > wc-bl.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-bl.txt
+	_ST_EQ "a stale copy removing a blank line elsewhere still refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	git checkout -q -- wc-bl.txt
+	printf 'one\ntwo\nthree\n' > wc-in.txt
+	_ST_RUN --commit --text "WC insert base" -- wc-in.txt
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "printf 'one\nimport foo\ntwo\nthree\n' > wc-in.txt && git commit -qam 'WC in land'"
+	export GIT_EDIT_ACTOR=wc-self
+	printf 'one\nimport foo, bar\ntwo\nthree\n' > wc-in.txt
+	_ST_RUN --commit --text "WC extends the inserted line" -- wc-in.txt
+	_ST_EQ "while an edit since on a line the landing inserted lands" "$RC:$(git show HEAD:wc-in.txt | sed -n 2p)" "0:import foo, bar"
+	# A merge by ID that aborts, as git 2.53's does in a linked worktree, merges from files instead
+	mkdir -p "$TMP/shim-mfabort"
+	printf '#!/bin/zsh\n[[ "$1" == merge-file && "$2" == --object-id ]] && exit 134\nexec %s "$@"\n' "$(whence -p git)" > "$TMP/shim-mfabort/git"
+	chmod +x "$TMP/shim-mfabort/git"
+	printf 'k%s\n' {1..9} > wc-ab.txt
+	_ST_RUN --commit --text "WC abort base" -- wc-ab.txt
+	cp wc-ab.txt "$TMP/wc-ab-stale"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "sed 's/^k2\$/P2/' wc-ab.txt > t && mv t wc-ab.txt && git commit -qam 'WC ab land'"
+	export GIT_EDIT_ACTOR=wc-self
+	sed 's/^k8$/C8/' "$TMP/wc-ab-stale" > wc-ab.txt
+	WC_TIP=$(git rev-parse HEAD)
+	PATH="$TMP/shim-mfabort:$PATH" _ST_RUN --commit --text "x" -- wc-ab.txt
+	_ST_EQ "a stale copy still refuses where git's merge by ID aborts" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	git checkout -q -- wc-ab.txt
+	# A file this commit renames, read before a landing on its old name, takes that landing back
+	printf 'n%s\n' {1..8} > wc-rnm.txt
+	_ST_RUN --commit --text "WC own rename base" -- wc-rnm.txt
+	cp wc-rnm.txt "$TMP/wc-rnm-stale"
+	export GIT_EDIT_ACTOR=wc-peer
+	_ST_RUN --exec -- sh -c "sed 's/^n3\$/P3/' wc-rnm.txt > t && mv t wc-rnm.txt && git commit -qam 'WC rnm land'"
+	export GIT_EDIT_ACTOR=wc-self
+	sed 's/^n7$/C7/' "$TMP/wc-rnm-stale" > wc-rnm2.txt && rm -f wc-rnm.txt
+	WC_TIP=$(git rev-parse HEAD)
+	_ST_RUN --commit --text "x" -- wc-rnm.txt wc-rnm2.txt
+	_ST_EQ "a rename made on stale content refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
+	_ST_OUT_HAS "naming both names" 'wc-rnm.txt – wc-peer.*which this commit renames to wc-rnm2.txt'
+	_ST_OUT_HAS "and the merge bringing what landed into the new one" 'git merge-file wc-rnm2.txt wc-rnm2.txt.git-edit-base wc-rnm2.txt.git-edit-landed'
+	# Run as printed, by a plain `sh`
+	sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name with '\(.*\)'\.\$/\1/p")"
+	_ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(ls wc-rnm2.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "P3 C7 :0"
+	_ST_RUN --commit --text "WC own rename" -- wc-rnm.txt wc-rnm2.txt
+	_ST_EQ "while one made on the landed content lands" "$RC:$(git show HEAD:wc-rnm2.txt | sed -n '3p;7p' | tr '\n' ' ')" "0:P3 C7 "
+	# What a peer stages of a file while it is taken whole or folded keeps its staging – only the entry
+	# the file had when read is the run's to re-sync
+	printf 'ps1\n' > wc-pst.txt
+	_ST_RUN --commit --text "WC peer staging base" -- wc-pst.txt
+	local WC_PB=$(printf 'peer staged\n' | git hash-object -w --stdin)
+	git config edit.verifyCmd "git -C '$TMP/repo' update-index --cacheinfo 100644,$WC_PB,wc-pst.txt"
+	printf 'ps2\n' > wc-pst.txt
+	_ST_RUN --commit --text "WC past a peer's staging" -- wc-pst.txt
+	_ST_EQ "a peer's staging made meanwhile stays staged" "$RC:$(git ls-files -s -- wc-pst.txt | awk '{print $2}')" "0:$WC_PB"
+	_ST_OUT_HAS "named as left alone" 'Index entries left alone.*wc-pst.txt'
+	git restore --staged -- wc-pst.txt
+	printf 'ps3\n' > wc-pst.txt && git add wc-pst.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD)" -- wc-pst.txt
+	git config --unset edit.verifyCmd
+	_ST_EQ "as does one staged while a fold runs" "$RC:$(git ls-files -s -- wc-pst.txt | awk '{print $2}')" "0:$WC_PB"
+	_ST_OUT_HAS "named there too" 'Left staged, changed since the fold read it: wc-pst.txt'
+	git restore --staged --worktree -- wc-pst.txt
+	# A pause elsewhere blocks neither `--commit` nor `--exec` – one on their
+	# own branch does, saying whose call it is
+	git checkout -q -b wc-paused
+	printf '1\n2\n3\n' > wc-pz.txt
+	_ST_RUN --commit --text "WC pz base" -- wc-pz.txt
+	local WC_PZ=$(git rev-parse HEAD)
+	printf '1\nL\n3\n' > wc-pz.txt
+	_ST_RUN --commit --text "WC pz later" -- wc-pz.txt
+	printf '1\nS\n3\n' > wc-pz.txt && git add wc-pz.txt
+	_ST_RUN --amend-into="$WC_PZ" -- wc-pz.txt
+	_ST_OUT_HAS "a fold pauses on its branch" '^git-edit: conflict'
+	git restore --staged --worktree -- wc-pz.txt
+	git checkout -q "$WC_BR"
+	echo pz > wc-pz-main.txt
+	_ST_RUN --commit --text "WC commit beside a pause elsewhere" -- wc-pz-main.txt
+	_ST_EQ "--commit lands on another branch" "$RC:$(git log -1 --format=%s)" "0:WC commit beside a pause elsewhere"
+	_ST_RUN --exec -- git commit -q --allow-empty -m "WC exec beside a pause elsewhere"
+	_ST_EQ "as --exec does" "$RC:$(git log -1 --format=%s)" "0:WC exec beside a pause elsewhere"
+	_ST_RUN --undo
+	_ST_EQ "and --undo takes such a landing back" "$RC:$(git log -1 --format=%s)" "0:WC commit beside a pause elsewhere"
+	_ST_RUN -M --text "x" HEAD
+	_ST_OUT_HAS "while other modes still refuse" 'operation is in flight on wc-paused'
+	git checkout -q wc-paused
+	echo pz2 > wc-pz2.txt
+	_ST_RUN --commit --text "x" -- wc-pz2.txt
+	_ST_OUT_HAS "and --commit on the paused branch refuses" 'operation is in flight on wc-paused'
+	_ST_OUT_HAS "saying whose call it is" "if another session's, wait for it"
+	rm -f wc-pz2.txt
+	_ST_RUN --abort
+	git checkout -q "$WC_BR"
+	git branch -q -D wc-paused
+	# Bare --carry takes the last rewrite past a --commit since, which took the checkout's own files
+	printf 'c1\nc2\nc3\n' > wc-bc.txt
+	_ST_RUN --commit --text "WC carry base" -- wc-bc.txt
+	_ST_RUN --exec -- sh -c "printf 'C1\nc2\nc3\n' > wc-bc.txt && git commit -qam 'WC carry rewrite'"
+	printf 'c1\nc2\nc3\nmine\n' > wc-bc.txt
+	echo x > wc-bc-other.txt
+	_ST_RUN --commit --text "WC commit after the rewrite" -- wc-bc-other.txt
+	_ST_RUN --carry
+	_ST_EQ "bare --carry carries across the last rewrite, past a --commit" "$RC:$(tr '\n' ' ' < wc-bc.txt)" "0:C1 c2 c3 mine "
+	git checkout -q -- wc-bc.txt
+	echo cl > wc-cl.txt
+	_ST_RUN --commit --text "WC commit line" -- wc-cl.txt
+	_ST_EQ "--commit's commit line sits within tail -3" "$(print -r -- "$OUT" | tail -3 | grep -c 'committed: [0-9a-f]* WC commit line')" "1"
 	export GIT_EDIT_ACTOR=
 
 	# --- 114. a name git hands back reaches it as itself ---
@@ -6436,6 +6601,14 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	git commit -q --allow-empty -m 'TE-H reset \e[0m kept'
 	_ST_RUN -M --text "x"
 	_ST_OUT_HAS "the HEAD a missing commit names shows its subject as itself" 'HEAD is currently [0-9a-f]* TE-H reset \\e\[0m kept$'
+	git reset -q --hard "$TE_BASE"
+	# A C1 control in a subject – U+009B, a CSI to some terminals – shows as `cat -v` has it, and a
+	# caret's own backslash starts no escape
+	git commit -q --allow-empty -m $'TE-C1 \xc2\x9b2J and \x1ce[0;30mhidden'
+	_ST_RUN -M --text "x"
+	_ST_OUT_HAS "a C1 control in a subject shows as cat -v has it" 'HEAD is currently [0-9a-f]* TE-C1 M-BM-^\[2J and'
+	_ST_OUT_HAS "and a caret's backslash renders no escape" 'and \^\\e\[0;30mhidden$'
+	_ST_CHECK "with no C1 pair reaching the terminal" eval '[[ "$(print -r -- "$OUT" | od -An -tx1 | tr -d " \n")" != *c29b* ]]'
 	git reset -q --hard "$TE_BASE"
 	# A terminal run pads with a real blank line – `ECHO_E` renders no `\n` spelled out, so padding
 	# held as text would print literally on every line

@@ -110,16 +110,30 @@ fi
 # Puts <text> into `REPLY` with each raw control byte in caret notation, tabs and newlines kept – a
 # subject's or path's, never a template's, so a crafted one can't clear the screen or set a title
 _CARET () {
-	# Args: <text>
+	# Args: <text> [<backslash>] – what `^\` takes for its backslash, `ECHO_E` passing its data mark
+	# so the caret starts no escape there
+	# Bytes, whatever the locale – a C1 control is a 2-byte UTF-8 pair there
+	local LC_ALL=C
 	REPLY=$1
-	[[ "$REPLY" == *[$'\001'-$'\010'$'\013'-$'\037'$'\177']* ]] || return 0
+	[[ "$REPLY" == *[$'\001'-$'\010'$'\013'-$'\037'$'\177']* || "$REPLY" == *$'\302'* ]] || return 0
 	# A substitution per byte present, as a pass per character slows to seconds on a long line
 	local -i c
+	local K
 	for (( c = 1; c <= 31; c++ )); do
 		(( c == 9 || c == 10 )) && continue
-		[[ "$REPLY" == *${(#)c}* ]] && REPLY=${REPLY//${(#)c}/^${(#)$(( c + 64 ))}}
+		[[ "$REPLY" == *${(#)c}* ]] || continue
+		K=${(#)$(( c + 64 ))}
+		REPLY=${REPLY//${(#)c}/^${K/\\/${2:-\\}}}
 	done
 	REPLY=${REPLY//$'\177'/^?}
+	# C1 controls, U+0080–U+009F, which a terminal may run as much – as `cat -v` shows their bytes
+	# Gated on the lead byte alone – a byte range past ASCII matches nothing in Linux's zsh
+	[[ "$REPLY" == *$'\302'* ]] || return 0
+	for (( c = 128; c <= 159; c++ )); do
+		[[ "$REPLY" == *$'\302'${(#)c}* ]] || continue
+		K=${(#)$(( c - 64 ))}
+		REPLY=${REPLY//$'\302'${(#)c}/M-BM-^${K/\\/${2:-\\}}}
+	done
 }
 
 # Prints the closing status line verbatim and on one line, whatever a name or message in it holds
@@ -168,7 +182,7 @@ ECHO_E () {
 	# Renders only the colors the templates use – `\e[0m`, `\e[22m`, a `0;` or `1;` 3x or 9x one – so
 	# a `\e[2J`, a title-setting sequence, a conceal or a `\n` that a ref name, path or subject
 	# carried stays literal – git-edit's own newlines are real ones in the template
-	_CARET "$*"
+	_CARET "$*" "$_LITB"
 	local raw=$REPLY out="" code
 	while [[ "$raw" == *'\e['* ]]; do
 		out+="${raw%%'\e['*}"
@@ -229,6 +243,8 @@ fi
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
 # to keep its worktree, so these need a list of their own
 _TEMP_FILES=()
+# Each file taken whole, with the index entry it had then – a re-sync resets only an entry still so
+typeset -A WHOLE_IDX
 
 # Tracks whether a status trailer was emitted, so the global trap doesn't put an `error …`
 # line on top of an explicit `ok …` or `conflict …` one
@@ -1395,6 +1411,15 @@ GIT_UNDO () {
 	local NEW=$(echo "$LAST" | awk '{print $4}')
 	local LABEL=$(echo "$LAST" | cut -d' ' -f5-)
 
+	# Only a pause on the branch it would move is in the way, whose landing the undo would strand
+	if _STATE_EXISTS; then
+		local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$(_STATE_FILE_PATH)" 2>/dev/null | head -1)
+		if [ -z "$SB" ] || [ "$SB" = "$REF" ]; then
+			PRINT_ERR "An operation is in flight${SB:+ on ${SB#refs/heads/}} – finish it with --continue or --abort before undoing"
+			exit 1
+		fi
+	fi
+
 	# An unlabeled caller, a person at a terminal, has no label to tell its own run by
 	if [ -n "$_ACTOR" ] && [ "$RUN_ACTOR" != "$_ACTOR" ] && [ ${#OPT_ALLOW_OTHER_ACTOR} -eq 0 ]; then
 		PRINT_ERR "The last operation ($LABEL) is another caller's – refusing to take it back"
@@ -1429,6 +1454,16 @@ _CHANGED_LINES () {
 	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 -- "$1" "$2" 2>/dev/null | awk 'f && /^[-+]/; /^@@/ {f = 1}' | LC_ALL=C sort
 }
 
+# Lists the spans of <from file> a change touches, in half-lines – `2s 2e` for lines s to e it
+# rewrites or removes, the point `2s+1` for an insertion after line s – as where an edit sits
+# tells it from one beside it, which matching text (a blank line, a `}`) cannot
+_CHANGED_SPANS () {
+	# Args: <from file> <to file>
+	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$1" "$2" 2>/dev/null | \
+		LC_ALL=C sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p' | \
+		awk 'NF { c = (NF < 2) ? 1 : $2; if (c == 0) print 2 * $1 + 1, 2 * $1 + 1; else print 2 * $1, 2 * ($1 + c - 1) }'
+}
+
 # Merges the checkout's uncommitted edits onto what a rewrite landed – each path it changed whose
 # file holds edits on the pre-rewrite content, a renamed file's moved to its new path – writing
 # only a clean merge that keeps the edits' own lines whole, and only over the file as it was read
@@ -1456,7 +1491,8 @@ GIT_CARRY () {
 			# Newest first – every branch's runs share the journal
 			for LINE in "${(@Oaf)$(<"$JF")}"; do
 				J=(${=${LINE%$'\t'*}})
-				if [ "${J[2]}" = "$REF" ]; then
+				# A `--commit` took the checkout's own files – nothing there to carry
+				if [ "${J[2]}" = "$REF" ] && [ "${J[5]}" != commit ]; then
 					OLD=${J[3]}
 					NEW=${J[4]}
 					break
@@ -1651,6 +1687,67 @@ _BRANCH_CHECKOUT () {
 	return 1
 }
 
+# Resets each path's index entry to the checkout's `HEAD` where it still holds the entry this run
+# expects – checked and written under git's own index lock, so a peer staging one meanwhile keeps it
+_RESET_IF_STAGED_AS () {
+	# Args: <checkout> (<path> <expected "mode blob", empty for none>)...
+	# Fills `RESET_DONE`, `RESET_KEPT` and `RESET_LOCKED`
+	local CO=$1 IDX TMP P HAVE
+	local -i I
+	local -a PAIRS CAND
+	local -x GIT_LITERAL_PATHSPECS=1
+	shift
+	PAIRS=("$@")
+	RESET_DONE=(); RESET_KEPT=(); RESET_LOCKED=()
+	(( ${#PAIRS} )) || return 0
+	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null) || return 1
+	TMP="$IDX.git-edit.$$"
+	_TEMP_FILES+=("$TMP")
+	# Whoever creates `index.lock` owns the index until letting go – a peer mid-`add` holds it –
+	# created exclusively as git does, `noclobber` opening it `O_EXCL`
+	if ! ( setopt noclobber; : > "$IDX.lock" ) 2>/dev/null; then
+		for (( I = 1; I <= ${#PAIRS}; I += 2 )); do RESET_LOCKED+=("${PAIRS[I]}"); done
+		return 0
+	fi
+	{
+		# A copy that failed would leave `reset` building an index of these paths alone
+		if [ -e "$IDX" ] && ! cp -p "$IDX" "$TMP" 2>/dev/null; then
+			for (( I = 1; I <= ${#PAIRS}; I += 2 )); do RESET_LOCKED+=("${PAIRS[I]}"); done
+			return 0
+		fi
+		for (( I = 1; I <= ${#PAIRS}; I += 2 )); do
+			P=${PAIRS[I]}
+			HAVE=$(GIT_INDEX_FILE=$TMP git -C "$CO" ls-files -s -- "$P" 2>/dev/null | awk '{ if ($3 != 0) c = 1; else e = $1" "$2 } END { print (c ? "conflict" : e) }')
+			if [ "$HAVE" = "${PAIRS[I + 1]}" ]; then CAND+=("$P"); else RESET_KEPT+=("$P"); fi
+		done
+		if (( ${#CAND} )); then
+			if GIT_INDEX_FILE=$TMP git -C "$CO" reset -q -- "${CAND[@]}" 2>/dev/null && mv -f "$TMP" "$IDX"; then
+				RESET_DONE=("${CAND[@]}")
+			else
+				RESET_LOCKED+=("${CAND[@]}")
+			fi
+		fi
+	} always {
+		rm -f "$TMP" "$IDX.lock"
+	}
+}
+
+# Re-syncs a fold's paths to the new tip where their entries still hold what the fold read, and
+# names any staged anew meanwhile, which keep their staging
+_RESYNC_FOLDED () {
+	# Args: <checkout> <tree the fold read> <path>...
+	local CO=$1 TREE=$2 P
+	local -a PAIRS
+	shift 2
+	for P in "$@"; do
+		PAIRS+=("$P" "$(git ls-tree "$TREE" -- ":(literal)$P" 2>/dev/null | awk '{print $1" "$3}')")
+	done
+	_RESET_IF_STAGED_AS "$CO" "${PAIRS[@]}"
+	(( ${#RESET_KEPT} )) && PRINT_TEXT "Left staged, changed since the fold read it: %s" 33 "${(j:, :)RESET_KEPT}"
+	(( ${#RESET_LOCKED} )) && PRINT_TEXT "Not re-synced, the index was locked: %s – run %s" 33 "${(j:, :)RESET_LOCKED}" "git reset -- $(_QUOTE_PATHS "${RESET_LOCKED[@]}")"
+	return 0
+}
+
 # Re-syncs the index entries a ref move stranded in <checkout> – an entry still holding the
 # pre-rewrite tip's blob reads as a staged revert of the rewrite, the foreign staging a peer's
 # plain commit sweeps in – guarded per path on exactly that equality, so a peer's staging (or
@@ -1658,7 +1755,7 @@ _BRANCH_CHECKOUT () {
 _RESYNC_STRANDED_ENTRIES () {
 	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED, LEFT_ALONE and LOCKED
 	local CO=$1 OLD=$2 NEW=$3 P OLDENT IDXALL IDXENT
-	local -a SYNC
+	local -a PAIRS
 	local -x GIT_LITERAL_PATHSPECS=1
 	RESYNCED=(); LEFT_ALONE=(); LOCKED=()
 	# NUL-separated, as a quote, backslash or tab in a name comes back C-quoted in the line form
@@ -1671,27 +1768,23 @@ _RESYNC_STRANDED_ENTRIES () {
 		if print -r -- "$IDXALL" | awk 'NF && $3 != 0 {found = 1} END {exit !found}'; then
 			LEFT_ALONE+=("$P")
 		elif [ "$OLDENT" = "$IDXENT" ]; then
-			SYNC+=("$P")
+			PAIRS+=("$P" "$IDXENT")
 		# One staged as the new tip has it is in sync already
 		elif [ "$IDXENT" = "$(git ls-tree "$NEW" -- "$P" 2>/dev/null | awk '{print $1" "$3}')" ]; then
 			:
 		# A file this run took whole supersedes what was staged of it, an intent-to-add entry too,
-		# as `git commit -- <paths>` has it – left as it was, a plain commit takes the file back
-		elif (( ${WHOLE_PATHS[(Ie)$P]} )); then
-			SYNC+=("$P")
+		# as `git commit -- <paths>` has it – left as it was, a plain commit takes the file back –
+		# though not what a peer staged since the file was read
+		elif (( ${WHOLE_PATHS[(Ie)$P]} )) && [ "$IDXENT" = "${WHOLE_IDX[$P]}" ]; then
+			PAIRS+=("$P" "$IDXENT")
 		else
 			LEFT_ALONE+=("$P")
 		fi
 	done
 	# A peer mid-`add` holds the index lock – its entries stay stranded, named as such rather
 	# than as differing, since they do not
-	if [ ${#SYNC[@]} -gt 0 ]; then
-		if git -C "$CO" reset -q -- "${SYNC[@]}" 2>/dev/null; then
-			RESYNCED=("${SYNC[@]}")
-		else
-			LOCKED=("${SYNC[@]}")
-		fi
-	fi
+	_RESET_IF_STAGED_AS "$CO" "${PAIRS[@]}"
+	RESYNCED=("${RESET_DONE[@]}"); LOCKED=("${RESET_LOCKED[@]}"); LEFT_ALONE+=("${RESET_KEPT[@]}")
 }
 
 # Hashes a worktree path as git would stage it – a symlink by the name it points at, which
@@ -2001,11 +2094,17 @@ _REQUIRE_GIT_VERSION () {
 # starting a second rewrite moves the branch under the paused one, whose CAS then refuses at
 # apply time, which is safe but strands work that was resolvable a moment earlier
 _REQUIRE_NO_INFLIGHT () {
-	if _STATE_EXISTS; then
-		PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-		ECHO_E "\e[0;31m  Run 'git edit --continue' or 'git edit --abort' first.\e[0m" >&2
-		exit 1
+	_STATE_EXISTS || return 0
+	local SB=$(sed -n 's/^branch=//p' "$(_STATE_FILE_PATH)" 2>/dev/null | head -1) HERE=$(git symbolic-ref -q HEAD)
+	SB=${SB#refs/heads/}
+	# Neither mode pauses, so neither needs the slot – only a pause on its own branch is in the way,
+	# whose landing it would strand
+	if [ ${#OPT_COMMIT} -gt 0 -o ${#OPT_EXEC} -gt 0 ] && [ -n "$SB" ] && [ -n "$HERE" ] && [ "$SB" != "${HERE#refs/heads/}" ]; then
+		return 0
 	fi
+	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB}, paused for its resolution"
+	ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it – if another session's, wait for it ('git edit --status' shows it).\e[0m" >&2
+	exit 1
 }
 
 # Refuses a pause where a parallel run's took the state slot while this one ran – that check came
@@ -2737,8 +2836,14 @@ _COMPOSE_WHOLE () {
 		PRINT_ERR "No commit to build on – the branch has none yet"
 		exit 1
 	fi
-	local TOP=$(git rev-parse --show-toplevel) IDX=$(MKTEMP_FILE git-edit-index) ERR
+	local TOP=$(git rev-parse --show-toplevel) IDX=$(MKTEMP_FILE git-edit-index) ERR P
 	_TEMP_FILES+=("$IDX")
+	# Each index entry as it stands before the files are read – a peer staging one in between then
+	# differs from it, keeping that staging through the re-sync
+	WHOLE_IDX=()
+	for P in "${WHOLE_PATHS[@]}"; do
+		WHOLE_IDX[$P]=$(git -C "$TOP" --literal-pathspecs ls-files -s -- "$P" 2>/dev/null | awk '{ if ($3 != 0) c = 1; else e = $1" "$2 } END { print (c ? "conflict" : e) }')
+	done
 	# An empty file is no index – read-tree writes its own
 	rm -f "$IDX"
 	if ! ERR=$(cd "$TOP" && GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" 2>&1 && GIT_INDEX_FILE=$IDX git update-index --add --remove -- "${WHOLE_PATHS[@]}" 2>&1); then
@@ -2757,13 +2862,18 @@ _COMPOSE_WHOLE () {
 # conflicts or cannot run, a binary say
 _MERGE_LANDING () {
 	# Args: <ours blob> <before blob> <after blob>
-	# One spawn where git merges blobs by ID (2.43), its result mostly in the object store already
+	local ID RC OURS BASE THEIRS
+	# One spawn where git merges blobs by ID (2.43), its result mostly in the object store already –
+	# a crash takes the files below instead, as 2.53 aborts there in a linked worktree
 	if [ -n "$_MERGE_FILE_IDS" ]; then
-		local ID
-		ID=$(git merge-file --object-id -q "$1" "$2" "$3" 2>/dev/null) && print -r -- "$ID"
-		return
+		ID=$(git merge-file --object-id -q "$1" "$2" "$3" 2>/dev/null)
+		RC=$?
+		if (( RC <= 127 )); then
+			[ $RC -eq 0 ] && print -r -- "$ID"
+			return $RC
+		fi
 	fi
-	local OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) RC
+	OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs)
 	_TEMP_FILES+=("$OURS" "$BASE" "$THEIRS")
 	git cat-file blob "$1" > "$OURS" && git cat-file blob "$2" > "$BASE" && git cat-file blob "$3" > "$THEIRS" && \
 		git merge-file -q "$OURS" "$BASE" "$THEIRS" 2>/dev/null
@@ -2771,6 +2881,25 @@ _MERGE_LANDING () {
 	[ $RC -eq 0 ] && git hash-object --no-filters -- "$OURS"
 	rm -f "$OURS" "$BASE" "$THEIRS"
 	return $RC
+}
+
+# Succeeds where <ours> – a copy edited beside a landing – touches none of its changed lines, read
+# against its before, which edits made on the landed lines would overlap
+_EDITS_MISS_LANDING () {
+	# Args: <ours blob> <before blob> <after blob>
+	local O=$(MKTEMP_FILE git-edit-ours) B=$(MKTEMP_FILE git-edit-base) A=$(MKTEMP_FILE git-edit-theirs) SHARED
+	local -x LANDED
+	_TEMP_FILES+=("$O" "$B" "$A")
+	if git cat-file blob "$1" > "$O" && git cat-file blob "$2" > "$B" && git cat-file blob "$3" > "$A"; then
+		LANDED=$(_CHANGED_SPANS "$B" "$A")
+		SHARED=$(_CHANGED_SPANS "$B" "$O" | awk '
+			BEGIN { n = split(ENVIRON["LANDED"], F, /[ \n]+/); for (i = 1; i < n; i += 2) { S[++k] = F[i] + 0; E[k] = F[i + 1] + 0 } }
+			NF { for (i = 1; i <= k; i++) if (S[i] <= $2 + 0 && $1 + 0 <= E[i]) { print "overlap"; exit } }')
+	else
+		SHARED=unknown
+	fi
+	rm -f "$O" "$B" "$A"
+	[ -z "$SHARED" ]
 }
 
 # Renders seconds as their largest whole unit – 3d, 5h, 12m, 40s
@@ -2791,15 +2920,15 @@ _AGO () {
 # the tip still carries, one a landing removed, or the removal of one it added – where a conflict
 # proves nothing, later edits on its lines conflicting too
 _GUARD_WHOLE_LANDINGS () {
-	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE Q QOURS
+	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE Q QOURS DST DSTBLOB O
 	local TOPDIR=$(git rev-parse --show-toplevel)
 	REF=$(git symbolic-ref -q HEAD) || return 0
 	[ -n "$JF" ] && [ -s "$JF" ] || return 0
-	local -i NOW=$(date +%s) K N I RI OLDEST_WHEN=0
+	local -i NOW=$(date +%s) K N I RI OLDEST_WHEN=0 MRC
 	local OLDEST_OLD=""
-	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED RF
+	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED RF RENAMED
 	local KIND
-	local -A MODE_OF
+	local -A MODE_OF RENAMED_TO
 	# Oldest first, as journaled – this caller's own landings are its to take back, an unlabeled
 	# caller's being every unlabeled one, which nothing tells apart
 	for LINE in "${(@f)$(<"$JF")}"; do
@@ -2820,6 +2949,10 @@ _GUARD_WHOLE_LANDINGS () {
 		MODE_OF[$P]=$MODE
 	done
 	[ ${#CHANGED} -gt 0 ] || return 0
+	RF=("${(@0)$(git diff -z -M --name-status --diff-filter=R "$WHOLE_HEAD" "$WHOLE_TREE" 2>/dev/null)}")
+	for (( RI = 1; RI + 2 <= ${#RF}; RI += 3 )); do
+		RENAMED_TO[${RF[RI + 1]}]=${RF[RI + 2]}
+	done
 	# One batch, read back by position – a move's two tips, then each path at both
 	for MOVE in "${MOVES[@]}"; do
 		M=(${=MOVE})
@@ -2843,6 +2976,8 @@ _GUARD_WHOLE_LANDINGS () {
 		P=${CHANGED[I]}
 		OURS=$(git rev-parse -q --verify "$WHOLE_TREE:$P" 2>/dev/null)
 		TIP=$(git rev-parse -q --verify "$WHOLE_HEAD:$P" 2>/dev/null)
+		DST=${RENAMED_TO[$P]}
+		[ -z "$OURS" ] && [ -n "$DST" ] && DSTBLOB=$(git rev-parse -q --verify "$WHOLE_TREE:$DST" 2>/dev/null)
 		# Oldest first, so the carry named takes in every later landing the file lacks as well
 		for (( K = 1; K <= ${#MOVES}; K++ )); do
 			M=(${=MOVES[K]})
@@ -2853,7 +2988,11 @@ _GUARD_WHOLE_LANDINGS () {
 			# Each kind takes its own remedy – a merge carries only edits made beside a landing (or
 			# across its rename), while a file still as before it or one it added is restored whole
 			KIND=carry GONE=""
-			if [ -z "$OURS" ]; then
+			# A file this commit renames answers with its new name's content
+			# where the landing changed it under the old one
+			O=$OURS
+			[ -z "$OURS" ] && [ -n "$DST" ] && [ -n "$BEFORE" ] && [ -n "$AFTER" ] && O=$DSTBLOB
+			if [ -z "$O" ]; then
 				# A removal takes back only a file such a run added, which the checkout never got
 				[ -z "$BEFORE" ] && [ -n "$TIP" ] || continue
 				KIND=restore GONE=", which added it"
@@ -2862,18 +3001,30 @@ _GUARD_WHOLE_LANDINGS () {
 			elif [ -z "$AFTER" ]; then
 				[ -z "$TIP" ] || continue
 				KIND=leave GONE=", which removed it"
-			elif [ -z "$TIP" ] || [ "$OURS" = "$AFTER" ]; then
+			elif [ -z "$TIP" ] || [ "$O" = "$AFTER" ]; then
 				continue
 			# The landing's own before, which no merge need read – a binary or a link as much as text,
 			# and a later landing on top where the tip still carries this one, or where the merge
 			# conflicts, as a copy holding no edits loses nothing to the restore
-			elif [ "$OURS" = "$BEFORE" ] && { [ "$TIP" = "$AFTER" ] || ! MERGED=$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER") || [ "$MERGED" = "$TIP" ]; }; then
+			elif [ "$O" = "$BEFORE" ] && { [ "$TIP" = "$AFTER" ] || ! MERGED=$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER") || [ "$MERGED" = "$TIP" ]; }; then
 				KIND=restore GONE=", the file still as before it"
 			else
 				[ "${MODE_OF[$P]}" != 120000 ] || continue
-				MERGED=$(_MERGE_LANDING "$OURS" "$BEFORE" "$AFTER") && [ "$MERGED" != "$OURS" ] && \
-					[ "$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")" = "$TIP" ] || continue
+				MERGED=$(_MERGE_LANDING "$O" "$BEFORE" "$AFTER")
+				MRC=$?
+				# A conflict lacks the landing only where the file's edits share none of its changed
+				# lines – edits on those lines, made after it, conflict as much
+				if (( MRC == 0 )); then
+					[ "$MERGED" != "$O" ] || continue
+				elif (( MRC <= 127 )); then
+					_EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER" || continue
+				else
+					continue
+				fi
+				[ "$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")" = "$TIP" ] || continue
 			fi
+			# A file this commit renames takes what landed under its old name, whatever its kind
+			[ "$O" != "$OURS" ] && KIND=renamed GONE=", which this commit renames to $DST"
 			# An addition or removal that is one side of a rename takes the carry, which follows it –
 			# where the old side holds edits, as untouched the two sides restore and leave as they are
 			if [ "$KIND" != carry ] && [ -z "$BEFORE$OURS" -o -z "$AFTER" ]; then
@@ -2896,6 +3047,11 @@ _GUARD_WHOLE_LANDINGS () {
 			case "$KIND" in
 				restore) RESTORE+=("$P") ;;
 				leave) REMOVED+=("$P") ;;
+				# Through files – `merge-file` sizes its inputs by `stat`, which a pipe answers short
+				renamed)
+					Q=${(q-)DST}
+					RENAMED+=("git show ${BEFORE:0:12} > $Q.git-edit-base && git show ${AFTER:0:12} > $Q.git-edit-landed && git merge-file $Q $Q.git-edit-base $Q.git-edit-landed; rm -f $Q.git-edit-base $Q.git-edit-landed")
+					;;
 				*)
 					if [ -z "$OLDEST_OLD" ] || (( M[1] < OLDEST_WHEN )); then
 						OLDEST_WHEN=${M[1]}
@@ -2915,6 +3071,12 @@ _GUARD_WHOLE_LANDINGS () {
 		ECHO_E "\e[0;31m  Take what landed with '$(_LIT "${REPLY}git restore --source=HEAD --worktree -- $(_QUOTE_PATHS "${RESTORE[@]}")")', or leave it out.\e[0m" >&2
 	fi
 	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_LIT "$(_QUOTE_PATHS "${REMOVED[@]}")")\e[0m" >&2
+	if [ ${#RENAMED} -gt 0 ]; then
+		_AT_TOP "$(git rev-parse --show-toplevel)"
+		for Q in "${RENAMED[@]}"; do
+			ECHO_E "\e[0;31m  Merge what landed into the new name with '$(_LIT "${REPLY}$Q")'.\e[0m" >&2
+		done
+	fi
 	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
 	exit 1
 }
@@ -2971,7 +3133,8 @@ GIT_COMMIT_WHOLE () {
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
 	if [ "$EXEC_CHANGED" = true ]; then
-		git --no-pager -c core.quotePath=false show --stat --summary --format='%h %s' "$EXEC_NEW_HEAD"
+		git --no-pager -c core.quotePath=false show --stat --summary --format= "$EXEC_NEW_HEAD" | LC_ALL=C sed '/./!d'
+		_PRINT_COMMIT_LINE "$EXEC_NEW_HEAD" '  committed: %h %s'
 	fi
 }
 
@@ -3294,7 +3457,7 @@ GIT_AMEND_INTO () {
 	# being history now – path-scoped, so anything a parallel session staged meanwhile keeps
 	# its staged state where a whole-index reset would wipe it. A `--tree` fold staged nothing,
 	# so the summary reconciles its entries like any other rewrite's instead
-	[ -z "$AMEND_TREE" ] && git --literal-pathspecs -C "$MAIN_DIR" reset -q -- "${STAGED_PATHS[@]}" 2>/dev/null
+	[ -z "$AMEND_TREE" ] && _RESYNC_FOLDED "$MAIN_DIR" "$STAGED_TREE" "${STAGED_PATHS[@]}"
 
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE" "$ORIG_HEAD" "$STAGED_TREE" ""
 
@@ -3587,7 +3750,7 @@ _SNAPSHOT_RUN () {
 	# The folded paths' index entries follow the new tip, as a replayed fold's do – a `--tree`
 	# fold staged nothing, so the summary reconciles its entries like any other rewrite's
 	AMEND_TREE=$STATE_TREE
-	[ -z "$AMEND_TREE" ] && [ -n "$STATE_FILES" ] && git --literal-pathspecs -C "$STATE_MAINDIR" reset -q -- "${(@ps:\t:)STATE_FILES}" 2>/dev/null
+	[ -z "$AMEND_TREE" ] && [ -n "$STATE_FILES" ] && _RESYNC_FOLDED "$STATE_MAINDIR" "$STATE_STAGEDTREE" "${(@ps:\t:)STATE_FILES}"
 	[ -n "$STATE_PATHSPECS" ] && AMEND_PATHSPECS=("${(@ps:\t:)STATE_PATHSPECS}")
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$STATE_DEPTH" "${STATE_FILES//$'\t'/,}" "$STATE_MAINDIR" "$STATE_REBASEBASE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE" "${_SNAPSHOT_RESOLVED_TREES:+resolved}"
 	[ -n "$_STATE_OWNED" ] && _CLEAR_STATE
@@ -5344,6 +5507,7 @@ _SAVE_STATE () {
 		if [ "$_CAPTURE_REWRITES" = "true" ]; then print -r -- "capture=$_CAPTURE_DIR"; fi
 		# And the files a run took whole, whose staging the landing re-syncs to what they folded
 		if [ ${#WHOLE_PATHS} -gt 0 ]; then print -r -- "whole=${(j: :)${(q)WHOLE_PATHS[@]}}"; fi
+		if [ ${#WHOLE_IDX} -gt 0 ]; then print -r -- "whole_idx=${(j: :)${(@qq)${(@kv)WHOLE_IDX}}}"; fi
 	} > "$SF_NEW"
 	# Rewrites this run's own pause in place, and claims a free slot by a hard link – an exclusive
 	# create where the filesystem has none – so a parallel run's pause taken meanwhile refuses this one
@@ -5412,6 +5576,7 @@ _LOAD_STATE () {
 			maindir)         STATE_MAINDIR=$VAL ;;
 			files)           STATE_FILES=$VAL ;;
 			whole)           WHOLE_PATHS=("${(@Q)${(z)VAL}}") ;;
+			whole_idx)       WHOLE_IDX=("${(@Q)${(z)VAL}}") ;;
 			pathspecs)       STATE_PATHSPECS=$VAL ;;
 			tree)            STATE_TREE=$VAL ;;
 			amended)         STATE_AMENDED=$VAL ;;
@@ -6307,7 +6472,7 @@ _CONTINUE_AMEND_INTO () {
 		if [ -n "$STATE_FILES" ]; then
 			local -a SYNC_PATHS
 			SYNC_PATHS=("${(@ps:\t:)STATE_FILES}")
-			git --literal-pathspecs -C "$STATE_MAINDIR" reset -q -- "${SYNC_PATHS[@]}" 2>/dev/null
+			_RESYNC_FOLDED "$STATE_MAINDIR" "$STATE_STAGEDTREE" "${SYNC_PATHS[@]}"
 		else
 			git -C "$STATE_MAINDIR" read-tree --reset "$NEW_HEAD" 2>/dev/null
 		fi
@@ -7631,10 +7796,6 @@ if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_CARRY} -gt 0 ]
 	fi
 fi
 if [ ${#OPT_UNDO} -gt 0 ]; then
-	if _STATE_EXISTS; then
-		PRINT_ERR "An operation is in flight – finish it with --continue or --abort before undoing"
-		exit 1
-	fi
 	GIT_UNDO
 	exit 0
 fi
