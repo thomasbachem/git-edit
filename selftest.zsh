@@ -52,11 +52,21 @@ GIT_SELFTEST () {
 		GIT_AUTHOR_DATE="${GIT_AUTHOR_DATE:-@$ST_TICK +0000}" GIT_COMMITTER_DATE="${GIT_COMMITTER_DATE:-@$ST_TICK +0000}" command git "$@"
 	}
 
+	# Fails a run ending past its trailer, the line a caller's `| tail -1` reads – a prompt or a note
+	# printed after it hides it there
+	_ST_TRAILER_LAST () {
+		[[ "${OUT##*$'\n'}" == git-edit:* ]] && return 0
+		[[ "$*" == (-h|--help|--version)* ]] && return 0
+		FAIL=$((FAIL+1))
+		ECHO_E "  \e[1;31mFAIL\e[0m 'git edit $*' ends past its trailer"
+		print -r -- "$OUT" | tail -3 | sed 's/^/       | /'
+	}
 	# Sub-invocations run non-TTY (stdin </dev/null) for deterministic agent
 	# behavior even when the selftest itself runs from a terminal
 	_ST_RUN () {
 		OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$@" </dev/null 2>&1)
 		RC=$?
+		_ST_TRAILER_LAST "$@"
 		# A prose line that lost its `#` is still a valid command invocation, so `zsh -n` accepts
 		# it and only the runtime complains – checking here makes every scenario a detector for
 		# that whole class of slip, rather than relying on one test to walk the affected line
@@ -74,6 +84,7 @@ GIT_SELFTEST () {
 		local INPUT=$1; shift
 		OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$@" <<<"$INPUT" 2>&1)
 		RC=$?
+		_ST_TRAILER_LAST "$@"
 		if [[ "$OUT" == *"command not found"* || "$OUT" == *"no matches found"* || \
 		      "$OUT" == *"bad substitution"* || "$OUT" == *"parse error"* ]]; then
 			FAIL=$((FAIL+1))
@@ -183,8 +194,13 @@ GIT_SELFTEST () {
 	_ST_PZ_WT () {
 		sed -n 's/^worktree=//p' "$(git rev-parse --git-common-dir)/git-edit-state" 2>/dev/null
 	}
-	# Runs git edit on a pseudo-terminal as a person at one would – stdin a TTY, no agent or CI
-	# marker – leaving `OUT` and `RC` as `_ST_RUN` does
+	# Answers whether this git's merge-tree takes `--merge-base`, as `--snapshot` needs – asked here
+	# rather than of the tool, whose probe broken would turn its checks into the refusal's
+	_ST_MERGE_BASE_OK () {
+		[[ "$(LC_ALL=C command git merge-tree -h 2>&1)" == *merge-base* ]]
+	}
+	# Runs git edit on a pseudo-terminal as a person at one would – stdin and stdout a TTY, no agent
+	# or CI marker – leaving `OUT` and `RC` as `_ST_RUN` does
 	_ST_TTY () {
 		# Args: [<name>=<value>...] -- <arg>...
 		_ST_TTY_START "$@" && _ST_TTY_END
@@ -197,22 +213,31 @@ GIT_SELFTEST () {
 		while [ $# -gt 0 ] && [ "$1" != "--" ]; do ENVS+=("$1"); shift; done
 		shift
 		rm -f "$TMP/tty-out" "$TMP/tty-rc"
+		: >"$TMP/tty-out"
 		zmodload zsh/zpty || return 1
 		# A home of its own, as a git before 2.32 reads the caller's global config past
-		# `GIT_CONFIG_GLOBAL`, editor and all
-		zpty ST_TTY "unset CLAUDECODE CI; env HOME=${(q)TMP} XDG_CONFIG_HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 ${(j: :)${(@q)ENVS}} ${(q)SELF} ${(j: :)${(@q)@}} >${(q)TMP}/tty-out 2>&1; print -r -- \$? >${(q)TMP}/tty-rc"
+		# `GIT_CONFIG_GLOBAL` – no color, pager or suite config pins, and an INT trap so a Ctrl-C sent
+		# to the pty, which reaches this shell too, still lets it note the run's status
+		zpty ST_TTY "trap : INT; unset CLAUDECODE CI GIT_EDIT_ACTOR GIT_CONFIG_PARAMETERS; env HOME=${(q)TMP} XDG_CONFIG_HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 NO_COLOR=1 PAGER=cat GIT_PAGER=cat ${(j: :)${(@q)ENVS}} ${(q)SELF} ${(j: :)${(@q)@}} 2>&1; print -r -- \$? >${(q)TMP}/tty-rc"
+	}
+	# Takes what the run wrote to its terminal since, its CRs dropped
+	_ST_TTY_PUMP () {
+		local C
+		while zpty -rt ST_TTY C 2>/dev/null; do print -rn -- "${C//$'\r'/}" >>"$TMP/tty-out"; done
+		return 0
 	}
 	_ST_TTY_AT () {
-		# Args: <text the output reaches> – fails where the run ends or 120s pass first
+		# Args: <text the output reaches> [<how many times>] – fails where the run ends or 120s pass first
 		local -i W=0
-		until LC_ALL=C grep -aqF -e "$1" "$TMP/tty-out" 2>/dev/null; do
+		until _ST_TTY_PUMP; (( $(LC_ALL=C grep -acF -e "$1" "$TMP/tty-out" 2>/dev/null) >= ${2:-1} )); do
 			{ [ -s "$TMP/tty-rc" ] || (( ++W > 1200 )); } && return 1
 			sleep 0.1
 		done
 	}
 	_ST_TTY_END () {
 		local -i W=0
-		until [ -s "$TMP/tty-rc" ] || (( ++W > 1200 )); do sleep 0.1; done
+		until _ST_TTY_PUMP; [ -s "$TMP/tty-rc" ] || (( ++W > 1200 )); do sleep 0.1; done
+		_ST_TTY_PUMP
 		zpty -d ST_TTY
 		OUT=$(<"$TMP/tty-out")
 		RC=$(<"$TMP/tty-rc")
@@ -222,16 +247,21 @@ GIT_SELFTEST () {
 		# Args: <commit> <file> <content>
 		local WT
 		_ST_TTY_START -- "$1" || return 1
-		if _ST_TTY_AT 'Now make your changes'; then
-			# None where the run stays in place
-			WT=$(git worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
+		if _ST_TTY_AT 'Make your changes in'; then
+			WT=$(_ST_PZ_WT)
 			[ -n "$WT" ] && print -r -- "$3" > "$WT/$2"
 			zpty -wn ST_TTY $'\r'
+			# A pause the resume reaches prompts in turn – left paused there, as a caller's run is
+			_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
 		fi
 		_ST_TTY_END
 	}
 
 	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
+	# Holds a hook or a check open until the test releases it, past its signal – a fixed sleep there
+	# closes the window early on a machine stalling the test longer
+	printf '#!/bin/sh\ni=0\nwhile [ ! -e "$1" ] && [ $i -lt 1200 ]; do sleep 0.1; i=$((i+1)); done\n' > "$TMP/st-hold"
+	chmod +x "$TMP/st-hold"
 	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 	# Hermetic maintenance – from git 2.54 every commit's auto-maintenance runs `rerere gc`
@@ -534,7 +564,7 @@ GIT_SELFTEST () {
 	_ST_CHECK "HEAD moved" test "$(git rev-parse HEAD)" != "$PRE_HEAD"
 	_ST_EQ "revert dropped, R1 content kept" "$(git show 'HEAD:f2.txt')" "v2"
 	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
-	# Graceful no-op: a manually-aborted worktree rebase reports unchanged
+	# A reorder aborted by hand in its worktree is no reorder – refused, the pause kept for an abort
 	echo "v2b" > f2.txt && git add f2.txt && git commit -qm "R3 commit"
 	echo "v1" > f2.txt && git add f2.txt && git commit -qm "R4 revert"
 	PRE_HEAD=$(git rev-parse HEAD)
@@ -543,10 +573,11 @@ GIT_SELFTEST () {
 	EMPTY_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 	git -C "$EMPTY_WT" rebase --abort >/dev/null 2>&1
 	_ST_RUN --continue
-	_ST_EQ "no-op continue exits 0" "$RC" "0"
-	_ST_OUT_HAS "reports unchanged" '^git-edit: ok – .* unchanged'
+	_ST_EQ "a continue after a hand abort refuses" "$RC" "1"
+	_ST_OUT_HAS "saying nothing was applied" 'aborted by hand – nothing was applied'
 	_ST_EQ "branch untouched" "$(git rev-parse HEAD)" "$PRE_HEAD"
-	_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
+	_ST_RUN --abort
+	_ST_CHECK "which an abort clears" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 
 	# --- 20. tag-orphan warning on rewrites beneath a tag ---
 	_ST_SCENARIO "\e[1;96m[20] tag-orphan warning\e[0m"
@@ -557,7 +588,8 @@ GIT_SELFTEST () {
 	_ST_RUN -M --text="T1 reworded" "$(git rev-parse HEAD~1)"
 	_ST_EQ "exits 0" "$RC" "0"
 	_ST_OUT_HAS "warns about the tag" 'points into the rewritten span'
-	_ST_OUT_HAS "suggests exact counterpart" 'git tag -f marker .*same subject'
+	_ST_OUT_HAS "suggests exact counterpart" 'Tag marker .*the same subject'
+	_ST_OUT_HAS "with the command to re-point it" 'git tag -f marker [0-9a-f]\{12\}$'
 	git tag -f marker >/dev/null 2>&1   # re-point to current `HEAD` for the next check
 	# Rewriting above the tag leaves it reachable – expect no warning
 	git tag -f marker "$(git rev-parse HEAD~1)" >/dev/null 2>&1
@@ -1243,15 +1275,16 @@ GIT_SELFTEST () {
 	_ST_RUN -d -y "$TC_DROP"
 	_ST_EQ "drop exits 0" "$RC" "0"
 	_ST_OUT_HAS "names the dropped path" 'tc-drop\.txt'
-	_ST_OUT_HAS "prescribes a targeted restore" 'restore --source=HEAD --staged --worktree'
+	_ST_OUT_HAS "prescribes a targeted discard" 'Keep it, or discard it with: git clean -f -- tc-drop\.txt'
 	_ST_OUT_LACKS "never prescribes stashing a shared checkout" 'git stash push'
 	_ST_OUT_LACKS "never prescribes a blanket reset" 'run git reset --hard'
 	# A drop's leftover paths are exactly the dropped work, so the restore has to read as
 	# an opt-in discard – calling it a reconcile invites destroying what was kept
-	_ST_OUT_HAS "frames the leftovers as uncommitted work" 'dropped content is now uncommitted'
-	_ST_OUT_HAS "offers the discard as a choice" 'Keep it, or discard those paths'
+	_ST_OUT_HAS "frames the leftovers as uncommitted work" 'dropped content stays in your checkout, unstaged'
 	_ST_OUT_LACKS "never calls a drop a reconcile" 'Reconcile those paths'
-	git restore --source=HEAD --staged --worktree -- tc-drop.txt
+	# Staged, a peer's fold of everything staged would land it again
+	_ST_CHECK "nothing of it is staged" git diff --cached --quiet
+	git clean -fq -- tc-drop.txt
 	_ST_CHECK "and that discard does remove the file" sh -c "! test -f tc-drop.txt"
 	_ST_EQ "unrelated WIP untouched" "$(cat tc-keep.txt)" "local wip"
 	git reset -q --hard
@@ -1264,7 +1297,7 @@ GIT_SELFTEST () {
 	echo "tc-after" > tc-after.txt && git add tc-after.txt && git commit -qm "TC after"
 	_ST_RUN -d -y "$TC_SP"
 	_ST_EQ "drop with a spaced path exits 0" "$RC" "0"
-	_ST_OUT_HAS "shell-quotes the spaced path" "restore.*'tc dir/tc file.txt'"
+	_ST_OUT_HAS "shell-quotes the spaced path" "clean -f -- 'tc dir/tc file.txt'"
 	git reset -q --hard
 
 	# --- 39. --exec names the branch it moved, and reaches the reconcile hint ---
@@ -1490,9 +1523,9 @@ GIT_SELFTEST () {
 	# mode into a conflict – anchored to the start of a line, or the patterns would count the
 	# assertion lines that carry them
 	_ST_CHECK "every conflict-capable rebase start carries rerere" \
-		sh -c "[ \$(grep -cE '^[[:space:]]*local CMD=\\(-c rerere.enabled=true (-c [^ ]+ |[^ ]*_CAPTURE_PIN[^ ]* )*rebase' '$SELF') -eq 6 ]"
+		sh -c "[ \$(grep -cE '^[[:space:]]*reply=\\(-c rerere.enabled=true (-c [^ ]+ |[^ ]*_CAPTURE_PIN[^ ]* )*rebase' '$SELF') -eq 1 ]"
 	_ST_CHECK "and none was left without it" \
-		sh -c "! grep -qE '^[[:space:]]*local CMD=\\(rebase' '$SELF'"
+		sh -c "! grep -qE '^[[:space:]]*(local CMD|reply)=\\(rebase' '$SELF'"
 	# Every rebase the script runs carries rerere, so a line with that flag but not the
 	# `rebase.updateRefs` pin is a rebase that would move other branches ahead of the CAS – a
 	# snapshot fold's direct `git rerere` aside, which moves nothing
@@ -1977,13 +2010,11 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	printf 'ai3\n' > ai3.txt && git add ai3.txt && git commit -qm "AI three"
 	_ST_RUN -d -y HEAD~1
 	_ST_EQ "the drop succeeds" "$RC" "0"
-	_ST_OUT_HAS "a drop auto-isolates" 'auto-isolating'
+	_ST_OUT_HAS "a drop runs in a worktree of its own" 'git worktree add --detach .*git-edit-auto-iso'
 	_ST_RUN --undo
 	_ST_RUN -M --text='AI three reworded' HEAD
-	_ST_OUT_LACKS "a reword does not" 'auto-isolating'
-	_ST_RUN --undo
-	OUT=$(GIT_EDIT_NO_AUTO_ISOLATE=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </dev/null 2>&1)
-	_ST_OUT_LACKS "GIT_EDIT_NO_AUTO_ISOLATE opts out" 'auto-isolating'
+	_ST_EQ "a reword lands" "$RC" "0"
+	_ST_OUT_LACKS "in no worktree, being plumbing" 'git worktree add'
 	_ST_RUN --undo
 	_ST_CHECK "and left nothing in flight" \
 		sh -c "! test -f \"\$(git rev-parse --git-common-dir)/git-edit-state\""
@@ -2155,18 +2186,19 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_SCENARIO "\e[1;96m[51] --text survives a squash's conflict pauses\e[0m"
 	git reset -q --hard
 	local N
+	# Each commit adds a line, so the reordered replay conflicts yet resolves back to the tip
 	for N in 1 2 3 4; do
-		echo "tx$N" > tx.txt && git add tx.txt && git commit -qm "TX $N"
+		printf 'tx%s\n' {1..$N} > tx.txt && git add tx.txt && git commit -qm "TX $N"
 	done
 	local TX_TARGET=$(git log --format=%H --grep='^TX 2$' -1)
 	local TX_VICTIM=$(git log --format=%H --grep='^TX 4$' -1)
 	_ST_RUN -s="$TX_TARGET" -y --text="$(printf 'TX folded subject\n\n• TX folded body')" "$TX_VICTIM"
 	_ST_EQ "the squash pauses on a conflict" "$RC" "2"
 	local TX_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	_ST_RESOLVE "$TX_WT" tx.txt "tx4"
+	_ST_RESOLVE "$TX_WT" tx.txt $'tx1\ntx2\ntx4'
 	_ST_RUN --continue
 	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
-	_ST_RESOLVE "$TX_WT" tx.txt "tx3"
+	_ST_RESOLVE "$TX_WT" tx.txt $'tx1\ntx2\ntx3\ntx4'
 	_ST_RUN --continue
 	_ST_EQ "the resumed squash settles" "$RC" "0"
 	_ST_EQ "the fold carries --text, not the combined default" \
@@ -2182,17 +2214,17 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	# must not answer, or an untouched commit silently takes the fold's subject
 	git reset -q --hard
 	for N in 1 2 3 4; do
-		echo "tf$N" > tf.txt && git add tf.txt && git commit -qm "TF $N"
+		printf 'tf%s\n' {1..$N} > tf.txt && git add tf.txt && git commit -qm "TF $N"
 	done
 	local TF_VICTIM=$(git log --format=%H --grep='^TF 2$' -1)
 	local TF_TARGET=$(git log --format=%H --grep='^TF 4$' -1)
 	_ST_RUN -s="$TF_TARGET" -y --text="TF folded subject" "$TF_VICTIM"
 	_ST_EQ "folding forward pauses before reaching the fold" "$RC" "2"
 	local TF_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	_ST_RESOLVE "$TF_WT" tf.txt "tf3"
+	_ST_RESOLVE "$TF_WT" tf.txt $'tf1\ntf3'
 	_ST_RUN --continue
 	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
-	_ST_RESOLVE "$TF_WT" tf.txt "tf2"
+	_ST_RESOLVE "$TF_WT" tf.txt $'tf1\ntf2\ntf3\ntf4'
 	_ST_RUN --continue
 	_ST_EQ "the forward fold settles" "$RC" "0"
 	_ST_EQ "the fold still takes --text" "$(git log --format=%s -1)" "TF folded subject"
@@ -2203,24 +2235,24 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	# carries a `#` line, which is what makes that a real assertion – git's own rebase drops
 	# those from any commit it stops on, and the fold's cleanup leaves `# Conflicts:` instead
 	git reset -q --hard
-	echo "tr1" > tr.txt && git add tr.txt && git commit -qm "TR 1"
-	echo "tr2" > tr.txt && git add tr.txt && git commit -qm "TR 2 target"
-	echo "tr3" > tr.txt && git add tr.txt
+	printf 'tr1\n' > tr.txt && git add tr.txt && git commit -qm "TR 1"
+	printf 'tr1\ntr2\n' > tr.txt && git add tr.txt && git commit -qm "TR 2 target"
+	printf 'tr1\ntr2\ntr3\n' > tr.txt && git add tr.txt
 	git commit -q -F - <<-'TRMSG'
 		TR 3 replayed
 
 		refs:
 		#77 belongs to this commit
 	TRMSG
-	echo "tr4" > tr.txt && git add tr.txt && git commit -qm "TR 4 victim"
+	printf 'tr1\ntr2\ntr3\ntr4\n' > tr.txt && git add tr.txt && git commit -qm "TR 4 victim"
 	local TR_BEFORE=$(git log --format=%B --grep='^TR 3 replayed$' -1)
 	_ST_RUN -s="$(git log --format=%H --grep='^TR 2 target$' -1)" -y --text="TR folded subject" \
 		"$(git log --format=%H --grep='^TR 4 victim$' -1)"
 	local TR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	_ST_RESOLVE "$TR_WT" tr.txt "tr4"
+	_ST_RESOLVE "$TR_WT" tr.txt $'tr1\ntr2\ntr4'
 	_ST_RUN --continue
 	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
-	_ST_RESOLVE "$TR_WT" tr.txt "tr3"
+	_ST_RESOLVE "$TR_WT" tr.txt $'tr1\ntr2\ntr3\ntr4'
 	_ST_RUN --continue
 	_ST_EQ "the replay settles" "$RC" "0"
 	_ST_EQ "a replayed commit's message survives byte for byte" \
@@ -2299,7 +2331,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
 	_ST_EQ "-m's editor opens on the fold" "$(grep -c . "$FE_LOG")" "1"
 	_ST_CHECK "and the -m branch routes through the guard" \
-		sh -c "command grep -q '_FOLD_EDITOR_CMD \"\$_REAL_EDITOR\"' '$SELF'"
+		sh -c "command grep -q '_FOLD_EDITOR_CMD \"\${(qq)_REAL_EDITOR}\"' '$SELF'"
 
 	# `sh` parses the emitted command, so a repo living under an apostrophe used
 	# to close the quote and leave a syntax error – which surfaces only as a
@@ -2331,7 +2363,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	git -C "$QR" config user.email selftest@example.com
 	git -C "$QR" config user.name "git-edit selftest"
 	for N in 1 2 3 4; do
-		echo "qr$N" > "$QR/qr.txt"
+		printf 'qr%s\n' {1..$N} > "$QR/qr.txt"
 		git -C "$QR" add qr.txt
 		git -C "$QR" commit -qm "QR $N"
 	done
@@ -2340,67 +2372,72 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 		"$(git log --format=%H --grep='^QR 4$' -1)"
 	_ST_EQ "a repo under an apostrophe still pauses, not errors" "$RC" "2"
 	local QR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
-	_ST_RESOLVE "$QR_WT" qr.txt "qr4"
+	_ST_RESOLVE "$QR_WT" qr.txt $'qr1\nqr2\nqr4'
 	_ST_RUN --continue
 	_ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'
-	_ST_RESOLVE "$QR_WT" qr.txt "qr3"
+	_ST_RESOLVE "$QR_WT" qr.txt $'qr1\nqr2\nqr3\nqr4'
 	_ST_RUN --continue
 	_ST_EQ "its resume settles" "$RC" "0"
 	_ST_EQ "and the fold carries --text" "$(git log --format=%s --skip=1 -1)" "QR folded subject"
 	cd "$TMP/repo"
 	rm -rf "$QR"
 
-	# `-m` wants a TTY no sub-invocation here can present, so drive the branch that carried the
-	# bug in-process – stub the runner and read back the editor and cleanup each mode
-	# installs, with nothing executed so no editor can open
-	local FE_SAVED=$(functions GIT_RUN_AND_HANDLE_CONFLICTS)
-	GIT_RUN_AND_HANDLE_CONFLICTS () { _FE_CMD=$1; _FE_ED=$GIT_EDITOR; _FE_EDS+=("$GIT_EDITOR") }
+	# `-m` wants a TTY no sub-invocation here can present, so build each resume's command in-process
+	# and read back the editor and cleanup it installs, with nothing executed so no editor can open
 	local -a _FE_EDS
-	local FE_KEEP_ACTION=$ACTION
-	local FE_KEEP_TEXT=$TEXT_VALUE
-	local -a FE_KEEP_OPTM=("${OPT_MESSAGE[@]}")
-	local FE_GUARD FE_CLEAN
-	ACTION=squash
+	local FE_GUARD FE_CLEAN FE_CMDLINE FE_IED FE_TXT=$TMP/fe-text.txt
+	print -r -- "FE inline message" > "$FE_TXT"
+	# The editor a resume's command installs, unquoted from its `GIT_EDITOR=`
+	_FE_IEDITOR_OF () {
+		FE_IED=${(Q)${${1#*GIT_EDITOR=}%% git *}}
+		_FE_EDS+=("$FE_IED")
+	}
 
-	TEXT_VALUE="FE inline message"
-	OPT_MESSAGE=()
-	GIT_REBASE_CONTINUE >/dev/null
+	_REBASE_CONTINUE_CMD --continue "$FE_TXT" ""
+	FE_CMDLINE=$REPLY
+	_FE_IEDITOR_OF "$FE_CMDLINE"
 	FE_GUARD=no
-	[[ -x "$_FE_ED" ]] && grep -q 'rebase-merge/done' "$_FE_ED" && grep -q 'cp ' "$_FE_ED" && FE_GUARD=yes
-	FE_CLEAN=no; [[ "$_FE_CMD" == *commit.cleanup=whitespace* ]] && FE_CLEAN=yes
+	[[ -x "$FE_IED" ]] && grep -q 'rebase-merge/done' "$FE_IED" && grep -q 'cp ' "$FE_IED" && FE_GUARD=yes
+	FE_CLEAN=no; [[ "$FE_CMDLINE" == *commit.cleanup=whitespace* ]] && FE_CLEAN=yes
 	_ST_EQ "--text installs the stand-in around its message" "$FE_GUARD" "yes"
 	# Safe only because the stand-in writes each replayed message back itself
 	_ST_EQ "and the cleanup that keeps its '#' lines" "$FE_CLEAN" "yes"
-	FE_GUARD=no; grep -q 'git log -1 --format=%B' "$_FE_ED" && FE_GUARD=yes
+	FE_GUARD=no; grep -q 'git log -1 --format=%B' "$FE_IED" && FE_GUARD=yes
 	_ST_EQ "every other step is restored from the commit replayed" "$FE_GUARD" "yes"
 
-	TEXT_VALUE=""
-	OPT_MESSAGE=(-m)
-	GIT_REBASE_CONTINUE >/dev/null
+	_REBASE_CONTINUE_CMD --continue "" real
+	_FE_IEDITOR_OF "$REPLY"
 	FE_GUARD=no
-	[[ -x "$_FE_ED" ]] && grep -qF -- "$(_RESOLVE_EDITOR)" "$_FE_ED" && FE_GUARD=yes
+	[[ -x "$FE_IED" ]] && grep -qF -- "$_REAL_EDITOR" "$FE_IED" && grep -qF -- "$(_RESOLVE_EDITOR) " "$_REAL_EDITOR" && FE_GUARD=yes
 	_ST_EQ "-m installs the stand-in around the real editor" "$FE_GUARD" "yes"
+	# Which runs in the caller's own environment, git-edit's config pins out of it
+	FE_GUARD=no; grep -q '^unset GIT_CONFIG_PARAMETERS' "$_REAL_EDITOR" && FE_GUARD=yes
+	_ST_EQ "and runs it without git-edit's config pins" "$FE_GUARD" "yes"
 	# Its template is git's own, so that one message keeps the comment stripping
-	FE_GUARD=no; grep -q 'stripspace --strip-comments' "$_FE_ED" && FE_GUARD=yes
+	FE_GUARD=no; grep -q 'stripspace --strip-comments' "$FE_IED" && FE_GUARD=yes
 	_ST_EQ "and strips the template git seeded it with" "$FE_GUARD" "yes"
+	# The rebase's own output is captured, so the editor a person types into takes the terminal
+	FE_GUARD=no; grep -qF '</dev/tty >/dev/tty' "$FE_IED" && FE_GUARD=yes
+	_ST_EQ "and hands it the terminal" "$FE_GUARD" "yes"
 
-	TEXT_VALUE="FE inline message"
-	OPT_MESSAGE=(-m)
-	GIT_REBASE_CONTINUE >/dev/null
-	FE_GUARD=no; grep -q 'cp ' "$_FE_ED" && FE_GUARD=yes
+	_REBASE_CONTINUE_CMD --continue "$FE_TXT" real
+	_FE_IEDITOR_OF "$REPLY"
+	FE_GUARD=no; grep -q 'cp ' "$FE_IED" && FE_GUARD=yes
 	_ST_EQ "given both, --text wins as the initial run had it" "$FE_GUARD" "yes"
 
-	ACTION=drop
-	TEXT_VALUE=""
-	OPT_MESSAGE=()
-	GIT_REBASE_CONTINUE >/dev/null
-	_ST_EQ "every other resume still silences the editor" "$_FE_ED" "true"
+	# A resume commits its conflicted step too, whose own message git's default cleanup would strip of
+	# every `#`-led line – so each writes it back, a fold keeping git's
+	_REBASE_CONTINUE_CMD --continue "" ""
+	FE_CMDLINE=$REPLY
+	_FE_IEDITOR_OF "$FE_CMDLINE"
+	FE_GUARD=no
+	[[ -x "$FE_IED" ]] && grep -q 'git log -1 --format=%B' "$FE_IED" && grep -q 'stripspace --strip-comments' "$FE_IED" && \
+		[[ "$FE_CMDLINE" == *commit.cleanup=whitespace* ]] && FE_GUARD=yes
+	_ST_EQ "every other resume writes each step's message back" "$FE_GUARD" "yes"
 
-	eval "$FE_SAVED"
-	ACTION=$FE_KEEP_ACTION
-	TEXT_VALUE=$FE_KEEP_TEXT
-	OPT_MESSAGE=("${FE_KEEP_OPTM[@]}")
-	unset _REAL_EDITOR _FE_CMD _FE_ED
+	unfunction _FE_EDITOR_OF
+	unset _REAL_EDITOR
+	rm -f "$FE_TXT"
 	# A silenced resume records `true`, which names no file to remove
 	local FE_INSTALLED
 	for FE_INSTALLED in "${_FE_EDS[@]}"; do
@@ -3000,6 +3037,8 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "verifying the tip it lands" 'Verified 1 commit(s)'
 	_ST_EQ "which is the dropped commit's parent" "$(git log -1 --format=%s)" "VD four"
 	git restore --source=HEAD --staged --worktree -- vdy.txt
+	# What the drops handed back, untracked – a later scenario reads the checkout as clean
+	git clean -fq -- vdx.txt vdy.txt
 	printf 'vd\nBAD\n' > vd.txt && git commit -qam "VD six"
 	printf 'vd\n' > vd.txt && git commit -qam "VD seven"
 	local VD_SIX=$(git rev-parse --short=7 HEAD^)
@@ -3433,6 +3472,12 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN -S HEAD~2 HEAD~1
 	_ST_EQ "a resquash under a signed tip applies" "$RC" "0"
 	_ST_OUT_HAS "and a non-reword mode names the signature too" 'carried [0-9]* signature'
+	# A SHA-256 signature and a merged tag's are signatures as much
+	printf 'nh\n' > nh.txt && git add nh.txt && git commit -qm "NH signed tip"
+	git cat-file commit HEAD | awk '{ print } /^committer /{ print "gpgsig-sha256 -----BEGIN PGP SIGNATURE-----"; print " selftest-only"; print " -----END PGP SIGNATURE-----"; print "mergetag object 0000000000000000000000000000000000000000"; print " type commit" }' > "$NR_RAW"
+	git update-ref refs/heads/main "$(git hash-object -w -t commit "$NR_RAW")"
+	_ST_RUN -M --text="NH signed tip reworded" HEAD
+	_ST_OUT_HAS "a gpgsig-sha256 and a mergetag header count as signatures" 'carried 2 signature'
 	# Negative: unsigned history says nothing about signatures
 	_ST_RUN -M --text="NS reworded again" HEAD~1
 	_ST_OUT_LACKS "unsigned history draws no signature notice" 'carried [0-9]* signature'
@@ -3751,13 +3796,14 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_EQ "a fold with rebase.updateRefs set applies" "$RC" "0"
 	_ST_EQ "leaving the branch in the span where it was" "$(git rev-parse ub-side)" "$UB_SIDE"
 	_ST_OUT_HAS "which it names" '^Branch ub-side points into the rewritten span'
-	_ST_OUT_HAS "with its exact counterpart" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)  # same change: UB mid"
+	_ST_OUT_HAS "with its exact counterpart" "Branch ub-side .*the same change: UB mid"
+	_ST_OUT_HAS "and the command moving it there" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)$"
 	_ST_OUT_HAS "and why the key moved nothing" 'rebase.updateRefs is set, but git edit moves only the branch it rewrites'
 	# A checked-out branch is stranded exactly as ub-side is – the difference is that someone may
 	# be working in it right now, which made silence there the worse of the two. It is named
 	# without a command, since moving it is that checkout's to do over whatever sits in it
 	_ST_OUT_HAS "and a branch a worktree has checked out, the same way" '^Branch ub-live points into the rewritten span, checked out in '
-	_ST_OUT_HAS "with its counterpart" "its counterpart here is $(git rev-parse --short=12 HEAD~1)  # same change: UB mid"
+	_ST_OUT_HAS "with its counterpart" "its counterpart here is $(git rev-parse --short=12 HEAD~1) – the same change: UB mid"
 	_ST_OUT_LACKS "but no command aimed at someone else's worktree" 'git branch -f ub-live'
 	_ST_OUT_LACKS "nor one below the span" 'Branch ub-below'
 	_ST_OUT_LACKS "nor one built on top of it" 'Branch ub-top'
@@ -3782,7 +3828,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	git reset -q --hard "$UB_TIP"
 	_ST_RUN -M --text="UB target reworded" "$UB_TARGET"
 	_ST_EQ "a reword applies" "$RC" "0"
-	_ST_OUT_HAS "naming the branch with its rebuilt counterpart" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)  # same change: UB mid"
+	_ST_OUT_HAS "naming the branch with its rebuilt counterpart" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)$"
 	_ST_OUT_LACKS "without a note about a key that isn't set" 'rebase.updateRefs is set'
 	git worktree remove --force "$TMP/ub-live"
 	git branch -qD ub-below ub-side ub-live ub-top
@@ -4700,6 +4746,8 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_RUN --amend-into="$(git rev-parse ':/RP one')" --amend-into="$(git rev-parse ':/RP two')" -- rp.txt
 	_ST_EQ "--amend-into given twice refuses" "$RC" "1"
 	_ST_OUT_HAS "naming the repeat" '--amend-into given twice'
+	_ST_RUN --selftest=70 --jobs=1 --jobs=2
+	_ST_OUT_HAS "--jobs given twice refuses too" '--jobs given twice'
 	_ST_CHECK "leaving the fold staged" sh -c '! git diff --cached --quiet -- rp.txt'
 	_ST_RUN --split="$(git rev-parse ':/RP two')" --split="$(git rev-parse ':/RP one')" --text="RP split" -- rp2.txt
 	_ST_EQ "--split given twice refuses" "$RC" "1"
@@ -4855,7 +4903,7 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	until { [ -s "$TMP/jobs-pids/1,2" ] && [ -s "$TMP/jobs-pids/3" ]; } || ! kill -0 $ST_JR 2>/dev/null || (( ++ST_JW > 1200 )); do sleep 0.1; done
 	kill -TERM $ST_JR
 	wait $ST_JR
-	_ST_EQ "a TERM to the runner alone stops it" "$?" "130"
+	_ST_EQ "a TERM to the runner alone stops it, as SIGTERM's exit" "$?" "143"
 	local ST_JU=$(<"$TMP/jobs-pids/1,2") ST_JV=$(<"$TMP/jobs-pids/3")
 	ST_JW=0
 	while { kill -0 "$ST_JU" || kill -0 "$ST_JV"; } 2>/dev/null && (( ++ST_JW <= 300 )); do sleep 0.1; done
@@ -5078,8 +5126,8 @@ EOF
 	local VT_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
 	# The check names its own process, so none outlives the scenario whatever the signal reaches,
 	# and marks its own end, since a signal to the run alone waits for the check it is running
-	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vt-check\"; sleep 2; echo done > \"$TMP/vt-done\"'"
-	rm -f "$TMP/vt-check" "$TMP/vt-done"
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vt-check\"; \"$TMP/st-hold\" \"$TMP/vt-release\"; echo done > \"$TMP/vt-done\"'"
+	rm -f "$TMP/vt-check" "$TMP/vt-done" "$TMP/vt-release"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/VT two')" --after="$(git rev-parse ':/VT base')" </dev/null >"$TMP/vt-out" 2>&1 &
 	local VT_PID=$!
 	local -i VT_WAIT=0
@@ -5087,6 +5135,7 @@ EOF
 		sleep 0.1
 	done
 	kill -TERM $VT_PID
+	: > "$TMP/vt-release"
 	wait $VT_PID
 	RC=$?
 	kill "$(cat "$TMP/vt-check" 2>/dev/null)" 2>/dev/null
@@ -5114,16 +5163,17 @@ EOF
 	# Holds the move open, so the signal lands inside it every time
 	print -r -- "#!/bin/sh
 [ \"\$1\" = committed ] || exit 0
-while read -r old new ref; do [ \"\$ref\" = $VL_REF ] && { : > '$TMP/vl-moving'; sleep 1; }; done
+while read -r old new ref; do [ \"\$ref\" = $VL_REF ] && { : > '$TMP/vl-moving'; '$TMP/st-hold' '$TMP/vl-release'; }; done
 exit 0" > "$VL_HOOKS/reference-transaction"
 	chmod +x "$VL_HOOKS/reference-transaction"
-	rm -f "$TMP/vl-moving"
+	rm -f "$TMP/vl-moving" "$TMP/vl-release"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c 'echo changed > vl_two.txt && git commit -qam "VL changed"' </dev/null >"$TMP/vl-out" 2>&1 &
 	VL_PID=$!
 	until [ -f "$TMP/vl-moving" ] || ! kill -0 $VL_PID 2>/dev/null; do
 		sleep 0.05
 	done
 	kill -TERM $VL_PID 2>/dev/null
+	: > "$TMP/vl-release"
 	wait $VL_PID
 	RC=$?
 	OUT=$(<"$TMP/vl-out")
@@ -5137,20 +5187,22 @@ exit 0" > "$VL_HOOKS/reference-transaction"
 	git checkout -q -- vl_two.txt
 	# A second signal stops it after all, here while the `post-rewrite` delivery holds the run
 	print -r -- "#!/bin/sh
-: > '$TMP/vl-delivering'; cat >/dev/null; sleep 1" > "$VL_HOOKS/post-rewrite"
+: > '$TMP/vl-delivering'; cat >/dev/null; '$TMP/st-hold' '$TMP/vl-release2'" > "$VL_HOOKS/post-rewrite"
 	chmod +x "$VL_HOOKS/post-rewrite"
 	VL_TIP=$(git rev-parse HEAD)
-	rm -f "$TMP/vl-moving" "$TMP/vl-delivering"
+	rm -f "$TMP/vl-moving" "$TMP/vl-delivering" "$TMP/vl-release" "$TMP/vl-release2"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/VL one')" --after="$(git rev-parse ':/VL two')" </dev/null >"$TMP/vl-out" 2>&1 &
 	VL_PID=$!
 	until [ -f "$TMP/vl-moving" ] || ! kill -0 $VL_PID 2>/dev/null; do
 		sleep 0.05
 	done
 	kill -TERM $VL_PID 2>/dev/null
+	: > "$TMP/vl-release"
 	until [ -f "$TMP/vl-delivering" ] || ! kill -0 $VL_PID 2>/dev/null; do
 		sleep 0.05
 	done
 	kill -TERM $VL_PID 2>/dev/null
+	: > "$TMP/vl-release2"
 	wait $VL_PID
 	RC=$?
 	OUT=$(<"$TMP/vl-out")
@@ -5171,12 +5223,12 @@ exit 0" > "$VL_HOOKS/reference-transaction"
 	local VR_TWO=$(git rev-parse ':/VR two') VR_BASE=$(git rev-parse ':/VR base')
 	local VR_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
 	# Fails until `vr-pass` exists, and holds each check open while `vr-slow` does
-	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; test -f \"$TMP/vr-slow\" && sleep 2; test -f \"$TMP/vr-pass\"'"
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; test -f \"$TMP/vr-slow\" && \"$TMP/st-hold\" \"$TMP/vr-release\"; test -f \"$TMP/vr-pass\"'"
 	rm -f "$TMP/vr-pass" "$TMP/vr-slow"
 	_ST_RUN --move="$VR_TWO" --after="$VR_BASE"
 	_ST_EQ "a failing gate pauses the move" "$RC" "2"
 	touch "$TMP/vr-slow"
-	rm -f "$TMP/vr-check"
+	rm -f "$TMP/vr-check" "$TMP/vr-release"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
 	local VR_PID=$!
 	local -i VR_WAIT=0
@@ -5184,6 +5236,7 @@ exit 0" > "$VL_HOOKS/reference-transaction"
 		sleep 0.1
 	done
 	kill -TERM $VR_PID
+	: > "$TMP/vr-release"
 	wait $VR_PID
 	RC=$?
 	_ST_EQ "a TERM mid-check stops the resume" "$RC" "143"
@@ -5195,16 +5248,17 @@ exit 0" > "$VL_HOOKS/reference-transaction"
 	local VR_REF=$(git symbolic-ref HEAD) VR_HOOKS=$(git rev-parse --path-format=absolute --git-path hooks)
 	print -r -- "#!/bin/sh
 [ \"\$1\" = committed ] || exit 0
-while read -r old new ref; do [ \"\$ref\" = $VR_REF ] && { : > '$TMP/vr-moving'; sleep 1; }; done
+while read -r old new ref; do [ \"\$ref\" = $VR_REF ] && { : > '$TMP/vr-moving'; '$TMP/st-hold' '$TMP/vr-release2'; }; done
 exit 0" > "$VR_HOOKS/reference-transaction"
 	chmod +x "$VR_HOOKS/reference-transaction"
-	rm -f "$TMP/vr-moving"
+	rm -f "$TMP/vr-moving" "$TMP/vr-release2"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
 	VR_PID=$!
 	until [ -f "$TMP/vr-moving" ] || ! kill -0 $VR_PID 2>/dev/null; do
 		sleep 0.05
 	done
 	kill -TERM $VR_PID 2>/dev/null
+	: > "$TMP/vr-release2"
 	wait $VR_PID
 	RC=$?
 	OUT=$(<"$TMP/vr-out")
@@ -5217,8 +5271,8 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 	# that run's work, so finishing this one leaves it be
 	local VR_SF="$(git rev-parse --git-common-dir)/git-edit-state"
 	local VR_ONE=$(git log -1 --format=%H --grep='^VR one$' HEAD)
-	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; sleep 1'"
-	rm -f "$TMP/vr-check" "$TMP/vr-moving"
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; \"$TMP/st-hold\" \"$TMP/vr-release3\"'"
+	rm -f "$TMP/vr-check" "$TMP/vr-moving" "$TMP/vr-release2" "$TMP/vr-release3"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VR_ONE" --after="$VR_BASE" </dev/null >"$TMP/vr-out" 2>&1 &
 	VR_PID=$!
 	VR_WAIT=0
@@ -5226,10 +5280,12 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 		sleep 0.1
 	done
 	printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
+	: > "$TMP/vr-release3"
 	until [ -f "$TMP/vr-moving" ] || ! kill -0 $VR_PID 2>/dev/null; do
 		sleep 0.05
 	done
 	kill -TERM $VR_PID 2>/dev/null
+	: > "$TMP/vr-release2"
 	wait $VR_PID
 	RC=$?
 	OUT=$(<"$TMP/vr-out")
@@ -5343,7 +5399,7 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 	_ST_EQ "an undo names only its own caller" "$(git reflog show -1 --format=%gs "$SID_REF")" "git edit: undo exec [$SID]"
 	export GIT_EDIT_ACTOR="x' HEAD; touch '$TMP/sid-pwned' '"
 	_ST_RUN --exec -- git commit -q --allow-empty -m "SID unsafe"
-	_ST_EQ "an unsafe value is left out" "$(git reflog show -1 --format=%gs "$SID_REF")" "git edit: exec"
+	_ST_EQ "an unsafe value is mapped to a label of its own" "$(git reflog show -1 --format=%gs "$SID_REF")" "git edit: exec [x__HEAD__touch__${TMP//[^A-Za-z0-9_-]/_}_sid-pwned___]"
 	_ST_CHECK "and runs nothing" test ! -e "$TMP/sid-pwned"
 	export GIT_EDIT_ACTOR=
 
@@ -5358,13 +5414,21 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 	local RG_REF=$(git symbolic-ref HEAD) RG_HOOKS=$(git rev-parse --path-format=absolute --git-path hooks)
 	local RG_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
 	local RG_TIP=$(git rev-parse HEAD) RG_LINE
-	git config edit.verifyCmd 'sleep 1'
-	# The reader leaves as the check starts, so the run's next line finds nobody
-	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/RG two')" --after="$(git rev-parse ':/RG base')" </dev/null 2>&1 | \
-	while IFS= read -r RG_LINE; do
+	git config edit.verifyCmd "'$TMP/st-hold' '$TMP/rg-release'"
+	# The reader leaves as the check starts, so the run's next line finds nobody – released only once
+	# the reading end is closed
+	local RG_PID RG_FD
+	rm -f "$TMP/rg-fifo" "$TMP/rg-release" && mkfifo "$TMP/rg-fifo"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/RG two')" --after="$(git rev-parse ':/RG base')" </dev/null >"$TMP/rg-fifo" 2>&1 &
+	RG_PID=$!
+	exec {RG_FD}<"$TMP/rg-fifo"
+	while IFS= read -r -u $RG_FD RG_LINE; do
 		[[ $RG_LINE == *'# verify'* ]] && break
 	done
-	RC=${pipestatus[1]}
+	exec {RG_FD}<&-
+	: > "$TMP/rg-release"
+	wait $RG_PID
+	RC=$?
 	git config --unset edit.verifyCmd
 	_ST_EQ "a reader gone mid-check stops the run" "$RC" "141"
 	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$RG_TIP"
@@ -5375,14 +5439,20 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 	# reader, leaving at the `update-ref` line, is gone
 	print -r -- "#!/bin/sh
 [ \"\$1\" = committed ] || exit 0
-while read -r old new ref; do [ \"\$ref\" = $RG_REF ] && sleep 1; done
+while read -r old new ref; do [ \"\$ref\" = $RG_REF ] && '$TMP/st-hold' '$TMP/rg-release'; done
 exit 0" > "$RG_HOOKS/reference-transaction"
 	chmod +x "$RG_HOOKS/reference-transaction"
-	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c 'echo changed > rg_one.txt && git commit -qam "RG changed"' </dev/null 2>&1 | \
-	while IFS= read -r RG_LINE; do
+	rm -f "$TMP/rg-fifo" "$TMP/rg-release" && mkfifo "$TMP/rg-fifo"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c 'echo changed > rg_one.txt && git commit -qam "RG changed"' </dev/null >"$TMP/rg-fifo" 2>&1 &
+	RG_PID=$!
+	exec {RG_FD}<"$TMP/rg-fifo"
+	while IFS= read -r -u $RG_FD RG_LINE; do
 		[[ $RG_LINE == *'git update-ref'* ]] && break
 	done
-	RC=${pipestatus[1]}
+	exec {RG_FD}<&-
+	: > "$TMP/rg-release"
+	wait $RG_PID
+	RC=$?
 	rm -f "$RG_HOOKS/reference-transaction"
 	_ST_EQ "a reader gone once the branch moves lets the run finish" "$RC" "0"
 	_ST_CHECK "moving the branch" test "$(git rev-parse HEAD)" != "$RG_TIP"
@@ -5676,10 +5746,11 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	export GIT_EDIT_ACTOR=
 	_ST_RUN --undo
 	_ST_EQ "as it does a labeled one" "$RC:$(git rev-parse HEAD)" "0:$UA_BASE"
-	# A label the reflog leaves out stays out of the journal, whose fields it could break
+	# A label's other characters map to `_`, so none breaks the journal's fields, and the run says so
 	export GIT_EDIT_ACTOR=$'ua\tunsafe'
 	_ST_RUN -M --text="UA unsafe" "$UA_BASE"
-	_ST_EQ "an unsafe label journals none" "$(tail -1 "$(git rev-parse --git-common-dir)/git-edit-journal" | cut -d' ' -f5-)" "reword ${UA_BASE:0:7}"
+	_ST_EQ "an unsafe label journals mapped" "$(tail -1 "$(git rev-parse --git-common-dir)/git-edit-journal" | cut -d' ' -f5-)" "reword ${UA_BASE:0:7}"$'\t'"ua_unsafe"
+	_ST_OUT_HAS "saying it was mapped" 'Labeled ua_unsafe – GIT_EDIT_ACTOR keeps letters, digits'
 	export GIT_EDIT_ACTOR=
 
 	# --- 107. a -C path registered but gone is reclaimed alone, never by a prune ---
@@ -5821,8 +5892,10 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	printf 'a\nb\nC\nD\ne\nf\ng\nH\nI\n' > sn-dir/sn.txt && git add sn-dir/sn.txt
 	_ST_RUN --amend-into="$SN_T" --snapshot --text="SN reworded" -- sn-dir/sn.txt
 	_ST_OUT_HAS "as is --text with it" 'takes no --text'
-	# A git before 2.40 has no `merge-tree --merge-base`, so --snapshot refuses there, naming it
-	if _MERGE_TREE_TAKES_BASE; then
+	# A git before 2.40 has no `merge-tree --merge-base`, so --snapshot refuses there, naming it – and
+	# the tool's own probe has to say the same, or a broken one turns these checks into the refusal's
+	_ST_EQ "the tool's merge-tree probe answers as git does" "$(_MERGE_TREE_TAKES_BASE && echo yes)" "$(_ST_MERGE_BASE_OK && echo yes)"
+	if _ST_MERGE_BASE_OK; then
 		_ST_RUN --amend-into="$SN_T" --snapshot -- sn-dir/sn.txt
 		_ST_EQ "a conflict beside the fold pauses" "$RC" "2"
 		_ST_OUT_HAS "at the oldest commit it reaches" 'at: [0-9a-f]* SN target'
@@ -5907,7 +5980,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "with nothing beside them" "$(git ls-tree --name-only HEAD~1 | grep -c -e uote -e ber)" "2"
 	_ST_CHECK "and nothing left staged" test -z "$(git diff --cached --name-only)"
 	# A snapshot fold needs git 2.40, scenario 111 checking the refusal below it
-	if _MERGE_TREE_TAKES_BASE; then
+	if _ST_MERGE_BASE_OK; then
 		printf 'UU\nv\n' > 'Über.txt' && git add 'Über.txt'
 		_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --snapshot -- 'Über.txt'
 		_ST_EQ "a snapshot fold too" "$RC:$(git show 'HEAD~1:Über.txt' | head -1):$(git ls-tree --name-only HEAD~1 | grep -c -e uote -e ber)" "0:UU:2"
@@ -5943,7 +6016,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --exec -- git commit --allow-empty -qm "WC empty"
 	unset EXEC_LABEL
 	_ST_EQ "an EXEC_LABEL in the caller's environment renames no exec run" "$RC:$(git reflog show -1 --format=%gs "$(git symbolic-ref -q HEAD)")" "0:git edit: exec [wc-self]"
-	_ST_OUT_HAS "nor hides its command" 'git commit --allow-empty -qm WC empty # (in '
+	_ST_OUT_HAS "nor hides its command, quoted as pasted" "git commit --allow-empty -qm 'WC empty' # (in "
 	mkdir -p wc-sub && echo inner > wc-sub/in.txt && echo i >> wc.txt && rm wc.sh
 	cd wc-sub
 	_ST_RUN --commit --text "WC change, remove, add" -- ../wc.txt ../wc.sh in.txt
@@ -6041,7 +6114,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	export GIT_EDIT_ACTOR=wc-self
 	cd sub
 	_ST_RUN --commit --text "x" -- s.txt ../added.txt
-	_ST_OUT_HAS "as does a hint's cd" "Take what landed with 'cd '.*wc-odd\\[1\\]\\\\e\\[0m' && git restore --source=HEAD"
+	_ST_OUT_HAS "as does a hint's cd" "Take what landed with: cd '.*wc-odd\\[1\\]\\\\e\\[0m' && git restore --source=HEAD"
 	cd "$TMP/repo"
 	rm -rf "$WC_ODD"
 	# A tracked hooks directory sourcing an untracked helper, as husky 5 to 8 lay one out, runs too
@@ -6222,7 +6295,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "removing a file another caller added refuses" 'wc-peer-new.txt – wc-peer.*which added it'
 	_ST_OUT_HAS "as does an old binary" 'wc.bin – wc-peer'
 	_ST_OUT_HAS "and an old link" 'wc-ln – wc-peer'
-	_ST_OUT_HAS "offering to restore the addition and the old copies" "Take what landed with 'git restore --source=HEAD --worktree -- wc-ln wc-peer-new.txt wc.bin'"
+	_ST_OUT_HAS "offering to restore the addition and the old copies" "Take what landed with: git restore --source=HEAD --worktree -- wc-ln wc-peer-new.txt wc.bin – or leave it out"
 	_ST_OUT_LACKS "rather than a carry, which takes nothing from a file still as before it" '--carry='
 	_ST_OUT_HAS "and the status line names them" '^git-edit: error – .*landed: wc-ln, wc-peer-new.txt, wc.bin$'
 	git restore --source=HEAD --worktree -- wc-peer-new.txt wc.bin wc-ln
@@ -6242,7 +6315,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_EQ "whose carry takes in both" "$RC:$(tr '\n' ' ' < wc-two.txt)" "0:o1 P1 o3 o4 o5 P2 o7 MINE "
 	printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
 	_ST_RUN --commit --text "x" -- wc-two.txt
-	_ST_OUT_HAS "a file still as before both is pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-two.txt'"
+	_ST_OUT_HAS "a file still as before both is pointed at the restore" "Take what landed with: git restore --source=HEAD --worktree -- wc-two.txt – or leave it out"
 	_ST_OUT_LACKS "never at a carry, which takes nothing in" '--carry='
 	git checkout -q -- wc-two.txt
 	# As is one whose later landing sits next to the earlier, where the merge conflicts, or a binary
@@ -6257,7 +6330,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	local WC_TIP=$(git rev-parse HEAD)
 	_ST_RUN --commit --text "x" -- wc-adj.txt wc-adj.bin
 	_ST_EQ "a copy still as before a landing another sits next to refuses, a binary too" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
-	_ST_OUT_HAS "both pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt'"
+	_ST_OUT_HAS "both pointed at the restore" "Take what landed with: git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt – or leave it out"
 	git checkout -q -- wc-adj.txt wc-adj.bin
 	# A file holding a later landing but lacking an earlier one is named for the earlier, as the
 	# landings are checked oldest first
@@ -6308,7 +6381,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_OUT_HAS "as is its new name, the old one edited" 'wc-rn2.txt – wc-peer.*which renamed wc-rn.txt to it'
 	echo r1 > wc-rn.txt
 	_ST_RUN --commit --text "x" -- wc-rn.txt wc-rn2.txt
-	_ST_OUT_HAS "while untouched, the new name is pointed at the restore" "Take what landed with 'git restore --source=HEAD --worktree -- wc-rn2.txt'"
+	_ST_OUT_HAS "while untouched, the new name is pointed at the restore" "Take what landed with: git restore --source=HEAD --worktree -- wc-rn2.txt – or leave it out"
 	_ST_OUT_HAS "and the old one left out" 'Leave out what was removed: wc-rn.txt'
 	_ST_OUT_LACKS "with no carry, which takes nothing in" '--carry='
 	rm -f wc-rn.txt && git checkout -q -- wc-rn2.txt
@@ -6470,9 +6543,9 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	_ST_RUN --commit --text "x" -- wc-rnm.txt wc-rnm2.txt
 	_ST_EQ "a rename made on stale content refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 	_ST_OUT_HAS "naming both names" 'wc-rnm.txt – wc-peer.*which this commit renames to wc-rnm2.txt'
-	_ST_OUT_HAS "and the merge bringing what landed into the new one" 'git merge-file wc-rnm2.txt wc-rnm2.txt.git-edit-base wc-rnm2.txt.git-edit-landed'
+	_ST_OUT_HAS "and the merge bringing what landed into the new one" 'git merge-file -- wc-rnm2.txt wc-rnm2.txt.git-edit-base wc-rnm2.txt.git-edit-landed'
 	# Run as printed, by a plain `sh`
-	sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name with '\(.*\)'\.\$/\1/p")"
+	sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name with: //p")"
 	_ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(ls wc-rnm2.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "P3 C7 :0"
 	_ST_RUN --commit --text "WC own rename" -- wc-rnm.txt wc-rnm2.txt
 	_ST_EQ "while one made on the landed content lands" "$RC:$(git show HEAD:wc-rnm2.txt | sed -n '3p;7p' | tr '\n' ' ')" "0:P3 C7 "
@@ -6550,7 +6623,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 		/^[[:space:]]*#/ { next }
 		/git[^;|&]* -- "?\$/ {
 			seen++
-			if (lit || /--literal-pathspecs|:\(literal\)|_QUOTE_PATHS|"\$\{(AMEND_)?PATHSPECS\[@\]\}"/ || / (update-index|hash-object|blame) |--no-index/) next
+			if (lit || /--literal-pathspecs|:\(literal\)|_QUOTE_PATHS|"\$\{(AMEND_)?PATHSPECS\[@\]\}"/ || / (update-index|hash-object|blame|merge-file|check-attr) |--no-index/) next
 			print NR ": " $0
 		}
 		END { print "seen " seen + 0 }'
@@ -6739,8 +6812,8 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	printf 'tt2\n' >> te-t.txt && git commit -qam 'TE-T reset \e[0m | kept'
 	git tag te-tag && git branch te-br
 	_ST_RUN -M --text "TE-T below reworded" "$(git rev-parse HEAD~1)"
-	_ST_OUT_HAS "a tag's re-point hint shows the subject as itself" 'git tag -f te-tag .*same subject: TE-T reset \\e\[0m | kept$'
-	_ST_OUT_HAS "as does a branch's" 'git branch -f te-br .*same [a-z]*: TE-T reset \\e\[0m | kept$'
+	_ST_OUT_HAS "a tag's re-point hint shows the subject as itself" 'Tag te-tag .*same subject: TE-T reset \\e\[0m | kept$'
+	_ST_OUT_HAS "as does a branch's" 'Branch te-br .*same [a-z]*: TE-T reset \\e\[0m | kept$'
 	git tag -d te-tag >/dev/null && git branch -q -D te-br
 	git reset -q --hard "$TE_BASE"
 	rm -f te-t.txt
@@ -6864,7 +6937,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 		}'
 	local GV_MISS=$(LC_ALL=C comm -23 \
 		<({ awk "$GV_AWK" "$SELF"; grep -oE '=OPT_[A-Z_]+' "$SELF" | sed 's/^=//'; } | grep -vE '^(GIT_.*|HOME|IFS|LC_ALL|REPLY|XDG_CONFIG_HOME)$' | LC_ALL=C sort -u) \
-		<(awk '/^unset ACTION /{ f = 1 } f { l = $0; sub(/\\$/, "", l); print l; if ($0 !~ /\\$/) exit }' "$SELF" | tr -s ' \t' '\n' | grep -vx unset | LC_ALL=C sort -u))
+		<(awk '/^_UNSET_OWN ACTION /{ f = 1 } f { l = $0; sub(/\\$/, "", l); print l; if ($0 !~ /\\$/) exit }' "$SELF" | tr -s ' \t' '\n' | grep -vx _UNSET_OWN | LC_ALL=C sort -u))
 	_ST_EQ "every global the script assigns starts unset" "$GV_MISS" ""
 	printf '%s\n' 'f () {' '	local A' '	A=1' '	B=2' '}' 'C=3' > "$TMP/gv-fixture"
 	_ST_EQ "the check finds a global, never a local" "$(awk "$GV_AWK" "$TMP/gv-fixture" | sort -u | tr '\n' ' ')" "B C "
@@ -6923,8 +6996,10 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	echo p > gvp.txt && git add gvp.txt
 	_ST_RUN --amend-into="$(git rev-parse HEAD)" --verify='seq 1 200000 | head -1 >/dev/null' -- gvp.txt
 	_ST_EQ "a check piping into head passes as a shell runs it" "$RC" "0"
-	GIT_EDIT_NO_AUTO_ISOLATE=0 _ST_RUN -d HEAD~1
-	_ST_OUT_HAS "a GIT_EDIT_NO_ switch set to 0 is off" 'auto-isolating'
+	local GV_STALE=$(git rev-parse HEAD~1)
+	_ST_RUN -M --text "GV stale once" HEAD~1
+	GIT_EDIT_NO_RESOLVE=0 _ST_RUN -M --text "GV stale twice" "$GV_STALE"
+	_ST_OUT_HAS "a GIT_EDIT_NO_ switch set to 0 is off" 'was rewritten'
 	# A caller's `rerere.autoUpdate` stages no resolution an abandoned run
 	# recorded – the file comes back unmerged
 	_ST_RUN --abort
@@ -6968,7 +7043,7 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	mkdir -p "$TMP/en-shim"
 	cat > "$TMP/en-shim/git" <<EN_SHIM
 #!/bin/sh
-if [ "\$1 \$2" = "config core.editor" ] && [ ! -e "$TMP/en-shim/fired" ]; then
+if [ "\$1 \$2" = "rev-list --merges" ] && [ ! -e "$TMP/en-shim/fired" ]; then
 	touch "$TMP/en-shim/fired"
 	G="$EN_GIT -C $EN_DIR"
 	C2=\$(\$G commit-tree "\$(\$G rev-parse HEAD~2^{tree})" -p "\$(\$G rev-parse HEAD~3)" -m "EN C peer" </dev/null)
@@ -7108,7 +7183,8 @@ EN_SHIM
 	_ST_RUN --amend-into="$PZ_A"
 	git -C "$(_ST_PZ_WT)" rebase --abort >/dev/null 2>&1
 	_ST_RUN --continue
-	_ST_EQ "a rebase aborted by hand in a fold's worktree applies nothing" "$RC:$(git log --format=%s | tr '\n' ' '):$(git diff --cached --name-only)" "0:PZ C PZ B PZ A :f.txt"
+	_ST_EQ "a rebase aborted by hand in a fold's worktree applies nothing" "$RC:$(git log --format=%s | tr '\n' ' '):$(git diff --cached --name-only)" "1:PZ C PZ B PZ A :f.txt"
+	_ST_RUN --abort
 	# A fold leaves another commit's own fixup! where it is
 	_ST_PZ_NEW p11
 	_ST_PZ_C a.txt a "PZ A" && PZ_A=$(git rev-parse HEAD) && _ST_PZ_C b.txt b "PZ B" && _ST_PZ_C b2.txt b2 "fixup! PZ B" && _ST_PZ_C c.txt c "PZ C"
@@ -7178,7 +7254,7 @@ EN_SHIM
 	_ST_RUN --split=HEAD --text "PZ first" -- ':(literal)say "hi".txt'
 	_ST_EQ "a pathspec split carries a quoted name as itself" "$RC:$(git ls-tree -z --name-only HEAD~1 | tr '\0' '|')" '0:base.txt|say "hi".txt|'
 	# A snapshot fold refuses staging beyond its stopped paths, which it would drop
-	if _MERGE_TREE_TAKES_BASE; then
+	if _ST_MERGE_BASE_OK; then
 		_ST_PZ_NEW p12
 		printf 'a\nb\nc\n' > f.txt && git add f.txt && git commit -qm "PZ A"
 		_ST_PZ_C h.txt h1 "PZ H"
@@ -7331,27 +7407,27 @@ EN_SHIM
 	_ST_EQ "a check leaving a background process lands" "$RC" "0"
 	_ST_CHECK "without waiting on it" sh -c "kill -0 \"\$(cat '$TMP/gl-bg')\" 2>/dev/null"
 	kill "$(<"$TMP/gl-bg")" 2>/dev/null
-	# A gate runs only in a worktree, so with one configured a terminal run isolates as an agent's
-	# does – and a configured link the checkout lacks is named, a check needing it failing on that
+	# A terminal run builds in a worktree of its own, where a configured gate runs as on an agent's – and
+	# a configured link the checkout lacks is named, a check needing it failing on that
 	_ST_PZ_NEW g3
 	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
 	git config edit.verifyCmd false
 	git config edit.worktreeLink node_modules
 	GL_TIP=$(git rev-parse HEAD)
-	_ST_TTY -- -d -y HEAD~1
-	_ST_OUT_HAS "a terminal run isolates where a gate is configured" 'verify gate configured: isolating'
-	_ST_EQ "so the failing gate pauses it" "$RC" "2"
+	_ST_TTY_START -- -d -y HEAD~1
+	_ST_TTY_AT 'to leave it paused' && zpty -wn ST_TTY q
+	_ST_TTY_END
+	_ST_OUT_HAS "a terminal run builds in a worktree of its own" 'git worktree add --detach .*git-edit-auto-iso'
+	_ST_EQ "where the failing gate pauses it, left paused from the prompt" "$RC" "2"
 	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$GL_TIP"
 	_ST_OUT_HAS "a configured link the checkout lacks is named" 'Not linking node_modules – .* has none to link'
 	_ST_RUN --abort
 	git config --unset edit.worktreeLink
-	# Detached, an isolated result would land nowhere, so the run stays in place and says so
+	# Detached, a result would land nowhere, so the run refuses
 	git checkout -q --detach
 	_ST_TTY -- -d -y HEAD~1
-	_ST_OUT_HAS "a detached terminal run stays in place, naming the gate it skips" 'Verify skipped – a detached HEAD keeps the run in place'
+	_ST_OUT_HAS "a detached terminal run refuses, naming what it needs" 'requires being on a branch'
 	git checkout -q main
-	OUT=$(GIT_EDIT_NO_AUTO_ISOLATE=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </dev/null 2>&1)
-	_ST_OUT_HAS "so does an opted-out one" 'Verify skipped – GIT_EDIT_NO_AUTO_ISOLATE keeps the run in place'
 	# The reword template comments in the configured character, which is what gets stripped
 	git config core.commentChar ';'
 	GL_TIP=$(git rev-parse HEAD)
@@ -7361,13 +7437,13 @@ EN_SHIM
 	# A dumb terminal skips `VISUAL`, and git refuses rather than fall back to vi there
 	_ST_TTY TERM=dumb GIT_EDITOR= EDITOR= VISUAL=false -- -M HEAD
 	_ST_OUT_HAS "a dumb terminal with no EDITOR refuses as git does" 'Terminal is dumb, but EDITOR unset'
-	# A terminal edit isolates under a gate too – what the person authors at the prompt lands only
-	# once the check passes on it, a failing one pausing into `--continue`, and Escape leaving nothing
+	# What a person authors at a terminal edit's prompt lands only once the check passes on it, a failing
+	# one pausing into `--continue`, and Escape twice leaving nothing
 	_ST_PZ_NEW g6
 	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
 	git config edit.verifyCmd '! grep -q bad b.txt'
 	_ST_TTY_EDIT HEAD~1 b.txt b2
-	_ST_OUT_HAS "a terminal edit isolates where a gate is configured" 'verify gate configured: isolating'
+	_ST_OUT_HAS "a terminal edit pauses with a worktree at the commit" 'Worktree at the commit'
 	_ST_EQ "landing what was authored at the prompt once the check passes" "$RC:$(git show HEAD~1:b.txt)" "0:b2"
 	_ST_OUT_HAS "saying so" 'Verified '
 	_ST_EQ "and leaving no worktree behind" "$(git worktree list | wc -l | tr -d ' ')" "1"
@@ -7382,9 +7458,12 @@ EN_SHIM
 	git reset -q --hard
 	GL_TIP=$(git rev-parse HEAD)
 	_ST_TTY_START -- HEAD~1
-	_ST_TTY_AT 'Now make your changes' && zpty -wn ST_TTY $'\e'
+	if _ST_TTY_AT 'Make your changes in'; then
+		zpty -wn ST_TTY $'\e'
+		_ST_TTY_AT 'Press Escape again' && zpty -wn ST_TTY $'\e'
+	fi
 	_ST_TTY_END
-	_ST_EQ "Escape at the prompt cancels" "$RC:$(git rev-parse HEAD)" "1:$GL_TIP"
+	_ST_EQ "Escape twice at the prompt cancels" "$RC:$(git rev-parse HEAD)" "0:$GL_TIP"
 	_ST_EQ "leaving no worktree behind" "$(git worktree list | wc -l | tr -d ' ')" "1"
 	_ST_CHECK "nor a pause" test ! -e "$(git rev-parse --git-common-dir)/git-edit-state"
 	# A counterpart lacking a path the check names fails on that alone, so the walk answers instead
@@ -7403,8 +7482,8 @@ EN_SHIM
 	_ST_PZ_C s1.txt s1 "GL S base"
 	print -r -- a > sa.txt && print -r -- b > sb.txt && git add sa.txt sb.txt && git commit -qm "GL S both"
 	GL_N=$(git worktree list | wc -l | tr -d ' ')
-	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/gl-check\"; sleep 2'"
-	rm -f "$TMP/gl-check"
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/gl-check\"; \"$TMP/st-hold\" \"$TMP/gl-release\"'"
+	rm -f "$TMP/gl-check" "$TMP/gl-release"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --split=HEAD --text="GL S a" -- sa.txt </dev/null >"$TMP/gl-out" 2>&1 &
 	GL_PID=$!
 	GL_WAIT=0
@@ -7412,6 +7491,7 @@ EN_SHIM
 		sleep 0.1
 	done
 	kill -TERM $GL_PID
+	: > "$TMP/gl-release"
 	wait $GL_PID
 	RC=$?
 	kill "$(cat "$TMP/gl-check" 2>/dev/null)" 2>/dev/null
@@ -7775,37 +7855,16 @@ EN_SHIM
 		_ST_RUN --abort
 	done
 	git config --file "$GIT_CONFIG_GLOBAL" --unset log.follow
-	# A terminal run where untracked files are hidden isolates, as one in place would stash every one
-	# of them – the opt-out keeps it in place, stashing them as ever
+	# A repo hiding its untracked files has them left as they are – the run never touches the checkout
+	# but to bring it along, and a stash would have taken every one of them
 	_ST_PZ_NEW rs7
 	# In the repo, as a git before 2.32 reads no `GIT_CONFIG_GLOBAL`
 	git config status.showUntrackedFiles no
 	for RS_N in a b c; do _ST_PZ_C "$RS_N.txt" "$RS_N" "RS $RS_N"; done
 	print -r -- scratch > rs-untracked.txt
 	_ST_TTY -- -d -y HEAD
-	_ST_OUT_HAS "a terminal run where untracked files are hidden isolates" 'untracked files hidden by status.showUntrackedFiles'
-	_ST_OUT_LACKS "stashing none of them" 'git stash push'
-	_ST_EQ "and lands, the untracked file left as it was" "$RC:$(git log -1 --format=%s):$(<rs-untracked.txt)" "0:RS b:scratch"
-	# The dropped file handed back is cleared, leaving a hidden untracked file the only thing to stash
-	git rm -qf c.txt
-	_ST_TTY GIT_EDIT_NO_AUTO_ISOLATE=1 -- -d -y HEAD
-	_ST_OUT_HAS "the opt-out runs in place, stashing it" 'git stash push'
-	_ST_EQ "and putting it back" "$RC:$(git log -1 --format=%s):$(<rs-untracked.txt)" "0:RS a:scratch"
-	# A detached `HEAD` can't take an isolated result, so it stays in place and says what that stashes
-	_ST_PZ_C d.txt d "RS d" && _ST_PZ_C e.txt e "RS e" && git checkout -q --detach
-	_ST_TTY -- -d -y HEAD
-	_ST_OUT_HAS "a detached run says the hidden files go into its stash" 'a detached HEAD keeps the run in place'
-	_ST_EQ "and lands in place" "$RC:$(git log -1 --format=%s):$(<rs-untracked.txt)" "0:RS d:scratch"
-	git checkout -q main
-	# However it is spelled, where git reads `0x0` as `no` – one before 2.47 refuses it
-	_ST_PZ_NEW rs7b
-	for RS_N in a b; do _ST_PZ_C "$RS_N.txt" "$RS_N" "RS $RS_N"; done
-	print -r -- scratch > rs-untracked.txt
-	if [ -z "$(git -c status.showUntrackedFiles=0x0 status --porcelain 2>&1)" ]; then
-		git config status.showUntrackedFiles 0x0
-		_ST_TTY -- -d -y HEAD
-		_ST_OUT_HAS "a run where 0x0 hides untracked files isolates" 'untracked files hidden by status.showUntrackedFiles'
-	fi
+	_ST_EQ "a terminal run where untracked files are hidden lands, leaving one as it was" "$RC:$(git log -1 --format=%s):$(<rs-untracked.txt)" "0:RS b:scratch"
+	_ST_OUT_LACKS "stashing none of them" 'git stash'
 	# A pushed commit is named as pushed, whatever columns list the remote branches holding it
 	_ST_PZ_NEW rs8
 	_ST_PZ_C a.txt a "RS pushed"
@@ -7818,6 +7877,1392 @@ EN_SHIM
 	for RS_K in color.ui column.ui status.showUntrackedFiles rebase.autoSquash rebase.instructionFormat blame.ignoreRevsFile; do
 		git config --file "$GIT_CONFIG_GLOBAL" --unset "$RS_K"
 	done
+	cd "$TMP/repo"
+
+	# --- 124. a terminal run brings the checkout along ---
+	# Once a terminal run lands, the files the rewrite changed follow it – one still as before takes
+	# what landed, edits merge onto it, a conflicting merge writes nothing, as the edits may be a peer
+	# session's – and whatever stands where a file landed is kept, never overwritten
+	_ST_SCENARIO "\e[1;96m[124] a terminal run brings the checkout along\e[0m"
+	local BC_X BC_Y
+	_ST_PZ_NEW bc1
+	_ST_PZ_C a.txt $'1\n2\n3\n4\n5' "BC base"
+	_ST_PZ_C gone.txt gone "BC adds gone"
+	BC_X=$(git rev-parse HEAD)
+	_ST_PZ_C a.txt $'1\n2x\n3\n4\n5' "BC edits a"
+	BC_Y=$(git rev-parse HEAD)
+	_ST_PZ_C b.txt b "BC tip"
+	print -r -- $'1\n2x\n3\n4\n5y' > a.txt
+	print -r -- c > c.txt
+	_ST_TTY -- -d -y "$BC_X" "$BC_Y"
+	_ST_EQ "a terminal drop lands" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:BC tip BC base "
+	_ST_CHECK "the dropped file leaves the checkout" test ! -e gone.txt
+	_ST_EQ "edits beside a dropped line stay, the line going" "$(tr '\n' ' ' < a.txt)" "1 2 3 4 5y "
+	_ST_EQ "as unstaged edits, the untracked file as it was" "$(git status --porcelain | tr '\n' '|')" " M a.txt|?? c.txt|"
+	_ST_OUT_HAS "naming what came along" 'now as they landed: gone.txt'
+	_ST_OUT_HAS "and the edits merged onto it" 'edits merged onto what landed: a.txt'
+	_ST_OUT_LACKS "with no hint left to run" 'Reconcile those paths'
+	# Undone at a terminal, the checkout comes back along the same way – the edits kept on top
+	_ST_TTY -- --undo
+	_ST_EQ "an undo brings the checkout back" "$RC:$(<gone.txt):$(tr '\n' ' ' < a.txt)" "0:gone:1 2x 3 4 5y "
+	_ST_EQ "nothing staged" "$(git diff --cached --name-only | wc -l | tr -d ' ')" "0"
+	_ST_EQ "and journals the undo as a move of its own" "$(tail -1 .git/git-edit-journal | awk '{print $5}')" "undo"
+	# A conflict writes nothing – no markers in a file a peer may be editing, no unmerged entry in an
+	# index it shares – the edits left as changes to what landed, with the merge named
+	_ST_PZ_NEW bc2
+	_ST_PZ_C a.txt $'1\n2\n3' "BC2 base"
+	_ST_PZ_C a.txt $'1\n2x\n3' "BC2 drop"
+	print -r -- $'1\n2xy\n3' > a.txt
+	_ST_TTY -- -d -y HEAD
+	_ST_EQ "edits conflicting with what landed stay as they were, unstaged" "$RC:$(git status --porcelain):$(tr '\n' ' ' < a.txt)" "0: M a.txt:1 2xy 3 "
+	_ST_OUT_HAS "named as left" 'conflict with what landed – left as they were, as changes to it: a.txt'
+	_ST_OUT_HAS "with the merge for when it is meant" 'git merge-file -- a.txt a.txt.git-edit-base a.txt.git-edit-landed'
+	eval "$(print -r -- "$OUT" | sed -n 's/^  \(git cat-file --filters .*git-edit-landed\)$/\1/p')"
+	_ST_EQ "which merges them, markers and all" "$(grep -c '^<<<<<<< a.txt$' a.txt):$(ls a.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "1:0"
+	git checkout -q -- a.txt
+	# What stands where a file lands is kept – an untracked file, an ignored one – as a change to it
+	_ST_PZ_NEW bc3
+	print -r -- ign.txt > .gitignore
+	_ST_PZ_C .gitignore ign.txt "BC3 ignore"
+	print -r -- landed > n.txt && print -r -- landed > ign.txt && git add -f n.txt ign.txt && git commit -qm "BC3 base"
+	git rm -q n.txt ign.txt && git commit -qm "BC3 rm"
+	print -r -- mine > n.txt
+	print -r -- mine > ign.txt
+	_ST_TTY -- -d -y HEAD
+	_ST_EQ "an untracked and an ignored file where the drop lands are kept" "$RC:$(<n.txt):$(<ign.txt)" "0:mine:mine"
+	_ST_EQ "as changes to what landed" "$(git status --porcelain | tr '\n' '|')" " M ign.txt| M n.txt|"
+	_ST_OUT_HAS "named with the restore" 'Take what landed with: git restore -- ign.txt n.txt'
+	# Staged whole, a merge stays staged – staged and unstaged both, it is left
+	_ST_PZ_NEW bc4
+	_ST_PZ_C f.txt $'1\n2\n3' "BC4 base"
+	_ST_PZ_C g.txt $'1\n2\n3' "BC4 g base"
+	_ST_PZ_C f.txt $'1\n2x\n3' "BC4 f"
+	BC_X=$(git rev-parse HEAD)
+	_ST_PZ_C g.txt $'1\n2x\n3' "BC4 g"
+	BC_Y=$(git rev-parse HEAD)
+	_ST_PZ_C t.txt t "BC4 tip"
+	print -r -- $'1\n2x\n3\n4' > f.txt && git add f.txt
+	print -r -- $'0\n1\n2x\n3' > g.txt && git add g.txt && print -r -- $'0\n1\n2x\n3\n4' > g.txt
+	_ST_TTY -- -d -y "$BC_X" "$BC_Y"
+	_ST_EQ "a file staged whole merges, staged" "$RC:$(git show :f.txt | tr '\n' ' '):$(git diff --name-only -- f.txt)" "0:1 2 3 4 :"
+	_ST_EQ "one staged and edited past that is left" "$(tr '\n' ' ' < g.txt)" "0 1 2x 3 4 "
+	_ST_OUT_HAS "named as such" 'g.txt – staged and unstaged edits both'
+	# A rename carries the edits to the new path, a removed file's stay untracked, a deleted one stays so
+	_ST_PZ_NEW bc5
+	_ST_PZ_C a.txt $'1\n2\n3\n4\n5\n6\n7\n8' "BC5 base"
+	_ST_PZ_C d.txt $'d1\nd2' "BC5 d"
+	git mv a.txt z.txt && git commit -qm "BC5 mv"
+	BC_X=$(git rev-parse HEAD)
+	_ST_PZ_C e.txt e "BC5 adds e"
+	BC_Y=$(git rev-parse HEAD)
+	_ST_PZ_C d.txt $'d1\nd2x' "BC5 d edit"
+	print -r -- $'1\n2\n3\n4\n5\n6\n7\n8\n9' > z.txt
+	print -r -- e-mine > e.txt
+	rm d.txt
+	_ST_TTY -- -d -y "$BC_X" "$BC_Y"
+	_ST_EQ "a renamed file's edits go back to its old path" "$RC:$(tail -1 a.txt):$(test -e z.txt && echo z)" "0:9:"
+	_ST_OUT_HAS "named with both paths" 'z.txt → a.txt'
+	_ST_EQ "a removed file's edits stay, untracked" "$(<e.txt):$(git status --porcelain -- e.txt)" "e-mine:?? e.txt"
+	_ST_OUT_HAS "named" 'your edits to them stay, untracked: e.txt'
+	# Nothing the drop rewrote above d.txt, so it is no path of the move – still deleted
+	_ST_CHECK "a file deleted beside it stays deleted" test ! -e d.txt
+	# Halfway through a merge, the checkout is someone's work in progress – left, with the hints
+	_ST_PZ_NEW bc6
+	_ST_PZ_C m.txt $'1\n2' "BC6 base"
+	git checkout -q -b bc6-side && _ST_PZ_C m.txt $'1\n2s' "BC6 side" && git checkout -q main
+	_ST_PZ_C m.txt $'1\n2m' "BC6 main"
+	_ST_PZ_C k.txt k "BC6 drop"
+	git merge -q bc6-side >/dev/null 2>&1
+	_ST_TTY -- -d -y HEAD
+	_ST_EQ "a run beside a merge in progress lands, the merge kept" "$RC:$(test -e .git/MERGE_HEAD && echo merging)" "0:merging"
+	_ST_OUT_HAS "the checkout left as it was" 'halfway through a merge, so it stays as it was'
+	_ST_CHECK "k.txt still there" test -e k.txt
+	git merge --abort
+	cd "$TMP/repo"
+
+	# --- 125. a terminal pause is a prompt ---
+	# At a terminal a pause asks rather than exits: Enter resumes it as `--continue` would, Escape
+	# twice cancels, q leaves it for later – and nothing ends it but a choice, a hangup leaving it too
+	_ST_SCENARIO "\e[1;96m[125] a terminal pause is a prompt\e[0m"
+	local PP_WT PP_TIP PP_PID PP_C
+	_ST_PZ_NEW pp1
+	_ST_PZ_C a.txt a "PP a"
+	_ST_PZ_C b.txt b "PP b"
+	_ST_PZ_C c.txt c "PP c"
+	PP_TIP=$(git rev-parse HEAD)
+	_ST_TTY_START -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		zpty -wn ST_TTY $'\e[A'
+		_ST_TTY_AT 'Press Enter to continue' && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "q leaves an edit paused" "$RC:$(git rev-parse HEAD)" "2:$PP_TIP"
+	_ST_OUT_HAS "an arrow key read as no answer, never as Escape" 'Press Enter to continue, Escape to cancel'
+	_ST_OUT_HAS "saying how to take it up" 'Left paused – resume with git edit --continue'
+	PP_WT=$(_ST_PZ_WT)
+	print -r -- b2 > "${PP_WT:-$ST_NO_WT}/b.txt"
+	_ST_TTY -- --continue
+	_ST_EQ "a terminal --continue lands it" "$RC:$(git show HEAD~1:b.txt)" "0:b2"
+	_ST_EQ "the checkout brought along" "$(<b.txt)" "b2"
+	# A hangup at the prompt leaves the pause, what was authored there kept for a later resume
+	PP_TIP=$(git rev-parse HEAD)
+	PP_C=$(git rev-parse HEAD~1)
+	_ST_TTY_START -- "$PP_C"
+	if _ST_TTY_AT 'Make your changes in'; then
+		PP_WT=$(_ST_PZ_WT)
+		print -r -- b3 > "${PP_WT:-$ST_NO_WT}/b.txt"
+		PP_PID=$(ps -eo pid=,args= 2>/dev/null | command grep -F -- "$SELF $PP_C" | command grep -v grep | awk 'NR == 1 {print $1}')
+		[ -n "$PP_PID" ] && kill -HUP "$PP_PID"
+	fi
+	_ST_TTY_END
+	_ST_EQ "a hangup at the prompt leaves the edit paused" "$RC:$(git rev-parse HEAD)" "129:$PP_TIP"
+	_ST_CHECK "what was authored there kept" grep -qx b3 "${PP_WT:-$ST_NO_WT}/b.txt"
+	_ST_RUN --continue
+	_ST_EQ "for a later --continue to land" "$RC:$(git show HEAD~1:b.txt)" "0:b3"
+	# A refused amend asks again, naming why, and the authored edit stays
+	printf '#!/bin/sh\necho "PP hook says no" >&2\nexit 1\n' > .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	_ST_TTY_START -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		PP_WT=$(_ST_PZ_WT)
+		print -r -- b4 > "${PP_WT:-$ST_NO_WT}/b.txt"
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_OUT_HAS "a refused amend names its reason" 'Amend failed – nothing was applied: PP hook says no'
+	_ST_EQ "asking again rather than discarding the edit" "$RC:$(<"${PP_WT:-$ST_NO_WT}/b.txt")" "1:b4"
+	rm -f .git/hooks/pre-commit
+	_ST_RUN --continue
+	_ST_EQ "which lands once the hook lets it" "$RC:$(git show HEAD~1:b.txt)" "0:b4"
+	# A conflict at a terminal resolves at its prompt – Enter stages a file left without markers, never
+	# one still holding them
+	_ST_PZ_NEW pp2
+	_ST_PZ_C f.txt $'1\n2\n3' "PP2 base"
+	_ST_PZ_C f.txt $'1\n2x\n3' "PP2 x"
+	_ST_PZ_C f.txt $'1\n2xy\n3' "PP2 y"
+	_ST_TTY_START -- -d -y HEAD~1
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		zpty -wn ST_TTY $'\r'
+		if _ST_TTY_AT 'Resolve the conflicts in' 2; then
+			PP_WT=$(_ST_PZ_WT)
+			print -r -- $'1\n2y\n3' > "${PP_WT:-$ST_NO_WT}/f.txt"
+			zpty -wn ST_TTY $'\r'
+		fi
+	fi
+	_ST_TTY_END
+	_ST_OUT_HAS "Enter on markers still there asks again" 'Conflict continues'
+	_ST_EQ "a resolved one lands" "$RC:$(git log --format=%s | tr '\n' ' '):$(tr '\n' ' ' < f.txt)" "0:PP2 y PP2 base :1 2y 3 "
+	_ST_OUT_HAS "naming what it staged" 'Staged as resolved: f.txt'
+	# Escape asks once more – a second Escape cancels, as the confirm before a drop does at once
+	PP_TIP=$(git rev-parse HEAD)
+	_ST_TTY_START -- -d HEAD
+	_ST_TTY_AT 'Press Enter to confirm' && zpty -wn ST_TTY $'\e'
+	_ST_TTY_END
+	_ST_EQ "Escape at a drop's confirm cancels" "$RC:$(git rev-parse HEAD)" "1:$PP_TIP"
+	_ST_OUT_HAS "saying nothing changed" 'Cancelled – nothing was changed'
+	_ST_EQ "leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" "1"
+	# The resume runs as a caller's own would – its environment as the caller had it, git -c and all,
+	# the tool's own config pins added once
+	_ST_PZ_NEW pp3
+	_ST_PZ_C a.txt a "PP3 a"
+	_ST_PZ_C b.txt b "PP3 b"
+	git config edit.verifyCmd 'test "$(printf %s "$GIT_CONFIG_PARAMETERS" | grep -o maintenance.auto | wc -l | tr -d " ")" = 1 && printf %s "$GIT_CONFIG_PARAMETERS" | grep -q pp3.caller'
+	_ST_TTY_START "GIT_CONFIG_PARAMETERS='pp3.caller=yes'" -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		PP_WT=$(_ST_PZ_WT)
+		print -r -- a2 > "${PP_WT:-$ST_NO_WT}/a.txt"
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "the resume gets the caller's config and the pins once" "$RC:$(git show HEAD~1:a.txt)" "0:a2"
+	git config --unset edit.verifyCmd
+	# -m opens the editor on the message at the amend, at a terminal
+	printf '#!/bin/sh\nprintf "PP3 reworded\\n" > "$1"\n' > "$TMP/pp-editor"
+	chmod +x "$TMP/pp-editor"
+	_ST_TTY_START "GIT_EDITOR=$TMP/pp-editor" -- -m HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "a terminal edit with -m takes the message from the editor" "$RC:$(git log -1 --format=%s HEAD~1)" "0:PP3 reworded"
+	# As does a squash with -m after a conflict, at the fold its resume reaches
+	_ST_PZ_NEW pp4
+	for PP_C in 1 2 3 4; do
+		printf 'pp%s\n' {1..$PP_C} > pp.txt && git add pp.txt && git commit -qm "PP4 $PP_C"
+	done
+	_ST_TTY_START "GIT_EDITOR=$TMP/pp-editor" -- -s="$(git rev-parse HEAD~2)" -m -y HEAD
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		PP_WT=$(_ST_PZ_WT)
+		print -r -- $'pp1\npp2\npp4' > "${PP_WT:-$ST_NO_WT}/pp.txt"
+		zpty -wn ST_TTY $'\r'
+		if _ST_TTY_AT 'Resolve the conflicts in' 2; then
+			print -r -- $'pp1\npp2\npp3\npp4' > "${PP_WT:-$ST_NO_WT}/pp.txt"
+			zpty -wn ST_TTY $'\r'
+		fi
+		_ST_TTY_AT 'to leave it paused' 3 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "a terminal squash with -m opens the editor at the fold its resume reaches" \
+		"$RC:$(git log --format=%s | tr '\n' ' ')" "0:PP4 3 PP3 reworded PP4 1 "
+	# -C names where an edit's worktree goes, and it stays – the caller's path
+	_ST_RUN -C="$TMP/pp-c" HEAD~1
+	_ST_EQ "an edit pauses in the -C path" "$RC:$(_ST_PZ_WT)" "2:$TMP/pp-c"
+	print -r -- cx > "$TMP/pp-c/cx.txt"
+	_ST_RUN --continue
+	_ST_EQ "which lands from there" "$RC:$(git show HEAD~1:cx.txt)" "0:cx"
+	_ST_CHECK "and stays" test -d "$TMP/pp-c"
+	git worktree remove --force "$TMP/pp-c"
+	cd "$TMP/repo"
+
+	# --- 126. a resume lands what its own run built, and nothing else ---
+	_ST_SCENARIO "\e[1;96m[126] a resume lands what its own run built, and nothing else\e[0m"
+	local RE_WT RE_TIP RE_PID RE_AMENDED RE_N
+	# A resume cut off in its gate left the worktree on the commit it was checking – the next one
+	# lands the whole result all the same, as the pause records it
+	_ST_PZ_NEW re1
+	_ST_PZ_C f.txt $'1\n2\n3' "RE base"
+	_ST_PZ_C f.txt $'1\n2x\n3' "RE x"
+	_ST_PZ_C f.txt $'1\n2xy\n3' "RE y"
+	_ST_PZ_C g.txt g "RE g"
+	_ST_PZ_C h.txt h "RE h"
+	_ST_RUN -d -y HEAD~3
+	_ST_EQ "a drop conflicting with what follows pauses" "$RC" "2"
+	RE_WT=$(_ST_PZ_WT)
+	_ST_RESOLVE "${RE_WT:-$ST_NO_WT}" f.txt $'1\n2y\n3'
+	git config edit.verifyCmd "if [ -e '$TMP/re1-arm' ]; then rm -f '$TMP/re1-arm'; until [ -s '$TMP/re1-pid' ]; do sleep 0.1; done; kill -TERM \$(cat '$TMP/re1-pid'); sleep 1; fi; true"
+	: > "$TMP/re1-arm"
+	rm -f "$TMP/re1-pid"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/re1-out" 2>&1 &
+	RE_PID=$!
+	print -r -- $RE_PID > "$TMP/re1-pid"
+	wait $RE_PID
+	RC=$?
+	_ST_EQ "a resume stopped in its gate stops" "$RC:$(git log -1 --format=%s)" "143:RE h"
+	_ST_RUN --continue
+	_ST_EQ "the next resume lands the whole result, not the commit the gate had out" \
+		"$RC:$(git log --format=%s | tr '\n' ' ')" "0:RE h RE g RE y RE base "
+	git config --unset edit.verifyCmd
+	# A rebase begun by hand in an edit's worktree is not its replay – refused, never landed
+	_ST_PZ_NEW re2
+	for RE_N in a b c; do _ST_PZ_C "$RE_N.txt" "$RE_N" "RE2 $RE_N"; done
+	RE_TIP=$(git rev-parse HEAD)
+	_ST_RUN HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	GIT_SEQUENCE_EDITOR=true git -C "${RE_WT:-$ST_NO_WT}" rebase -q --exec false HEAD~1 >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "a rebase begun by hand at an edit's stop is refused" "$RC:$(git rev-parse HEAD)" "1:$RE_TIP"
+	_ST_OUT_HAS "named as not the edit's replay" "is not this edit's replay"
+	_ST_RUN --abort
+	# A merge that reached the branch during an edit would be flattened by the replay – refused
+	_ST_RUN HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	print -r -- b2 > "${RE_WT:-$ST_NO_WT}/b.txt"
+	git checkout -q -b re2-side HEAD~2 && _ST_PZ_C s.txt s "RE2 side" && git checkout -q main
+	git merge -q --no-ff -m "RE2 merge" re2-side
+	RE_TIP=$(git rev-parse HEAD)
+	_ST_RUN --continue
+	_ST_EQ "a merge landed during an edit refuses its replay" "$RC:$(git rev-parse HEAD)" "1:$RE_TIP"
+	_ST_OUT_HAS "naming the merge" 'A merge reached main during the edit'
+	_ST_RUN --abort
+	# A branch reset to the paused commit is no landing of the pause – its authored files stay
+	_ST_PZ_NEW re3
+	for RE_N in a b c; do _ST_PZ_C "$RE_N.txt" "$RE_N" "RE3 $RE_N"; done
+	_ST_RUN HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	print -r -- b-authored > "${RE_WT:-$ST_NO_WT}/b.txt"
+	git reset -q --hard HEAD~1
+	_ST_RUN --continue
+	_ST_EQ "a branch reset to the paused commit still lands the edit" "$RC:$(git show HEAD:b.txt)" "0:b-authored"
+	_ST_OUT_LACKS "never read as landed already" 'had landed already'
+	# A squash resumed past a resolution that changes what the commits add up to lands nothing
+	_ST_PZ_NEW re4
+	for RE_N in 1 2 3 4; do _ST_PZ_C t.txt "t$RE_N" "RE4 $RE_N"; done
+	RE_TIP=$(git rev-parse HEAD)
+	_ST_RUN -s="$(git rev-parse HEAD~2)" -y HEAD
+	RE_WT=$(_ST_PZ_WT)
+	_ST_RESOLVE "${RE_WT:-$ST_NO_WT}" t.txt t4
+	_ST_RUN --continue
+	_ST_RESOLVE "${RE_WT:-$ST_NO_WT}" t.txt t3
+	_ST_RUN --continue
+	_ST_EQ "a resumed squash changing the tip lands nothing" "$RC:$(git rev-parse HEAD)" "1:$RE_TIP"
+	_ST_OUT_HAS "saying so" "The squash would change the tip's content"
+	_ST_RUN --abort
+	# A root's edit takes an amend made by hand at its stop
+	_ST_PZ_NEW re5
+	for RE_N in a b; do _ST_PZ_C "$RE_N.txt" "$RE_N" "RE5 $RE_N"; done
+	_ST_RUN HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	print -r -- a2 > "${RE_WT:-$ST_NO_WT}/a.txt"
+	git -C "${RE_WT:-$ST_NO_WT}" commit -q --amend -am "RE5 root amended"
+	_ST_RUN --continue
+	_ST_EQ "a hand-made amend of the root lands" "$RC:$(git log --format=%s | tr '\n' ' '):$(git show HEAD~1:a.txt)" "0:RE5 b RE5 root amended :a2"
+	# A replay aborted by hand leaves the amend, which the hint resets to
+	_ST_PZ_NEW re6
+	_ST_PZ_C f.txt $'1\n2\n3' "RE6 base"
+	_ST_PZ_C f.txt $'1\n2x\n3' "RE6 x"
+	_ST_PZ_C f.txt $'1\n2xy\n3' "RE6 y"
+	_ST_RUN HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	print -r -- $'1\n2z\n3' > "${RE_WT:-$ST_NO_WT}/f.txt"
+	_ST_RUN --continue
+	RE_AMENDED=$(sed -n 's/^amended=//p' .git/git-edit-state | tail -1)
+	git -C "${RE_WT:-$ST_NO_WT}" rebase --abort
+	_ST_RUN --continue
+	_ST_OUT_HAS "a replay aborted by hand points the reset at the amend" "reset --hard ${RE_AMENDED:0:12}"
+	_ST_RUN --abort
+	# A commit an edit empties goes, whether or not a post-rewrite hook makes the replay interactive
+	for RE_N in plain hooked; do
+		_ST_PZ_NEW "re7-$RE_N"
+		_ST_PZ_C f.txt $'1\n2\n3' "RE7 base"
+		_ST_PZ_C g.txt g "RE7 g"
+		_ST_PZ_C f.txt $'1\n2\n3\n4' "RE7 adds 4"
+		_ST_PZ_C h.txt h "RE7 h"
+		[ $RE_N = hooked ] && printf '#!/bin/sh\ncat >/dev/null\n' > .git/hooks/post-rewrite && chmod +x .git/hooks/post-rewrite
+		_ST_RUN HEAD~2
+		RE_WT=$(_ST_PZ_WT)
+		print -r -- $'1\n2\n3\n4' > "${RE_WT:-$ST_NO_WT}/f.txt"
+		_ST_RUN --continue
+		_ST_EQ "a commit the edit emptied is dropped – $RE_N" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:RE7 h RE7 g RE7 base "
+	done
+	# Dropping every commit leaves nothing to land
+	_ST_PZ_NEW re8
+	_ST_PZ_C a.txt a "RE8 a"
+	_ST_PZ_C b.txt b "RE8 b"
+	RE_TIP=$(git rev-parse HEAD)
+	_ST_RUN -d -y HEAD~1 HEAD
+	_ST_EQ "dropping every commit refuses" "$RC:$(git rev-parse HEAD)" "1:$RE_TIP"
+	_ST_OUT_HAS "saying why" 'leaves it none'
+	# A gate the run declined stays declined through its pauses
+	_ST_PZ_NEW re9
+	_ST_PZ_C f.txt $'1\n2\n3' "RE9 base"
+	_ST_PZ_C f.txt $'1\n2x\n3' "RE9 x"
+	_ST_PZ_C f.txt $'1\n2xy\n3' "RE9 y"
+	git config edit.verifyCmd false
+	_ST_RUN -d -y --no-verify HEAD~1
+	RE_WT=$(_ST_PZ_WT)
+	_ST_RESOLVE "${RE_WT:-$ST_NO_WT}" f.txt $'1\n2y\n3'
+	_ST_RUN --continue
+	_ST_EQ "a --no-verify run's resume skips the gate too" "$RC:$(git log -1 --format=%s)" "0:RE9 y"
+	_ST_OUT_HAS "saying so" 'Verify skipped – --no-verify was passed'
+	git config --unset edit.verifyCmd
+	# A pause's notes survive its rewrite, and a value with a newline is refused, never split into keys
+	(
+		_STATE_OWNED=""
+		STATE_RESOLVED=abc123
+		_SAVE_STATE "operation=edit" "worktree=/nonexistent" >/dev/null 2>&1
+		_SAVE_STATE "operation=edit" "worktree=/nonexistent" >/dev/null 2>&1
+		grep -qx 'resolved=abc123' .git/git-edit-state
+	)
+	_ST_EQ "a pause rewritten keeps the trees resolved at its stops" "$?" "0"
+	rm -f .git/git-edit-state
+	( _STATE_OWNED=""; _SAVE_STATE "operation=edit" $'files=a\nbranch=refs/heads/x' >/dev/null 2>&1 )
+	_ST_EQ "a newline in a value refuses" "$?:$(test -e .git/git-edit-state && echo saved)" "1:"
+	cd "$TMP/repo"
+
+	# --- 127. a caller's environment changes nothing the tool reads ---
+	_ST_SCENARIO "\e[1;96m[127] a caller's environment changes nothing the tool reads\e[0m"
+	local CE_N CE_T CE_TIP CE_WT
+	# GIT_DIFF_OPTS widens git's diffs past the -U0 a line-level guard reads – an edit beside another
+	# caller's landing then looked like one on its lines, which hid the landing it lacked
+	_ST_PZ_NEW ce1
+	print -l {1..20} > f.txt && git add f.txt && git commit -qm "CE base"
+	print -l {1..9} 10p {11..20} > f.txt
+	OUT=$(GIT_EDIT_ACTOR=ce-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "CE peer" -- f.txt </dev/null 2>&1)
+	print -l {1..10} 11m {12..20} > f.txt
+	OUT=$(GIT_DIFF_OPTS=--unified=3 GIT_EDIT_ACTOR=ce-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "CE self" -- f.txt </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "GIT_DIFF_OPTS leaves the landing guard reading -U0" "$RC:$(git log -1 --format=%s)" "1:CE peer"
+	_ST_OUT_HAS "naming the landing it would take back" "f.txt – ce-peer's"
+	git checkout -q -- f.txt
+	# As it leaves the auto-target's blame on the staged lines alone – a pure insertion folds into the
+	# newest commit touching the file, never into the one owning the lines around it
+	_ST_PZ_C g.txt g "CE other"
+	print -l new {1..9} 10p {11..20} > f.txt && git add f.txt
+	GIT_DIFF_OPTS=--unified=3 _ST_RUN --amend-into=auto -- f.txt
+	_ST_OUT_HAS "GIT_DIFF_OPTS leaves an insertion's auto-target as the newest commit on the file" 'Amending staged changes into [0-9a-f]* (CE peer)'
+	# i18n.logOutputEncoding re-encodes what a rebuild reads of a message and an author
+	_ST_PZ_NEW ce2
+	_ST_PZ_C a.txt a "CE2 base"
+	_ST_PZ_C b.txt b "CE2 Привет"
+	_ST_PZ_C c.txt c "CE2 tip"
+	git config i18n.logOutputEncoding KOI8-R
+	_ST_RUN -M --text "CE2 base reworded" HEAD~2
+	git config --unset i18n.logOutputEncoding
+	_ST_EQ "a rebuild under i18n.logOutputEncoding keeps a UTF-8 subject" "$RC:$(git log -1 --format=%s HEAD~1)" "0:CE2 Привет"
+	# A squash's -m template comments in the configured character, which is what gets stripped
+	git config core.commentChar ';'
+	_ST_TTY GIT_EDITOR=: -- -S -m -y HEAD~1 HEAD
+	git config --unset core.commentChar
+	_ST_EQ "a -S -m left as opened keeps no line of its template" "$RC:$(git log -1 --format=%B | grep -c 'Combined message')" "0:0"
+	# GREP_OPTIONS colours every grep the tool reads on BSD
+	GREP_OPTIONS=--color=always _ST_RUN -M --text "CE2 under GREP_OPTIONS" HEAD
+	_ST_EQ "GREP_OPTIONS changes nothing" "$RC:$(git log -1 --format=%s)" "0:CE2 under GREP_OPTIONS"
+	# A path the upstream renamed takes a replant past edits on it, which its guard reads by both names
+	_ST_PZ_NEW ce3
+	print -l {1..8} > r.txt && git add r.txt && git commit -qm "CE3 base"
+	git checkout -q -b ce3-up && git mv r.txt s.txt && git commit -qm "CE3 up renames" && git checkout -q main
+	_ST_PZ_C t.txt t "CE3 own"
+	print -l {1..9} > r.txt
+	CE_TIP=$(git rev-parse HEAD)
+	_ST_RUN --onto=ce3-up
+	_ST_EQ "a replant past edits on a path the upstream renamed refuses" "$RC:$(git rev-parse HEAD)" "1:$CE_TIP"
+	_ST_OUT_HAS "naming it" 'r.txt'
+	git checkout -q -- r.txt
+	# A staged submodule bump is a staged change whatever diff.ignoreSubmodules hides
+	_ST_PZ_NEW ce4
+	_ST_PZ_C a.txt a "CE4 base"
+	git update-index --add --cacheinfo "160000,$(git rev-parse HEAD),sub" && git commit -qm "CE4 sub"
+	_ST_PZ_C b.txt b "CE4 tip"
+	CE_T=$(git rev-parse HEAD~1)
+	git update-index --cacheinfo "160000,$CE_T,sub"
+	git config diff.ignoreSubmodules all
+	_ST_RUN --amend-into="$CE_T" -- sub
+	_ST_EQ "a staged submodule bump folds under diff.ignoreSubmodules=all" "$RC:$(git rev-parse HEAD~1:sub)" "0:$CE_T"
+	git config --unset diff.ignoreSubmodules
+	# A name holding a quote is read from git's NUL-separated form – the line form quotes it
+	_ST_PZ_NEW ce5
+	for CE_N in {1..12}; do echo "q line $CE_N"; done > 'q"old.txt'
+	git add 'q"old.txt' && git commit -qm "CE5 add"
+	CE_T=$(git rev-parse HEAD)
+	git mv 'q"old.txt' 'q"new.txt' && git commit -qm "CE5 rename"
+	sed 's/^q line 3$/q line 3 fixed/' 'q"new.txt' > q.tmp && mv q.tmp 'q"new.txt' && git add 'q"new.txt'
+	_ST_RUN --amend-into="$CE_T" -- 'q"new.txt'
+	_ST_EQ "a fold follows a rename of a name holding a quote, into its old path" "$RC:$(git show 'HEAD~1:q"old.txt' | sed -n 3p)" "0:q line 3 fixed"
+	# A name a hint pastes back holds its `!` single-quoted, which an interactive shell would expand
+	_ST_PZ_NEW ce6
+	_ST_PZ_C a.txt a "CE6 base"
+	print -r -- x > 'x!y.txt' && git add 'x!y.txt' && git commit -qm "CE6 adds"
+	_ST_PZ_C c.txt c "CE6 tip"
+	_ST_RUN -d -y HEAD~1
+	_ST_OUT_HAS "a hint's name holding ! comes single-quoted" "git clean -f -- 'x!y.txt'"
+	# A command echoed keeps its own spacing – a path with two spaces names that path
+	_ST_RUN -d -y -C="$TMP/ce two  spaces" HEAD
+	_ST_OUT_HAS "a printed command keeps a path's double space" "ce two  spaces"
+	git worktree remove --force "$TMP/ce two  spaces" 2>/dev/null
+	cd "$TMP/repo"
+
+	# --- 128. a landing takes back nothing another caller landed, and says what it did ---
+	_ST_SCENARIO "\e[1;96m[128] a landing takes back nothing another caller landed, and says what it did\e[0m"
+	local LA_GIT=$(whence -p git) LA_TIP LA_T LA_WT LA_N
+	# Staging made before another caller's landing would take it back where the fold rebuilds the
+	# file as staged – above the landing that went through silently
+	_ST_PZ_NEW la1
+	print -l {1..10} > f.txt && git add f.txt && git commit -qm "LA base"
+	print -l 1x {2..10} > f.txt && git add f.txt
+	OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "sed 's/^7\$/7x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer'" </dev/null 2>&1)
+	OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "echo g > g.txt && git add g.txt && git commit -qm 'LA target'" </dev/null 2>&1)
+	LA_TIP=$(git rev-parse HEAD)
+	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$LA_TIP" -- f.txt </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "a fold of staging that predates a landing refuses" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
+	_ST_OUT_HAS "naming it as staged" 'Folded as staged, 1 file(s) would take back what another caller landed: f.txt'
+	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$LA_TIP" --base="$LA_TIP" -- f.txt </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "--base naming the tip takes it back deliberately" "$RC:$(git show HEAD:f.txt | sed -n 7p)" "0:7"
+	# Under --snapshot as much
+	print -l 1y {2..10} > f.txt && git add f.txt
+	OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "sed 's/^8\$/8x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer 2'" </dev/null 2>&1)
+	LA_TIP=$(git rev-parse HEAD)
+	if _ST_MERGE_BASE_OK; then
+		OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$(git rev-parse HEAD~1)" --snapshot -- f.txt </dev/null 2>&1)
+		RC=$?
+		_ST_EQ "as does a snapshot fold" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
+	fi
+	git reset -q
+	git checkout -q -- f.txt
+	# A tree composed on a tip a peer moves past before the fold reads it takes that peer back –
+	# refused, named as the caller gave it
+	mkdir -p "$TMP/la-shim"
+	cat > "$TMP/la-shim/git" <<LA_SHIM
+#!/bin/sh
+if [ "\$1 \$2" = "rev-list --merges" ] && [ -e "$TMP/la-shim/arm" ]; then
+	rm -f "$TMP/la-shim/arm"
+	G="$LA_GIT -C $TMP/pz-la1"
+	C=\$(\$G commit-tree "\$(\$G rev-parse HEAD^{tree})" -p "\$(\$G rev-parse HEAD)" -m "LA peer meanwhile" </dev/null)
+	\$G update-ref refs/heads/main "\$C"
+fi
+exec "$LA_GIT" "\$@"
+LA_SHIM
+	chmod +x "$TMP/la-shim/git"
+	git show HEAD:f.txt | sed 's/^1.*$/1z/' > f.txt
+	: > "$TMP/la-shim/arm"
+	PATH="$TMP/la-shim:$PATH" _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --whole -- f.txt
+	_ST_EQ "files read before a landing that came during the run refuse" "$RC:$(git log -1 --format=%s)" "1:LA peer meanwhile"
+	_ST_OUT_HAS "naming the files, never a --tree" 'The files were read on [0-9a-f]*, but the branch moved'
+	git checkout -q -- f.txt
+	# A file another caller added is taken back by one written in its place – never by edits on top
+	_ST_PZ_NEW la2
+	_ST_PZ_C a.txt a "LA2 base"
+	OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "printf '%s\\n' 1 2 3 4 5 6 7 8 > n.txt && git add n.txt && git commit -qm 'LA2 peer adds'" </dev/null 2>&1)
+	LA_TIP=$(git rev-parse HEAD)
+	print -r -- mine > n.txt
+	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA2 self" -- n.txt </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "a file written over one another caller added refuses" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
+	_ST_OUT_HAS "naming the landing" "n.txt – la-peer's exec run .*which added it"
+	print -l {1..8} 9 > n.txt
+	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA2 self" -- n.txt </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "edits on top of it land" "$RC:$(git log -1 --format=%s)" "0:LA2 self"
+	# An undo puts the index back with the branch, nothing left staged against it
+	_ST_PZ_C b.txt b "LA2 b"
+	_ST_RUN HEAD
+	print -r -- b2 > "$(_ST_PZ_WT)/b.txt"
+	_ST_RUN --continue
+	_ST_RUN --undo
+	_ST_EQ "an undo leaves nothing staged against the tip it restores" "$RC:$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:0"
+	# An undo removes the line it read – a landing appended meanwhile stays on record
+	_ST_RUN -d -y HEAD
+	cat > "$TMP/la-shim/git" <<LA_SHIM
+#!/bin/sh
+if [ "\$1" = "update-ref" ] && [ -e "$TMP/la-shim/arm" ]; then
+	rm -f "$TMP/la-shim/arm"
+	printf '%s refs/heads/elsewhere 1111111 2222222 peer\n' "\$(date +%s)" >> "$TMP/pz-la2/.git/git-edit-journal"
+fi
+exec "$LA_GIT" "\$@"
+LA_SHIM
+	: > "$TMP/la-shim/arm"
+	PATH="$TMP/la-shim:$PATH" _ST_RUN --undo
+	_ST_EQ "an undo keeps a landing journaled meanwhile" "$RC:$(command grep -c 'refs/heads/elsewhere' .git/git-edit-journal)" "0:1"
+	_ST_EQ "and removes the run it took back" "$(awk '$5 == "drop"' .git/git-edit-journal | wc -l | tr -d ' ')" "0"
+	# The trailer names the tip a resume swapped – a peer landing during its replay moved it on
+	_ST_PZ_NEW la3
+	for LA_N in a b c; do _ST_PZ_C "$LA_N.txt" "$LA_N" "LA3 $LA_N"; done
+	_ST_RUN HEAD~1
+	LA_WT=$(_ST_PZ_WT)
+	print -r -- b2 > "${LA_WT:-$ST_NO_WT}/b.txt"
+	cat > "$TMP/la-shim/git" <<LA_SHIM
+#!/bin/sh
+if [ "\$1" = "-c" ] && [ -e "$TMP/la-shim/arm" ] && case " \$* " in *" --onto "*) true ;; *) false ;; esac; then
+	rm -f "$TMP/la-shim/arm"
+	G="$LA_GIT -C $TMP/pz-la3"
+	B=\$(echo p | \$G hash-object -w --stdin)
+	T=\$( { \$G ls-tree main; printf '100644 blob %s\tpeer.txt\n' "\$B"; } | \$G mktree)
+	C=\$(\$G commit-tree "\$T" -p "\$(\$G rev-parse main)" -m "LA3 peer" </dev/null)
+	\$G update-ref refs/heads/main "\$C"
+	echo "\$C" > "$TMP/la-shim/peer"
+fi
+exec "$LA_GIT" "\$@"
+LA_SHIM
+	: > "$TMP/la-shim/arm"
+	PATH="$TMP/la-shim:$PATH" _ST_RUN --continue
+	_ST_OUT_HAS "a resume's trailer names the tip it swapped" "moved $(cat "$TMP/la-shim/peer" 2>/dev/null) → $(git rev-parse HEAD)"
+	# --exec reports a branch its command moved itself
+	LA_TIP=$(git rev-parse HEAD)
+	_ST_RUN --exec -- git update-ref refs/heads/main HEAD~1
+	_ST_EQ "an --exec whose command moved the branch reports the move" "$RC:$(git rev-parse HEAD)" "0:$(git rev-parse "$LA_TIP~1")"
+	_ST_OUT_HAS "never as unchanged" 'main moved meanwhile, .* not by this run'
+	git update-ref refs/heads/main "$LA_TIP"
+	# A failing post-checkout hook fails no worktree a run sets up, nor leaves one registered
+	printf '#!/bin/sh\nexit 1\n' > .git/hooks/post-checkout && chmod +x .git/hooks/post-checkout
+	print -r -- c2 > c.txt
+	_ST_RUN --commit --text "LA3 c2" -- c.txt
+	_ST_EQ "a failing post-checkout hook leaves --commit landing" "$RC:$(git log -1 --format=%s)" "0:LA3 c2"
+	_ST_EQ "and no worktree registered" "$(git worktree list | wc -l | tr -d ' ')" "1"
+	rm -f .git/hooks/post-checkout
+	# A hook vetoing the ref move is no branch that moved
+	printf '#!/bin/sh\n[ "$1" = prepared ] && grep -q refs/heads/main && exit 1\nexit 0\n' > .git/hooks/reference-transaction
+	chmod +x .git/hooks/reference-transaction
+	LA_TIP=$(git rev-parse HEAD)
+	_ST_RUN -M --text "LA3 vetoed" HEAD
+	_ST_EQ "a vetoed ref move lands nothing" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
+	_ST_OUT_HAS "named as refused, the branch where it was" 'git refused to move main, still at the tip this run read'
+	rm -f .git/hooks/reference-transaction
+	# --commit refused by its hook names the hook, as there was no command of the caller's
+	printf '#!/bin/sh\nexit 1\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+	print -r -- c3 > c.txt
+	_ST_RUN --commit --no-verify --text "LA3 c3" -- c.txt
+	_ST_EQ "--commit runs the repository's hooks even with --no-verify" "$RC:$(git log -1 --format=%s)" "1:LA3 c2"
+	_ST_OUT_HAS "naming the refused commit, not a command" 'The commit was refused (exit 1)'
+	rm -f .git/hooks/pre-commit
+	git checkout -q -- c.txt
+	# --whole and --tree together refuse
+	_ST_RUN --amend-into=HEAD --whole --tree=HEAD -- c.txt
+	_ST_OUT_HAS "--whole with --tree refuses" '--whole and --tree cannot be combined'
+	# A symlink turned file is no chmod away
+	ln -s a.txt ln.txt && git add ln.txt && git commit -qm "LA3 link"
+	rm ln.txt && print -r -- plain > ln.txt
+	_ST_RUN --commit --text "LA3 unlink" -- ln.txt
+	_ST_OUT_HAS "a symlink turned file is named as one, not a chmod" 'Put a symlink back where one was'
+	git checkout -q -- ln.txt
+	# A drop's content goes back unstaged, a peer's fold then leaving it, and the discard offered
+	# spares a file holding edits on top of it, pointed at the carry instead
+	_ST_PZ_NEW la4
+	_ST_PZ_C f.txt $'1\n2\n3' "LA4 base"
+	print -r -- $'1\n2x\n3' > f.txt && print -r -- g > g.txt && git add f.txt g.txt && git commit -qm "LA4 drop"
+	LA_T=$(git rev-parse HEAD)
+	_ST_PZ_C h.txt h "LA4 tip"
+	print -r -- $'1\n2x\n3\n4' > f.txt
+	_ST_RUN -d -y "$LA_T"
+	_ST_EQ "a drop leaves nothing staged" "$RC:$(git diff --cached --name-only | tr '\n' ' ')" "0:"
+	_ST_OUT_HAS "offering to discard the dropped file" 'Keep it, or discard it with: git clean -f -- g.txt'
+	_ST_OUT_LACKS "never the one holding edits" 'discard it with: .*f.txt'
+	_ST_OUT_HAS "which is named with the carry" 'git edit --carry='
+	_ST_RUN --carry
+	_ST_EQ "the carry keeps the edits, the dropped line gone, nothing staged" \
+		"$RC:$(tr '\n' ' ' < f.txt):$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:1 2 3 4 :0"
+	# A branch checked out twice re-syncs the caller's own index
+	_ST_PZ_C k.txt k "LA4 k"
+	git restore -q --source=HEAD --worktree -- . 2>/dev/null; git clean -fq
+	git worktree add -q -f "$TMP/la4-twin" main 2>/dev/null
+	cd "$TMP/la4-twin"
+	_ST_RUN -d -y HEAD
+	_ST_EQ "a branch checked out twice re-syncs the index of the copy the run started in" "$RC:$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:0"
+	cd "$TMP/pz-la4"
+	git worktree remove --force "$TMP/la4-twin"
+	cd "$TMP/repo"
+
+
+	# --- 129. a landing guard reads what it lands, and a held lock waits ---
+	_ST_SCENARIO "\e[1;96m[129] a landing guard reads what it lands, and a held lock waits\e[0m"
+	local LG_T LG_B LG_REAL LG_GD LG_WT
+	# Edits on top of a file another caller added, then rewrote, hold most of what the tip has
+	_ST_PZ_NEW lg1
+	_ST_PZ_C base.txt b "LG base"
+	print -l {1..10} > n.txt
+	GIT_EDIT_ACTOR=lg-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LG peer adds" -- n.txt </dev/null >/dev/null 2>&1
+	print -l a b c d e f g h i j > n.txt
+	GIT_EDIT_ACTOR=lg-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LG peer rewrites" -- n.txt </dev/null >/dev/null 2>&1
+	print -l a b c d e f g h i j k > n.txt
+	GIT_EDIT_ACTOR=lg-self _ST_RUN --commit --text "LG self" -- n.txt
+	_ST_EQ "edits on top of a file another caller added and rewrote land" "$RC:$(git log -1 --format=%s)" "0:LG self"
+	# The fold carries what was staged as the run read it – staging changed meanwhile stays staged
+	_ST_PZ_NEW lg2
+	_ST_PZ_C a.txt a "LG2 a" && LG_T=$(git rev-parse HEAD)
+	_ST_PZ_C b.txt b "LG2 b"
+	print -r -- a1 > a.txt && git add a.txt
+	LG_REAL=$(whence -p git)
+	mkdir -p "$TMP/lg-shim"
+	printf '#!/bin/sh\ncase " $* " in *" --summary "*) [ -e "%s/lg-shim-done" ] || { : > "%s/lg-shim-done"; echo a2 > a.txt; "%s" add a.txt; } ;; esac\nexec "%s" "$@"\n' \
+		"$TMP" "$TMP" "$LG_REAL" "$LG_REAL" > "$TMP/lg-shim/git"
+	chmod +x "$TMP/lg-shim/git"
+	rm -f "$TMP/lg-shim-done"
+	PATH="$TMP/lg-shim:$PATH" _ST_RUN --amend-into="$LG_T"
+	_ST_EQ "a fold carries the staging it read, not what was staged meanwhile" "$RC:$(git show HEAD~1:a.txt):$(git show :a.txt)" "0:a1:a2"
+	_ST_CHECK "the staging changed meanwhile was taken" test -e "$TMP/lg-shim-done"
+	git restore -q --staged a.txt; git checkout -q -- a.txt
+	# A held index lock is waited out, as a `git status` holds it a moment – the re-sync lands then
+	_ST_PZ_NEW lg3
+	_ST_PZ_C x.txt x1 "LG3 x1"
+	_ST_PZ_C x.txt x2 "LG3 x2"
+	_ST_PZ_C y.txt y "LG3 y"
+	LG_GD=$(git rev-parse --absolute-git-dir)
+	printf '#!/bin/sh\n[ "$1" = committed ] || exit 0\ngrep -q " refs/heads/main$" || exit 0\n[ -e "%s/lg-arm" ] || exit 0\nrm -f "%s/lg-arm"\n: > "%s/index.lock"\n( sleep 1; rm -f "%s/index.lock" ) >/dev/null 2>&1 &\n' \
+		"$LG_GD" "$LG_GD" "$LG_GD" "$LG_GD" > .git/hooks/reference-transaction
+	chmod +x .git/hooks/reference-transaction
+	: > "$LG_GD/lg-arm"
+	_ST_RUN -d -y HEAD~1
+	_ST_EQ "a drop's re-sync waits out an index lock held a moment" "$RC:$(git diff --cached --name-only | tr '\n' ' ')" "0:"
+	_ST_OUT_LACKS "naming no entry left locked" 'Index locked'
+	rm -f .git/hooks/reference-transaction "$LG_GD/index.lock"
+	# A staged fold refused for a landing hands back the staging, never the checkout's file
+	_ST_PZ_NEW lg4
+	_ST_PZ_C base.txt b "LG4 base" && LG_T=$(git rev-parse HEAD)
+	print -l {1..10} > n.txt
+	GIT_EDIT_ACTOR=lg-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LG4 peer adds" -- n.txt </dev/null >/dev/null 2>&1
+	print -l q r s > n.txt && git add n.txt
+	GIT_EDIT_ACTOR=lg-self _ST_RUN --amend-into="$LG_T" -- n.txt
+	_ST_EQ "a staged fold taking back an addition refuses" "$RC" "1"
+	_ST_OUT_HAS "offering to unstage it" 'git restore --staged -- n.txt'
+	_ST_OUT_LACKS "never to restore the checkout's file" 'restore --source=HEAD --worktree'
+	git restore -q --staged n.txt; git checkout -q -- n.txt
+	# As is a bare tree, which names no tip it was composed on
+	print -l q r s > n.txt
+	LG_B=$(GIT_INDEX_FILE="$TMP/lg-idx" sh -c "git read-tree '$LG_T' && git update-index --add n.txt && git write-tree")
+	git checkout -q -- n.txt
+	GIT_EDIT_ACTOR=lg-self _ST_RUN --amend-into="$LG_T" --tree="$LG_B" -- n.txt
+	_ST_EQ "a bare --tree taking back a landing refuses" "$RC:$(git log -1 --format=%s)" "1:LG4 peer adds"
+	_ST_OUT_HAS "naming the tree" 'Folded from --tree'
+	# An undo hands the run it took back to the checkout as work, never as staleness to discard
+	_ST_PZ_NEW lg5
+	_ST_PZ_C base.txt b "LG5 base"
+	print -r -- w > w.txt
+	_ST_RUN --commit --text "LG5 adds" -- w.txt
+	_ST_RUN --undo
+	_ST_OUT_HAS "an undo hands its run back as the checkout's" 'what the undone run landed stays in your checkout'
+	_ST_OUT_HAS "to keep or discard" 'Keep it, or discard it with'
+	rm -f w.txt
+	# A journal lock held past its wait – an append goes in all the same, an undo moves nothing
+	_ST_PZ_NEW lg6
+	_ST_PZ_C base.txt b "LG6 base"
+	: > .git/git-edit-journal.lock
+	print -r -- j > j.txt
+	_ST_RUN --commit --text "LG6 journaled" -- j.txt
+	_ST_EQ "an append goes in past a held journal lock" "$RC:$(tail -1 .git/git-edit-journal | cut -d' ' -f5-)" "0:commit"
+	_ST_OUT_HAS "saying so" 'Journaled without its lock'
+	LG_T=$(git rev-parse HEAD)
+	touch .git/git-edit-journal.lock
+	_ST_RUN --undo
+	_ST_EQ "an undo under a held journal lock moves nothing" "$RC:$(git rev-parse HEAD)" "1:$LG_T"
+	_ST_OUT_HAS "naming the lock" 'journal is locked by another run'
+	# One a killed run left behind, past 10 s, is broken
+	touch -t 200001010000 .git/git-edit-journal.lock
+	_ST_RUN --undo
+	_ST_EQ "a stale journal lock is broken" "$RC:$(tail -1 .git/git-edit-journal | awk '{print $5}')" "0:undo"
+	_ST_CHECK "and goes" test ! -e .git/git-edit-journal.lock
+	rm -f j.txt
+	# A pause is its own caller's – another label refuses, and a resume journals under the pause's
+	_ST_PZ_NEW lg7
+	_ST_PZ_C a.txt a "LG7 a" && _ST_PZ_C b.txt b "LG7 b"
+	GIT_EDIT_ACTOR=lg-a _ST_RUN HEAD~1
+	LG_WT=$(_ST_PZ_WT)
+	print -r -- a2 > "${LG_WT:-$ST_NO_WT}/a.txt"
+	GIT_EDIT_ACTOR=lg-b _ST_RUN --continue
+	_ST_EQ "another label's continue refuses" "$RC:$(git log -1 --format=%s HEAD~1):$(git show HEAD~1:a.txt)" "1:LG7 a:a"
+	_ST_OUT_HAS "naming whose it is" "The paused edit is lg-a's"
+	GIT_EDIT_ACTOR=lg-b _ST_RUN --abort
+	_ST_EQ "as does its abort" "$RC:$(_ST_PZ_WT)" "1:$LG_WT"
+	_ST_RUN --continue
+	_ST_EQ "a person may finish an agent's pause" "$RC:$(git show HEAD~1:a.txt)" "0:a2"
+	_ST_EQ "journaled as the pause's own run" "$(tail -1 .git/git-edit-journal | awk -F'\t' '{print $2}')" "lg-a"
+	# A labeled run is an agent's – no prompt at a terminal, whatever its stdin
+	_ST_TTY GIT_EDIT_ACTOR=lg-a -- HEAD~1
+	_ST_EQ "a labeled run at a terminal pauses as an agent's" "$RC" "2"
+	_ST_OUT_LACKS "asking nothing" 'press Enter to continue'
+	_ST_RUN --abort
+	# An exec that changed nothing names a peer's move beside "unchanged"
+	_ST_PZ_NEW lg8
+	_ST_PZ_C a.txt a "LG8 a"
+	LG_T=$(git rev-parse HEAD)
+	_ST_RUN --exec -- git -C "$TMP/pz-lg8" commit -q --allow-empty -m "LG8 peer"
+	_ST_OUT_HAS "an exec that changed nothing says so beside a peer's move" "^git-edit: ok – refs/heads/main unchanged, moved meanwhile by another run, ${LG_T:0:7} → "
+	# A hook vetoing the landing says so where it happens, not in the trailer alone
+	printf '#!/bin/sh\n[ "$1" = prepared ] || exit 0\ngrep -q " refs/heads/main$" || exit 0\necho "LG8 frozen" >&2\nexit 1\n' > .git/hooks/reference-transaction
+	chmod +x .git/hooks/reference-transaction
+	_ST_RUN -d -y HEAD
+	_ST_EQ "a vetoed landing refuses" "$RC" "1"
+	_ST_EQ "naming the veto above the trailer too" "$(print -r -- "$OUT" | grep -c 'git refused to move main')" "2"
+	rm -f .git/hooks/reference-transaction
+	cd "$TMP/repo"
+
+	# --- 130. a caller's settings reach what runs on its behalf, and nothing else ---
+	_ST_SCENARIO "\e[1;96m[130] a caller's settings reach what runs on its behalf, and nothing else\e[0m"
+	local EV_T EV_WT
+	# A rebuilt message is written in the encoding its header names
+	_ST_PZ_NEW ev1
+	git config i18n.commitEncoding ISO-8859-1
+	_ST_PZ_C a.txt a "EV base"
+	print -rn -- $'Na\xefve top\n' > "$TMP/ev-msg"
+	print -r -- b > b.txt && git add b.txt && git commit -q -F "$TMP/ev-msg"
+	_ST_RUN -M --text "EV base reworded" HEAD~1
+	_ST_EQ "a rebuilt Latin-1 message stays Latin-1 under its header" \
+		"$RC:$(git cat-file commit HEAD | sed -n '/^$/,$p' | sed 1d | od -An -tx1 | tr -d ' \n')" "0:4e61ef766520746f700a"
+	_ST_EQ "and reads back as it was written" "$(git -c i18n.logOutputEncoding=UTF-8 log -1 --format=%s)" "Naïve top"
+	# A -M template comments as this git strips – git before 2.45 knows no core.commentString
+	_ST_PZ_NEW ev2
+	_ST_PZ_C a.txt a "EV2 a" && _ST_PZ_C b.txt b "EV2 b"
+	git config core.commentString '//'
+	printf '#!/bin/sh\n{ printf "EV2 reworded\\n"; grep -E "^(#|//)" "$1"; } > "$1.n" && mv "$1.n" "$1"\n' > "$TMP/ev-editor"
+	chmod +x "$TMP/ev-editor"
+	_ST_TTY "GIT_EDITOR=$TMP/ev-editor" -- -M HEAD~1
+	git config --unset core.commentString
+	_ST_EQ "a -M template keeps no line in the message, whichever prefix this git strips" \
+		"$RC:$(git log -1 --format=%B HEAD~1 | grep -c .)" "0:1"
+	# Commits from a detached worktree carry the identity the branch's checkout reads
+	_ST_PZ_NEW ev3
+	_ST_PZ_C a.txt a "EV3 a"
+	printf '[user]\n\temail = branch@x.invalid\n' > "$TMP/ev-onbranch.inc"
+	git config 'includeIf.onbranch:main.path' "$TMP/ev-onbranch.inc"
+	print -r -- c > c.txt
+	_ST_RUN --commit --text "EV3 c" -- c.txt
+	_ST_EQ "a --commit takes an onbranch include's identity" "$RC:$(git log -1 --format='%ae %ce')" "0:branch@x.invalid branch@x.invalid"
+	_ST_PZ_C d.txt d "EV3 d"
+	_ST_RUN -d -y HEAD~1
+	_ST_EQ "as does a drop's rebuild" "$RC:$(git log -1 --format=%ce)" "0:branch@x.invalid"
+	git config --unset 'includeIf.onbranch:main.path'
+	# A caller's own variables reach its command, whatever name the tool keeps inside
+	_ST_PZ_NEW ev4
+	_ST_PZ_C a.txt a "EV4 a"
+	TARGET=prod COMMIT=c0 S=s1 STEP=st _ST_RUN --exec -- sh -c 'printf "%s:%s:%s:%s\n" "$TARGET" "$COMMIT" "$S" "$STEP" > "$0"' "$TMP/ev-vars"
+	_ST_EQ "an --exec command gets the caller's TARGET, COMMIT, S and STEP" "$RC:$(<"$TMP/ev-vars")" "0:prod:c0:s1:st"
+	git config edit.verifyCmd 'test "$TARGET" = prod'
+	_ST_PZ_C b.txt b "EV4 b"
+	TARGET=prod _ST_RUN -d -y HEAD
+	git config --unset edit.verifyCmd
+	_ST_EQ "as does a verify check" "$RC" "0"
+	# A terminal on stdin but output piped away is no person at a prompt
+	_ST_PZ_NEW ev5
+	_ST_PZ_C a.txt a "EV5 a" && _ST_PZ_C b.txt b "EV5 b"
+	zmodload zsh/zpty
+	rm -f "$TMP/ev5-rc"
+	zpty EV5 "unset CLAUDECODE CI GIT_EDIT_ACTOR; env HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 ${(q)SELF} HEAD~1 2>&1 | cat >${(q)TMP}/ev5-out; print -r -- \${pipestatus[1]} >${(q)TMP}/ev5-rc"
+	local -i EV_W=0
+	until [ -s "$TMP/ev5-rc" ] || (( ++EV_W > 300 )); do sleep 0.1; done
+	zpty -d EV5
+	_ST_EQ "an edit with its output piped pauses as an agent's" "$(<"$TMP/ev5-rc")" "2"
+	_ST_CHECK "ending on its trailer" test "$(tail -1 "$TMP/ev5-out" | cut -c1-17)" = "git-edit: paused "
+	_ST_RUN --abort
+	# A relative hooksPath runs from the checkout at a pause's resume too – an untracked one, husky's
+	_ST_PZ_NEW ev6
+	_ST_PZ_C a.txt a "EV6 a" && _ST_PZ_C b.txt b "EV6 b"
+	mkdir -p .hk && printf '#!/bin/sh\necho ran >> "%s/ev6-hook"\n' "$TMP" > .hk/pre-commit && chmod +x .hk/pre-commit
+	printf '.hk/\n' >> .git/info/exclude
+	git config core.hooksPath .hk
+	rm -f "$TMP/ev6-hook"
+	_ST_RUN HEAD~1
+	print -r -- a2 > "$(_ST_PZ_WT)/a.txt"
+	_ST_RUN --continue
+	git config --unset core.hooksPath
+	_ST_EQ "an edit's amend runs the checkout's untracked hooks" "$RC:$(grep -c ran "$TMP/ev6-hook" 2>/dev/null)" "0:1"
+	# The output git itself prints shows a subject's control bytes inert
+	_ST_PZ_NEW ev7
+	_ST_PZ_C a.txt a "EV7 a"
+	_ST_PZ_C c.txt c "EV7 c"
+	print -r -- b > b.txt && git add b.txt && git commit -qm $'EV7 \e]0;pwned\a title'
+	_ST_RUN -d -y HEAD~1
+	_ST_EQ "no raw escape from a subject reaches the output" "$(print -r -- "$OUT" | LC_ALL=C grep -c $'\e]0;')" "0"
+	# A re-point hint for an annotated tag keeps its message
+	_ST_PZ_NEW ev8
+	_ST_PZ_C a.txt a "EV8 a" && _ST_PZ_C b.txt b "EV8 b"
+	git tag -a -m "EV8 release notes" v8 HEAD
+	_ST_PZ_C c.txt c "EV8 c"
+	_ST_RUN -d -y HEAD~2
+	_ST_OUT_HAS "an annotated tag's hint keeps its message" 'git tag -f -a -F - v8'
+	eval "$(print -r -- "$OUT" | sed -n 's/^  \(git for-each-ref .*git tag -f -a -F - v8 [0-9a-f]*\)$/\1/p')"
+	_ST_EQ "which re-points it as an annotated tag" "$(git cat-file -t v8):$(git for-each-ref --format='%(contents:subject)' refs/tags/v8)" "tag:EV8 release notes"
+	# A path a hint pastes back holds its `!` single-quoted, the cd before it too
+	mkdir -p "$TMP/ev9!dir" && cd "$TMP/ev9!dir" && git init -q -b main . && git config user.email p@x.invalid && git config user.name P
+	_ST_PZ_C a.txt a "EV9 a" && _ST_PZ_C b.txt b "EV9 b"
+	mkdir -p sub && cd sub
+	_ST_RUN -d -y HEAD~1
+	_ST_OUT_HAS "a cd a hint pastes holds its ! single-quoted" "cd '[^']*/ev9!dir' && "
+	cd "$TMP"
+	rm -rf "${TMP:?}/ev9!dir"
+	cd "$TMP/repo"
+
+	# --- 131. a resume lands only a rebuild that finished, with what was made there ---
+	_ST_SCENARIO "\e[1;96m[131] a resume lands only a rebuild that finished, with what was made there\e[0m"
+	local EG_WT EG_PID EG_T
+	# A split's own checks run apart from its authoring – a failure there restores nothing over it
+	_ST_PZ_NEW eg1
+	printf 'one\n' > f && git add f && git commit -qm "EG base"
+	printf 'one\ntwo\n' > f && print -r -- z > z && git add f z && git commit -qm "EG both"
+	_ST_RUN --split=HEAD --text "EG first"
+	EG_WT=$(_ST_PZ_WT)
+	printf 'one\n' > "${EG_WT:-$ST_NO_WT}/f"
+	_ST_RUN --continue --verify='grep -q two f'
+	_ST_EQ "a split's failed check keeps the authored first part" "$RC:$(<"${EG_WT:-$ST_NO_WT}/f")" "1:one"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "which lands as authored" "$RC:$(git show HEAD~1:f | tr '\n' ' '):$(git show HEAD:f | tr '\n' ' ')" "0:one :one two "
+	# A rebase quit by hand in the worktree lands nothing, nor one aborted there
+	_ST_PZ_NEW eg2
+	_ST_PZ_C f.txt $'1\n2\n3' "EG2 c1"
+	_ST_PZ_C f.txt $'1\n2x\n3' "EG2 c2"
+	_ST_PZ_C f.txt $'1\n2xy\n3' "EG2 c3"
+	_ST_PZ_C g.txt g "EG2 c4"
+	EG_T=$(git rev-parse HEAD)
+	_ST_RUN -d -y HEAD~2
+	git -C "$(_ST_PZ_WT)" rebase --quit >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "a drop quit by hand in its worktree lands nothing" "$RC:$(git rev-parse HEAD)" "1:$EG_T"
+	_ST_RUN --abort
+	_ST_RUN -d -y HEAD~2
+	EG_WT=$(_ST_PZ_WT)
+	_ST_RESOLVE "$EG_WT" f.txt $'1\n2y\n3'
+	GIT_EDITOR=true git -C "${EG_WT:-$ST_NO_WT}" rebase --continue >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "one finished by hand there lands" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:EG2 c4 EG2 c3 EG2 c1 "
+	EG_T=$(git rev-parse HEAD)
+	_ST_PZ_C f.txt $'1\n2z\n3' "EG2 c5"
+	_ST_PZ_C f.txt $'1\n2zz\n3' "EG2 c6"
+	EG_T=$(git rev-parse HEAD)
+	_ST_RUN -d -y HEAD~1
+	git -C "$(_ST_PZ_WT)" rebase --abort >/dev/null 2>&1
+	_ST_RUN --continue
+	_ST_EQ "a drop aborted by hand there lands nothing" "$RC:$(git rev-parse HEAD)" "1:$EG_T"
+	_ST_OUT_HAS "saying it was aborted" 'aborted by hand – nothing was applied'
+	_ST_RUN --abort
+	# Markers committed at a stop are caught as staged ones are
+	_ST_RUN -d -y HEAD~1
+	EG_WT=$(_ST_PZ_WT)
+	git -C "${EG_WT:-$ST_NO_WT}" add -A && git -C "${EG_WT:-$ST_NO_WT}" commit -qm "EG2 c6"
+	_ST_RUN --continue
+	_ST_EQ "markers committed at a stop refuse" "$RC:$(git rev-parse HEAD)" "2:$EG_T"
+	_ST_OUT_HAS "naming them" 'still contains conflict markers'
+	_ST_RUN --abort
+	# A resumed step keeps its message whole, `#`-led lines and all
+	_ST_PZ_NEW eg3
+	_ST_PZ_C f.txt $'1\n2\n3' "EG3 c1"
+	_ST_PZ_C f.txt $'1\n2x\n3' "EG3 c2"
+	print -r -- $'1\n2xy\n3' > f.txt && git add f.txt && printf 'EG3 c3\n\n#42 is fixed here\n' > "$TMP/eg3-msg" && git commit -q -F "$TMP/eg3-msg"
+	_ST_RUN -d -y HEAD~1
+	_ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'1\n2y\n3'
+	_ST_RUN --continue
+	_ST_EQ "a resumed step keeps its #-led body line" "$RC:$(git log -1 --format=%b)" "0:#42 is fixed here"
+	# Commits made on a gate pause's built result are refused, never discarded
+	_ST_PZ_NEW eg4
+	_ST_PZ_C a.txt a "EG4 a" && _ST_PZ_C b.txt b "EG4 b" && _ST_PZ_C c.txt c "EG4 c"
+	EG_T=$(git rev-parse HEAD)
+	_ST_RUN -d -y --verify=false HEAD~1
+	EG_WT=$(_ST_PZ_WT)
+	print -r -- fix > "${EG_WT:-$ST_NO_WT}/fix.txt" && git -C "${EG_WT:-$ST_NO_WT}" add fix.txt && git -C "${EG_WT:-$ST_NO_WT}" commit -qm "EG4 fix"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "a commit made on the built result refuses" "$RC:$(git rev-parse HEAD)" "1:$EG_T"
+	_ST_OUT_HAS "naming it" 'EG4 fix'
+	_ST_RUN --abort
+	# A gate cut off past an edit's amend is no authoring phase – edits made there refuse
+	_ST_PZ_NEW eg5
+	_ST_PZ_C a.txt a "EG5 a" && _ST_PZ_C b.txt b "EG5 b"
+	EG_T=$(git rev-parse HEAD)
+	_ST_RUN HEAD~1
+	EG_WT=$(_ST_PZ_WT)
+	print -r -- a2 > "${EG_WT:-$ST_NO_WT}/a.txt"
+	rm -f "$TMP/eg5-in" "$TMP/eg5-go"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue --verify="touch $TMP/eg5-in; $TMP/st-hold $TMP/eg5-go" </dev/null >/dev/null 2>&1 &
+	EG_PID=$!
+	local -i EG_W=0
+	until [ -e "$TMP/eg5-in" ] || (( ++EG_W > 1200 )); do sleep 0.1; done
+	# Released at once, as the run takes the signal only once the check it waits on is done
+	kill -INT $EG_PID 2>/dev/null
+	: > "$TMP/eg5-go"
+	wait $EG_PID 2>/dev/null
+	_ST_RUN --status
+	_ST_OUT_HAS "a gate cut off past the amend reads as built, not authoring" 'Past the amend'
+	print -r -- b2 > "${EG_WT:-$ST_NO_WT}/b.txt"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "an edit made there refuses rather than vanish" "$RC:$(git rev-parse HEAD):$(<"${EG_WT:-$ST_NO_WT}/b.txt")" "1:$EG_T:b2"
+	_ST_RUN --abort
+	# A gate pause rewritten by a replay onto a moved tip keeps its marks
+	_ST_RUN HEAD~1
+	EG_WT=$(_ST_PZ_WT)
+	print -r -- a3 > "${EG_WT:-$ST_NO_WT}/a.txt"
+	_ST_RUN --continue --verify=false
+	_ST_PZ_C p.txt p "EG5 peer"
+	_ST_RUN --continue
+	print -r -- b3 > "${EG_WT:-$ST_NO_WT}/b.txt"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "an edit at a gate pause after a re-replay refuses" "$RC:$(<"${EG_WT:-$ST_NO_WT}/b.txt")" "1:b3"
+	_ST_OUT_HAS "as a gate pause's" 'a gate pause has nothing to fold them into'
+	_ST_RUN --abort
+	# Commits made by hand on a finished replay are refused where the branch moved, never dropped
+	_ST_PZ_NEW eg6
+	_ST_PZ_C f.txt $'1\n2\n3' "EG6 c1"
+	_ST_PZ_C f.txt $'1\n2b\n3' "EG6 c2"
+	_ST_RUN HEAD~1
+	EG_WT=$(_ST_PZ_WT)
+	print -r -- $'1\n2a\n3' > "${EG_WT:-$ST_NO_WT}/f.txt"
+	_ST_RUN --continue
+	_ST_RESOLVE "$EG_WT" f.txt $'1\n2b\n3'
+	GIT_EDITOR=true git -C "${EG_WT:-$ST_NO_WT}" rebase --continue >/dev/null 2>&1
+	git -C "${EG_WT:-$ST_NO_WT}" commit -q --allow-empty -m "EG6 extra"
+	_ST_PZ_C p.txt p "EG6 peer"
+	EG_T=$(git rev-parse HEAD)
+	_ST_RUN --continue
+	_ST_EQ "a hand commit on a finished replay refuses where the branch moved" "$RC:$(git rev-parse HEAD)" "1:$EG_T"
+	_ST_OUT_HAS "naming it" 'EG6 extra'
+	_ST_RUN --abort
+	# A squash cancelling out amends under the hold-back – nothing announced before it lands
+	_ST_PZ_NEW eg7
+	_ST_PZ_C a.txt a "EG7 base"
+	_ST_PZ_C x.txt x "EG7 adds x"
+	_ST_PZ_C y.txt y "EG7 other"
+	git rm -q x.txt && git commit -qm "EG7 removes x"
+	printf '#!/bin/sh\ncat >> "%s/eg7-rewritten"\n' "$TMP" > .git/hooks/post-rewrite && chmod +x .git/hooks/post-rewrite
+	rm -f "$TMP/eg7-rewritten"
+	# Apart, so the squash runs as a rebase, its fold amended empty
+	_ST_RUN -s="$(git rev-parse HEAD~2)" -y --verify=false HEAD
+	_ST_OUT_HAS "the squashed commits cancel out" 'cancel each other out' 
+	_ST_RUN --abort
+	_ST_CHECK "a cancelled-out squash announces no rewrite it never landed" test ! -s "$TMP/eg7-rewritten"
+	rm -f .git/hooks/post-rewrite
+	cd "$TMP/repo"
+
+	# --- 132. a terminal prompt answers only its own pause, and the checkout keeps every edit ---
+	_ST_SCENARIO "\e[1;96m[132] a terminal prompt answers only its own pause, and the checkout keeps every edit\e[0m"
+	local TP_WT TP_T TP_PID TP_GD
+	# A conflict no markers tell – a binary's – takes Enter only once confirmed, as git left it
+	_ST_PZ_NEW tp1
+	_ST_PZ_C a.txt a "TP base"
+	printf 'b\0one' > b.bin && git add b.bin && git commit -qm "TP b1"
+	printf 'b\0two' > b.bin && git commit -qam "TP b2"
+	printf 'b\0three' > b.bin && git commit -qam "TP b3"
+	_ST_TTY_START -- -d -y HEAD~1
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'Nothing tells a resolution of b.bin' && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "Enter on a binary conflict asks again rather than take git's side" "$RC:$(git -C "$(_ST_PZ_WT)" ls-files -u -- b.bin | wc -l | tr -d ' ')" "2:3"
+	_ST_RUN --abort
+	# Keys typed ahead answer no prompt not yet shown
+	_ST_TTY_START -- -d HEAD~1
+	if _ST_TTY_AT 'Press Enter to confirm'; then
+		zpty -wn ST_TTY $'\r\r'
+		_ST_TTY_AT 'Resolve the conflicts in' && { sleep 0.5; zpty -wn ST_TTY q; }
+	fi
+	_ST_TTY_END
+	_ST_EQ "an Enter typed ahead of a conflict's prompt answers nothing" "$RC" "2"
+	_ST_OUT_LACKS "staging nothing" 'Staged as resolved'
+	_ST_RUN --abort
+	# A prompt left waiting acts on no pause another run took the slot with meanwhile
+	_ST_PZ_NEW tp2
+	_ST_PZ_C a.txt a "TP2 a" && _ST_PZ_C b.txt b "TP2 b"
+	_ST_TTY_START -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		_ST_RUN --abort
+		_ST_RUN HEAD~1
+		TP_WT=$(_ST_PZ_WT)
+		print -r -- mine > "${TP_WT:-$ST_NO_WT}/a.txt"
+		zpty -wn ST_TTY $'\e'
+		_ST_TTY_AT 'Press Escape again' && zpty -wn ST_TTY $'\e'
+	fi
+	_ST_TTY_END
+	_ST_EQ "a stale prompt cancels nothing" "$RC" "1"
+	_ST_OUT_HAS "saying the pause is gone" 'no longer pending'
+	_ST_CHECK "the other run's pause stands, what was authored there too" grep -qx mine "${TP_WT:-$ST_NO_WT}/a.txt"
+	_ST_RUN --abort
+	# Escape, then any other key, goes back to the prompt
+	_ST_TTY_START -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		zpty -wn ST_TTY $'\e'
+		_ST_TTY_AT 'Press Escape again' && zpty -wn ST_TTY x
+		_ST_TTY_AT 'Not cancelled' && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "Escape then another key cancels nothing" "$RC" "2"
+	_ST_CHECK "the pause stays" test -d "$(_ST_PZ_WT)"
+	# Ctrl-C at the prompt leaves the pause and says so, as q does
+	_ST_TTY_START -- --continue
+	if _ST_TTY_AT 'Make your changes in'; then
+		zpty -wn ST_TTY $'\003'
+	fi
+	_ST_TTY_END
+	_ST_EQ "Ctrl-C at the prompt leaves the pause" "$RC" "130"
+	_ST_OUT_HAS "saying so, as q does" 'Left paused – resume with'
+	_ST_RUN --abort
+	# Markers at a configured size keep a file unstaged at Enter
+	_ST_PZ_NEW tp3
+	print -r -- '*.adoc conflict-marker-size=9' > .gitattributes && git add .gitattributes
+	_ST_PZ_C f.adoc $'l1\nl2\nl3' "TP3 c1"
+	_ST_PZ_C f.adoc $'l1\nX2\nl3' "TP3 c2"
+	_ST_PZ_C f.adoc $'l1\nXY2\nl3' "TP3 c3"
+	_ST_TTY_START -- -d -y HEAD~1
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'Resolve the conflicts in' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_OUT_LACKS "Enter stages no file still holding markers of its configured size" 'Staged as resolved: f.adoc'
+	_ST_OUT_HAS "asking again" 'Conflict continues'
+	_ST_RUN --abort
+	# A squash's -m editor quit with an error abandons the squash
+	_ST_PZ_NEW tp4
+	_ST_PZ_C a.txt a "TP4 a" && _ST_PZ_C b.txt b "TP4 b" && _ST_PZ_C c.txt c "TP4 c" && _ST_PZ_C d.txt d "TP4 d"
+	TP_T=$(git rev-parse HEAD)
+	printf '#!/bin/sh\nexit 1\n' > "$TMP/tp-editor-fail" && chmod +x "$TMP/tp-editor-fail"
+	# Apart, so the squash runs as a rebase, its fold opening the editor
+	_ST_TTY "GIT_EDITOR=$TMP/tp-editor-fail" -- -s="$(git rev-parse HEAD~2)" -m -y HEAD
+	_ST_EQ "a squash whose -m editor fails lands nothing" "$RC:$(git rev-parse HEAD)" "1:$TP_T"
+	# An editor runs in the caller's own environment, git-edit's config pins out of it
+	printf '#!/bin/sh\nprintf "%%s\\n" "$GIT_CONFIG_PARAMETERS" > "%s/tp-editor-env"\nprintf "TP4 squashed\\n" > "$1"\n' "$TMP" > "$TMP/tp-editor-env.sh"
+	chmod +x "$TMP/tp-editor-env.sh"
+	rm -f "$TMP/tp-editor-env"
+	_ST_TTY "GIT_EDITOR=$TMP/tp-editor-env.sh" -- -s="$(git rev-parse HEAD~2)" -m -y HEAD
+	_ST_EQ "a squash's -m editor runs" "$RC:$(git log -1 --format=%s HEAD~1)" "0:TP4 squashed"
+	_ST_CHECK "without git-edit's config pins" sh -c "test -e '$TMP/tp-editor-env' && ! grep -q maintenance.auto '$TMP/tp-editor-env'"
+	rm -f "$TMP/tp-editor-env"
+	_ST_TTY "GIT_EDITOR=$TMP/tp-editor-env.sh" -- -s="$(git rev-parse HEAD~1)" -m -y HEAD
+	_ST_CHECK "as on the squash rebuilt apart from a rebase" sh -c "test -e '$TMP/tp-editor-env' && ! grep -q maintenance.auto '$TMP/tp-editor-env'"
+	mkdir -p "$TMP/tp-bin"
+	printf '#!/bin/sh\nprintf "%%s\\n" "$GIT_CONFIG_PARAMETERS" > "%s/tp-gui-env"\n' "$TMP" > "$TMP/tp-bin/code"
+	chmod +x "$TMP/tp-bin/code"
+	rm -f "$TMP/tp-gui-env"
+	_ST_TTY_START "GIT_EDITOR=code" "PATH=$TMP/tp-bin:$PATH" -- HEAD~1
+	if _ST_TTY_AT 'opens it in VS Code'; then
+		zpty -wn ST_TTY ' '
+		local -i TP_W=0
+		until [ -e "$TMP/tp-gui-env" ] || (( ++TP_W > 100 )); do sleep 0.1; done
+		zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_CHECK "nor does a GUI editor opened at the prompt" sh -c "test -e '$TMP/tp-gui-env' && ! grep -q maintenance.auto '$TMP/tp-gui-env'"
+	_ST_RUN --abort
+	# The sync leaves no staged revert where it can't merge – a binary's edits stay as changes to it
+	_ST_PZ_NEW tp5
+	_ST_PZ_C a.txt a "TP5 base"
+	printf 'b\0one' > b.bin && git add b.bin && git commit -qm "TP5 b1"
+	printf 'b\0two' > b.bin && git commit -qam "TP5 b2"
+	_ST_PZ_C c.txt c "TP5 c"
+	printf 'b\0mine' > b.bin
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a binary's edits stay unstaged, its entry what landed" "$RC:$(git diff --cached --name-only):$(git status --porcelain -- b.bin)" "0:: M b.bin"
+	_ST_OUT_HAS "named as kept" 'Your edits stay as they were, now changes to what landed'
+	git checkout -q -- b.bin
+	# An entry flagged assume-unchanged hides edits the sync merges, never overwrites
+	_ST_PZ_NEW tp6
+	_ST_PZ_C f.txt $'1\n2\n3\n4\n5\n6\n7\n8' "TP6 c1"
+	_ST_PZ_C f.txt $'1\n2x\n3\n4\n5\n6\n7\n8' "TP6 c2"
+	_ST_PZ_C g.txt g "TP6 g"
+	git update-index --assume-unchanged f.txt
+	print -r -- $'1\n2x\n3\n4\n5\n6\n7\n8 mine' > f.txt
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a hidden edit is merged onto what landed" "$RC:$(tr '\n' ' ' < f.txt)" "0:1 2 3 4 5 6 7 8 mine "
+	git update-index --no-assume-unchanged f.txt; git checkout -q -- f.txt
+	# A locked index is named with the command for once it is free, never as a change while it ran
+	_ST_PZ_C h.txt h1 "TP6 h1"
+	_ST_PZ_C h.txt h2 "TP6 h2"
+	TP_GD=$(git rev-parse --absolute-git-dir)
+	printf '#!/bin/sh\n[ "$1" = committed ] || exit 0\ngrep -q " refs/heads/main$" || exit 0\n: > "%s/index.lock"\n' "$TP_GD" > .git/hooks/reference-transaction
+	chmod +x .git/hooks/reference-transaction
+	_ST_TTY -- -d -y HEAD
+	rm -f .git/hooks/reference-transaction "$TP_GD/index.lock"
+	_ST_OUT_HAS "a locked index is named with the restore for later" 'Take what landed once it is free'
+	_ST_OUT_LACKS "never as a change while it ran" 'changed while it ran'
+	git restore -q --source=HEAD --staged --worktree -- h.txt
+	# A rename the carry can't take lands its destination all the same, a file standing there kept
+	_ST_PZ_NEW tp7
+	_ST_PZ_C a.txt a "TP7 base"
+	print -l {1..10} > b && git add b && git commit -qm "TP7 adds b"
+	git mv b a2 && git commit -qm "TP7 renames b"
+	_ST_PZ_C c.txt c "TP7 c"
+	print -l {1..10} mine > a2
+	print -r -- scratch > b
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a rename's destination reaches the index where the carry can't" "$RC:$(git status --porcelain | sort | tr '\n' '|')" "0: M b|?? a2|"
+	rm -f a2; git checkout -q -- b
+	# A removal staged by hand stays staged, the file untracked
+	_ST_PZ_NEW tp8
+	_ST_PZ_C f.txt $'1\n2\n3' "TP8 c1"
+	_ST_PZ_C f.txt $'1\n2x\n3' "TP8 c2"
+	_ST_PZ_C g.txt g "TP8 g"
+	git rm -q --cached f.txt
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a staged removal stays staged, the file untracked" "$RC:$(git status --porcelain -- f.txt | sort | tr '\n' '|')" "0:?? f.txt|D  f.txt|"
+	cd "$TMP/repo"
+
+
+	# --- 133. each branch of a pause's resume and the checkout's sync does what it says ---
+	_ST_SCENARIO "\e[1;96m[133] each branch of a pause's resume and the checkout's sync does what it says\e[0m"
+	local SG_WT SG_T SG_N
+	# A resume from inside the pause's worktree is no person at the checkout – it gets the hints
+	_ST_PZ_NEW sg1
+	_ST_PZ_C a.txt a "SG a" && _ST_PZ_C b.txt b "SG b"
+	_ST_RUN HEAD~1
+	SG_WT=$(_ST_PZ_WT)
+	print -r -- a2 > "${SG_WT:-$ST_NO_WT}/a.txt"
+	cd "${SG_WT:-$ST_NO_WT}"
+	_ST_TTY -- --continue
+	cd "$TMP/pz-sg1"
+	_ST_EQ "a terminal resume from the pause's worktree lands" "$RC:$(git show HEAD~1:a.txt)" "0:a2"
+	_ST_EQ "leaving the checkout, which is no caller's own there" "$(<a.txt)" "a"
+	_ST_OUT_HAS "with its hints" 'checkout still holds the'
+	git checkout -q -- .
+	# Nor is a checkout halfway through a rebase brought along
+	_ST_RUN HEAD~1
+	SG_WT=$(_ST_PZ_WT)
+	print -r -- a3 > "${SG_WT:-$ST_NO_WT}/a.txt"
+	GIT_SEQUENCE_EDITOR="sed -i.bak '1i\\
+break
+'" git rebase -q -i HEAD~1 >/dev/null 2>&1
+	_ST_TTY -- --continue
+	_ST_OUT_HAS "a checkout mid-rebase stays as it was" 'halfway through a rebase'
+	git rebase --abort >/dev/null 2>&1
+	git checkout -q -- .
+	# A merged file keeps the executable bit the checkout gave it, set or cleared
+	_ST_PZ_NEW sg2
+	print -l 1 2 3 4 5 6 > x.sh && print -l 1 2 3 4 5 6 > n.sh && chmod +x n.sh && git add x.sh n.sh && git commit -qm "SG2 base"
+	print -l 1 2x 3 4 5 6 > x.sh && print -l 1 2x 3 4 5 6 > n.sh && git commit -qam "SG2 change"
+	_ST_PZ_C g.txt g "SG2 g"
+	print -l 1 2x 3 4 5 6m > x.sh && chmod +x x.sh
+	print -l 1 2x 3 4 5 6m > n.sh && chmod -x n.sh
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a merge keeps a +x the checkout set" "$RC:$(test -x x.sh && echo x):$(tr '\n' ' ' < x.sh)" "0:x:1 2 3 4 5 6m "
+	_ST_CHECK "and a -x it cleared" test ! -x n.sh
+	git checkout -q -- . 2>/dev/null; chmod -x x.sh; chmod +x n.sh
+	# A file deleted in the checkout stays deleted, its entry taking what landed
+	_ST_PZ_NEW sg3
+	_ST_PZ_C f.txt $'1\n2\n3' "SG3 c1" && _ST_PZ_C f.txt $'1\n2x\n3' "SG3 c2" && _ST_PZ_C g.txt g "SG3 g"
+	rm f.txt
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a deletion in the checkout stays, unstaged, against what landed" "$RC:$(git status --porcelain -- f.txt):$(git diff --cached --name-only)" "0: D f.txt:"
+	git checkout -q -- f.txt
+	# A path the rewrite adds that the caller staged a version of their own for stays theirs
+	_ST_PZ_NEW sg4
+	_ST_PZ_C base.txt b "SG4 base"
+	_ST_PZ_C n.txt n "SG4 adds n"
+	git rm -q n.txt && git commit -qm "SG4 removes n"
+	_ST_PZ_C g.txt g "SG4 g"
+	print -r -- mine > n.txt && git add n.txt
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a staged version of a path the rewrite adds stays staged" "$RC:$(git show :n.txt)" "0:mine"
+	_ST_OUT_HAS "named" 'you staged your own version'
+	git rm -q --cached n.txt; rm -f n.txt; git checkout -q -- . 2>/dev/null
+	# A path that lands below one the checkout keeps waits with it – the kept file stays whole
+	_ST_PZ_NEW sg5
+	_ST_PZ_C base.txt b "SG5 base"
+	_ST_PZ_C x x "SG5 file x"
+	git rm -q x && mkdir x && print -r -- y > x/y.txt && git add x/y.txt && git commit -qm "SG5 dir x"
+	_ST_PZ_C g.txt g "SG5 g"
+	git rm -rq x && print -r -- mine > x && git add x && git commit -qm "SG5 file x again"
+	print -r -- edited > x
+	_ST_TTY -- -d -y HEAD
+	_ST_EQ "a file the checkout edits stays whole where a directory lands" "$RC:$(<x)" "0:edited"
+	_ST_OUT_HAS "named as standing there" 'x/y.txt – your file x stands where its directory goes'
+	rm -f x; git checkout -q -- . 2>/dev/null
+	# Ctrl-D at the prompt leaves the pause, as q does
+	_ST_PZ_NEW sg6
+	_ST_PZ_C a.txt a "SG6 a" && _ST_PZ_C b.txt b "SG6 b"
+	_ST_TTY_START -- HEAD~1
+	_ST_TTY_AT 'Make your changes in' && zpty -wn ST_TTY $'\004'
+	_ST_TTY_END
+	_ST_EQ "Ctrl-D leaves the pause" "$RC" "2"
+	_ST_OUT_HAS "saying so" 'Left paused – resume with'
+	_ST_RUN --abort
+	# Enter takes a deletion and a link's new target as the resolution they are
+	_ST_PZ_NEW sg7
+	_ST_PZ_C f.txt $'1\n2\n3' "SG7 c1" && _ST_PZ_C f.txt $'1\n2x\n3' "SG7 c2"
+	git rm -q f.txt && git commit -qm "SG7 removes f"
+	_ST_PZ_C g.txt g "SG7 g"
+	_ST_TTY_START -- -d -y HEAD~2
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		rm -f "$(_ST_PZ_WT)/f.txt"
+		zpty -wn ST_TTY $'\r'
+	fi
+	_ST_TTY_END
+	_ST_EQ "a deletion resolved at Enter lands as one" "$RC:$(git cat-file -e HEAD:f.txt 2>/dev/null && echo kept || echo gone)" "0:gone"
+	_ST_PZ_NEW sg8
+	_ST_PZ_C a.txt a "SG8 base"
+	ln -s t1 l && git add l && git commit -qm "SG8 link t1"
+	ln -sfn t2 l && git commit -qam "SG8 link t2"
+	ln -sfn t3 l && git commit -qam "SG8 link t3"
+	_ST_TTY_START -- -d -y HEAD~1
+	if _ST_TTY_AT 'Resolve the conflicts in'; then
+		ln -sfn t9 "$(_ST_PZ_WT)/l"
+		zpty -wn ST_TTY $'\r'
+	fi
+	_ST_TTY_END
+	_ST_EQ "a link re-pointed at a conflict lands at Enter" "$RC:$(git cat-file -p HEAD:l)" "0:t9"
+	# A copy run as `zsh git-edit`, never executable itself, resumes the same way
+	_ST_PZ_NEW sg9
+	_ST_PZ_C a.txt a "SG9 a" && _ST_PZ_C b.txt b "SG9 b"
+	cp "$SELF" "$TMP/sg-copy" && chmod -x "$TMP/sg-copy"
+	cp "${SELF:h}/selftest.zsh" "$TMP/selftest.zsh" 2>/dev/null
+	rm -f "$TMP/tty-out" "$TMP/tty-rc"; : > "$TMP/tty-out"
+	zpty ST_TTY "unset CLAUDECODE CI GIT_EDIT_ACTOR GIT_CONFIG_PARAMETERS; env HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 NO_COLOR=1 PAGER=cat zsh ${(q)TMP}/sg-copy HEAD~1 2>&1; print -r -- \$? >${(q)TMP}/tty-rc"
+	if _ST_TTY_AT 'Make your changes in'; then
+		print -r -- a2 > "$(_ST_PZ_WT)/a.txt"
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	_ST_EQ "a non-executable copy resumes through zsh" "$RC:$(git show HEAD~1:a.txt)" "0:a2"
+	# The resume carries the caller's own settings on, leaving no temp file of the run it replaced
+	git config edit.verifyCmd 'test "$GIT_DIFF_OPTS" = --unified=5'
+	SG_N=$(command find "$TMP/tmp" -maxdepth 1 -type f -name 'git-edit-*' 2>/dev/null | wc -l | tr -d ' ')
+	_ST_TTY_START "GIT_DIFF_OPTS=--unified=5" "TMPDIR=$TMP/tmp" -- HEAD~1
+	if _ST_TTY_AT 'Make your changes in'; then
+		print -r -- a3 > "$(_ST_PZ_WT)/a.txt"
+		zpty -wn ST_TTY $'\r'
+		_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+	fi
+	_ST_TTY_END
+	git config --unset edit.verifyCmd
+	_ST_EQ "a resume at Enter keeps the caller's GIT_DIFF_OPTS for its gate" "$RC:$(git show HEAD~1:a.txt)" "0:a3"
+	_ST_EQ "and leaves no temp file of the run it replaced" "$(command find "$TMP/tmp" -maxdepth 1 -type f -name 'git-edit-*' 2>/dev/null | wc -l | tr -d ' ')" "$SG_N"
+	# A resumed drop refuses where the branch moved during the resolution
+	_ST_PZ_NEW sg10
+	_ST_PZ_C f.txt $'1\n2\n3' "SG10 c1" && _ST_PZ_C f.txt $'1\n2x\n3' "SG10 c2" && _ST_PZ_C f.txt $'1\n2xy\n3' "SG10 c3"
+	_ST_RUN -d -y HEAD~1
+	_ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'1\n2y\n3'
+	_ST_PZ_C p.txt p "SG10 peer"
+	SG_T=$(git rev-parse HEAD)
+	_ST_RUN --continue
+	_ST_EQ "a resumed drop refuses a branch moved meanwhile" "$RC:$(git rev-parse HEAD)" "1:$SG_T"
+	_ST_OUT_HAS "keeping the resolution" 'Your resolution is intact in'
+	_ST_RUN --abort
+	# A commit the drop leaves empty is named
+	_ST_PZ_NEW sg11
+	_ST_PZ_C base.txt b "SG11 base"
+	_ST_PZ_C x.txt x "SG11 adds x"
+	git rm -q x.txt && git commit -qm "SG11 removes x"
+	_ST_PZ_C g.txt g "SG11 g"
+	_ST_RUN -d -y HEAD~2
+	_ST_OUT_HAS "a commit the drop empties is named" 'left empty by the drop were dropped'
+	# An edit's --text after its amend refuses, as do commits at the stop with edits beside them
+	_ST_PZ_NEW sg12
+	_ST_PZ_C a.txt a "SG12 a" && _ST_PZ_C b.txt b "SG12 b"
+	_ST_RUN HEAD~1
+	print -r -- a2 > "$(_ST_PZ_WT)/a.txt"
+	_ST_RUN --continue --verify=false
+	_ST_RUN --continue --text "SG12 late"
+	_ST_EQ "--text past the amend refuses" "$RC" "1"
+	_ST_OUT_HAS "saying where it belonged" 'takes effect at the amend, which is past'
+	_ST_RUN --abort
+	_ST_RUN HEAD~1
+	SG_WT=$(_ST_PZ_WT)
+	print -r -- a3 > "${SG_WT:-$ST_NO_WT}/a.txt" && git -C "${SG_WT:-$ST_NO_WT}" commit -qam "SG12 at the stop"
+	print -r -- a4 > "${SG_WT:-$ST_NO_WT}/a.txt"
+	_ST_RUN --continue
+	_ST_EQ "commits at the stop with edits beside them refuse" "$RC" "1"
+	_ST_OUT_HAS "naming both" 'Commits were made at the stop, with changes beside them still uncommitted'
+	_ST_RUN --abort
+	# A pause reads as landed only where its own run's move put the branch at its worktree's `HEAD`
+	_ST_PZ_NEW sg13
+	_ST_PZ_C a.txt a "SG13 a" && _ST_PZ_C b.txt b "SG13 b"
+	_ST_RUN HEAD~1
+	SG_WT=$(_ST_PZ_WT)
+	print -r -- a2 > "${SG_WT:-$ST_NO_WT}/a.txt"
+	# A peer's landing, journaled, from the tip the pause read – a pause blocks a --commit itself
+	SG_T=$(git rev-parse HEAD)
+	_ST_PZ_C p.txt p "SG13 peer"
+	printf '%s refs/heads/main %s %s commit\tsg-peer\n' "$(date +%s)" "$SG_T" "$(git rev-parse HEAD)" >> .git/git-edit-journal
+	_ST_RUN --continue
+	_ST_OUT_LACKS "a peer's landing from the same tip is no landing of the pause" 'had landed already'
+	_ST_EQ "which lands onto it" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:SG13 peer SG13 b SG13 a "
+	_ST_RUN HEAD~2
+	SG_WT=$(_ST_PZ_WT)
+	git update-ref refs/heads/main "$(git -C "${SG_WT:-$ST_NO_WT}" rev-parse HEAD)"
+	git reset -q --hard
+	_ST_RUN --continue
+	_ST_OUT_LACKS "nor is a branch reset to the paused commit" 'had landed already'
+	_ST_RUN --abort
+	# A file another caller added empty holds no lines a caller's own could keep
+	_ST_PZ_NEW sg14
+	_ST_PZ_C base.txt b "SG14 base"
+	: > e.txt
+	GIT_EDIT_ACTOR=sg-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "SG14 peer adds empty" -- e.txt </dev/null >/dev/null 2>&1
+	print -r -- filled > e.txt
+	GIT_EDIT_ACTOR=sg-self _ST_RUN --commit --text "SG14 fills" -- e.txt
+	_ST_EQ "a file another caller added empty takes edits on it" "$RC:$(git log -1 --format=%s)" "0:SG14 fills"
+	cd "$TMP/repo"
+
+
+	# --- 134. a file carrying a conflict is never taken whole, nor written into by a terminal's sync ---
+	_ST_SCENARIO "\e[1;96m[134] a file carrying a conflict is never taken whole, nor written into by a sync\e[0m"
+	local MK_T
+	_ST_PZ_NEW mk1
+	_ST_PZ_C f.txt $'1\n2\n3' "MK base" && MK_T=$(git rev-parse HEAD)
+	print -r -- $'1\n<<<<<<< ours\n2a\n=======\n2b\n>>>>>>> theirs\n3' > f.txt
+	_ST_RUN --commit --text "MK markers" -- f.txt
+	_ST_EQ "--commit refuses a file carrying conflict markers" "$RC:$(git rev-parse HEAD)" "1:$MK_T"
+	_ST_OUT_HAS "naming it" 'Conflict markers in 1 file(s) taken whole – nothing landed: f.txt'
+	_ST_RUN --amend-into="$MK_T" --whole -- f.txt
+	_ST_EQ "as does a --whole fold" "$RC:$(git rev-parse HEAD)" "1:$MK_T"
+	# Lines the tip already holds are the file's own, as is an underline of seven `=` alone
+	print -r -- $'1\n<<<<<<< ours\n2a\n=======\n2b\n>>>>>>> theirs\n3' > f.txt
+	git add f.txt && git commit -qm "MK markers as content"
+	print -r -- $'1\n<<<<<<< ours\n2a\n=======\n2b\n>>>>>>> theirs\n3\n4' > f.txt
+	print -r -- $'Title\n=======\ntext' > t.md
+	_ST_RUN --commit --text "MK edits beside" -- f.txt t.md
+	_ST_EQ "markers the tip holds already, and a heading's underline, land" "$RC:$(git log -1 --format=%s)" "0:MK edits beside"
+	# A larger marker size makes them content, as `git diff --check` reads it
+	print -r -- 'g.txt conflict-marker-size=32' > .gitattributes && git add .gitattributes && git commit -qm "MK attrs"
+	print -r -- $'<<<<<<< a\nx\n>>>>>>> b' > g.txt
+	_ST_RUN --commit --text "MK fixture" -- g.txt
+	_ST_EQ "markers below a file's conflict-marker-size are its content" "$RC:$(git log -1 --format=%s)" "0:MK fixture"
+	# A rename the carry can't merge cleanly lands its new path, the edits left at the old one
+	_ST_PZ_NEW mk2
+	_ST_PZ_C base.txt b "MK2 base"
+	print -l 1 2 3 4 5 6 7 8 > r && git add r && git commit -qm "MK2 adds r"
+	git mv r s && print -l 1 2x 3 4 5 6 7 8 > s && git add s && git commit -qm "MK2 renames r"
+	_ST_PZ_C c.txt c "MK2 c"
+	print -l 1 2y 3 4 5 6 7 8 > s
+	_ST_TTY -- -d -y HEAD~1
+	_ST_EQ "a rename conflicting with edits lands its new path, the edits untracked at the old" \
+		"$RC:$(git status --porcelain | sort | tr '\n' '|'):$(sed -n 2p r):$(sed -n 2p s)" "0:?? s|:2:2y"
 	cd "$TMP/repo"
 
 	# --- Summary ---

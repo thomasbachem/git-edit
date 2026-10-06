@@ -55,18 +55,24 @@ until the final CAS lands \(em so a failure or
 .B \-\-abort
 leaves your staged changes exactly as they were, with nothing to roll back.
 .IP \(bu 3
-In non\-interactive contexts (stdin is not a TTY, or
-.B CI
-or
+An edit, drop or squash runs in a temporary worktree of its own too, or the
+.B \-C
+path, reading the config the branch's checkout reads \(em an
+.B onbranch
+include's identity or signing key, a relative
+.B core.hooksPath
+whose untracked hooks only the checkout has, as husky's \(em through an
+.B includeIf
+only this repository's git dirs read. At a terminal \(em stdin and stdout a
+TTY, with none of
+.BR CI ,
 .B CLAUDECODE
-is set, e.g. an agent) the modes that would otherwise touch the working tree
-auto\-isolate into a unique temporary worktree \(em and so do they at a
-terminal where a verify gate is configured, since only a worktree run can be
-gated, or where
-.B status.showUntrackedFiles=no
-hides untracked files, which a run in place would stash every one of.
-Otherwise an edit, drop or squash at a terminal runs in place, stashing
-and restoring uncommitted work around the rebase.
+or
+.B GIT_EDIT_ACTOR
+set \(em a pause asks rather than exits, and a run that lands brings the
+checkout along; elsewhere, an agent's run say, the checkout is left as it was,
+with the hints that reconcile it. See
+.BR "TERMINAL RUNS" .
 .IP \(bu 3
 Output carries blank\-line padding only when stdout is a terminal. Piped or
 captured it comes out tight \(em same lines, no padding \(em so even a
@@ -137,11 +143,8 @@ It needs git 2.31 or later and refuses an older one outright, since below
 that some of its checks would read as off rather than fail. Every mode needs a
 checked\-out branch but
 .BR \-M ,
-.BR \-S ,
-a split by pathspec and an edit, drop or squash run in place, which move a
-detached
-.B HEAD
-too.
+.B \-S
+and a split by pathspec.
 .B \-h
 and
 .B \-\-version
@@ -171,17 +174,18 @@ a range \fIA\fB..\fIB\fR, which includes both its ends, unlike git's own.
 .B \-e, \-\-edit
 Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
 replays the descendants. Naming the mode refuses a second \fIcommit\fR, which
-the bare form reads as a squash. Without a TTY the pause becomes a
+the bare form reads as a squash. The pause holds a worktree checked out at the
+commit, named by a
 .B paused
-trailer naming an isolated worktree checked out at the commit \(em edit files
-there (clean of any main\-checkout WIP), then
+trailer \(em edit files there (clean of any main\-checkout WIP), then
 .B git edit \-\-continue
 (optionally with
 .B \-\-text
 to also reword) amends, replays, prints the net history change, and
-CAS\-applies. The branch never moves before the final apply. The edit was
-authored in that worktree, so the main checkout is left holding the pre\-edit
-content; the affected paths and a targeted
+CAS\-applies, or press Enter at a terminal's prompt. The branch never moves
+before the final apply. The edit was authored in that worktree, so outside a
+terminal the main checkout is left holding the pre\-edit content; the affected
+paths and a targeted
 .B git\-restore
 command are printed. That restore is an offer \(em it discards whatever the
 rewrite left in those paths, which for an edit that removed content is the work
@@ -223,11 +227,14 @@ A stale SHA resolves by patch id. A commit whose own message contains a
 line is refused (that line is the record separator) \(em reword it singly.
 .TP
 .B \-d, \-\-drop
-Delete one or more \fIcommit\fRs or ranges. Run isolated, the checkout is not
-touched, so the dropped content stays there as uncommitted work \(em keep it,
-or discard it with the
-.B git\-restore
-command printed. Run in place at a terminal, it goes with the commit.
+Delete one or more \fIcommit\fRs or ranges. At a terminal the dropped content
+leaves the checkout with the commit, edits of yours on it kept. Outside one the
+checkout is not touched, so the content stays there as uncommitted work,
+unstaged \(em as staged, a fold of everything staged would land it again.
+Keep it, or discard it with the command printed, which leaves out a file
+holding edits of its own on that content, naming
+.B \-\-carry
+for it instead. Dropping every commit of the branch refuses.
 .TP
 .B \-s, \-\-squash
 Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
@@ -240,8 +247,8 @@ contiguous, merge\-free range whose target is the oldest commit.
 Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
 .B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
-Fold the currently\-staged changes into \fIsha\fR via fixup + autosquash in an
-isolated worktree. A \fIpathspec\fR narrows the fold to those staged paths and
+Fold the currently\-staged changes into \fIsha\fR in an isolated worktree, as a
+fixup placed beside it. A \fIpathspec\fR narrows the fold to those staged paths and
 leaves the rest staged \(em worth using when the index may hold more than you
 mean to fold, since a parallel session can stage into it between your
 .BR git\-add (1)
@@ -306,9 +313,18 @@ Handed over as a commit on
 .BR HEAD ,
 it pins the tip it was composed on, and a tip that moved since is refused
 rather than have the diff carry a newer commit's reversal; a bare tree
-carries no such pin. The shared index is neither read nor written \(em its
+carries no such pin, and is checked against other callers' landings instead.
+The shared index is neither read nor written \(em its
 entries are reconciled afterwards as any rewrite's are, re\-synced where they
 still hold the pre\-op tip and named where they do not.
+.IP
+A fold of what is staged is guarded as
+.B \-\-commit
+is, reading the staging once for the guard and the fold alike: staged before
+another caller's landing, it would take that landing back where the fold
+rebuilds those files as staged, so it refuses, naming the
+.B "git restore \-\-staged"
+that takes what landed instead.
 .IP
 .B \-\-text
 also rewords \fIsha\fR in the same run \(em
@@ -426,12 +442,20 @@ landed as
 .B \-\-exec
 lands its result: the repo's hooks run on it whatever
 .B \-\-no\-verify
-says, as does
-.BR edit.verifyCmd ,
-the branch moves only from the tip the files were composed on, and the
+says,
+.B edit.verifyCmd
+unless
+.B \-\-no\-verify
+skips it, the branch moves only from the tip the files were composed on, and the
 journal and reflog name the caller. A file\-mode change refuses unless
 .B \-\-allow\-mode\-change
-says it is meant.
+says it is meant, and a file carrying a conflict its tip version lacks \(em an
+opening and a closing marker line at its
+.B conflict\-marker\-size
+\(em refuses whoever left it there; a larger marker size in
+.B .gitattributes
+makes such lines a file's content, as for
+.BR "git diff \-\-check" .
 .IP
 In a checkout other callers share, a rewrite one of them lands \(em a drop, a
 fold built elsewhere \(em changes a file at the tip without passing through
@@ -465,10 +489,9 @@ Run any \fIcommand\fR (e.g. a raw
 .BR "git rebase" )
 inside a fresh temporary worktree; the branch ref is CAS\-updated only if
 \fIcommand\fR moved HEAD. The escape hatch for cases the other modes do not
-cover. A commit it makes runs the repo's hooks \(em under a relative
+cover. A commit it makes runs the repo's hooks, a relative
 .B core.hooksPath
-from the checkout, as the worktree lacks an untracked hooks directory such
-as husky's.
+read from the checkout as every mode's worktree reads it.
 .IP
 The pushed guard runs on the result here, since a wrapped \fIcommand\fR's
 targets are its own: a remote\-tracking ref that was an ancestor of the old tip
@@ -566,11 +589,10 @@ subject: where a reword or a squash drops a body the new message does not
 restate, the run names it and the commit it is still readable at.
 .TP
 .B \-C, \-\-dir\fR[=\fIpath\fR]
-Run the rebase in a separate worktree (default:
+Name the worktree an edit, drop or squash runs in (default:
 .IR <repo> .git\-edit)
-so it does not touch the main checkout. Enabled automatically in
-non\-interactive contexts, and wherever a verify gate is configured. A
-worktree that exists already is reused only detached and clean \(em one
+in place of a temporary one, which then stays after the run for the next to
+reuse. A worktree that exists already is reused only detached and clean \(em one
 holding a branch or tracked changes refuses, and under a gate so does one
 holding untracked files, which the check would run over \(em in the default
 path, which this tool manages, they are removed instead.
@@ -606,10 +628,14 @@ asked for.
 .B \-\-allow\-other\-actor
 Let
 .B \-\-undo
-take back a run another
+take back a run, or
+.B \-\-continue
+and
+.B \-\-abort
+take on a pause, another
 .B GIT_EDIT_ACTOR
 caller made \(em a parallel session's, or one of your own under another
-label.
+label. A resume journals under the pause's own label.
 .TP
 .B \-\-tree=\fItree\-ish\fR
 With
@@ -617,7 +643,8 @@ With
 fold \fItree\-ish\fR's diff from
 .B HEAD
 instead of the index's \(em composed apart from the shared index, a commit
-pinning the tip it was composed on; see
+pinning the tip it was composed on, a bare tree checked against other
+callers' landings; see
 .BR MODES .
 .TP
 .B \-\-whole
@@ -656,10 +683,10 @@ before the \fIcommand\fR starts, naming what reached the branch since and the
 that carries those onto the result inside the run; see
 .BR MODES .
 With
-.B \-\-commit
-or
-.BR \-\-whole ,
-the commit the files rest on: a path changed between it and the tip refuses,
+.BR \-\-commit ,
+.B \-\-whole
+or a fold of what is staged, the commit the files rest on: a path changed
+between it and the tip refuses,
 in place of the check against other callers' landings, and the tip's own SHA
 takes a landing back on purpose.
 .TP
@@ -745,8 +772,7 @@ and a squash routed to plumbing reuse every tree byte\-for\-byte and run no
 verification \(em an explicit
 .B \-\-verify
 on one refuses rather than promise a gate the run never keeps. Every mode
-that can change a tree does verify \(em bar an edit, drop or squash run in
-place, which says so \(em including
+that can change a tree does verify, including
 .BR \-\-exec ,
 whose command authors content nothing else has checked \(em the case a gate
 is worth most on. A split verifies too \(em its extracted half is a tree no
@@ -886,7 +912,12 @@ run the scenarios
 at a time \(em one a core by default. Each runs with the ones its
 .B # needs
 mark names, in a scratch repository of its own, and their output prints in
-suite order under one count and trailer. A scenario that fails here but
+suite order under one count and trailer, which ends in
+.BI ", " n " jobs"
+after the scenarios a pick names, or in
+.BI "\(en " n " jobs"
+alone. A TERM, INT or HUP stops the units it runs too, the runner exiting as
+any run a signal stops does. A scenario that fails here but
 passes in a serial run reads state an earlier one left, and its mark should
 name that one.
 .PP
@@ -925,6 +956,51 @@ git\-edit: paused \(en verify failed at <sha> in <worktree>; output in <path>; t
 git\-edit: paused \(en mode change at <sha> in <worktree>; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'
 .RE
 .fi
+.SH "TERMINAL RUNS"
+A person at a terminal gets a prompt where a pause would end the run: Enter
+resumes it as
+.B git edit \-\-continue
+would, staging each conflicted file left without the markers git gave it
+\(em one git gave none, a binary's, a side's deletion or a
+.B rerere
+prefill, only once changed since the prompt came up, or at a second Enter;
+Escape twice cancels it as
+.B \-\-abort
+does; and q leaves it for later, as Ctrl\-C, Ctrl\-D, a closed terminal or a
+hangup does too \(em the worktree kept with whatever was authored there, for
+either command to take up. An arrow or function key counts as no answer, a
+key typed before a prompt showed answers none, and a prompt whose pause
+another run ended and took the slot from meanwhile acts on nothing. The first
+known GUI editor among git's editor sources
+.RB ( GIT_EDITOR ,
+.BR core.editor ,
+.BR VISUAL ,
+.BR EDITOR )
+\(em Sublime Text, VS Code, Cursor, Zed, a JetBrains IDE and others \(em opens
+the pause's worktree, and Space opens it again. Every editor starts in the
+caller's own environment, git\-edit's config pins out of it, and one quit with
+an error abandons what it was opened for.
+.PP
+Once a terminal run lands \(em any mode, and an undo \(em it brings the
+checkout along: each file the move changed and the checkout left alone takes
+what landed, through git's two\-tree merge. Uncommitted edits on one merge
+onto it, staged where the file was staged whole. A merge that conflicts writes
+nothing \(em the edits may be another session's, whose file and index markers
+would disrupt \(em and leaves them as changes to what landed, naming the
+.B git merge\-file
+that brings the markers in once someone means to resolve them. An untracked or ignored file standing where
+a file lands stays, the index taking what landed, so it shows as a change to
+that. A renamed file's edits follow it to the new path, its destination
+landing on its own where they can't, and edits on a file the move removed
+stay, untracked. A file no text merge takes, a binary or a link, keeps the
+edits as changes to what landed, never as a staged revert; a removal staged
+by hand stays staged; and an index git can't write, a peer holding its lock,
+is named with the
+.B git restore
+for once it is free. Each case is named, and a file staged and edited both is
+left as it was. A checkout halfway through a merge, rebase or cherry\-pick is
+left as it is, with the hints an agent's run prints instead, as is one a
+resume run from inside the pause's worktree lands on.
 .SH "CONFLICT RESOLUTION"
 When a rebase\- or autosquash\-based mode hits a conflict it pauses (exit
 status 2), prints the temporary worktree, the conflicted files, the failing
@@ -942,6 +1018,17 @@ empty (its changes are already upstream); skip it with
 .B "git -C <worktree> rebase --skip"
 then
 .BR "git edit \-\-continue" .
+.PP
+A resume takes the rebase as it finds it in the worktree: continued there by
+hand to its end, its result lands; quit or aborted there by hand, it lands
+nothing \(em
+.B \-\-continue
+refuses, naming the picks the result lacks, and
+.B \-\-abort
+clears the pause. Conflict markers are refused in a commit made at the stop as
+in a staged file, and the conflicted commit keeps its own message whole, a
+.BR # \-led
+line too.
 .PP
 If a parallel session moves the branch while you resolve, the final
 compare\-and\-swap refuses and the rewrite does not apply \(em but the worktree
@@ -1252,13 +1339,21 @@ counts as unset.
 A label for whoever runs git\-edit \(em an agent session's id, a CI job \(em
 closing every reflog message it writes as \fB [\fR\fIlabel\fR\fB]\fR, so a
 history viewer can name who moved the branch. The reflog never leaves the
-clone, so neither does the label. A value holding anything but letters,
-digits,
+clone, so neither does the label. Any character but letters, digits,
 .B _
 and
 .B \-
-is dropped, since it could break the command the message rides in, and the
-run goes unlabeled throughout. An undo's entry names only whoever undid. The
+maps to
+.BR _ ,
+since it could break the command the message rides in, and the run says so,
+as two labels may then read as one. A set label marks the run as an agent's:
+no prompt at a pause, no checkout brought along, at a terminal too. An undo's
+entry names only whoever undid; a pause records its label, which another
+label's
+.B \-\-continue
+or
+.B \-\-abort
+refuses. The
 journal records the label too, for
 .B \-\-undo
 to refuse a labeled caller another's run \(em and for the
@@ -1283,11 +1378,6 @@ as plain text.
 .B GIT_EDIT_NO_RESOLVE
 If set, disables resolving a stale \fIcommit\fR to its post\-rewrite identity;
 every unreachable commit is then simply refused.
-.TP
-.B GIT_EDIT_NO_AUTO_ISOLATE
-If set, disables the auto\-isolation into a temp worktree. A run kept in place
-that way skips a configured gate, and says so:
-.BR "Verify skipped \(en GIT_EDIT_NO_AUTO_ISOLATE keeps the run in place, so `npm test` won't run" .
 .TP
 .B GIT_EDIT_NO_AUTO_OPEN
 If set, does not auto\-open the worktree in a detected GUI editor at
@@ -1338,6 +1428,13 @@ label for a labeled run), behind
 .B \-\-undo
 and the last\-operation report of
 .BR \-\-status .
+Its lock,
+.IR git\-edit\-journal.lock ,
+is waited on for 5 s: an append goes in past one held longer, saying so,
+while
+.B \-\-undo
+refuses under it, moving nothing; one a killed run left, older than 10 s, is
+broken.
 .SH EXAMPLES
 .TP
 Fold staged changes into the commit that introduced the code:
