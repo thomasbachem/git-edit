@@ -166,6 +166,65 @@ GIT_SELFTEST () {
 		# Args: <worktree> <file> <content> – the temp-file write that drops the executable bit
 		printf '%s\n' "$3" > "$1/$2.tmp" && mv "$1/$2.tmp" "$1/$2" && git -C "$1" add -- "$2"
 	}
+	# Makes and enters a fresh repo `pz-<name>` under `$TMP` – `_ST_PZ_C` commits there, and
+	# `_ST_PZ_WT` names the worktree a pause recorded
+	_ST_PZ_NEW () {
+		cd "$TMP" && rm -rf "pz-$1" && git init -q -b main "pz-$1" && cd "pz-$1" && git config user.email p@x.invalid && git config user.name P
+	}
+	_ST_PZ_C () {
+		# Args: <path> <content> <subject>
+		print -r -- "$2" > "$1" && git add -- "$1" && git commit -qm "$3"
+	}
+	_ST_PZ_WT () {
+		sed -n 's/^worktree=//p' "$(git rev-parse --git-common-dir)/git-edit-state" 2>/dev/null
+	}
+	# Runs git edit on a pseudo-terminal as a person at one would – stdin a TTY, no agent or CI
+	# marker – leaving `OUT` and `RC` as `_ST_RUN` does
+	_ST_TTY () {
+		# Args: [<name>=<value>...] -- <arg>...
+		_ST_TTY_START "$@" && _ST_TTY_END
+	}
+	# `_ST_TTY` in steps, for a run awaiting keys – `_ST_TTY_AT` waits for its prompt, then
+	# `zpty -wn ST_TTY <key>` answers it
+	_ST_TTY_START () {
+		# Args: [<name>=<value>...] -- <arg>...
+		local -a ENVS=()
+		while [ $# -gt 0 ] && [ "$1" != "--" ]; do ENVS+=("$1"); shift; done
+		shift
+		rm -f "$TMP/tty-out" "$TMP/tty-rc"
+		zmodload zsh/zpty || return 1
+		# A home of its own, as a git before 2.32 reads the caller's global config past
+		# `GIT_CONFIG_GLOBAL`, editor and all
+		zpty ST_TTY "unset CLAUDECODE CI; env HOME=${(q)TMP} XDG_CONFIG_HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 ${(j: :)${(@q)ENVS}} ${(q)SELF} ${(j: :)${(@q)@}} >${(q)TMP}/tty-out 2>&1; print -r -- \$? >${(q)TMP}/tty-rc"
+	}
+	_ST_TTY_AT () {
+		# Args: <text the output reaches> – fails where the run ends or 30s pass first
+		local -i W=0
+		until LC_ALL=C grep -aqF -e "$1" "$TMP/tty-out" 2>/dev/null; do
+			{ [ -s "$TMP/tty-rc" ] || (( ++W > 300 )); } && return 1
+			sleep 0.1
+		done
+	}
+	_ST_TTY_END () {
+		local -i W=0
+		until [ -s "$TMP/tty-rc" ] || (( ++W > 300 )); do sleep 0.1; done
+		zpty -d ST_TTY
+		OUT=$(<"$TMP/tty-out")
+		RC=$(<"$TMP/tty-rc")
+	}
+	# Runs a terminal `git edit <commit>`, writing <content> to <file> at its prompt, then Enter
+	_ST_TTY_EDIT () {
+		# Args: <commit> <file> <content>
+		local WT
+		_ST_TTY_START -- "$1" || return 1
+		if _ST_TTY_AT 'Now make your changes'; then
+			# None where the run stays in place
+			WT=$(git worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
+			[ -n "$WT" ] && print -r -- "$3" > "$WT/$2"
+			zpty -wn ST_TTY $'\r'
+		fi
+		_ST_TTY_END
+	}
 
 	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
 	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -1419,7 +1478,7 @@ GIT_SELFTEST () {
 	# `rebase.updateRefs` pin is a rebase that would move other branches ahead of the CAS – a
 	# snapshot fold's direct `git rerere` aside, which moves nothing
 	_ST_CHECK "and every one pins rebase.updateRefs off" \
-		sh -c "! grep -E -- '-c rerere\\.enabled=true' '$SELF' | grep -v -- '-c rerere\\.enabled=true rerere ' | grep -vq -- '-c rebase\\.updateRefs=false'"
+		sh -c "! grep -E -- '-c rerere\\.enabled=true' '$SELF' | grep -vE -- '-c rerere\\.enabled=true (-c [^ ]+ )*rerere ' | grep -vq -- '-c rebase\\.updateRefs=false'"
 	_ST_CHECK "and carries the pins that hold a rewrite's delivery back" \
 		sh -c "! grep -E -- '-c rebase\\.updateRefs=false' '$SELF' | grep -vq -- '_CAPTURE_PIN'"
 	# A start holding git's delivery back without the `--exec` step saving the list has nothing to
@@ -2949,13 +3008,22 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	_ST_OUT_HAS "and warns that editing there is not the repair" 'not the repair'
 	local VE_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)
 	_ST_CHECK "the pause named a worktree" sh -c "[ -d '$VE_WT' ]"
-	# Untracked files are the command's own litter and the linked deps – only
-	# tracked edits are work the caller would lose
+	# Untracked files feed the re-verify yet never land, so they block the resume – an ignored
+	# one does not, the linked deps being ignored paths
 	printf 'log\n' > "${VE_WT:-$ST_NO_WT}/verify-run.log"
 	_ST_RUN --continue
-	_ST_EQ "untracked litter does not block the resume" "$RC" "2"
-	_ST_OUT_HAS "which re-verifies as usual" 'git-edit: paused – verify failed'
+	_ST_EQ "an untracked file blocks the gated resume" "$RC" "1"
+	_ST_OUT_HAS "naming it" 'never land: verify-run.log'
 	rm -f "$VE_WT/verify-run.log"
+	local VE_EXCLUDE="$(git rev-parse --git-common-dir)/info/exclude"
+	cp "$VE_EXCLUDE" "$TMP/ve-exclude" 2>/dev/null
+	print -r -- 'ignored-run.log' >> "$VE_EXCLUDE"
+	printf 'log\n' > "${VE_WT:-$ST_NO_WT}/ignored-run.log"
+	_ST_RUN --continue
+	_ST_EQ "an ignored one does not" "$RC" "2"
+	_ST_OUT_HAS "which re-verifies as usual" 'git-edit: paused – verify failed'
+	rm -f "$VE_WT/ignored-run.log"
+	cp "$TMP/ve-exclude" "$VE_EXCLUDE" 2>/dev/null || rm -f "$VE_EXCLUDE"
 	printf 'hand-edited\n' >> "${VE_WT:-$ST_NO_WT}/vd.txt"
 	_ST_RUN --continue
 	_ST_EQ "a continue over worktree edits refuses" "$RC" "1"
@@ -6814,15 +6882,6 @@ EN_SHIM
 
 	# --- 120. a pause resumes onto what was authored, and an abort leaves what it found ---
 	_ST_SCENARIO "\e[1;96m[120] a pause resumes onto what was authored, and an abort leaves what it found\e[0m"
-	_ST_PZ_NEW () {
-		cd "$TMP" && rm -rf "pz-$1" && git init -q -b main "pz-$1" && cd "pz-$1" && git config user.email p@x.invalid && git config user.name P
-	}
-	_ST_PZ_C () {
-		print -r -- "$2" > "$1" && git add -- "$1" && git commit -qm "$3"
-	}
-	_ST_PZ_WT () {
-		sed -n 's/^worktree=//p' "$(git rev-parse --git-common-dir)/git-edit-state" 2>/dev/null
-	}
 	local PZ_WT PZ_A PZ_B PZ_X PZ_RES PZ_I PZ_ORIG
 	# Commits made by hand at an edit stop stand in for the paused commit, what followed replaying
 	_ST_PZ_NEW p1
@@ -7057,6 +7116,184 @@ EN_SHIM
 	_ST_RUN -s="$PZ_A" "$PZ_B" --text "PZ combined"
 	_ST_EQ "a squash whose commits cancel out takes its --text" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:PZ y PZ x PZ combined PZ base "
 	_ST_CHECK "leaving out the file both left out" sh -c '! git cat-file -e HEAD:a.txt'
+	git reset -q --hard "$PZ_TIP"
+	_ST_TTY "GIT_EDITOR=printf 'PZ via editor\n' >" -- -s="$PZ_A" "$PZ_B" -m -y
+	_ST_EQ "and -m opens the editor on it" "$RC:$(git log -1 --format=%s HEAD~2)" "0:PZ via editor"
+	cd "$TMP/repo"
+
+	# --- 121. the gate runs on what lands, wherever the run starts ---
+	_ST_SCENARIO "\e[1;96m[121] the gate runs on what lands, wherever the run starts\e[0m"
+	local GL_WT GL_TIP GL_N GL_PID
+	local -i GL_T0 GL_WAIT
+	# A resolution's file left unstaged would feed the gate and never land, so the resume refuses
+	_ST_PZ_NEW g1
+	git config edit.verifyCmd true
+	for GL_N in 1 2 3; do _ST_PZ_C f.txt "$GL_N" "GL $GL_N"; done
+	_ST_RUN -d HEAD~1
+	_ST_EQ "a drop conflicting with what follows pauses" "$RC" "2"
+	GL_WT=$(_ST_PZ_WT)
+	_ST_RESOLVE "${GL_WT:-$ST_NO_WT}" f.txt 3
+	print -r -- note > "${GL_WT:-$ST_NO_WT}/notes.txt"
+	_ST_RUN --continue
+	_ST_EQ "an untracked file blocks a gated conflict resume" "$RC" "1"
+	_ST_OUT_HAS "naming it" 'never land: notes.txt'
+	rm -f "$GL_WT/notes.txt"
+	_ST_RUN --continue
+	_ST_EQ "and the resume lands once it is gone" "$RC" "0"
+	# An edit being authored stages its worktree wholesale, so the file lands there instead
+	_ST_RUN HEAD~1
+	GL_WT=$(_ST_PZ_WT)
+	print -r -- new > "${GL_WT:-$ST_NO_WT}/new.txt"
+	_ST_RUN --continue
+	_ST_EQ "an edit's authoring stage takes an untracked file under a gate" "$RC" "0"
+	_ST_CHECK "into the edited commit" git cat-file -e "HEAD~1:new.txt"
+	# A reused `-C` worktree's untracked files would feed the gate the same way
+	git worktree add -q --detach "$TMP/pz-g1-wt" HEAD
+	print -r -- u > "$TMP/pz-g1-wt/u.txt"
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_RUN -d HEAD -C="$TMP/pz-g1-wt"
+	_ST_EQ "a -C worktree holding untracked files refuses under a gate" "$RC" "1"
+	_ST_OUT_HAS "saying why" 'holds untracked files the verify check would run over'
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$GL_TIP"
+	git worktree remove --force "$TMP/pz-g1-wt"
+	# Each check starts from its commit alone – a run's leftovers failed the next run, blamed the
+	# commit it replaces and blocked the resume – while a file someone adds there still refuses
+	_ST_PZ_NEW g7
+	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
+	echo a2 > a.txt && git add a.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD~2)" --verify='test ! -e marker && touch marker' -- a.txt
+	_ST_EQ "a check leaving a file behind passes at each commit it runs at" "$RC:$(git show HEAD~2:a.txt)" "0:a2"
+	_ST_OUT_HAS "naming what it left" "Removed what the check left untracked, so no run saw another's: marker"
+	_ST_PZ_NEW g8
+	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
+	echo a3 > a.txt && git add a.txt
+	_ST_RUN --amend-into="$(git rev-parse HEAD~2)" --verify='test ! -e marker && touch marker && { test ! -e c.txt || ! grep -q a3 a.txt; }' -- a.txt
+	_ST_EQ "one failing at the tip pauses" "$RC" "2"
+	_ST_OUT_LACKS "never blaming the commit it replaces for its own leftovers" 'replaces fails the same check'
+	GL_WT=$(_ST_PZ_WT)
+	_ST_RUN --continue
+	_ST_EQ "and its resume checks again rather than refuse" "$RC" "2"
+	_ST_OUT_LACKS "on a file the check left" 'never land: marker'
+	print -r -- mine > "${GL_WT:-$ST_NO_WT}/mine.txt"
+	_ST_RUN --continue
+	_ST_EQ "while a file someone adds there still refuses" "$RC" "1"
+	_ST_OUT_HAS "naming it" 'never land: mine.txt'
+	_ST_RUN --abort
+	# The default `-C` path is the tool's own, so what a run cut off mid-check left there is removed
+	_ST_PZ_NEW g1d
+	for GL_N in a b c d; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
+	git config edit.verifyCmd true
+	_ST_RUN -d -y -C HEAD~2
+	print -r -- stale > "$TMP/pz-g1d.git-edit/stale.log"
+	_ST_RUN -d -y -C HEAD~1
+	_ST_EQ "a second gated run in the default -C path lands" "$RC:$(git log --format=%s | tr '\n' ' ')" "0:GL d GL a "
+	_ST_OUT_HAS "naming what the first one left" 'Removed what an earlier run left untracked in .*: stale.log'
+	git worktree remove --force "$TMP/pz-g1d.git-edit"
+	# An `--exec` command's untracked litter never lands, so the gate runs
+	# without it – an ignored file stays, as the links do
+	_ST_PZ_NEW g2
+	print -r -- '*.log' > .gitignore && git add .gitignore && git commit -qm "GL ignore"
+	git config edit.verifyCmd '! test -e litter.txt && test -e keep.log'
+	_ST_RUN --exec -- sh -c 'echo x > litter.txt; echo y > keep.log; git commit -q --allow-empty -m "GL exec"'
+	_ST_EQ "an --exec gate runs without the command's litter" "$RC" "0"
+	_ST_OUT_HAS "saying it was removed" 'left untracked, which never lands: litter.txt'
+	# A check leaving a process behind holds no pipe the gate waits on
+	GL_T0=$SECONDS
+	_ST_RUN --exec --verify='(sleep 20 &); true' -- git commit -q --allow-empty -m "GL bg"
+	_ST_EQ "a check leaving a background process lands" "$RC" "0"
+	_ST_CHECK "without waiting on it" test $(( SECONDS - GL_T0 )) -lt 15
+	# A gate runs only in a worktree, so with one configured a terminal run isolates as an agent's
+	# does – and a configured link the checkout lacks is named, a check needing it failing on that
+	_ST_PZ_NEW g3
+	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
+	git config edit.verifyCmd false
+	git config edit.worktreeLink node_modules
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_TTY -- -d -y HEAD~1
+	_ST_OUT_HAS "a terminal run isolates where a gate is configured" 'verify gate configured: isolating'
+	_ST_EQ "so the failing gate pauses it" "$RC" "2"
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$GL_TIP"
+	_ST_OUT_HAS "a configured link the checkout lacks is named" 'Not linking node_modules – .* has none to link'
+	_ST_RUN --abort
+	git config --unset edit.worktreeLink
+	# Detached, an isolated result would land nowhere, so the run stays in place and says so
+	git checkout -q --detach
+	_ST_TTY -- -d -y HEAD~1
+	_ST_OUT_HAS "a detached terminal run stays in place, naming the gate it skips" 'Verify skipped – a detached HEAD keeps the run in place'
+	git checkout -q main
+	OUT=$(GIT_EDIT_NO_AUTO_ISOLATE=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </dev/null 2>&1)
+	_ST_OUT_HAS "so does an opted-out one" 'Verify skipped – GIT_EDIT_NO_AUTO_ISOLATE keeps the run in place'
+	# The reword template comments in the configured character, which is what gets stripped
+	git config core.commentChar ';'
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_TTY GIT_EDITOR=: -- -M HEAD
+	_ST_EQ "a reword left as opened keeps its message" "$(git log -1 --format=%B)" "$(git log -1 --format=%B "$GL_TIP")"
+	git config --unset core.commentChar
+	# A dumb terminal skips `VISUAL`, and git refuses rather than fall back to vi there
+	_ST_TTY TERM=dumb GIT_EDITOR= EDITOR= VISUAL=false -- -M HEAD
+	_ST_OUT_HAS "a dumb terminal with no EDITOR refuses as git does" 'Terminal is dumb, but EDITOR unset'
+	# A terminal edit isolates under a gate too – what the person authors at the prompt lands only
+	# once the check passes on it, a failing one pausing into `--continue`, and Escape leaving nothing
+	_ST_PZ_NEW g6
+	for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
+	git config edit.verifyCmd '! grep -q bad b.txt'
+	_ST_TTY_EDIT HEAD~1 b.txt b2
+	_ST_OUT_HAS "a terminal edit isolates where a gate is configured" 'verify gate configured: isolating'
+	_ST_EQ "landing what was authored at the prompt once the check passes" "$RC:$(git show HEAD~1:b.txt)" "0:b2"
+	_ST_OUT_HAS "saying so" 'Verified '
+	_ST_EQ "and leaving no worktree behind" "$(git worktree list | wc -l | tr -d ' ')" "1"
+	git reset -q --hard
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_TTY_EDIT HEAD~1 b.txt bad
+	_ST_EQ "a check failing on the edit pauses, moving nothing" "$RC:$(git rev-parse HEAD)" "2:$GL_TIP"
+	_ST_OUT_HAS "into a resume" 'paused – verify failed'
+	git config edit.verifyCmd true
+	_ST_RUN --continue
+	_ST_EQ "which lands the edit once the check passes" "$RC:$(git show HEAD~1:b.txt)" "0:bad"
+	git reset -q --hard
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_TTY_START -- HEAD~1
+	_ST_TTY_AT 'Now make your changes' && zpty -wn ST_TTY $'\e'
+	_ST_TTY_END
+	_ST_EQ "Escape at the prompt cancels" "$RC:$(git rev-parse HEAD)" "1:$GL_TIP"
+	_ST_EQ "leaving no worktree behind" "$(git worktree list | wc -l | tr -d ' ')" "1"
+	_ST_CHECK "nor a pause" test ! -e "$(git rev-parse --git-common-dir)/git-edit-state"
+	# A counterpart lacking a path the check names fails on that alone, so the walk answers instead
+	_ST_PZ_NEW g4
+	_ST_PZ_C base.txt base "GL base"
+	_ST_PZ_C app.sh app "GL Add app"
+	_ST_PZ_C v2.sh v2 "GL Add v2 feature"
+	mkdir tests && print -r -- 'test -f v2.sh' > tests/t.sh && git add tests/t.sh
+	_ST_RUN --amend-into="$(git rev-parse ':/GL Add app')" --allow-new-path --verify='sh tests/t.sh' -- tests/t.sh
+	_ST_EQ "a fold failing its check pauses" "$RC" "2"
+	_ST_OUT_LACKS "never blaming a counterpart without the check's file" 'commit it replaces fails'
+	_ST_OUT_HAS "but naming where it heals" 'first green: [0-9a-f]* GL Add v2 feature'
+	_ST_RUN --abort
+	# A TERM during a split's check takes its throwaway worktree along
+	_ST_PZ_NEW g5
+	_ST_PZ_C s1.txt s1 "GL S base"
+	print -r -- a > sa.txt && print -r -- b > sb.txt && git add sa.txt sb.txt && git commit -qm "GL S both"
+	GL_N=$(git worktree list | wc -l | tr -d ' ')
+	git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/gl-check\"; sleep 2'"
+	rm -f "$TMP/gl-check"
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --split=HEAD --text="GL S a" -- sa.txt </dev/null >"$TMP/gl-out" 2>&1 &
+	GL_PID=$!
+	GL_WAIT=0
+	until [ -s "$TMP/gl-check" ] || (( ++GL_WAIT > 150 )); do
+		sleep 0.1
+	done
+	kill -TERM $GL_PID
+	wait $GL_PID
+	RC=$?
+	kill "$(cat "$TMP/gl-check" 2>/dev/null)" 2>/dev/null
+	_ST_EQ "a TERM mid-check stops the split" "$RC" "143"
+	_ST_EQ "and takes its verify worktree along" "$(git worktree list | wc -l | tr -d ' ')" "$GL_N"
+	# An implicit squash routed to plumbing has no gate to keep an explicit --verify's promise
+	GL_TIP=$(git rev-parse HEAD)
+	_ST_RUN HEAD~1 HEAD --verify=true
+	_ST_EQ "an implicit squash routed to plumbing refuses --verify" "$RC" "1"
+	_ST_OUT_HAS "as -S does" 'cannot gate this squash'
+	_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$GL_TIP"
 	cd "$TMP/repo"
 
 	# --- Summary ---

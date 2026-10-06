@@ -57,33 +57,34 @@ unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEN
 	AMEND_TREE AMEND_TREE_GIVEN AUTO_OPEN_EDITOR C CMD COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO D DIR_HAS_EQUALS EDITOR_BASE EDITOR_FIRST EDIT_BRANCH EDIT_TARGET \
 	EDIT_WT EXEC_BASE EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_REF \
-	IS_REF LEFT_ALONE LOCKED MARKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST \
-	MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED \
-	MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM \
-	OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH \
-	OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT \
-	OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT OPT_EXEC OPT_HELP OPT_MESSAGE OPT_MOVE \
-	OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_SELFTEST \
-	OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY \
-	OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD OUR_TOPLEVEL PREV_NEW \
-	PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED \
-	RESOLVE_SCAN_MAX RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA \
-	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
-	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
-	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY \
-	STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED \
-	STATE_RRPRE STATE_RRPRE_SET STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE \
-	STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN \
-	STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA \
-	VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_GITDIR \
-	WT_OURS WT_OUT WT_STATUS _ACTOR _BANNER_REPO _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
-	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM \
-	_HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK \
-	_ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS \
-	_REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE \
-	_RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP _REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA \
-	_SNAPSHOT_RESOLVED_TREES _SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED \
-	_STATE_PATH _STATUS_EMITTED _TEMP_FILES _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_NO_RESUME
+	ISOLATE_WHY IS_REF LEFT_ALONE LOCKED MARKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
+	MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET \
+	MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD ONTO_NEW_HEAD ONTO_REF \
+	ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE \
+	OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO OPT_BASE OPT_BEFORE \
+	OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT OPT_EXEC OPT_HELP \
+	OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER OPT_RESQUASH \
+	OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE \
+	OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD \
+	OUR_TOPLEVEL PREV_NEW PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT \
+	RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD RESUME_STRAY RESYNCED S \
+	SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA SPLIT_NEW_HEAD SPLIT_REF \
+	SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION STATE_ALLOW_MODE_CHANGE STATE_AMENDED \
+	STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES STATE_FIXUP STATE_FOLD STATE_FORK \
+	STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY STATE_OPERATION STATE_ORIG_HEAD \
+	STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
+	STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD \
+	STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP T \
+	TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA VERIFY_VALUE WHOLE_HEAD WHOLE_IDX \
+	WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_DEFAULT WT_GITDIR WT_OURS WT_OUT WT_STATUS \
+	WT_STRAY _ACTOR _BANNER_REPO _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS \
+	_CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM _HOOK_RUN_PROBED \
+	_LANDED_MOVE _LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD \
+	_REAL_EDITOR _REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR \
+	_RERERE_OPTOUT _RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET \
+	_REWORDED_TIP _REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
+	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATE_PATH _STATUS_EMITTED \
+	_TEMP_FILES _TEMP_WORKTREES _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER _VERIFY_NO_RESUME
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_ISOLATE GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_PROGRESS; do
@@ -272,6 +273,9 @@ _VERIFY_NO_RESUME=false
 # run that had a check and declined it looks like the one that never had one
 _VERIFY_BYPASSED=""
 
+# What the gate's check runs left untracked, removed after each one and named once per gate
+typeset -a _VERIFY_LITTER
+
 # Where the run started – an isolated run reports from its temp worktree, so a command it prints
 # for the branch's checkout names that checkout only where it is not the caller's own
 _START_DIR=$PWD
@@ -290,6 +294,8 @@ fi
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
 # to keep its worktree, so these need a list of their own
 _TEMP_FILES=()
+# Throwaway worktrees likewise – a gate's, which no pause ever keeps
+_TEMP_WORKTREES=()
 # Each file taken whole, with the index entry it had then – a re-sync resets only an entry still so
 typeset -A WHOLE_IDX
 
@@ -339,6 +345,12 @@ _GLOBAL_EXIT_TRAP () {
 		rm -f "${_TEMP_FILES[@]}" 2>/dev/null
 		_TEMP_FILES=()
 	fi
+	local W
+	for W in "${_TEMP_WORKTREES[@]}"; do
+		git worktree remove --force "$W" >/dev/null 2>&1
+		rm -rf "$W"
+	done
+	_TEMP_WORKTREES=()
 	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
 		_RERERE_SCOPE_END $CODE
 	fi
@@ -630,13 +642,13 @@ _LINK_WORKTREE_EXTRAS () {
 	EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}")
 	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
 
-	local -a LINKED SKIPPED FAILED
+	local -a LINKED SKIPPED FAILED MISSING
 	local P
 	for P in "${EXTRAS[@]}"; do
 		[ -z "$P" ] && continue
 		# Only what the origin actually has, and never over a tracked path the
 		# commit itself carries – the worktree's own content wins
-		[ -e "$FROM/$P" ] || continue
+		[ -e "$FROM/$P" ] || { MISSING+=("$P"); continue; }
 		[ -e "$WT/$P" ] && continue
 		# An ignore pattern written for a directory (`node_modules/`) misses the symlink standing
 		# in for it, so the link lands untracked where the directory was ignored – and
@@ -664,6 +676,10 @@ _LINK_WORKTREE_EXTRAS () {
 	fi
 	if [ ${#FAILED[@]} -gt 0 ]; then
 		PRINT_TEXT "Could not link %s into the worktree – check the path." 33 "${(j:, :)FAILED}"
+	fi
+	# Said, since a check needing one fails on that alone, which reads as the rewrite's doing
+	if [ ${#MISSING[@]} -gt 0 ]; then
+		PRINT_TEXT "Not linking %s – %s has none to link." 33 "${(j:, :)MISSING}" "$FROM"
 	fi
 }
 
@@ -2799,6 +2815,13 @@ GIT_EXEC () {
 		return 0
 	fi
 
+	# What the command left untracked never lands, so the gate runs without it – `clean` without
+	# `-x` spares the links, which only ever stand in for ignored paths
+	if _VERIFY_CONFIGURED; then
+		local CLEANED=$(LC_ALL=C git -C "$WT" -c core.quotePath=false clean -fd 2>/dev/null | LC_ALL=C sed -n 's/^Removing //p')
+		[ -n "$CLEANED" ] && PRINT_TEXT "Removed what the command left untracked, which never lands: %s" 90 "$(_JOIN_PATHS "$CLEANED")"
+	fi
+
 	# The command authored this content rather than replaying a commit somebody already made,
 	# so a standing gate is worth more here than anywhere else – and the worktree already sits
 	# at the result. Having no pause to offer, a failure refuses outright: the built commits
@@ -4258,6 +4281,7 @@ _SPLIT_APPLY () {
 	if _VERIFY_CONFIGURED; then
 		local VWT
 		VWT=$(MKTEMP_DIR git-edit-verify) || exit 1
+		_TEMP_WORKTREES+=("$VWT")
 		if git worktree add --detach "$VWT" "$PREV_NEW" >/dev/null 2>&1; then
 			_LINK_WORKTREE_EXTRAS "$VWT"
 			local VERIFY_OK=true
@@ -4269,6 +4293,7 @@ _SPLIT_APPLY () {
 			_VERIFY_NO_RESUME=false
 			git worktree remove --force "$VWT" >/dev/null 2>&1
 			rm -rf "$VWT"
+			_TEMP_WORKTREES=(${_TEMP_WORKTREES:#$VWT})
 			if [ "$VERIFY_OK" != "true" ]; then
 				# No pause – a split's halves re-derive from its own worktree, so a refusal leaves the
 				# authoring in place for another `--continue`
@@ -4278,6 +4303,7 @@ _SPLIT_APPLY () {
 			fi
 		else
 			rm -rf "$VWT"
+			_TEMP_WORKTREES=(${_TEMP_WORKTREES:#$VWT})
 			# Fail closed – an unverifiable split landing under an `ok` trailer reads as gated when
 			# in fact nothing ever ran at all
 			PRINT_ERR "Could not open a worktree to verify the split – not applied"
@@ -6323,15 +6349,14 @@ _VERIFY_NOTE_BYPASS () {
 	return 0
 }
 
-# Runs the caller's verification over what a rewrite built, before the CAS applies it – the
-# gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
-# standing `edit.verifyCmd`, at the commits a mode names, first rebuilt and resolved ones, the tip
+# Answers whether a gate is in force for this run, putting its command into `REPLY`
 _VERIFY_CONFIGURED () {
+	REPLY=""
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 1
-	local CMD=$VERIFY_VALUE
-	[ -z "$CMD" ] && CMD=$STATE_VERIFY_CMD
-	[ -z "$CMD" ] && CMD=$(git config --get edit.verifyCmd 2>/dev/null)
-	[ -n "$CMD" ]
+	REPLY=$VERIFY_VALUE
+	[ -z "$REPLY" ] && REPLY=$STATE_VERIFY_CMD
+	[ -z "$REPLY" ] && REPLY=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -n "$REPLY" ]
 }
 
 # Answers whether the span tier is in force – the flag, the tier a pause recorded, or the standing
@@ -6390,6 +6415,23 @@ _VERIFY_COUNTERPART () {
 	return 1
 }
 
+# Removes what a check left untracked in <worktree>, so the next one – at another commit, in the
+# walk, or a resume's – sees that commit and the ignored files alone, as `--exec`'s gate does,
+# `clean` without `-x` sparing the links
+_VERIFY_CLEAN () {
+	# Args: <worktree>
+	local P
+	for P in ${(f)"$(LC_ALL=C git -C "$1" -c core.quotePath=false clean -fd 2>/dev/null | LC_ALL=C sed -n 's/^Removing //p')"}; do
+		(( ${_VERIFY_LITTER[(Ie)$P]} )) || _VERIFY_LITTER+=("$P")
+	done
+}
+
+# Names what the gate's runs left untracked, once for the whole gate
+_VERIFY_NOTE_LITTER () {
+	[ ${#_VERIFY_LITTER} -gt 0 ] && PRINT_TEXT "Removed what the check left untracked, so no run saw another's: %s" 90 "$(_JOIN_PATHS "${(F)_VERIFY_LITTER}")"
+	return 0
+}
+
 # Says who broke the check and where it heals, the two questions a failure raises – the
 # counterpart run attributes it, since a check already failing at the commit this one
 # replaces was failing before the rewrite, and otherwise the walk climbs the span
@@ -6406,8 +6448,16 @@ _VERIFY_DIAGNOSE () {
 	local -a PATHS=("$@")
 
 	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
+	local P
+	# A counterpart lacking a path the command names fails on that alone – the walk then answers
+	for P in "${PATHS[@]}"; do
+		git -C "$WT" cat-file -e "$CP:$P" 2>/dev/null || CP=""
+	done
 	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
-		if ! (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1; then
+		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1
+		local CP_RC=$?
+		_VERIFY_CLEAN "$WT"
+		if [ $CP_RC -ne 0 ]; then
 			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
 			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
 			# Naming the cause without the remedy leaves the reader to find it in the page. The
@@ -6436,7 +6486,7 @@ _VERIFY_DIAGNOSE () {
 	# Spent against the wall clock, not summed per run – whole-second deltas
 	# round a sub-second check down to nothing, and the budget would never bind
 	local -i WALK_T0=$SECONDS CHECKED=0 ABOVE=0
-	local X P FOUND="" PAST=false SKIP
+	local X FOUND="" PAST=false SKIP
 	for X in "${SPAN[@]}"; do
 		if [ "$X" = "$FAILED" ]; then
 			PAST=true
@@ -6453,9 +6503,8 @@ _VERIFY_DIAGNOSE () {
 		[ "$SKIP" = "true" ] && continue
 		git -C "$WT" checkout -qf --detach "$X" 2>/dev/null || continue
 		CHECKED+=1
-		if (cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1; then
-			FOUND=$X
-		fi
+		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && _CALLER_PATHSPECS_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1 && FOUND=$X
+		_VERIFY_CLEAN "$WT"
 	done
 	if [ -n "$FOUND" ]; then
 		PRINT_TEXT "The check passes again above it – that commit carries what the failing one now needs:" 33
@@ -6466,6 +6515,9 @@ _VERIFY_DIAGNOSE () {
 	return 0
 }
 
+# Runs the caller's verification over what a rewrite built, before the CAS applies it – the
+# gate for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a
+# standing `edit.verifyCmd`, at the commits a mode names, first rebuilt and resolved ones, the tip
 _VERIFY_REWRITE () {
 	# Args: <worktree> <new_head> <orig_head> [<commits the mode names, space-separated>]
 	#       [<base a replant replayed onto>]
@@ -6563,8 +6615,10 @@ _VERIFY_REWRITE () {
 	PRINT_CMD "$VERIFY_CMD  # verify ${#COMMITS[@]} commit(s)" 90
 	local C
 	local OUT
+	local OUT_FILE
 	local ABSENT
 	local RUN_T0
+	_VERIFY_LITTER=()
 	local -i SKIPPED=0
 	local -i RC=0 RUN_SECS=0
 	local -i POSITION=0
@@ -6599,9 +6653,16 @@ _VERIFY_REWRITE () {
 		fi
 		# The subshell contains both the cd and the export naming the commit – exported, since a
 		# prefix assignment on the `eval` builtin never reaches the child it forks
+		# Into a file, as `$(…)` would wait on every process holding its pipe –
+		# a server the check left running included
+		OUT_FILE=$(MKTEMP_FILE git-edit-verify-out) || exit 1
+		_TEMP_FILES+=("$OUT_FILE")
 		RUN_T0=$SECONDS
-		OUT=$(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && _CALLER_PATHSPECS_BACK && eval "$VERIFY_CMD" </dev/null 2>&1)
+		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && _CALLER_PATHSPECS_BACK && eval "$VERIFY_CMD" </dev/null) >"$OUT_FILE" 2>&1
 		RC=$?
+		OUT=$(<"$OUT_FILE")
+		rm -f "$OUT_FILE"
+		_VERIFY_CLEAN "$WT"
 		# Taken here rather than at the diagnosis below, which the printing in
 		# between would pad – the walk budget is the failing run's own duration
 		RUN_SECS=$(( SECONDS - RUN_T0 ))
@@ -6615,6 +6676,7 @@ _VERIFY_REWRITE () {
 			# to the result tip, since every resume path reads the worktree's `HEAD` as the result,
 			# and one left at a walked commit would land that commit as the new tip
 			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$RUN_SECS" -- "${CMD_PATHS[@]}"
+			_VERIFY_NOTE_LITTER
 			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 			# A mode with no pause keeps neither the worktree nor a resume, so both hints
 			# would point at what its exit is about to remove – it names its own recourse
@@ -6631,6 +6693,7 @@ _VERIFY_REWRITE () {
 		fi
 	done
 	local -i VERIFY_SECS=$(( SECONDS - VERIFY_T0 ))
+	_VERIFY_NOTE_LITTER
 	# End at the tip, so the worktree a later step or reader sees is the result
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 	# One line for the whole outcome, since that is the line a caller greps: a bare "Verified 2
@@ -6862,34 +6925,38 @@ _IS_NON_INTERACTIVE () {
 }
 
 # Resolves a usable editor command, matching git's own cascade – `GIT_EDITOR`, `core.editor`,
-# `VISUAL`, `EDITOR`, then vi – skipping the `true` no-op that automation commonly sets,
-# since the plumbing-mode operations that need typing would not work with it
+# `VISUAL` unless the terminal is dumb, `EDITOR`, then vi – skipping the `true` no-op that
+# automation commonly sets, which the plumbing modes that need typing could not work with
 _RESOLVE_EDITOR () {
 	local CAND
-	for CAND in "$GIT_EDITOR" "$(git config core.editor 2>/dev/null)" "$VISUAL" "$EDITOR"; do
+	local -a CANDS=("$GIT_EDITOR" "$(git config core.editor 2>/dev/null)")
+	[ "$TERM" = dumb ] || CANDS+=("$VISUAL")
+	CANDS+=("$EDITOR")
+	for CAND in "${CANDS[@]}"; do
 		[ -z "$CAND" ] && continue
 		[ "$CAND" = "true" ] && continue
 		print -r -- "$CAND"
-		return
+		return 0
 	done
-	echo "vi"
+	# A dumb terminal gets no vi fallback, as git refuses there too
+	[ "$TERM" = dumb ] && return 1
+	print -r -- vi
 }
 
 # Bails out before opening an editor in a non-TTY context, where it would either no-op
 # silently, hang waiting for input as vi or nano do, or open a GUI editor with `-w` and
-# never return – call this right before any path that would open `$EDITOR`
+# never return, or where none resolves – call this right before any path that would open `$EDITOR`
 _REQUIRE_TTY_FOR_EDITOR () {
-	if ! _IS_NON_INTERACTIVE; then
-		return 0
+	if _IS_NON_INTERACTIVE; then
+		PRINT_ERR "Cannot open editor in non-interactive context (no TTY / agent run)"
+		ECHO_E "\e[0;31m  Pass --text \"<msg>\" for an inline message, or --text - to read from stdin.\e[0m" >&2
+		exit 1
 	fi
-	# If the resolved editor is `true` (GIT_EDITOR=true), opening it is a
-	# harmless no-op – let it through
-	if [ "$(_RESOLVE_EDITOR)" = "true" ]; then
-		return 0
+	if ! _RESOLVE_EDITOR >/dev/null; then
+		PRINT_ERR "Terminal is dumb, but EDITOR unset"
+		ECHO_E "\e[0;31m  Set EDITOR, or pass --text \"<msg>\" for an inline message.\e[0m" >&2
+		exit 1
 	fi
-	PRINT_ERR "Cannot open editor in non-interactive context (no TTY / agent run)"
-	ECHO_E "\e[0;31m  Pass --text \"<msg>\" for an inline message, or --text - to read from stdin.\e[0m" >&2
-	exit 1
 }
 
 # Opens the resolved editor on the given temp file and returns the cleaned-up contents,
@@ -6897,7 +6964,8 @@ _REQUIRE_TTY_FOR_EDITOR () {
 # output on stderr so it cannot leak into the captured value
 _READ_MESSAGE_FROM_EDITOR () {
 	local MSG_FILE=$1
-	local EDIT_CMD=$(_RESOLVE_EDITOR)
+	local EDIT_CMD
+	EDIT_CMD=$(_RESOLVE_EDITOR) || return 1
 
 	PRINT_CMD "$EDIT_CMD $MSG_FILE" >&2
 	eval "$EDIT_CMD \"\$MSG_FILE\"" >&2 || return 1
@@ -7091,11 +7159,16 @@ GIT_REWORD () {
 		TMP_DIR=$(MKTEMP_DIR git-edit-reword) || exit 1
 		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
 		git log -1 --format='%B' "$TARGET" > "$MSG_FILE"
+		# In the comment string `stripspace` strips – the last one configured, either key, and
+		# `#` for `auto`, as only `git commit` picks another
+		local CC=$(git config --get-regexp '^core\.comment(char|string)$' 2>/dev/null | tail -1)
+		CC=${CC#* }
+		[[ -z "$CC" || "$CC" == (auto|core.*) ]] && CC='#'
 		{
-			echo ""
-			echo "# Please enter the new commit message for ${TARGET:0:7}."
-			echo "# Lines starting with '#' will be ignored."
-			echo "# An empty message aborts the operation."
+			print -r -- ""
+			print -r -- "$CC Please enter the new commit message for ${TARGET:0:7}."
+			print -r -- "$CC Lines starting with '$CC' will be ignored."
+			print -r -- "$CC An empty message aborts the operation."
 		} >> "$MSG_FILE"
 
 		NEW_MSG=$(_READ_MESSAGE_FROM_EDITOR "$MSG_FILE")
@@ -8076,6 +8149,26 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 			fi
 			exit 1
 		fi
+		# Untracked files feed the gate's run yet never land, so a resolution's new file left
+		# unstaged passes a check its result fails – only an authoring stage absorbs them
+		if _VERIFY_CONFIGURED; then
+			RESUME_GD=$(git -C "$STATE_WORKTREE" rev-parse --absolute-git-dir 2>/dev/null)
+			RESUME_ABSORBS=false
+			if [ -z "$STATE_VERIFY_FAILED$STATE_MODE_STRAY" ] && [ ! -d "$RESUME_GD/rebase-merge" ] && [ ! -d "$RESUME_GD/rebase-apply" ]; then
+				[ "$STATE_OPERATION" = split ] && RESUME_ABSORBS=true
+				[ "$STATE_OPERATION" = edit ] && [ "$(git -C "$STATE_WORKTREE" rev-parse HEAD 2>/dev/null)" = "$STATE_TARGET" ] && RESUME_ABSORBS=true
+			fi
+			RESUME_STRAY=$(git -C "$STATE_WORKTREE" -c core.quotePath=false ls-files -o --exclude-standard --directory --no-empty-directory 2>/dev/null)
+			if [ "$RESUME_ABSORBS" = false ] && [ -n "$RESUME_STRAY" ]; then
+				PRINT_ERR "Untracked files in the pause worktree would feed the verify check but never land: $(_JOIN_PATHS "$RESUME_STRAY")"
+				if [ -n "$STATE_VERIFY_FAILED$STATE_MODE_STRAY" ]; then
+					ECHO_E "\e[0;31m  Remove them – the result is already built, so one it needs is a fix to the commit itself.\e[0m" >&2
+				else
+					ECHO_E "\e[0;31m  Stage the ones the resolution needs and remove the rest, then 'git edit --continue'.\e[0m" >&2
+				fi
+				exit 1
+			fi
+		fi
 		# After a verify pause the built result is recorded – put the worktree back on it before any
 		# handler reads its `HEAD` as the result to apply, since the inspect hint checks out the
 		# failing commit and a continue from there would land it as the tip
@@ -8953,6 +9046,12 @@ fi
 # touch, while `-S` and `-C` are unaffected and the rest falls through to the rebase
 if [[ "$ACTION" == "squash" ]] && [ ${#OPT_DIR} -eq 0 ] && _RESQUASH_ELIGIBLE; then
 	ACTION="resquash"
+	# The refusal `-S` gets up front, once the route is known
+	if [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+		PRINT_ERR "--verify cannot gate this squash"
+		ECHO_E "\e[0;31m  A contiguous squash into the oldest commit preserves every tree by construction.\e[0m" >&2
+		exit 1
+	fi
 fi
 
 # Merge-span guard for the modes still rebase-based after auto-routing – a
@@ -9013,14 +9112,29 @@ fi
 
 # Auto-isolate in non-interactive contexts – run by an agent, CI or any script, default to
 # `-C` for the modes that would otherwise touch the main working tree, so parallel
-# sessions cannot clobber each other, with `GIT_EDIT_NO_AUTO_ISOLATE=1` to override
-if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -eq 0 ] && \
-   [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
-	ECHO_E "${_PAD}\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
-	OPT_DIR=(--dir)
-	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso) || exit 1
-	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
-	_CLEANUP_HOOK="git worktree remove --force ${(q-)WORKTREE_DIR} 2>/dev/null; rm -rf ${(q-)WORKTREE_DIR}"
+# sessions cannot clobber each other, with `GIT_EDIT_NO_AUTO_ISOLATE=1` to override –
+# and on a terminal too where a gate is configured, as only a worktree run verifies
+if [ ${#OPT_DIR} -eq 0 ] && [[ "$ACTION" == (drop|edit|squash) ]]; then
+	ISOLATE_WHY=""
+	if [ -n "$GIT_EDIT_NO_AUTO_ISOLATE" ]; then
+		_VERIFY_CONFIGURED && PRINT_TEXT "Verify skipped – %s keeps the run in place, so \`%s\` won't run" 90 "GIT_EDIT_NO_AUTO_ISOLATE" "${REPLY%%$'\n'*}"
+	elif _IS_NON_INTERACTIVE; then
+		ISOLATE_WHY="non-interactive context: auto-isolating in a temp worktree"
+	elif _VERIFY_CONFIGURED; then
+		# Only a branch receives an isolated result – a detached one would be left in the worktree
+		if git symbolic-ref -q HEAD >/dev/null; then
+			ISOLATE_WHY="verify gate configured: isolating in a temp worktree"
+		else
+			PRINT_TEXT "Verify skipped – a detached HEAD keeps the run in place, so \`%s\` won't run" 90 "${REPLY%%$'\n'*}"
+		fi
+	fi
+	if [ -n "$ISOLATE_WHY" ]; then
+		ECHO_E "${_PAD}\e[0;90m($ISOLATE_WHY)\e[0m"
+		OPT_DIR=(--dir)
+		WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso) || exit 1
+		rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
+		_CLEANUP_HOOK="git worktree remove --force ${(q-)WORKTREE_DIR} 2>/dev/null; rm -rf ${(q-)WORKTREE_DIR}"
+	fi
 fi
 
 
@@ -9060,6 +9174,7 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 			exit 1
 		fi
 		WORKTREE_DIR="${TOPLEVEL}.git-edit"
+		WT_DEFAULT=1
 	fi
 
 	# Detect a known GUI editor so the worktree can auto-open at interactive pauses, for both
@@ -9141,6 +9256,18 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		if [ -n "$(git -C "$WORKTREE_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
 			PRINT_ERR "-C/--dir path '$WORKTREE_DIR' holds uncommitted changes – name a scratch path instead"
 			exit 1
+		fi
+		# Untracked files would feed the gate's run yet never land – an earlier check's own output in
+		# the default path, which this tool manages, so removed there and refused in a named one
+		if _VERIFY_CONFIGURED; then
+			WT_STRAY=$(git -C "$WORKTREE_DIR" -c core.quotePath=false ls-files -o --exclude-standard --directory --no-empty-directory 2>/dev/null)
+			if [ -n "$WT_STRAY" ] && [ -n "$WT_DEFAULT" ]; then
+				git -C "$WORKTREE_DIR" clean -fdq 2>/dev/null
+				PRINT_TEXT "Removed what an earlier run left untracked in %s: %s" 90 "$WORKTREE_DIR" "$(_JOIN_PATHS "$WT_STRAY")"
+			elif [ -n "$WT_STRAY" ]; then
+				PRINT_ERR "-C/--dir path '$WORKTREE_DIR' holds untracked files the verify check would run over – name a scratch path instead"
+				exit 1
+			fi
 		fi
 		WT_OURS=0
 
