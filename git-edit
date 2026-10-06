@@ -50,6 +50,47 @@ unalias -a
 # (required for `$?` to work with `tee` below)
 set -o pipefail
 
+# Names this script assigns are its own – one a caller exported would seed it before the script set
+# it, a `TARGET` joining a squash or an `OPT_DROP` posing as `-d` – so each starts unset, a list
+# scenario 118 holds to the script
+unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF AMEND_SOURCE \
+	AMEND_TREE AMEND_TREE_GIVEN AUTO_OPEN_EDITOR C CMD COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
+	COMMITS_RESOLVED COMMITS_TOPO D DIR_HAS_EQUALS EDITOR_BASE EDITOR_FIRST EDIT_BRANCH EDIT_TARGET \
+	EDIT_WT EXEC_BASE EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_REF \
+	IS_REF LEFT_ALONE LOCKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST \
+	MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED \
+	MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM \
+	OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH \
+	OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT \
+	OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT OPT_EXEC OPT_HELP OPT_MESSAGE OPT_MOVE \
+	OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_SELFTEST \
+	OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY \
+	OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD OUR_TOPLEVEL PREV_NEW \
+	PREV_OLD RAW_TEXT_VALUE REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED \
+	RESOLVE_SCAN_MAX RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA \
+	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
+	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
+	STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY STATE_OPERATION \
+	STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE \
+	STATE_RRPRE_SET STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE STATE_UPSTREAM \
+	STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STEP T \
+	TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA VERIFY_VALUE WHOLE_HEAD WHOLE_IDX \
+	WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_GITDIR WT_OUT WT_STATUS _ACTOR _BANNER_REPO \
+	_CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES \
+	_CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM _HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR \
+	_LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY \
+	_RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE \
+	_RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
+	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES _SNAPSHOT_STAGES \
+	_SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATUS_EMITTED _TEMP_FILES _VERIFY_BYPASSED \
+	_VERIFY_FAILED _VERIFY_NO_RESUME
+
+# A switch set to 0, false, no or off is off, as most tools read one
+for _V in GIT_EDIT_NO_AUTO_ISOLATE GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_PROGRESS; do
+	[[ "${(P)_V:l}" == (0|false|no|off) ]] && unset $_V
+done
+unset _V
+
 # Released version – bumped together with the `v<version>` tag it ships under
 GIT_EDIT_VERSION="1.7.0"
 
@@ -58,10 +99,15 @@ GIT_EDIT_VERSION="1.7.0"
 # next conflict, wedging every later continue on "you have staged changes" – and have them print
 # a non-ASCII path as itself, since its quoted form read back (`"\303\234ber.txt"`) names no file
 if [ -z "$GIT_CONFIG_COUNT" ]; then
-	export GIT_CONFIG_COUNT=3
+	export GIT_CONFIG_COUNT=6
 	export GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false
 	export GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
 	export GIT_CONFIG_KEY_2=core.quotePath GIT_CONFIG_VALUE_2=false
+	# And output the script parses stays as it reads it – no signature lines in a `git log`, and
+	# todo lines a sequence editor matches by a full `pick <7 hex>`
+	export GIT_CONFIG_KEY_3=log.showSignature GIT_CONFIG_VALUE_3=false
+	export GIT_CONFIG_KEY_4=rebase.abbreviateCommands GIT_CONFIG_VALUE_4=false
+	export GIT_CONFIG_KEY_5=core.abbrev GIT_CONFIG_VALUE_5=7
 fi
 # Pathspec semantics are git-edit's own – a caller's glob setting refuses the `:(literal)` names
 # it passes, a literal one reads them as file names – kept for what runs on the caller's behalf
@@ -72,8 +118,9 @@ done
 unset _V GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS
 
 # Exports the caller's pathspec settings again, in the subshell of a command run on their behalf –
-# an `--exec` command or a verify check
+# an `--exec` command or a verify check – and drops `pipefail`, which a check's `| head` would trip
 _CALLER_PATHSPECS_BACK () {
+	set +o pipefail
 	[ ${#_CALLER_PATHSPECS} -eq 0 ] || export "${_CALLER_PATHSPECS[@]}"
 }
 
@@ -905,7 +952,7 @@ _CURRENT_REF () {
 		echo "refs/heads/$ORIG_BRANCH"
 		return
 	fi
-	local B=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local B=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -n "$B" ]; then
 		echo "refs/heads/$B"
 	else
@@ -2090,6 +2137,23 @@ _REQUIRE_GIT_VERSION () {
 	fi
 }
 
+# Refuses a git dir, work tree or index named through the environment – a dotfiles alias's
+# `--git-dir` – unless it names this directory's own, which it then drops – as every git a temp
+# worktree runs would take it, and work on the caller's checkout
+_REQUIRE_PLAIN_GIT_ENV () {
+	[ -n "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR" ] || return 0
+	local -a WITH WITHOUT
+	WITH=("$(git rev-parse --absolute-git-dir 2>/dev/null)" "$(git rev-parse --show-toplevel 2>/dev/null)" "$(git rev-parse --path-format=absolute --git-path index 2>/dev/null)")
+	WITHOUT=("$(unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR; git rev-parse --absolute-git-dir 2>/dev/null)" "$(unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR; git rev-parse --show-toplevel 2>/dev/null)" "$(unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR; git rev-parse --path-format=absolute --git-path index 2>/dev/null)")
+	if [ -n "${WITH[1]}" ] && [ "${(j:|:)WITH}" = "${(j:|:)WITHOUT}" ]; then
+		unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+		return 0
+	fi
+	PRINT_ERR "GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE names another repository, work tree or index than this directory's"
+	ECHO_E "\e[0;31m  Run git edit from inside the checkout, without them – its temp worktrees would take them too.\e[0m" >&2
+	exit 1
+}
+
 # Refuses every mutating mode while another operation is paused, the plumbing ones included –
 # starting a second rewrite moves the branch under the paused one, whose CAS then refuses at
 # apply time, which is safe but strands work that was resolvable a moment earlier
@@ -2292,9 +2356,9 @@ GIT_REBASE_DROP () {
 	_CAPTURE_BEGIN_ISOLATED
 	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
@@ -2324,9 +2388,9 @@ GIT_REBASE_SQUASH () {
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
 	if git show -s --pretty=%P "$OLDEST" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$OLDEST~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$OLDEST~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
 	fi
 	# The initial run opens an editor only for the fold, never for a clean pick, so
 	# `--text`'s own `#` lines just need git's cleanup out of the way – with `-m` the
@@ -2375,9 +2439,9 @@ GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	# Run as is below rather than joined and `eval`d, so its capture args go in as the arrays
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
@@ -2545,7 +2609,7 @@ _REFUSE_EXEC_BLANK_LINES () {
 # if the branch moved, so raw rewriting commands never touch the main checkout
 GIT_EXEC () {
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	# The CAS runs in the temp worktree, where `HEAD` names that worktree's own, never the checkout's
 	if [ -z "$BRANCH" ]; then
 		PRINT_ERR "--exec requires being on a branch (got detached HEAD)"
@@ -3204,7 +3268,7 @@ GIT_AMEND_INTO () {
 	TARGET=$_RESOLVED_SHA
 
 	# Pre-flight: must be on a branch
-	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "--amend-into requires being on a branch (got detached HEAD)"
 		exit 1
@@ -3372,7 +3436,7 @@ GIT_AMEND_INTO () {
 	# Step 3 – autosquash, where `GIT_SEQUENCE_EDITOR=true` accepts the auto-arranged todo and
 	# `GIT_EDITOR=true` keeps any message editor shut, defensive under fixup semantics
 	# `rerere` replays an already-resolved hunk, and `rr-cache` carries that across retries
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --autosquash --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -3659,7 +3723,7 @@ _SNAPSHOT_PAUSE () {
 	# A hunk resolved at an earlier stop arrives pre-filled – that stop's own record, recorded at
 	# its continue, would otherwise count as this one's
 	rm -f "$1/MERGE_RR"
-	git -C "$WT" -c rerere.enabled=true rerere >/dev/null 2>&1
+	git -C "$WT" -c rerere.enabled=true -c rerere.autoUpdate=false rerere >/dev/null 2>&1
 	_SNAPSHOT_SAVE_STATE
 	_CLEANUP_HOOK=""
 	PRINT_ERR "Conflict merging the fold into ${_SNAPSHOT_ERA:0:7} – resolve in the worktree, stage it, then 'git edit --continue'"
@@ -3784,7 +3848,7 @@ _CONTINUE_SNAPSHOT () {
 		fi
 		_GUARD_RESOLUTION_CLEAN "$WT"
 		# Recorded for rerere too, which pre-fills the same hunks at a later stop
-		git -C "$WT" -c rerere.enabled=true rerere >/dev/null 2>&1
+		git -C "$WT" -c rerere.enabled=true -c rerere.autoUpdate=false rerere >/dev/null 2>&1
 		while IFS=$'\t' read -r P BLOB; do
 			ENTRY=$(git -C "$WT" ls-files -s -- ":(literal)$P" 2>/dev/null)
 			if [ -n "$ENTRY" ]; then
@@ -4155,7 +4219,7 @@ GIT_SPLIT () {
 
 	# Capture the ref to update
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -4216,7 +4280,7 @@ GIT_SPLIT () {
 GIT_SPLIT_PAUSE () {
 	_REQUIRE_NO_INFLIGHT
 
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$BRANCH" ]; then
 		PRINT_ERR "Splitting by content requires being on a branch (got detached HEAD)"
 		exit 1
@@ -4430,7 +4494,7 @@ GIT_REORDER () {
 	_REQUIRE_NO_INFLIGHT
 
 	# Pre-flight: must be on a branch
-	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "--reorder requires being on a branch (got detached HEAD)"
 		exit 1
@@ -4557,7 +4621,7 @@ SEQEOF
 	chmod +x "$SEQ"
 
 	_CAPTURE_BEGIN
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -4680,7 +4744,7 @@ _FINISH_AUTO_RESOLVED_STEP () {
 	local OUTPUT RC # Needs to be separate for `$?` to work properly
 	# C locale – the captured evidence should read in English, not the
 	# machine's language (homebrew git localizes on an empty locale env)
-	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase --continue 2>&1 )
+	OUTPUT=$( export LC_ALL=C; GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -C "$WT" -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase --continue 2>&1 )
 	RC=$?
 	if [ $RC -eq 0 ]; then
 		PRINT_TEXT "%s – restored the %s blobs and continued." 32 "Final step auto-resolved (staged tree proven identical)" "$2"
@@ -4734,7 +4798,7 @@ _ONTO_FORK_POINT () {
 GIT_ONTO () {
 	_REQUIRE_NO_INFLIGHT
 
-	local ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "--onto requires being on a branch (got detached HEAD)"
 		exit 1
@@ -4820,7 +4884,7 @@ GIT_ONTO () {
 	_CAPTURE_BEGIN
 	# Detached, so the branch ref stays put until the CAS – and the branch can
 	# stay checked out in whatever worktree the caller is using
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --onto $UPSTREAM_FULL $FORK"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --onto $UPSTREAM_FULL $FORK"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
@@ -5051,12 +5115,12 @@ _CONTINUE_ONTO () {
 	else
 		local CMD
 		if [ ${#OPT_SKIP} -gt 0 ]; then
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --skip"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --skip"
 		else
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 			_GUARD_STOP_MODES "$STATE_WORKTREE"
 			_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
-			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
+			CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		fi
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
@@ -5140,7 +5204,7 @@ _CONTINUE_REORDER () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -5220,12 +5284,12 @@ _CONTINUE_REBASE () {
 			# Safe because the stand-in writes every replayed message back itself
 			CLEANUP="-c commit.cleanup=whitespace "
 		fi
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=$SHOWN git ${CLEANUP}-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		# Exported, as an assignment before `eval` reaches its commands only where the caller had
 		# already exported the name – elsewhere git fell back to `$EDITOR`
-		if ! CONTINUE_OUTPUT=$( export LC_ALL=C GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR"; eval "git ${CLEANUP}-c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue" 2>&1 ); then
+		if ! CONTINUE_OUTPUT=$( export LC_ALL=C GIT_SEQUENCE_EDITOR=true GIT_EDITOR="$FOLD_EDITOR"; eval "git ${CLEANUP}-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue" 2>&1 ); then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -5308,7 +5372,7 @@ _EDIT_START_REPLAY () {
 		git checkout -q "$STATE_AMENDED" 2>/dev/null
 		return 0
 	fi
-	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$CMD" >/dev/null 2>&1; then
@@ -5346,7 +5410,7 @@ _CONTINUE_EDIT () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ); then
@@ -6422,7 +6486,7 @@ _CONTINUE_AMEND_INTO () {
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
-		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
+		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
@@ -6735,7 +6799,7 @@ GIT_REWORD () {
 
 	# Capture the ref to update (branch if attached, `HEAD` if detached)
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -7096,7 +7160,7 @@ GIT_RESQUASH () {
 
 	# Capture the ref to update
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -7305,9 +7369,9 @@ GIT_REBASE_CONTINUE () {
 
 	# The stand-in restores every replayed message itself, so the rebase can run
 	# under the cleanup the fold needs – set only where the stand-in goes in
-	local CMD="git -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
+	local CMD="git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
 	if [[ "$ACTION" == "squash" && ( -n "$TEXT_VALUE" || -n "$OPT_MESSAGE" ) ]]; then
-		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
+		CMD="git -c commit.cleanup=whitespace -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $SUBCMD"
 	fi
 	PRINT_CMD "$CMD"
 
@@ -7563,6 +7627,7 @@ done
 
 # Past the usage and version answers, which an outdated git should still get
 _REQUIRE_GIT_VERSION
+_REQUIRE_PLAIN_GIT_ENV
 
 # Capture `HEAD` before any modification, for the status trailer's `old_head` field – stays
 # empty outside a git repo or in an empty one, where the script fails later on commit
@@ -8611,7 +8676,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		PRINT_ERR "Pass --text with 'git edit --continue' – the message is applied at the amend"
 		exit 1
 	fi
-	EDIT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	EDIT_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$EDIT_BRANCH" ]; then
 		PRINT_ERR "Edit mode requires being on a branch (got detached HEAD)"
 		exit 1
@@ -8737,7 +8802,7 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 	fi
 
 	# Capture original branch and `HEAD` for ref-update at the end
-	ORIG_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+	ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	ORIG_HEAD=$(git rev-parse HEAD)
 
 	# Canonicalize paths (resolve symlinks) so comparisons are consistent
