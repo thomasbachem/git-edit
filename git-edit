@@ -57,7 +57,7 @@ unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEN
 	AMEND_TREE AMEND_TREE_GIVEN AUTO_OPEN_EDITOR C CMD COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO D DIR_HAS_EQUALS EDITOR_BASE EDITOR_FIRST EDIT_BRANCH EDIT_TARGET \
 	EDIT_WT EXEC_BASE EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_REF \
-	IS_REF LEFT_ALONE LOCKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST \
+	IS_REF LEFT_ALONE LOCKED MARKED MEANT_MODES MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST \
 	MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED \
 	MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO NEW_HEAD ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM \
 	OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH \
@@ -70,20 +70,20 @@ unset ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEN
 	RESOLVE_SCAN_MAX RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_SCOPE SELFTEST_TEXT SHA \
 	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STASH_REF STATE_ACTION \
 	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
-	STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY STATE_OPERATION \
-	STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE \
-	STATE_RRPRE_SET STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE STATE_UPSTREAM \
-	STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STEP T \
-	TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA VERIFY_VALUE WHOLE_HEAD WHOLE_IDX \
-	WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_GITDIR WT_OUT WT_STATUS _ACTOR _BANNER_REPO \
-	_CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES \
-	_CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM _HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR \
-	_LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY \
-	_RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE \
-	_RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
-	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES _SNAPSHOT_STAGES \
-	_SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATUS_EMITTED _TEMP_FILES _VERIFY_BYPASSED \
-	_VERIFY_FAILED _VERIFY_NO_RESUME
+	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MODE_STRAY \
+	STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED \
+	STATE_RRPRE STATE_RRPRE_SET STATE_SPAN STATE_STAGEDTREE STATE_TARGET STATE_TARGETS STATE_TREE \
+	STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN \
+	STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_VALUE THEIR_TOPLEVEL TOPLEVEL TREE_BASE TREE_SHA \
+	VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS WHOLE_TREE WORKTREE_ABS WORKTREE_DIR WT_GITDIR \
+	WT_OURS WT_OUT WT_STATUS _ACTOR _BANNER_REPO _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
+	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _DEFERRED_SIGNAL _DIM \
+	_HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK \
+	_ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS \
+	_REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE \
+	_RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP _REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SNAPSHOT_ERA \
+	_SNAPSHOT_RESOLVED_TREES _SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED \
+	_STATE_PATH _STATUS_EMITTED _TEMP_FILES _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_NO_RESUME
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_ISOLATE GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_PROGRESS; do
@@ -2217,8 +2217,12 @@ GIT_STASH () {
 		fi
 	done
 
+	# An isolated run's worktree holds no work of the caller's to protect – a `-C` path's untracked
+	# files went into the shared stash otherwise, and an abort left them there
+	[ -n "$WORKTREE_DIR" ] && return 0
+
 	# Nothing to stash – skip the attempt rather than print a `git stash push` that saved
-	# nothing, which in an isolated worktree is always so and reads as the caller's own stash
+	# nothing
 	if [ -z "$(git status --porcelain)" ]; then
 		return 0
 	fi
@@ -2280,7 +2284,7 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 			# `--continue` like the other modes, and abort in the main checkout, where a pause strands
 			if _IS_NON_INTERACTIVE; then
 				if [ -n "$WORKTREE_DIR" ] && [ -n "$ORIG_BRANCH" ]; then
-					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
+					_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" "wt_ours=${WT_OURS:-0}" \
 						"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 					# The editor override carrying --text lasts this one rebase
 					# invocation – hand the message on, as `--continue` spawns its own
@@ -2353,6 +2357,33 @@ GIT_RUN_AND_HANDLE_CONFLICTS () {
 			CONTINUE_OR_ABORT ${OPEN_EDITOR_CMD:+open}
 
 			GIT_ADD_ALL
+			# Enter on markers still in the files would stage them – asked again rather than committed
+			_MARKED_PATHS .
+			while [ ${#MARKED} -gt 0 ]; do
+				PRINT_ERR "Conflict markers remain in: ${(j:, :)MARKED}"
+				PRINT_TEXT "Resolve them, then press %s to continue, or %s to cancel editing." 33 "Enter" "Escape"
+				CONTINUE_OR_ABORT ${OPEN_EDITOR_CMD:+open}
+				GIT_ADD_ALL
+				_MARKED_PATHS .
+			done
+			GIT_REBASE_CONTINUE
+		elif [[ "$OUTPUT" == *"--allow-empty"* ]] || [[ "$OUTPUT" == *"No changes - did you forget to use"* ]] && \
+		     [[ "$(tail -1 "$(git rev-parse --git-path rebase-merge/done)" 2>/dev/null)" == (fixup|squash|f|s)\ * ]]; then
+			# A fixup or squash left empty is its commits cancelling out – skipping it brought back
+			# the change the other took away, so the combined commit stays, empty
+			PRINT_TEXT "%s – the combined commit stays, empty." 33 "The squashed commits cancel each other out"
+			# With the message the squash would have taken – `--text`, else `-m`'s editor on the
+			# combined one git left, a bare squash keeping the target's as its fixups do
+			if [ -n "$TEXT_VALUE" ]; then
+				local SQUASH_MSG_FILE=$(MKTEMP_FILE git-edit-squash-msg)
+				_TEMP_FILES+=("$SQUASH_MSG_FILE")
+				printf '%s\n' "$TEXT_VALUE" > "$SQUASH_MSG_FILE"
+				git -c commit.cleanup=whitespace commit -q --amend --allow-empty -F "$SQUASH_MSG_FILE" </dev/null >/dev/null 2>&1 || ABORT
+			elif [ ${#OPT_MESSAGE} -gt 0 ]; then
+				git commit -q --amend --allow-empty --edit -F "$(git rev-parse --git-path rebase-merge/message)" >/dev/null || ABORT
+			else
+				git commit -q --amend --allow-empty --no-edit </dev/null >/dev/null 2>&1 || ABORT
+			fi
 			GIT_REBASE_CONTINUE
 		elif [[ "$OUTPUT" == *"--allow-empty"* ]] || [[ "$OUTPUT" == *"No changes - did you forget to use"* ]]; then
 			PRINT_TEXT "%s – Press %s to skip (drop) it, or %s to cancel editing." 33 "A later commit is now empty" "Enter" "Escape"
@@ -2660,7 +2691,8 @@ GIT_EXEC () {
 	fi
 
 	# Unique per-invocation worktree so concurrent --exec calls never collide
-	local WT=$(MKTEMP_DIR git-edit-exec)
+	local WT
+	WT=$(MKTEMP_DIR git-edit-exec) || exit 1
 	rmdir "$WT"  # `git worktree add` wants to create the dir itself
 	local CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
@@ -3237,6 +3269,8 @@ GIT_COMMIT_WHOLE () {
 # being the staged index, or the `--tree` a caller composed apart from it
 _STAGED_TREE_FOR () {
 	local BASE=$1
+	# An unmerged entry reads as a deletion below – the caller refuses the empty tree instead
+	[ -z "$AMEND_TREE" ] && [ -n "$(git ls-files -u -- "${AMEND_PATHSPECS[@]}" 2>/dev/null)" ] && return 1
 	local TMPIDX=$(MKTEMP_FILE git-edit-amend-idx)
 	rm -f "$TMPIDX"
 	GIT_INDEX_FILE=$TMPIDX git read-tree "$BASE" || { rm -f "$TMPIDX"; return 1; }
@@ -3438,11 +3472,13 @@ GIT_AMEND_INTO () {
 		PRINT_ERR "Cannot snapshot index (unmerged entries?) – resolve conflicts first"
 		exit 1
 	fi
-	local FIXUP_COMMIT=$(git commit-tree "$STAGED_TREE" -p "$FIXUP_PARENT" -m "fixup! $TARGET_SUBJECT" </dev/null) || exit 1
+	local FIXUP_COMMIT
+	FIXUP_COMMIT=$(git commit-tree "$STAGED_TREE" -p "$FIXUP_PARENT" -m "fixup! $TARGET_SUBJECT" </dev/null) || exit 1
 	PRINT_CMD "git write-tree + commit-tree -> ${FIXUP_COMMIT:0:7}  # fixup! object, branch untouched"
 
 	# Step 2: isolated worktree at the fixup commit object
-	local WT=$(MKTEMP_DIR git-edit-amend-into)
+	local WT
+	WT=$(MKTEMP_DIR git-edit-amend-into) || exit 1
 	rmdir "$WT"
 	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)FIXUP_COMMIT}"
 	PRINT_CMD "$WT_CMD" 90
@@ -3466,7 +3502,20 @@ GIT_AMEND_INTO () {
 	# Step 3 – autosquash, where `GIT_SEQUENCE_EDITOR=true` accepts the auto-arranged todo and
 	# `GIT_EDITOR=true` keeps any message editor shut, defensive under fixup semantics
 	# `rerere` replays an already-resolved hunk, and `rr-cache` carries that across retries
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --autosquash --no-autostash --interactive $REBASE_BASE"
+	# The fold's own fixup alone goes beside its target – `--autosquash` moved every `fixup!` in the
+	# span, another commit's included
+	local SEQ=$(MKTEMP_FILE git-edit-fold-seq)
+	_TEMP_FILES+=("$SEQ")
+	cat > "$SEQ" <<'SEQEOF'
+#!/bin/sh
+awk -v fix="$GIT_EDIT_FOLD_FIXUP" -v tgt="$GIT_EDIT_FOLD_TARGET" '
+	$1 == "pick" && length($2) >= 7 && index(fix, $2) == 1 { next }
+	{ print }
+	!done && $1 == "pick" && length($2) >= 7 && index(tgt, $2) == 1 { print "fixup " fix; done = 1 }
+' "$1" > "$1.git-edit" && mv "$1.git-edit" "$1"
+SEQEOF
+	chmod +x "$SEQ"
+	local REBASE_CMD="GIT_EDIT_FOLD_FIXUP=$FIXUP_COMMIT GIT_EDIT_FOLD_TARGET=$TARGET_FULL GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -3476,6 +3525,7 @@ GIT_AMEND_INTO () {
 		# staged changes are still staged in main
 		_SAVE_STATE \
 			"operation=amend-into" \
+			"fixup=$FIXUP_COMMIT" \
 			"worktree=$WT" \
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
@@ -3520,6 +3570,7 @@ GIT_AMEND_INTO () {
 	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$(_MODE_LINES "$WT" "$ORIG_HEAD" "$STAGED_TREE")" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_SAVE_STATE \
 			"operation=amend-into" \
+			"fixup=$FIXUP_COMMIT" \
 			"worktree=$WT" \
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
@@ -3599,7 +3650,7 @@ _AMEND_INTO_SNAPSHOT () {
 	fi
 	# The fold as a commit on the tip, the side every snapshot merges in
 	STATE_FOLD=$(git commit-tree "$STAGED_TREE" -p "$ORIG_HEAD" -m "fold into ${TARGET_FULL:0:7}" </dev/null) || exit 1
-	STATE_WORKTREE=$(MKTEMP_DIR git-edit-snapshot)
+	STATE_WORKTREE=$(MKTEMP_DIR git-edit-snapshot) || exit 1
 	rmdir "$STATE_WORKTREE"
 	local WT_CMD="git worktree add --detach ${(q-)STATE_WORKTREE} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
@@ -3640,8 +3691,11 @@ _SNAPSHOT_BUILD () {
 	_SNAPSHOT_RESOLVED_TREES=()
 	if [ -s "$MAP" ]; then
 		# A tab through a variable – inside a subscript zsh keeps `$'\t'` as those four characters
-		local TAB=$'\t'
-		while IFS=$TAB read -r P BLOB LINE; do
+		local TAB=$'\t' L
+		# From the end, as a name may hold a tab
+		while IFS= read -r L; do
+			LINE=${L##*$TAB} L=${L%$TAB*}
+			BLOB=${L##*$TAB} P=${L%$TAB*}
 			RES[$P$TAB$BLOB]=$LINE
 		done < "$MAP"
 	fi
@@ -3653,9 +3707,10 @@ _SNAPSHOT_BUILD () {
 	fi
 	PRINT_CMD "git merge-tree --write-tree --merge-base=${STATE_ORIG_HEAD:0:7} <commit> ${STATE_FOLD:0:7}  # each of ${#ERAS[@]} commit(s)" 90
 	for C in "${ERAS[@]}"; do
-		OUT=$(git merge-tree --write-tree --merge-base="$STATE_ORIG_HEAD" "$C" "$STATE_FOLD" 2>/dev/null)
+		# NUL-separated, as the line form quotes a name holding a quote, backslash or tab
+		OUT=$(git merge-tree --write-tree -z --merge-base="$STATE_ORIG_HEAD" "$C" "$STATE_FOLD" 2>/dev/null)
 		RC=$?
-		MT_LINES=("${(@f)OUT}")
+		MT_LINES=("${(@0)OUT}")
 		TREE=${MT_LINES[1]}
 		if [ $RC -eq 1 ]; then
 			# The conflicted entries, a line per stage, run up to the blank line before git's messages
@@ -3742,11 +3797,12 @@ _SNAPSHOT_PAUSE () {
 	local NULL_OID=${(l:${#_SNAPSHOT_ERA}::0:)}
 	git -C "$WT" checkout -qf --detach "$_SNAPSHOT_ERA" 2>/dev/null
 	if ! git -C "$WT" read-tree --reset -u "$_SNAPSHOT_TREE" 2>/dev/null || \
-	   ! { for P in "${PATHS[@]}"; do print -r -- "0 $NULL_OID"$'\t'"$P"; done; print -rl -- "${_SNAPSHOT_STAGES[@]}"; } | git -C "$WT" update-index --index-info; then
+	   ! { for P in "${PATHS[@]}"; do print -rn -- "0 $NULL_OID"$'\t'"$P"$'\0'; done; print -rn -- "${(pj:\0:)_SNAPSHOT_STAGES}"$'\0'; } | git -C "$WT" update-index -z --index-info; then
 		PRINT_ERR "Could not lay the conflict at ${_SNAPSHOT_ERA:0:7} out in the worktree"
 		exit 1
 	fi
 	: >| "$1/git-edit-snapshot-pending"
+	print -r -- "$_SNAPSHOT_TREE" >| "$1/git-edit-snapshot-tree"
 	for P in "${PATHS[@]}"; do
 		print -r -- "$P"$'\t'"$(git rev-parse "$_SNAPSHOT_ERA:$P")" >> "$1/git-edit-snapshot-pending"
 	done
@@ -3876,10 +3932,28 @@ _CONTINUE_SNAPSHOT () {
 			EMIT_CONFLICT "$WT" "${UNMERGED//$'\n'/,}"
 			exit 2
 		fi
-		_GUARD_RESOLUTION_CLEAN "$WT"
+		_GUARD_RESOLUTION_CLEAN "$WT" "$STATE_FOLD"
+		# Staging beyond the stopped paths would never reach a commit – the snapshot takes their
+		# resolutions alone – so it refuses rather than drop it
+		local -a STOPPED EXTRA
+		local SLINE
+		while IFS= read -r SLINE; do STOPPED+=("${SLINE%$'\t'*}"); done < "$GD/git-edit-snapshot-pending"
+		if [ -s "$GD/git-edit-snapshot-tree" ]; then
+			for P in ${(0)"$(git -C "$WT" diff-index --cached -z --name-only "$(<"$GD/git-edit-snapshot-tree")" 2>/dev/null)"}; do
+				(( ${STOPPED[(Ie)$P]} )) || EXTRA+=("$P")
+			done
+		fi
+		if [ ${#EXTRA} -gt 0 ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Staged beyond the stopped paths, which a snapshot fold would drop: ${(j:, :)EXTRA}"
+			ECHO_E "\e[0;31m  Unstage them in $(_LIT "$WT") – fold them separately – then 'git edit --continue'.\e[0m" >&2
+			exit 1
+		fi
 		# Recorded for rerere too, which pre-fills the same hunks at a later stop
 		git -C "$WT" -c rerere.enabled=true -c rerere.autoUpdate=false rerere >/dev/null 2>&1
-		while IFS=$'\t' read -r P BLOB; do
+		while IFS= read -r SLINE; do
+			# From the end, as a name may hold a tab
+			P=${SLINE%$'\t'*} BLOB=${SLINE##*$'\t'}
 			ENTRY=$(git -C "$WT" ls-files -s -- ":(literal)$P" 2>/dev/null)
 			if [ -n "$ENTRY" ]; then
 				ENTRY=${${ENTRY%%$'\t'*}% *}
@@ -4172,7 +4246,8 @@ _SPLIT_APPLY () {
 	# Rebuild descendants on top of the remainder commit
 	PREV_OLD=$X
 	PREV_NEW=$C2
-	_REBUILD_DESCENDANTS "$X"
+	# From the branch's own tip – a split resumed with the checkout on another branch walked that
+	_REBUILD_DESCENDANTS "$X" "$ORIG_HEAD"
 
 	# A split authors an intermediate tree no commit ever carried, so it earns the gate as much
 	# as any replay, even with the tip tree unchanged by construction – always in a throwaway
@@ -4181,7 +4256,8 @@ _SPLIT_APPLY () {
 	# flag – so record the bypass ahead of it, where every other mode records it from the gate
 	_VERIFY_NOTE_BYPASS
 	if _VERIFY_CONFIGURED; then
-		local VWT=$(MKTEMP_DIR git-edit-verify)
+		local VWT
+		VWT=$(MKTEMP_DIR git-edit-verify) || exit 1
 		if git worktree add --detach "$VWT" "$PREV_NEW" >/dev/null 2>&1; then
 			_LINK_WORKTREE_EXTRAS "$VWT"
 			local VERIFY_OK=true
@@ -4214,6 +4290,13 @@ _SPLIT_APPLY () {
 		fi
 	fi
 
+	# The remainder keeps the commit's full tree and descendants keep theirs, so the tip tree is
+	# identical by construction – checked, as a rebuild that walked another history breaks it
+	if [ "$(git rev-parse "$PREV_NEW^{tree}")" != "$(git rev-parse "$ORIG_HEAD^{tree}")" ]; then
+		PRINT_ERR "The split's tip would differ from ${ORIG_HEAD:0:7}'s – not applied"
+		exit 1
+	fi
+
 	# Atomic CAS ref update
 	local CMD="git update-ref -m ${(q-)${:-git edit: split ${X:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)PREV_NEW} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$CMD"
@@ -4224,9 +4307,7 @@ _SPLIT_APPLY () {
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "split ${X:0:7}"
 
-	# The remainder keeps the commit's full tree and descendants keep theirs,
-	# so the tip tree is identical by construction – stated so callers don't
-	# re-verify with a diff
+	# Stated, checked above, so callers don't re-verify with a diff
 	PRINT_TEXT "%s – split into:" 32 "Tip tree identical ✓"
 	git show --stat --format='  %h %s' "$C1" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	git show --stat --format='  %h %s' "$C2" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
@@ -4289,7 +4370,14 @@ GIT_SPLIT () {
 	rm -f "$TMPIDX"
 	GIT_INDEX_FILE=$TMPIDX git read-tree "$X^" || { rm -f "$TMPIDX"; exit 1; }
 	local META PATHNAME DSTMODE DSTSHA
-	while IFS=$'\t' read -r META PATHNAME; do
+	local -a RAW
+	local -i I
+	# NUL-separated, as the line form quotes a name holding a quote, backslash or control byte –
+	# and that quoting became the name
+	RAW=("${(@0)$(git diff-tree -z -r "$X^" "$X" -- "${PATHSPECS[@]}")}")
+	for (( I = 1; I < ${#RAW[@]}; I += 2 )); do
+		META=${RAW[I]} PATHNAME=${RAW[I+1]}
+		[ -z "$META" ] && continue
 		DSTMODE=$(echo "$META" | awk '{print $2}')
 		DSTSHA=$(echo "$META" | awk '{print $4}')
 		if [ "$DSTMODE" = "000000" ]; then
@@ -4297,7 +4385,7 @@ GIT_SPLIT () {
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
 		fi
-	done < <(git diff-tree -r "$X^" "$X" -- "${PATHSPECS[@]}")
+	done
 	local TREE1=$(GIT_INDEX_FILE=$TMPIDX git write-tree)
 	rm -f "$TMPIDX"
 	[ -z "$TREE1" ] && { PRINT_ERR "Failed to compose the extracted tree"; exit 1; }
@@ -4320,7 +4408,8 @@ GIT_SPLIT_PAUSE () {
 	_SPLIT_GUARDS "$SPLIT_TARGET"
 	local X=$_RESOLVED_SHA
 
-	local WT=$(MKTEMP_DIR git-edit-split)
+	local WT
+	WT=$(MKTEMP_DIR git-edit-split) || exit 1
 	rmdir "$WT"  # `git worktree add` wants to create the dir itself
 	if ! git worktree add --detach "$WT" "$X" >/dev/null 2>&1; then
 		PRINT_ERR "Cannot create split worktree at ${X:0:7}"
@@ -4612,7 +4701,8 @@ GIT_REORDER () {
 	fi
 
 	# Isolated worktree at the current tip
-	local WT=$(MKTEMP_DIR git-edit-reorder)
+	local WT
+	WT=$(MKTEMP_DIR git-edit-reorder) || exit 1
 	rmdir "$WT"
 	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
@@ -4878,7 +4968,7 @@ GIT_ONTO () {
 	# covers the rest since no descendant of an unpushed commit is pushed
 	_GUARD_UNPUSHED "${SPAN[1]}"
 	_GUARD_NO_MERGE_SPAN "${SPAN[1]}"
-	_GUARD_ONTO_CHECKOUT_CLEAN "$MAIN_DIR" "$ORIG_HEAD" "$UPSTREAM_FULL"
+	_GUARD_ONTO_CHECKOUT_CLEAN "$MAIN_DIR" "$ORIG_HEAD" "$UPSTREAM_FULL" "$REF"
 
 	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
 	# Whether the old base still sits on the upstream decides how surprising
@@ -4901,7 +4991,8 @@ GIT_ONTO () {
 		"$ONTO_UPSTREAM" "${GAINED:-0}" "${#SPAN[@]}" "$ORIG_BRANCH"
 	_PRINT_ONTO_TRIAGE "$UPSTREAM_FULL" "$ORIG_HEAD" "$FORK"
 
-	local WT=$(MKTEMP_DIR git-edit-onto)
+	local WT
+	WT=$(MKTEMP_DIR git-edit-onto) || exit 1
 	rmdir "$WT"
 	local WT_CMD="git worktree add --detach ${(q-)WT} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$WT_CMD" 90
@@ -4970,7 +5061,7 @@ GIT_ONTO () {
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "onto ${UPSTREAM_FULL:0:7}"
-	_SYNC_ONTO_CHECKOUT "$MAIN_DIR" "$ORIG_HEAD" "$NEW_HEAD"
+	_SYNC_ONTO_CHECKOUT "$MAIN_DIR" "$ORIG_HEAD" "$NEW_HEAD" "$REF"
 
 	_PRINT_ONTO_SUMMARY "$UPSTREAM_FULL" "$NEW_HEAD" "${#SPAN[@]}" "$ORIG_HEAD" "$FORK"
 
@@ -5030,10 +5121,13 @@ _PRINT_ONTO_SKIP_HINT () {
 # replant would rewrite – the sync afterwards declines to overwrite it, correctly, but
 # only once the branch had moved, leaving the ref and the files disagreeing
 _GUARD_ONTO_CHECKOUT_CLEAN () {
+	# Args: <checkout> <from> <upstream> [<branch ref>]
 	local DIR=$1
 	local FROM=$2
 	local UPSTREAM=$3
 	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
+	# A checkout on another branch is not the replant's to update
+	[ -n "$4" ] && [ "$(git -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ] && return 0
 
 	local -a AFFECTED DIRTY BLOCKED
 	AFFECTED=("${(@f)$(git -C "$DIR" diff --name-only "$FROM" "$UPSTREAM" 2>/dev/null)}")
@@ -5065,10 +5159,15 @@ _GUARD_ONTO_CHECKOUT_CLEAN () {
 # isolated modes skip this since a reorder preserves the tree, and leaving a replant
 # behind makes every commit the upstream gained read as a local deletion
 _SYNC_ONTO_CHECKOUT () {
+	# Args: <checkout> <from> <to> [<branch ref>]
 	local DIR=$1
 	local FROM=$2
 	local TO=$3
 	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
+	if [ -n "$4" ] && [ "$(git -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ]; then
+		PRINT_TEXT "%s – left as it is." 32 "The checkout holds another branch"
+		return 0
+	fi
 	local ERR=$(git -C "$DIR" read-tree -u -m "$FROM" "$TO" 2>&1)
 	if [ -z "$ERR" ]; then
 		PRINT_TEXT "Checkout updated to the replanted branch." 32
@@ -5081,9 +5180,9 @@ _SYNC_ONTO_CHECKOUT () {
 		PRINT_TEXT "%s" 33 "Branch replanted, but the checkout could not follow – it still holds the pre-replant content."
 		if [ -n "${BLOCKED[1]}" ]; then
 			PRINT_TEXT "Blocked by uncommitted work in: %s" 33 "${(j:, :)BLOCKED}"
-			PRINT_TEXT "Commit or move those, then: %s" 33 "git -C $DIR checkout -- ."
+			PRINT_TEXT "Commit or move those, then: %s" 33 "git -C ${(q-)DIR} read-tree -u -m ${FROM:0:12} ${TO:0:12}"
 		else
-			PRINT_TEXT "Reconcile once your uncommitted work is safe: %s" 33 "git -C $DIR checkout -- ."
+			PRINT_TEXT "Reconcile once your uncommitted work is safe: %s" 33 "git -C ${(q-)DIR} read-tree -u -m ${FROM:0:12} ${TO:0:12}"
 		fi
 	fi
 }
@@ -5182,7 +5281,7 @@ _CONTINUE_ONTO () {
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "onto ${STATE_TARGET:0:7}"
-	_SYNC_ONTO_CHECKOUT "$STATE_MAINDIR" "$STATE_ORIG_HEAD" "$NEW_HEAD"
+	_SYNC_ONTO_CHECKOUT "$STATE_MAINDIR" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$STATE_BRANCH"
 
 	_PRINT_ONTO_SUMMARY "$STATE_TARGET" "$NEW_HEAD" "$STATE_SPAN" "$STATE_ORIG_HEAD" "$STATE_FORK"
 
@@ -5284,7 +5383,8 @@ _CONTINUE_REBASE () {
 
 	cd "$STATE_WORKTREE" || exit 1
 
-	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
+	# Only a worktree this tool made goes – a `-C` path the caller named is theirs
+	_STATE_WT_OURS && _CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
 
@@ -5365,9 +5465,13 @@ _ABORT_REBASE () {
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
-		local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
-		PRINT_CMD "$CMD" 90
-		eval "$CMD"
+		if _STATE_WT_OURS; then
+			local CMD="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
+			PRINT_CMD "$CMD" 90
+			eval "$CMD"
+		else
+			PRINT_TEXT "%s, your -C path, stays." 33 "$STATE_WORKTREE"
+		fi
 	fi
 
 	_CLEAR_STATE
@@ -5395,6 +5499,8 @@ _PRINT_EDIT_RECONCILE_HINT () {
 # Exits 2 on conflict, returns on success with the worktree `HEAD` at the replayed tip
 _EDIT_START_REPLAY () {
 	local TIP=$(git rev-parse "$STATE_BRANCH")
+	# Before the save, which carries the rerere baseline only once the scope holds one
+	_RERERE_SCOPE_BEGIN
 	_SAVE_STATE "operation=edit" "worktree=$STATE_WORKTREE" "branch=$STATE_BRANCH" \
 		"orig_head=$STATE_ORIG_HEAD" "target=$STATE_TARGET" "amended=$STATE_AMENDED" "replay_tip=$TIP" \
 		"maindir=$STATE_MAINDIR"
@@ -5406,7 +5512,6 @@ _EDIT_START_REPLAY () {
 	fi
 	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
-	_RERERE_SCOPE_BEGIN
 	if ! eval "$CMD" >/dev/null 2>&1; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Conflict while replaying descendants – resolve in worktree, then 'git edit --continue'"
@@ -5416,6 +5521,13 @@ _EDIT_START_REPLAY () {
 		EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 		exit 2
 	fi
+}
+
+# Tells a pause whose run landed it but was cut off before clearing it – the branch moved off the
+# pre-op tip onto exactly what the pause worktree built
+_PAUSE_LANDED () {
+	[ -d "$STATE_WORKTREE" ] && [ "$(git rev-parse "$STATE_BRANCH" 2>/dev/null)" != "$STATE_ORIG_HEAD" ] && \
+		[ "$(git rev-parse "$STATE_BRANCH" 2>/dev/null)" = "$(git -C "$STATE_WORKTREE" rev-parse HEAD 2>/dev/null)" ]
 }
 
 # Resumes a paused non-interactive edit – the phase is re-derived from the worktree itself,
@@ -5428,7 +5540,24 @@ _CONTINUE_EDIT () {
 		exit 1
 	fi
 
+	if _PAUSE_LANDED; then
+		PRINT_TEXT "The edit had landed already, its run cut off before clearing the pause – nothing left to do." 33
+		git worktree remove --force "$STATE_WORKTREE" 2>/dev/null
+		rm -rf "$STATE_WORKTREE"
+		_CLEAR_STATE
+		EMIT_STATUS "$(git rev-parse "$STATE_BRANCH")" "$STATE_BRANCH" false
+		exit 0
+	fi
+
 	cd "$STATE_WORKTREE" || exit 1
+
+	# A branch rewritten below the paused commit no longer holds it – a replay onto its tip would
+	# carry the old commits back beside their new copies
+	if ! git merge-base --is-ancestor "$STATE_TARGET" "$(git rev-parse "$STATE_BRANCH")" 2>/dev/null; then
+		PRINT_ERR "${STATE_BRANCH#refs/heads/} was rewritten under this edit – ${STATE_TARGET:0:7} is no longer in its history"
+		ECHO_E "\e[0;31m  Nothing was applied – 'git edit --abort', then edit its counterpart anew.\e[0m" >&2
+		exit 1
+	fi
 
 	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
@@ -5436,6 +5565,13 @@ _CONTINUE_EDIT () {
 
 	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 	local HEAD_NOW=$(git rev-parse HEAD)
+
+	# A message goes in with the amend – past it, the reword is a run of its own
+	if [ -n "$TEXT_VALUE" ] && [ "$HEAD_NOW" != "$STATE_TARGET" ]; then
+		_CLEANUP_HOOK=""
+		PRINT_ERR "--text takes effect at the amend, which is past – finish the edit, then reword: git edit -M --text=\"…\" <sha>"
+		exit 1
+	fi
 
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
 		# Mid-replay conflict
@@ -5480,9 +5616,30 @@ _CONTINUE_EDIT () {
 		# Amend landed but the replay never ran (crash between) – run it now
 		[ "$_CAPTURE_REWRITES" = "true" ] || _CAPTURE_BEGIN
 		_EDIT_START_REPLAY
+	elif [ -n "$STATE_AMENDED" ] && git merge-base --is-ancestor "$STATE_AMENDED" HEAD 2>/dev/null; then
+		# The replay finished, possibly by hand – apply what it built
+		:
+	elif [ -z "$STATE_AMENDED" ] && git rev-parse -q --verify "$STATE_TARGET^" >/dev/null && \
+	     [ "$HEAD_NOW" != "$(git rev-parse "$STATE_TARGET^")" ] && git merge-base --is-ancestor "$STATE_TARGET^" HEAD 2>/dev/null; then
+		# Commits made by hand at the stop – an amend of the paused commit, or ones on top of it –
+		# stand in for it, and what followed it replays onto them as for an amend of the tool's own
+		if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+			_CLEANUP_HOOK=""
+			PRINT_ERR "Commits were made at the stop, with changes beside them still uncommitted"
+			ECHO_E "\e[0;31m  Commit or discard them in $(_LIT "$STATE_WORKTREE"), then 'git edit --continue'.\e[0m" >&2
+			exit 1
+		fi
+		STATE_AMENDED=$HEAD_NOW
+		[ "$_CAPTURE_REWRITES" = "true" ] || _CAPTURE_BEGIN
+		_CAPTURE_RECORD "$STATE_TARGET" "$STATE_AMENDED"
+		_EDIT_START_REPLAY
+	else
+		# Anything else – a reset elsewhere, the paused commit dropped – lands nothing
+		_CLEANUP_HOOK=""
+		PRINT_ERR "The edit's worktree no longer builds on ${STATE_TARGET:0:7} or its parent – nothing was applied"
+		ECHO_E "\e[0;31m  Reset it there ('git -C $(_LIT "${(q-)STATE_WORKTREE}") reset --hard ${STATE_TARGET:0:12}') and edit again, or 'git edit --abort'.\e[0m" >&2
+		exit 1
 	fi
-	# Otherwise `HEAD` is beyond the amended commit with no rebase in progress – the replay
-	# finished, possibly by hand, so fall through to apply
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 	local BASE=${STATE_REPLAY_TIP:-$STATE_ORIG_HEAD}
@@ -5535,6 +5692,8 @@ _CONTINUE_EDIT () {
 
 _ABORT_EDIT () {
 	PRINT_ACTION "Aborting edit of %s..." "${STATE_TARGET:0:7}"
+	local LANDED=""
+	_PAUSE_LANDED && LANDED=1
 
 	if [ -d "$STATE_WORKTREE" ]; then
 		git -C "$STATE_WORKTREE" rebase --abort 2>/dev/null
@@ -5544,7 +5703,11 @@ _ABORT_EDIT () {
 	fi
 
 	_CLEAR_STATE
-	PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	if [ -n "$LANDED" ]; then
+		PRINT_TEXT "The edit had landed already, its run cut off before clearing the pause – nothing to take back." 33
+	else
+		PRINT_TEXT "Branch was never touched – nothing to roll back." 32
+	fi
 	PRINT_TEXT "%s" 32 "Edit aborted, state cleared."
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
@@ -5620,6 +5783,8 @@ _SAVE_STATE () {
 
 _LOAD_STATE () {
 	local SF=$(_STATE_FILE_PATH)
+	# Kept for the clear, which a run removing its worktree first could no longer resolve
+	_STATE_PATH=$SF
 	if [ -z "$SF" ] || [ ! -f "$SF" ]; then
 		PRINT_ERR "No in-flight git-edit operation to continue or abort"
 		exit 1
@@ -5631,6 +5796,8 @@ _LOAD_STATE () {
 	STATE_ORIG_HEAD=""
 	STATE_TARGET=""
 	STATE_HEAD_WITH_FIXUP=""
+	STATE_FIXUP=""
+	STATE_WT_OURS=""
 	STATE_DEPTH=""
 	STATE_REBASEBASE=""
 	STATE_STAGEDTREE=""
@@ -5665,6 +5832,8 @@ _LOAD_STATE () {
 			orig_head)       STATE_ORIG_HEAD=$VAL ;;
 			target)          STATE_TARGET=$VAL ;;
 			head_with_fixup) STATE_HEAD_WITH_FIXUP=$VAL ;;
+			fixup)           STATE_FIXUP=$VAL ;;
+			wt_ours)         STATE_WT_OURS=$VAL ;;
 			depth)           STATE_DEPTH=$VAL ;;
 			rebasebase)      STATE_REBASEBASE=$VAL ;;
 			stagedtree)      STATE_STAGEDTREE=$VAL ;;
@@ -5764,8 +5933,14 @@ _VERIFY_SAVE_LOG () {
 	PRINT_TEXT "Full output: %s" 33 "$LF"
 }
 
+# Tells whether the pause's worktree is one this tool made – by its name
+# for a pause from before the record was kept
+_STATE_WT_OURS () {
+	[ "$STATE_WT_OURS" = 1 ] || { [ -z "$STATE_WT_OURS" ] && [[ "${STATE_WORKTREE:t}" == git-edit-* ]]; }
+}
+
 _CLEAR_STATE () {
-	local SF=$(_STATE_FILE_PATH)
+	local SF=${_STATE_PATH:-$(_STATE_FILE_PATH)}
 	[ -n "$SF" ] || return 0
 	# The capture dir a pause recorded goes with its state, as does this run's own
 	_CAPTURE_REMOVE "$(sed -n 's/^capture=//p' "$SF" 2>/dev/null | head -1)"
@@ -5924,22 +6099,49 @@ _PRINT_DROPPED_COMMITS () {
 	return 0
 }
 
+# Fills `MARKED` with the staged paths in <worktree> holding conflict markers none of its sides
+# brought, each at its own `conflict-marker-size` – an underline a file holds of its own passes
+_MARKED_PATHS () {
+	# Args: <worktree> [<rev a side came from>...]
+	local WT=$1 FILE N RE STAGED OWN SIDE A
+	shift
+	local -a FILES SIDES ATTRS
+	local -A SIZE
+	SIDES=(HEAD "$@")
+	git -C "$WT" rev-parse -q --verify REBASE_HEAD >/dev/null 2>&1 && SIDES+=(REBASE_HEAD)
+	MARKED=()
+	# NUL-separated – the line form C-quotes a name holding a quote or
+	# backslash, which then shows no markers and passes
+	FILES=(${(0)"$(git -C "$WT" diff --cached -z --name-only 2>/dev/null)"})
+	(( ${#FILES} )) || return 0
+	ATTRS=("${(@0)$(print -rn -- "${(pj:\0:)FILES}" | git -C "$WT" check-attr -z --stdin conflict-marker-size 2>/dev/null)}")
+	for (( A = 1; A + 2 <= ${#ATTRS}; A += 3 )); do SIZE[${ATTRS[A]}]=${ATTRS[A + 2]}; done
+	for FILE in "${FILES[@]}"; do
+		N=${SIZE[$FILE]}
+		[[ "$N" == <1-> ]] || N=7
+		RE="^(<{$N}|={$N}|>{$N})( |\$)"
+		# Read whole – piped into `grep -q`, `git show` died at an early marker once the blob
+		# outgrew the pipe buffer, and `pipefail` read that as a clean file
+		STAGED=$(git -C "$WT" show ":0:$FILE" 2>/dev/null | grep -E "$RE")
+		[ -n "$STAGED" ] || continue
+		OWN=""
+		for SIDE in "${SIDES[@]}"; do
+			OWN+=$(git -C "$WT" show "$SIDE:$FILE" 2>/dev/null | grep -E "$RE")$'\n'
+		done
+		[ -n "$(LC_ALL=C comm -23 <(print -r -- "$STAGED" | LC_ALL=C sort -u) <(print -r -- "$OWN" | LC_ALL=C sort -u))" ] && MARKED+=("$FILE")
+	done
+	return 0
+}
+
 # Refuses to resume while a staged file still carries conflict markers – the failure mode is
 # a resolver dying silently, a blanket `git add` staging the file markers and all, and
 # `rebase --continue` accepting that, so read the staged blob, which is what gets committed
 _GUARD_RESOLUTION_CLEAN () {
+	# Args: <worktree> [<rev a side came from>...]
 	local WT=$1
 	local -a BAD
-	local FILE
-	# NUL-separated – the line form C-quotes a name holding a quote or
-	# backslash, which then shows no markers and passes
-	for FILE in ${(0)"$(git -C "$WT" diff --cached -z --name-only 2>/dev/null)"}; do
-		# Read whole – piped, `git show` died at an early marker once the blob outgrew the pipe
-		# buffer, and `pipefail` read that as a clean file
-		if grep -qE '^(<<<<<<<|=======|>>>>>>>)( |$)' <<<"$(git -C "$WT" show ":0:$FILE" 2>/dev/null)"; then
-			BAD+=("$FILE")
-		fi
-	done
+	_MARKED_PATHS "$@"
+	BAD=("${MARKED[@]}")
 	if [ ${#BAD[@]} -gt 0 ]; then
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Staged resolution still contains conflict markers – refusing to continue"
@@ -6274,7 +6476,12 @@ _VERIFY_REWRITE () {
 	# A replant's new base brings the commits its upstream gained, which this run never built –
 	# the range the gate reads leaves them out
 	local -a BUILT_RANGE=("$NEW_HEAD" --not "$ORIG_HEAD" ${5:+"$5"})
-	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
+	[ -z "$WT" ] && return 0
+	# A worktree gone missing reads as no pass where a check is configured
+	if [ ! -d "$WT" ]; then
+		[ ${#OPT_NO_VERIFY} -eq 0 ] && _VERIFY_CONFIGURED && { PRINT_ERR "No worktree at $WT to verify in – not applied"; return 1; }
+		return 0
+	fi
 	# Below the worktree guard, so the note marks a gate this run declined rather than one the
 	# mode never had – `--abort`, `--undo` and `--status` never reach here at all
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && { _VERIFY_NOTE_BYPASS; return 0; }
@@ -6513,6 +6720,13 @@ _CONTINUE_AMEND_INTO () {
 			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 			exit 0
 		fi
+		# Back on the fold's own fixup – a `git rebase --abort` in the worktree – nothing was folded
+		if [ -n "$STATE_FIXUP" ] && [ "$(git rev-parse HEAD)" = "$STATE_FIXUP" ]; then
+			_CLEAR_STATE
+			PRINT_TEXT "%s – nothing applied, and your staged changes are still staged." 33 "The rebase was aborted in the worktree"
+			EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
+			exit 0
+		fi
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
@@ -6553,11 +6767,20 @@ _CONTINUE_AMEND_INTO () {
 	local GUARD=$STATE_ORIG_HEAD
 	[ -n "$STATE_HEAD_WITH_FIXUP" ] && GUARD=$STATE_HEAD_WITH_FIXUP
 	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: amend-into ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)GUARD}"
-	PRINT_CMD "$UPDATE_CMD" 90
-	if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
-		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
+	# A run cut off after its landing left the branch at this very result –
+	# it landed, and only the record of it is missing
+	if [ "$(git rev-parse "$STATE_BRANCH" 2>/dev/null)" = "$NEW_HEAD" ]; then
+		PRINT_TEXT "%s – completing what it left." 33 "The branch holds this result already, a run landing it cut off"
+		local JF=$(_JOURNAL_FILE_PATH)
+		[ -n "$JF" ] && command grep -qF " $STATE_BRANCH $GUARD $NEW_HEAD " "$JF" 2>/dev/null || \
+			_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
+	else
+		PRINT_CMD "$UPDATE_CMD" 90
+		if ! _MOVE_REF "$UPDATE_CMD" 2>/dev/null; then
+			_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
+		fi
+		_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
 	fi
-	_RECORD_REF_MOVE "$STATE_BRANCH" "$GUARD" "$NEW_HEAD" "amend-into ${STATE_TARGET:0:7}"
 
 	# Re-sync the folded paths' index entries to the new `HEAD`, those staged changes being
 	# history now – path-scoped so a parallel session's staged work survives, and legacy
@@ -6588,6 +6811,10 @@ _CONTINUE_AMEND_INTO () {
 # Legacy pre-invisible-fixup states carry a `head_with_fixup` tip and get the old rollback
 _ABORT_AMEND_INTO () {
 	PRINT_ACTION "Aborting amend-into of %s..." "${STATE_TARGET:0:7}"
+	# A run cut off after its landing left the branch at the worktree's result – there is nothing
+	# to take back, only the pause to clear
+	local LANDED=""
+	_PAUSE_LANDED && LANDED=1
 
 	# Cleanup the worktree (which is in a paused rebase state)
 	if [ -d "$STATE_WORKTREE" ]; then
@@ -6609,6 +6836,8 @@ _ABORT_AMEND_INTO () {
 		else
 			PRINT_TEXT "%s – branch moved since fixup; leaving as-is to avoid clobbering other commits." 33 "Note"
 		fi
+	elif [ -n "$LANDED" ]; then
+		PRINT_TEXT "The fold had landed already, its run cut off before clearing the pause – nothing to take back." 33
 	else
 		if [ -n "$STATE_TREE" ]; then
 			PRINT_TEXT "Branch was never touched – the tree is intact, ready to retry." 32
@@ -6704,7 +6933,7 @@ _REPLAY_REBUILD () {
 	# Under five commits the walk's two spawns each undercut this path's probe
 	# and proof
 	local -a OLD FIELDS
-	OLD=("${(@f)$(git rev-list --reverse --parents "$FROM..HEAD" 2>/dev/null)}")
+	OLD=("${(@f)$(git rev-list --reverse --parents "$FROM..${2:-HEAD}" 2>/dev/null)}")
 	[ ${#OLD[@]} -lt 5 ] && return 1
 	local LINE BASE=""
 	for LINE in "${OLD[@]}"; do
@@ -6726,7 +6955,7 @@ _REPLAY_REBUILD () {
 	local TMPREF="refs/git-edit/replay-$$"
 	git update-ref "$TMPREF" "$PREV_NEW" 2>/dev/null || return 1
 	local OUT
-	OUT=$( export LC_ALL=C; git replay "${_REPLAY_FLAGS[@]}" --advance "$TMPREF" "$FROM..HEAD" 2>/dev/null )
+	OUT=$( export LC_ALL=C; git replay "${_REPLAY_FLAGS[@]}" --advance "$TMPREF" "$FROM..${2:-HEAD}" 2>/dev/null )
 	git update-ref -d "$TMPREF" 2>/dev/null
 	# "update <ref> <new> <old>" – the third field is the rebuilt tip
 	local FIRST=${OUT%%$'\n'*}
@@ -6735,7 +6964,7 @@ _REPLAY_REBUILD () {
 	[ -z "$NEW_TIP" ] && return 1
 	# The proof: both spans dump identical, commit for commit
 	local FMT='%T%x00%an%x00%ae%x00%aI%x00%B%x00'
-	cmp -s <(git log --reverse --format="$FMT" "$FROM..HEAD" 2>/dev/null) \
+	cmp -s <(git log --reverse --format="$FMT" "$FROM..${2:-HEAD}" 2>/dev/null) \
 	       <(git log --reverse --format="$FMT" "$PREV_NEW..$NEW_TIP" 2>/dev/null) || return 1
 	local -a NEW
 	NEW=("${(@f)$(git rev-list --reverse "$PREV_NEW..$NEW_TIP" 2>/dev/null)}")
@@ -6755,14 +6984,15 @@ _REPLAY_REBUILD () {
 # old->new map across the walk, since a single `PREV_OLD`/`PREV_NEW` chain breaks on merge
 # topologies – `--topo-order` guards the parents-before-children walk against clock skew
 _REBUILD_DESCENDANTS () {
-	local FROM=$1
+	# Args: <from> [<tip>] – the tip the walk ends at, `HEAD` unless named
+	local FROM=$1 UPTO=${2:-HEAD}
 	# One replay where the span is linear and its result proves out – else the walk
-	_REPLAY_REBUILD "$FROM" && return 0
+	_REPLAY_REBUILD "$FROM" "$UPTO" && return 0
 	local DESC P D_NEW D_TOUCHED
 	local -a D_PARENTS_ARGS NF
 	local -A REWRITTEN
 	REWRITTEN[$(git rev-parse "$PREV_OLD")]=$PREV_NEW
-	for DESC in $(git rev-list --reverse --topo-order "$FROM..HEAD"); do
+	for DESC in $(git rev-list --reverse --topo-order "$FROM..$UPTO"); do
 		# One git-log per commit packs tree, parents, author and message, NUL-separated with the
 		# message last so `$()` strips its trailing newlines as a bare `%B` capture would, and
 		# `(@0)` keeps an empty parents field so a root commit does not shift the author
@@ -6857,7 +7087,8 @@ GIT_REWORD () {
 		# Open the caller's editor on a temp file seeded with the current message – named
 		# `COMMIT_EDITMSG`, git's convention, inside a temp dir, so editors apply commit-message
 		# syntax highlighting from the recognized filename
-		local TMP_DIR=$(MKTEMP_DIR git-edit-reword)
+		local TMP_DIR
+		TMP_DIR=$(MKTEMP_DIR git-edit-reword) || exit 1
 		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
 		git log -1 --format='%B' "$TARGET" > "$MSG_FILE"
 		{
@@ -7265,7 +7496,8 @@ GIT_RESQUASH () {
 		_REQUIRE_TTY_FOR_EDITOR
 		# With -m: combine all messages and open editor for review
 		# File is named `COMMIT_EDITMSG` so editors apply commit-message syntax
-		local TMP_DIR=$(MKTEMP_DIR git-edit-resquash)
+		local TMP_DIR
+		TMP_DIR=$(MKTEMP_DIR git-edit-resquash) || exit 1
 		local MSG_FILE="$TMP_DIR/COMMIT_EDITMSG"
 		{
 			echo "# Combined message from ${#COMMITS[@]} squashed commits."
@@ -7862,6 +8094,11 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 			fi
 		fi
 	fi
+	# A drop or squash, reorder or replant has no message left to take – refused rather than dropped
+	if [ -n "$TEXT_VALUE" ] && [[ "$STATE_OPERATION" == (rebase|reorder|onto) ]]; then
+		PRINT_ERR "--text has no message to set on this ${STATE_ACTION:-$STATE_OPERATION}'s continue – finish it, then reword: git edit -M --text=\"…\" <sha>"
+		exit 1
+	fi
 	case "$STATE_OPERATION" in
 		amend-into) _CONTINUE_AMEND_INTO ;;
 		snapshot)   _CONTINUE_SNAPSHOT ;;
@@ -7876,6 +8113,10 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 fi
 if [ ${#OPT_ABORT} -gt 0 ]; then
 	_LOAD_STATE
+	# Run from inside the pause worktree, which the abort removes – the rest runs from the checkout
+	if [ -n "$STATE_WORKTREE" ] && [[ "${PWD:A}/" == "${STATE_WORKTREE:A}/"* ]]; then
+		cd "${STATE_MAINDIR:-${$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null):h}}" 2>/dev/null
+	fi
 	_REANCHOR_INITIAL_HEAD
 	case "$STATE_OPERATION" in
 		amend-into) _ABORT_AMEND_INTO ;;
@@ -7885,7 +8126,17 @@ if [ ${#OPT_ABORT} -gt 0 ]; then
 		rebase)     _ABORT_REBASE ;;
 		edit)       _ABORT_EDIT ;;
 		split)      _ABORT_SPLIT ;;
-		*) PRINT_ERR "Unknown saved operation: '$STATE_OPERATION'"; exit 1 ;;
+		*)
+			# An unreadable pause, or one a newer version wrote – cleared, its
+			# worktree removed only where this tool made it
+			PRINT_TEXT "%s – clearing it." 33 "The pause records no operation this version knows${STATE_OPERATION:+ ('$STATE_OPERATION')}"
+			if [ -n "$STATE_WORKTREE" ] && [ -d "$STATE_WORKTREE" ] && [[ "${STATE_WORKTREE:t}" == git-edit-* ]]; then
+				git worktree remove --force "$STATE_WORKTREE" 2>/dev/null
+				rm -rf "$STATE_WORKTREE"
+			fi
+			_CLEAR_STATE
+			EMIT_STATUS "$(git rev-parse HEAD 2>/dev/null)" "$(_CURRENT_REF)" false
+			;;
 	esac
 	exit 0
 fi
@@ -7977,6 +8228,9 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 			WORKTREE_DIR=""
 		fi
 	fi
+	# Absolute – the run enters the worktree, where a relative path named something else, and the
+	# gate given it found nothing to run in
+	[ -n "$WORKTREE_DIR" ] && WORKTREE_DIR=${WORKTREE_DIR:a}
 fi
 
 # Extract the `-s`/`--squash` value, applying the same re-injection heuristic as `-C` – its
@@ -8723,7 +8977,7 @@ if [[ "$ACTION" == "edit" ]] && _IS_NON_INTERACTIVE; then
 		exit 1
 	fi
 	EDIT_TARGET=$(git rev-parse "$COMMIT^{commit}")
-	EDIT_WT=$(MKTEMP_DIR git-edit-edit)
+	EDIT_WT=$(MKTEMP_DIR git-edit-edit) || exit 1
 	rmdir "$EDIT_WT"  # `git worktree add` wants to create the dir itself
 	if ! git worktree add --detach "$EDIT_WT" "$EDIT_TARGET" >/dev/null 2>&1; then
 		PRINT_ERR "Cannot create edit worktree at ${EDIT_TARGET:0:7}"
@@ -8749,6 +9003,14 @@ if [ -n "$TEXT_VALUE" ] && [[ "$ACTION" != "reword" && "$ACTION" != "resquash" &
 	exit 1
 fi
 
+# An isolated drop or squash lands on a branch – from a detached `HEAD` it reported a move
+# that never happened, then removed the result
+if [ -z "$(git symbolic-ref -q HEAD)" ] && [[ "$ACTION" == (drop|squash) ]] && \
+   { [ ${#OPT_DIR} -gt 0 ] || { [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE; }; }; then
+	PRINT_ERR "$ACTION requires being on a branch (got detached HEAD)"
+	exit 1
+fi
+
 # Auto-isolate in non-interactive contexts – run by an agent, CI or any script, default to
 # `-C` for the modes that would otherwise touch the main working tree, so parallel
 # sessions cannot clobber each other, with `GIT_EDIT_NO_AUTO_ISOLATE=1` to override
@@ -8756,7 +9018,7 @@ if [ -z "$GIT_EDIT_NO_AUTO_ISOLATE" ] && _IS_NON_INTERACTIVE && [ ${#OPT_DIR} -e
    [[ "$ACTION" == "drop" || "$ACTION" == "edit" || "$ACTION" == "squash" ]]; then
 	ECHO_E "${_PAD}\e[0;90m(non-interactive context: auto-isolating in a temp worktree)\e[0m"
 	OPT_DIR=(--dir)
-	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso)
+	WORKTREE_DIR=$(MKTEMP_DIR git-edit-auto-iso) || exit 1
 	rmdir "$WORKTREE_DIR"  # `git worktree add` wants to create the dir itself
 	_CLEANUP_HOOK="git worktree remove --force ${(q-)WORKTREE_DIR} 2>/dev/null; rm -rf ${(q-)WORKTREE_DIR}"
 fi
@@ -8870,6 +9132,17 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 			PRINT_ERR "-C/--dir cannot point to the current working tree"
 			exit 1
 		fi
+		# Nor one holding a branch or work – the reset and the replay below
+		# would move that branch and wipe the work
+		if git -C "$WORKTREE_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+			PRINT_ERR "-C/--dir path '$WORKTREE_DIR' has $(git -C "$WORKTREE_DIR" symbolic-ref --short -q HEAD) checked out – name a scratch path, or detach it there first"
+			exit 1
+		fi
+		if [ -n "$(git -C "$WORKTREE_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+			PRINT_ERR "-C/--dir path '$WORKTREE_DIR' holds uncommitted changes – name a scratch path instead"
+			exit 1
+		fi
+		WT_OURS=0
 
 		# Clean up any leftover rebase state from a previous killed run
 		# (rm -rf as fallback in case `git rebase --abort` chokes on malformed state)
@@ -8882,7 +9155,8 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 		# Sync existing worktree to current `HEAD`
 		CMD="git -C ${(q-)WORKTREE_DIR} reset --hard ${(q-)ORIG_HEAD}"
 		PRINT_CMD "$CMD"
-		eval "$CMD" >/dev/null || ABORT
+		# Exits rather than `ABORT`, whose rebase abort would run here in the caller's checkout
+		eval "$CMD" >/dev/null || { PRINT_ERR "Could not reset $WORKTREE_DIR to ${ORIG_HEAD:0:7}"; exit 1; }
 	else
 		# Create a new detached worktree, auto-recovering from a stale registration – git refuses
 		# where the path is listed by `git worktree list` but missing on disk, which happens when
@@ -8899,21 +9173,23 @@ if [ ${#OPT_DIR} -gt 0 ]; then
 				ECHO_E "\e[0;90m(stale worktree registration – reclaiming its path and retrying)\e[0m"
 				CMD="git worktree add -f --detach ${(q-)WORKTREE_DIR} ${(q-)ORIG_HEAD}"
 				PRINT_CMD "$CMD"
-				eval "$CMD" || ABORT
+				eval "$CMD" || { PRINT_ERR "Could not create the worktree at $WORKTREE_DIR"; exit 1; }
 			else
 				print -r -- "$WT_OUT" >&2
-				ABORT
+				PRINT_ERR "Could not create the worktree at $WORKTREE_DIR"
+				exit 1
 			fi
 		else
 			[ -n "$WT_OUT" ] && print -r -- "$WT_OUT"
 		fi
+		WT_OURS=1
 	fi
 
 	# Same links every other worktree path gets – before the cd, so the
 	# origin fallback still resolves to the main checkout
 	_LINK_WORKTREE_EXTRAS "$WORKTREE_DIR"
 
-	cd "$WORKTREE_DIR" || ABORT
+	cd "$WORKTREE_DIR" || { PRINT_ERR "Cannot enter $WORKTREE_DIR"; exit 1; }
 fi
 
 
@@ -8970,11 +9246,17 @@ if [ -n "$WORKTREE_DIR" ]; then
 			for DROPPED in "${COMMITS[@]}"; do MEANT_MODES+="$(_MODE_LINES "$WORKTREE_DIR" "$DROPPED" "$DROPPED^")"$'\n'; done
 		fi
 		if { [ "$ACTION" != "edit" ] && ! _GUARD_TIP_MODES "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" "$MEANT_MODES"; } || ! _VERIFY_REWRITE "$WORKTREE_DIR" "$NEW_HEAD" "$ORIG_HEAD" ""; then
-			_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" \
+			_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" "wt_ours=${WT_OURS:-0}" \
 				"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}"
 			_CLEANUP_HOOK=""
 			EMIT_GATE_PAUSED "$WORKTREE_DIR" "$NEW_HEAD"
 			exit 2
+		fi
+		# A squash keeps the tip's content by construction – a replay that changed it lands nothing
+		if [ "$ACTION" = "squash" ] && [ "$(git rev-parse "$NEW_HEAD^{tree}")" != "$(git rev-parse "$ORIG_HEAD^{tree}")" ]; then
+			PRINT_ERR "The squash would change the tip's content – not applied"
+			PRINT_TEXT "Rebased history is at %s in %s." 33 "$NEW_HEAD" "$WORKTREE_DIR"
+			exit 1
 		fi
 		# Atomic compare-and-swap – only update where the ref still matches `ORIG_HEAD`, so a
 		# concurrent commit, from an editor working in the main checkout say, is never
