@@ -203,16 +203,16 @@ GIT_SELFTEST () {
 		zpty ST_TTY "unset CLAUDECODE CI; env HOME=${(q)TMP} XDG_CONFIG_HOME=${(q)TMP} GIT_EDIT_NO_AUTO_OPEN=1 ${(j: :)${(@q)ENVS}} ${(q)SELF} ${(j: :)${(@q)@}} >${(q)TMP}/tty-out 2>&1; print -r -- \$? >${(q)TMP}/tty-rc"
 	}
 	_ST_TTY_AT () {
-		# Args: <text the output reaches> – fails where the run ends or 30s pass first
+		# Args: <text the output reaches> – fails where the run ends or 120s pass first
 		local -i W=0
 		until LC_ALL=C grep -aqF -e "$1" "$TMP/tty-out" 2>/dev/null; do
-			{ [ -s "$TMP/tty-rc" ] || (( ++W > 300 )); } && return 1
+			{ [ -s "$TMP/tty-rc" ] || (( ++W > 1200 )); } && return 1
 			sleep 0.1
 		done
 	}
 	_ST_TTY_END () {
 		local -i W=0
-		until [ -s "$TMP/tty-rc" ] || (( ++W > 300 )); do sleep 0.1; done
+		until [ -s "$TMP/tty-rc" ] || (( ++W > 1200 )); do sleep 0.1; done
 		zpty -d ST_TTY
 		OUT=$(<"$TMP/tty-out")
 		RC=$(<"$TMP/tty-rc")
@@ -635,7 +635,9 @@ GIT_SELFTEST () {
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m man page missing:$missing"
 		fi
-		if [ -z "$rmissing" ]; then
+		if [ ! -f "$READMEFILE" ]; then
+			ECHO_E "\e[0;90m  skipped – no README.md beside this copy\e[0m"
+		elif [ -z "$rmissing" ]; then
 			PASS=$((PASS+1)); ECHO_E "  \e[0;32mPASS\e[0m README documents every mode"
 		else
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m README missing:$rmissing"
@@ -4012,10 +4014,10 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	: > "$HB_LOG"
 	rm -f "$TMP/hb-a-waiting" "$TMP/hb-b-done"
 	printf 'hb2 folded\n' > hb2.txt && git add hb2.txt
-	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$HB_TARGET" --verify="touch $TMP/hb-a-waiting; i=0; while [ ! -f $TMP/hb-b-done ] && [ \$i -lt 300 ]; do sleep 0.1; i=\$((i+1)); done" -- hb2.txt </dev/null > "$TMP/hb-a.out" 2>&1 &
+	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$HB_TARGET" --verify="touch $TMP/hb-a-waiting; i=0; while [ ! -f $TMP/hb-b-done ] && [ \$i -lt 1200 ]; do sleep 0.1; i=\$((i+1)); done" -- hb2.txt </dev/null > "$TMP/hb-a.out" 2>&1 &
 	local HB_APID=$!
 	HB_STEPS=0
-	while [ ! -f "$TMP/hb-a-waiting" ] && [ $HB_STEPS -lt 300 ]; do sleep 0.1; HB_STEPS=$((HB_STEPS + 1)); done
+	while [ ! -f "$TMP/hb-a-waiting" ] && kill -0 $HB_APID 2>/dev/null && [ $HB_STEPS -lt 1200 ]; do sleep 0.1; HB_STEPS=$((HB_STEPS + 1)); done
 	printf 'hs1 folded\n' > "$TMP/hb-side/hs1.txt" && git -C "$TMP/hb-side" add hs1.txt
 	cd "$TMP/hb-side"
 	_ST_RUN --amend-into=HEAD~1 -- hs1.txt
@@ -4850,13 +4852,13 @@ END { exit bad }' > "$TMP/direct-cmd.awk"
 	chmod +x "$TMP/jobs-sleeper"
 	( _COLOR=false; TMPDIR="$TMP/jobs tmp"; _SELFTEST_JOBS "$TMP/jobs-sleeper" "$TMP/pick.zsh" --selftest 2 ) >/dev/null 2>&1 &
 	local ST_JR=$! ST_JW=0
-	until { [ -s "$TMP/jobs-pids/1,2" ] && [ -s "$TMP/jobs-pids/3" ]; } || (( ++ST_JW > 100 )); do sleep 0.1; done
+	until { [ -s "$TMP/jobs-pids/1,2" ] && [ -s "$TMP/jobs-pids/3" ]; } || ! kill -0 $ST_JR 2>/dev/null || (( ++ST_JW > 1200 )); do sleep 0.1; done
 	kill -TERM $ST_JR
 	wait $ST_JR
 	_ST_EQ "a TERM to the runner alone stops it" "$?" "130"
 	local ST_JU=$(<"$TMP/jobs-pids/1,2") ST_JV=$(<"$TMP/jobs-pids/3")
 	ST_JW=0
-	while { kill -0 "$ST_JU" || kill -0 "$ST_JV"; } 2>/dev/null && (( ++ST_JW <= 50 )); do sleep 0.1; done
+	while { kill -0 "$ST_JU" || kill -0 "$ST_JV"; } 2>/dev/null && (( ++ST_JW <= 300 )); do sleep 0.1; done
 	_ST_CHECK "and the units it was running with it" \
 		sh -c "[ -n '$ST_JU' ] && [ -n '$ST_JV' ] && ! kill -0 '$ST_JU' 2>/dev/null && ! kill -0 '$ST_JV' 2>/dev/null"
 	kill "$ST_JU" "$ST_JV" 2>/dev/null
@@ -5081,7 +5083,7 @@ EOF
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/VT two')" --after="$(git rev-parse ':/VT base')" </dev/null >"$TMP/vt-out" 2>&1 &
 	local VT_PID=$!
 	local -i VT_WAIT=0
-	until [ -s "$TMP/vt-check" ] || (( ++VT_WAIT > 150 )); do
+	until [ -s "$TMP/vt-check" ] || ! kill -0 $VT_PID 2>/dev/null || (( ++VT_WAIT > 1200 )); do
 		sleep 0.1
 	done
 	kill -TERM $VT_PID
@@ -5178,7 +5180,7 @@ exit 0" > "$VL_HOOKS/reference-transaction"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --continue </dev/null >"$TMP/vr-out" 2>&1 &
 	local VR_PID=$!
 	local -i VR_WAIT=0
-	until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
+	until [ -s "$TMP/vr-check" ] || ! kill -0 $VR_PID 2>/dev/null || (( ++VR_WAIT > 1200 )); do
 		sleep 0.1
 	done
 	kill -TERM $VR_PID
@@ -5220,7 +5222,7 @@ exit 0" > "$VR_HOOKS/reference-transaction"
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$VR_ONE" --after="$VR_BASE" </dev/null >"$TMP/vr-out" 2>&1 &
 	VR_PID=$!
 	VR_WAIT=0
-	until [ -s "$TMP/vr-check" ] || (( ++VR_WAIT > 150 )); do
+	until [ -s "$TMP/vr-check" ] || ! kill -0 $VR_PID 2>/dev/null || (( ++VR_WAIT > 1200 )); do
 		sleep 0.1
 	done
 	printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
@@ -6755,13 +6757,17 @@ exit 0" > "$RG_HOOKS/reference-transaction"
 	local TE_U8=$(locale -a 2>/dev/null | grep -m1 -E '^(en_US\.UTF-8|en_US\.utf8|C\.UTF-8|C\.utf8)$')
 	git config edit.verifyCmd "printf 'TE gate CRLF\r\n'; printf 'TE gate \377\nTE gate past the byte\n'; awk 'BEGIN { for (i = 0; i < 8000; i++) printf \"\033[31mred\033[0m te \"; print \"\" }'; exit 1"
 	printf 'tg\n' > te-g.txt
-	local -i TE_T0=$SECONDS
+	# CPU seconds, as a loaded machine stretches the clock's tenfold – a pass per character takes
+	# 30 here, where this run takes under one
+	times > "$TMP/te-cpu"
 	LC_ALL=${TE_U8:-C} _ST_RUN --commit --text "x" -- te-g.txt
+	times >> "$TMP/te-cpu"
 	git config --unset edit.verifyCmd
 	_ST_OUT_HAS "a gate's CRLF line prints" '| TE gate CRLF'
 	_ST_OUT_LACKS "with no caret for the line's own ending" 'TE gate CRLF\^M'
 	_ST_OUT_HAS "as does the line past a byte no UTF-8 holds" '| TE gate past the byte'
-	_ST_CHECK "and a 128 KB colored line in under 10 seconds" test $(( SECONDS - TE_T0 )) -lt 10
+	_ST_CHECK "and a 128 KB colored line in under 10 CPU seconds" test "$(awk 'function s(t, a) { split(t, a, /[ms]/); return a[1] * 60 + a[2] }
+		NR == 2 { b = s($1) + s($2) } NR == 4 { print int(s($1) + s($2) - b) }' "$TMP/te-cpu")" -lt 10
 	rm -f te-g.txt
 	# A byte above 0x7f prints as itself – as the stand-in for a data backslash, it came back as one
 	local TE_LC
@@ -7245,7 +7251,7 @@ EN_SHIM
 	# --- 121. the gate runs on what lands, wherever the run starts ---
 	_ST_SCENARIO "\e[1;96m[121] the gate runs on what lands, wherever the run starts\e[0m"
 	local GL_WT GL_TIP GL_N GL_PID
-	local -i GL_T0 GL_WAIT
+	local -i GL_WAIT
 	# A resolution's file left unstaged would feed the gate and never land, so the resume refuses
 	_ST_PZ_NEW g1
 	git config edit.verifyCmd true
@@ -7318,11 +7324,13 @@ EN_SHIM
 	_ST_RUN --exec -- sh -c 'echo x > litter.txt; echo y > keep.log; git commit -q --allow-empty -m "GL exec"'
 	_ST_EQ "an --exec gate runs without the command's litter" "$RC" "0"
 	_ST_OUT_HAS "saying it was removed" 'left untracked, which never lands: litter.txt'
-	# A check leaving a process behind holds no pipe the gate waits on
-	GL_T0=$SECONDS
-	_ST_RUN --exec --verify='(sleep 20 &); true' -- git commit -q --allow-empty -m "GL bg"
+	# A check leaving a process behind holds no pipe the gate waits on – that process outliving the
+	# run proves it, where a clock reads a loaded machine as a wait
+	rm -f "$TMP/gl-bg"
+	_ST_RUN --exec --verify="(sleep 300 & echo \$! > '$TMP/gl-bg'); true" -- git commit -q --allow-empty -m "GL bg"
 	_ST_EQ "a check leaving a background process lands" "$RC" "0"
-	_ST_CHECK "without waiting on it" test $(( SECONDS - GL_T0 )) -lt 15
+	_ST_CHECK "without waiting on it" sh -c "kill -0 \"\$(cat '$TMP/gl-bg')\" 2>/dev/null"
+	kill "$(<"$TMP/gl-bg")" 2>/dev/null
 	# A gate runs only in a worktree, so with one configured a terminal run isolates as an agent's
 	# does – and a configured link the checkout lacks is named, a check needing it failing on that
 	_ST_PZ_NEW g3
@@ -7400,7 +7408,7 @@ EN_SHIM
 	GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --split=HEAD --text="GL S a" -- sa.txt </dev/null >"$TMP/gl-out" 2>&1 &
 	GL_PID=$!
 	GL_WAIT=0
-	until [ -s "$TMP/gl-check" ] || (( ++GL_WAIT > 150 )); do
+	until [ -s "$TMP/gl-check" ] || ! kill -0 $GL_PID 2>/dev/null || (( ++GL_WAIT > 1200 )); do
 		sleep 0.1
 	done
 	kill -TERM $GL_PID
