@@ -103,6 +103,8 @@ GIT_EDIT_VERSION="1.7.0"
 # signature lines in a `git log`, a full `pick <7 hex>` in todo lines and paths from the top
 # Appended to what `git -c` passes, which outranks every other source – a caller's own `-c` and
 # `GIT_CONFIG_COUNT` included, so a pin there would lose to both
+# Its own rebases add `--no-autosquash` and an empty `rebase.instructionFormat` instead, as a
+# caller's autosquash folds another's `fixup!` into the span and a pin reaches `--exec` commands
 for _K _V in maintenance.auto false gc.auto 0 core.quotePath false log.showSignature false \
 		rebase.abbreviateCommands false core.abbrev 7 diff.relative false; do
 	GIT_CONFIG_PARAMETERS+="${GIT_CONFIG_PARAMETERS:+ }'$_K=$_V'"
@@ -507,9 +509,10 @@ USAGE () {
 	ECHO_E "\e[0;94m       --version                       Print the version this copy ships as\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94mnotes: In non-interactive contexts (stdin not a TTY, or CI or CLAUDECODE set), -C is enabled\e[0m"
-	ECHO_E "\e[0;94m       automatically, and at a terminal too where a verify gate is configured. Set\e[0m"
-	ECHO_E "\e[0;94m       GIT_EDIT_NO_AUTO_ISOLATE=1 to opt out. Every mode but -M, -S, a pathspec split and an\e[0m"
-	ECHO_E "\e[0;94m       in-place edit, drop or squash needs a checked-out branch.\e[0m"
+	ECHO_E "\e[0;94m       automatically, and at a terminal too where a verify gate is configured or untracked\e[0m"
+	ECHO_E "\e[0;94m       files are hidden (status.showUntrackedFiles=no). Set GIT_EDIT_NO_AUTO_ISOLATE=1 to opt\e[0m"
+	ECHO_E "\e[0;94m       out. Every mode but -M, -S, a pathspec split and an in-place edit, drop or squash\e[0m"
+	ECHO_E "\e[0;94m       needs a checked-out branch.\e[0m"
 	ECHO_E "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
 	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
@@ -1001,7 +1004,13 @@ PRINT_COMPLETED () {
 # Reports whether a commit already exists on a remote – unlike `_GUARD_UNPUSHED` it only says so,
 # and ignores `--allow-pushed` so callers can still tell shared history apart after consent
 _IS_PUSHED () {
-	[ -n "$(git branch -r --contains "$1" 2>/dev/null | grep -v ' -> ' | head -1)" ]
+	[ -n "$(_REMOTES_CONTAINING "$1")" ]
+}
+
+# Lists the remote-tracking branches holding <commit>, one a line, their `origin/HEAD` aliases left
+# out – through `for-each-ref`, as `git branch` lays its list out in a caller's columns and colors
+_REMOTES_CONTAINING () {
+	git for-each-ref --contains "$1" --format='%(if)%(symref)%(then)%(else)%(refname:short)%(end)' refs/remotes 2>/dev/null | LC_ALL=C grep -a .
 }
 
 # Refuses a commit that already exists on a remote – guarding the oldest commit an operation
@@ -1010,7 +1019,7 @@ _IS_PUSHED () {
 _GUARD_UNPUSHED () {
 	[ ${#OPT_ALLOW_PUSHED} -gt 0 ] && return 0
 	local C=$1
-	local CONTAINING=$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ' | LC_ALL=C sed 's/^[* ]*//' | head -3 | tr '\n' ' ' | LC_ALL=C sed 's/ $//')
+	local CONTAINING=$(_REMOTES_CONTAINING "$C" | head -3 | tr '\n' ' ' | LC_ALL=C sed 's/ $//')
 	if [ -n "$CONTAINING" ]; then
 		PRINT_ERR "Commit ${C:0:7} is already pushed (on: $CONTAINING)"
 		ECHO_E "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
@@ -1189,13 +1198,14 @@ _RECORD_REF_MOVE () {
 	_PRINT_FORCE_PUSH "$1" "$2" "$3"
 	_CAPTURE_COLLECT "$2" "$3"
 
-	# A tag is orphaned where it was reachable from the old tip but not the new one, and its
-	# counterpart is suggested when one commit in the span shares its subject – tags on pushed
-	# base history are ancestors of both tips, so two `--merged` walks beat a per-tag loop
-	local ORPHANED_TAGS=$(comm -23 <(git tag --merged "$2" 2>/dev/null | sort) <(git tag --merged "$3" 2>/dev/null | sort))
-	local TAG TAGSHA TSUBJ CAND
-	for TAG in ${(f)ORPHANED_TAGS}; do
-		TAGSHA=$(git rev-parse "$TAG^{commit}" 2>/dev/null)
+	# A tag is orphaned where the old tip reached it and the new one doesn't, its counterpart named
+	# where one commit in the span shares its subject – two `--merged` walks, as tags on pushed
+	# history reach both tips, through `for-each-ref`, as `git tag` lists in a caller's columns
+	local ORPHANED_TAGS=$(comm -23 <(git for-each-ref refs/tags --merged "$2" --format='%(refname)' 2>/dev/null | sort) <(git for-each-ref refs/tags --merged "$3" --format='%(refname)' 2>/dev/null | sort))
+	local TAGREF TAG TAGSHA TSUBJ CAND
+	for TAGREF in ${(f)ORPHANED_TAGS}; do
+		TAG=${TAGREF#refs/tags/}
+		TAGSHA=$(git rev-parse "$TAGREF^{commit}" 2>/dev/null)
 		[ -z "$TAGSHA" ] && continue
 		TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
 		# Compared whole, as the stale-SHA resolver compares one – a `|` or backslash in it included
@@ -2267,7 +2277,7 @@ GIT_STASH () {
 
 	# Nothing to stash – skip the attempt rather than print a `git stash push` that saved
 	# nothing
-	if [ -z "$(git status --porcelain)" ]; then
+	if [ -z "$(git status --porcelain --untracked-files=normal)" ]; then
 		return 0
 	fi
 
@@ -2447,9 +2457,9 @@ GIT_REBASE_DROP () {
 	_CAPTURE_BEGIN_ISOLATED
 	# Determine if the oldest commit has a parent or is the first commit
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> drop"
 
@@ -2479,9 +2489,9 @@ GIT_REBASE_SQUASH () {
 	# Determine rebase start point (parent of the oldest commit)
 	local OLDEST="${COMMITS[1]}"
 	if git show -s --pretty=%P "$OLDEST" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive "$OLDEST~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive "$OLDEST~")
 	else
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive --root)
 	fi
 	# The initial run opens an editor only for the fold, never for a clean pick, so
 	# `--text`'s own `#` lines just need git's cleanup out of the way – with `-m` the
@@ -2530,9 +2540,9 @@ GIT_REBASE_BEGIN_EDIT () {
 	# Determine if commit has a parent or is the first commit
 	# Run as is below rather than joined and `eval`d, so its capture args go in as the arrays
 	if git show -s --pretty=%P "$COMMIT" | grep -q .; then
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive "$COMMIT~")
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autosquash --no-autostash --interactive "$COMMIT~")
 	else
-		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autostash --interactive --root)
+		local CMD=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= "${_CAPTURE_PIN_ARGS[@]}" rebase "${_CAPTURE_EXEC_ARGS[@]}" --no-autosquash --no-autostash --interactive --root)
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> edit"
 
@@ -3310,7 +3320,7 @@ GIT_COMMIT_WHOLE () {
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
 	if [ "$EXEC_CHANGED" = true ]; then
-		git --no-pager -c core.quotePath=false show --stat --summary --format= "$EXEC_NEW_HEAD" | LC_ALL=C sed '/./!d'
+		git --no-pager -c core.quotePath=false show --no-color --stat --summary --format= "$EXEC_NEW_HEAD" | LC_ALL=C sed '/./!d'
 		_PRINT_COMMIT_LINE "$EXEC_NEW_HEAD" '  committed: %h %s'
 	fi
 }
@@ -3430,7 +3440,7 @@ GIT_AMEND_INTO () {
 				if git cat-file -e "$AMEND_TREE:$ABSENT_PATH" 2>/dev/null; then
 					if [ -z "$ABSENT_RENAMES_READ" ]; then
 						ABSENT_RENAMES_READ=1
-						if [ "$(git config --type=bool --get merge.renames 2>/dev/null || git config --type=bool --get diff.renames 2>/dev/null)" != false ]; then
+						if _MERGE_DETECTS_RENAMES; then
 							ABSENT_RENAMES=$(git diff -M -l"$(git config --get merge.renameLimit || git config --get diff.renameLimit || echo 7000)" --name-status --diff-filter=R "$ORIG_HEAD" "$TARGET_FULL" 2>/dev/null)
 						fi
 					fi
@@ -3446,7 +3456,7 @@ GIT_AMEND_INTO () {
 					PRINT_TEXT "Note: %s is %s at %s – git's rename detection carries the fold there." 90 "$ABSENT_PATH" "$ABSENT_FROM" "${TARGET_FULL:0:7}"
 					continue
 				fi
-				ABSENT_INTRODUCER=$(git log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- ":(literal)$ABSENT_PATH" | head -1)
+				ABSENT_INTRODUCER=$(git -c log.follow=false log --diff-filter=A --format='%h (%s)' --reverse "$TARGET_FULL..HEAD" -- ":(literal)$ABSENT_PATH" | head -1)
 				if [ -n "$ABSENT_INTRODUCER" ]; then
 					ABSENT_LINES+=("$ABSENT_PATH – arrives in $ABSENT_INTRODUCER")
 				else
@@ -3567,7 +3577,7 @@ awk -v fix="$GIT_EDIT_FOLD_FIXUP" -v tgt="$GIT_EDIT_FOLD_TARGET" '
 ' "$1" > "$1.git-edit" && mv "$1.git-edit" "$1"
 SEQEOF
 	chmod +x "$SEQ"
-	local REBASE_CMD="GIT_EDIT_FOLD_FIXUP=$FIXUP_COMMIT GIT_EDIT_FOLD_TARGET=$TARGET_FULL GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_FOLD_FIXUP=$FIXUP_COMMIT GIT_EDIT_FOLD_TARGET=$TARGET_FULL GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -4039,14 +4049,16 @@ _ABORT_SNAPSHOT () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
-# Commits that last touched the exact lines the staged diff rewrites – a fix usually belongs
-# to whoever wrote the line, not the newest commit to touch the file, so a file-level
-# guess folds into the wrong one, and pure additions carry no old lines to attribute
+# Commits that last touched the exact lines the staged diff rewrites, as a fix belongs to whoever
+# wrote the line, not the newest commit to touch the file – pure additions carry none, and a
+# failed blame prints the path and git's reason and returns 1, as no evidence is no guess
 _BLAME_AMEND_TARGETS () {
 	local TOPLEVEL=$(git rev-parse --show-toplevel)
-	local P HUNK START COUNT
-	local -a LARGS
+	local P HUNK START COUNT OUT
+	local -a LARGS FOUND
 	for P in "$@"; do
+		# A submodule's pointer has no lines to blame – the per-path guess finds who last moved it
+		[ "$(git -C "$TOPLEVEL" cat-file -t "HEAD:$P" 2>/dev/null)" = commit ] && continue
 		LARGS=()
 		while IFS= read -r HUNK; do
 			# "@@ -<start>[,<count>]" – an absent count means one line, 0 means
@@ -4056,10 +4068,54 @@ _BLAME_AMEND_TARGETS () {
 			[ -z "$COUNT" ] && COUNT=1
 			[ "$COUNT" = "0" ] && continue
 			LARGS+=(-L "$START,+$COUNT")
-		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --no-renames -- ":(literal)$P" 2>/dev/null | LC_ALL=C grep -aE '^@@')
+		done < <(git -C "$TOPLEVEL" diff "${AMEND_SOURCE[@]}" -U0 --inter-hunk-context=0 --no-renames --no-color --no-ext-diff \
+			--no-textconv -- ":(literal)$P" 2>/dev/null | LC_ALL=C grep -aE '^@@')
 		[ ${#LARGS[@]} -eq 0 ] && continue
-		git -C "$TOPLEVEL" blame "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null | LC_ALL=C grep -aoE '^[0-9a-f]{40,64}'
-	done | sort -u
+		# Every line to the commit that wrote it, whatever ignore-revs files skip – an empty
+		# `--ignore-revs-file=` clears them, where an empty `-c` sorts first and clears nothing
+		if ! OUT=$(git -C "$TOPLEVEL" blame --no-textconv --ignore-revs-file= "${LARGS[@]}" --porcelain HEAD -- "$P" 2>/dev/null); then
+			# A missing one fails blame first, so this reads no user or system config – `HOME` too, for
+			# a git before 2.32 – and trusts the repo as that config did
+			if ! OUT=$(HOME=/nonexistent XDG_CONFIG_HOME=/nonexistent GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+					git -C "$TOPLEVEL" -c safe.directory="$TOPLEVEL" blame --no-textconv --ignore-revs-file= "${LARGS[@]}" --porcelain HEAD -- "$P" 2>&1); then
+				print -r -- "$P – ${OUT%%$'\n'*}"
+				return 1
+			fi
+		fi
+		FOUND+=(${(f)"$(print -r -- "$OUT" | LC_ALL=C grep -aoE '^[0-9a-f]{40,64}')"})
+	done
+	(( ${#FOUND} )) && print -rl -- ${(u)FOUND}
+	return 0
+}
+
+# Answers whether a merge here pairs renames – `merge.renames`, else `diff.renames`, read raw, as
+# `--type=bool` refuses a `copies` in any config file, even one a later file overrides
+_MERGE_DETECTS_RENAMES () {
+	local K L V
+	for K in merge.renames diff.renames; do
+		# The last value, as git takes it – one with no value at all fails the merge, pairing nothing
+		L=$(git config --get-regexp "^${K/./\\.}\$" 2>/dev/null | tail -1)
+		[ -n "$L" ] || continue
+		[ "$L" = "$K" ] && return 1
+		V=${L#"$K "}
+		[[ "${V:l}" == (copies|copy) ]] && return 0
+		# Any other value is git's boolean, `0x0` and `00` included – one it can't read, the merge dies on
+		V=$(git -c edit.renamesprobe="$V" config --type=bool --get edit.renamesprobe 2>/dev/null) || return 0
+		[ "$V" = true ]
+		return
+	done
+	return 0
+}
+
+# Answers whether the repo's config hides untracked files from `git status` – `no`, or any other
+# boolean git reads as false, as git 2.47 takes `0x0` and an empty value too
+_HIDES_UNTRACKED () {
+	local L V
+	L=$(git config --get-regexp '^status\.showuntrackedfiles$' 2>/dev/null | tail -1)
+	# A key with no value reads as true
+	[[ -n "$L" && "$L" != status.showuntrackedfiles ]] || return 1
+	V=$(git -c edit.untrackedprobe="${L#status.showuntrackedfiles }" config --type=bool --get edit.untrackedprobe 2>/dev/null)
+	[ "$V" = false ]
 }
 
 # Resolves `--amend-into=auto` to the newest unpushed commit touching the staged paths –
@@ -4089,7 +4145,13 @@ _RESOLVE_AMEND_TARGET () {
 	# folding into the commit that wrote the code and the commit that merely
 	# touched the file last
 	local -a BLAMED
-	BLAMED=(${${(@f)$(_BLAME_AMEND_TARGETS "${PATHS[@]}")}:#})
+	local BLAME_OUT
+	if ! BLAME_OUT=$(_BLAME_AMEND_TARGETS "${PATHS[@]}"); then
+		PRINT_ERR "Cannot auto-target: blame can't attribute the staged lines – ${BLAME_OUT}"
+		ECHO_E "\e[0;31m  Pass an explicit --amend-into=<sha>.\e[0m" >&2
+		exit 1
+	fi
+	BLAMED=(${${(@f)BLAME_OUT}:#})
 	if [ ${#BLAMED[@]} -gt 1 ]; then
 		PRINT_ERR "Cannot auto-target: the staged lines were last touched by different commits"
 		for C in "${BLAMED[@]}"; do
@@ -4100,7 +4162,7 @@ _RESOLVE_AMEND_TARGET () {
 	fi
 	if [ ${#BLAMED[@]} -eq 1 ]; then
 		C=${BLAMED[1]}
-		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
+		if [ -n "$(_REMOTES_CONTAINING "$C")" ]; then
 			PRINT_ERR "Cannot auto-target: the staged lines were last touched by a pushed commit (${C:0:7})"
 			ECHO_E "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
 			exit 1
@@ -4115,12 +4177,12 @@ _RESOLVE_AMEND_TARGET () {
 	local CANDIDATE=""
 	local MULTIPLE=false
 	for P in "${PATHS[@]}"; do
-		C=$(git -C "$TOPLEVEL" log -1 --format=%H HEAD -- ":(literal)$P" 2>/dev/null)
+		C=$(git -C "$TOPLEVEL" -c log.follow=false log -1 --format=%H HEAD -- ":(literal)$P" 2>/dev/null)
 		if [ -z "$C" ]; then
 			# New file – follows the consensus of the paths with history
 			continue
 		fi
-		if [ -n "$(git branch -r --contains "$C" 2>/dev/null | grep -v ' -> ')" ]; then
+		if [ -n "$(_REMOTES_CONTAINING "$C")" ]; then
 			PRINT_ERR "Cannot auto-target: '$P' was last touched by a pushed commit (${C:0:7})"
 			ECHO_E "\e[0;31m  Its history lies beyond the rewrite horizon – pass an explicit --amend-into=<sha>, or commit separately.\e[0m" >&2
 			exit 1
@@ -4173,7 +4235,7 @@ _PRINT_AMENDED_SUMMARY () {
 	else
 		PRINT_TEXT "%s" 32 "Amended commit"
 	fi
-	git show --stat --format='' "$AMENDED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --no-color --stat --format='' "$AMENDED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	if [ -n "$AMEND_TREE" ]; then
 		# The fold's content never sat in the checkout's index, so its entries are stranded like
 		# any other rewrite's – re-synced where they still hold the pre-op tip, named where not
@@ -4417,8 +4479,8 @@ _SPLIT_APPLY () {
 
 	# Stated, checked above, so callers don't re-verify with a diff
 	PRINT_TEXT "%s – split into:" 32 "Tip tree identical ✓"
-	git show --stat --format='  %h %s' "$C1" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
-	git show --stat --format='  %h %s' "$C2" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --no-color --stat --format='  %h %s' "$C1" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --no-color --stat --format='  %h %s' "$C2" | head -8 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	# Each half's stat has to stay under its own subject to say which files went
 	# where, so the pair can't move below the block the way a fold's name does –
 	# one line naming the commit that was split carries that into the tail instead
@@ -4538,7 +4600,7 @@ GIT_SPLIT_PAUSE () {
 	PRINT_ACTION "Splitting %s..." "$X"
 	PRINT_TEXT "Worktree at the commit's own content: %s" 33 "$WT"
 	PRINT_TEXT "Edit it back to what the %s commit should leave behind – undo there whatever belongs in the second:" 33 "first"
-	git show --stat --format='' "$X" | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
+	git show --no-color --stat --format='' "$X" | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}  /;s/\$/${_OFF}/"
 	if [ -n "$TEXT_VALUE" ]; then
 		PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 	else
@@ -4851,7 +4913,7 @@ SEQEOF
 	chmod +x "$SEQ"
 
 	_CAPTURE_BEGIN
-	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --interactive $REBASE_BASE"
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive $REBASE_BASE"
 	PRINT_CMD "GIT_SEQUENCE_EDITOR=<reorder script> git rebase --interactive $REBASE_BASE" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
@@ -5115,7 +5177,7 @@ GIT_ONTO () {
 	_CAPTURE_BEGIN
 	# Detached, so the branch ref stays put until the CAS – and the branch can
 	# stay checked out in whatever worktree the caller is using
-	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autostash --onto $UPSTREAM_FULL $FORK"
+	local REBASE_CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --onto $UPSTREAM_FULL $FORK"
 	PRINT_CMD "$REBASE_CMD" 90
 	_RERERE_SCOPE_BEGIN
 	if ! eval "$REBASE_CMD" >/dev/null 2>&1; then
@@ -5618,7 +5680,7 @@ _EDIT_START_REPLAY () {
 		git checkout -q "$STATE_AMENDED" 2>/dev/null
 		return 0
 	fi
-	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
 	if ! eval "$CMD" >/dev/null 2>&1; then
 		_CLEANUP_HOOK=""
@@ -5700,7 +5762,7 @@ _CONTINUE_EDIT () {
 		fi
 	elif [ "$HEAD_NOW" = "$STATE_TARGET" ]; then
 		# Authoring done – amend the target with whatever changed
-		if [ -z "$(git status --porcelain)" ] && [ -z "$TEXT_VALUE" ]; then
+		if [ -z "$(git status --porcelain --untracked-files=normal)" ] && [ -z "$TEXT_VALUE" ]; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Nothing to amend – no changes in the worktree and no --text"
 			ECHO_E "\e[0;31m  Edit files in $STATE_WORKTREE (or pass --text \"…\"), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
@@ -5779,7 +5841,7 @@ _CONTINUE_EDIT () {
 	# Net history change – pre-answers the "does the result differ by exactly
 	# my edit?" verification the caller would otherwise run
 	PRINT_TEXT "Net history change (%s -> %s):" 32 "${BASE:0:7}" "${NEW_HEAD:0:7}"
-	git --no-pager diff --stat "$BASE" "$NEW_HEAD" 2>/dev/null | LC_ALL=C sed 's/^/  /'
+	git --no-pager diff --no-color --stat "$BASE" "$NEW_HEAD" 2>/dev/null | LC_ALL=C sed 's/^/  /'
 	_PRINT_MODE_CHANGES "$BASE" "$NEW_HEAD"
 	_PRINT_TREE_IDENTITY "$BASE" "$NEW_HEAD"
 	_PRINT_DROPPED_COMMITS "$BASE" "$NEW_HEAD"
@@ -7698,7 +7760,7 @@ GIT_RESQUASH () {
 	# theirs, so the tip tree is identical by construction – stated so callers
 	# don't re-verify with a diff
 	PRINT_TEXT "%s" 32 "Tip tree identical ✓ – unchanged by construction."
-	git show --stat --format='' "$NEW_SQUASHED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	git show --no-color --stat --format='' "$NEW_SQUASHED" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 	_PRINT_DROPPED_BODIES "${COMMITS[@]}"
 	# Identity below the stat block, for the same reason the fold's is
 	_PRINT_COMMIT_LINE "$NEW_SQUASHED" '  squashed: %h %s'
@@ -9225,6 +9287,13 @@ if [ ${#OPT_DIR} -eq 0 ] && [[ "$ACTION" == (drop|edit|squash) ]]; then
 			ISOLATE_WHY="verify gate configured: isolating in a temp worktree"
 		else
 			PRINT_TEXT "Verify skipped – a detached HEAD keeps the run in place, so \`%s\` won't run" 90 "${REPLY%%$'\n'*}"
+		fi
+	# In place, the stash would move every untracked file, however many the repo hides
+	elif _HIDES_UNTRACKED; then
+		if git symbolic-ref -q HEAD >/dev/null; then
+			ISOLATE_WHY="untracked files hidden by status.showUntrackedFiles: isolating in a temp worktree"
+		else
+			PRINT_TEXT "Untracked files hidden by %s go into the stash – a detached HEAD keeps the run in place" 90 "status.showUntrackedFiles"
 		fi
 	fi
 	if [ -n "$ISOLATE_WHY" ]; then

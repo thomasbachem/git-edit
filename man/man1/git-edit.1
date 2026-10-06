@@ -62,7 +62,10 @@ or
 is set, e.g. an agent) the modes that would otherwise touch the working tree
 auto\-isolate into a unique temporary worktree \(em and so do they at a
 terminal where a verify gate is configured, since only a worktree run can be
-gated. Otherwise an edit, drop or squash at a terminal runs in place, stashing
+gated, or where
+.B status.showUntrackedFiles=no
+hides untracked files, which a run in place would stash every one of.
+Otherwise an edit, drop or squash at a terminal runs in place, stashing
 and restoring uncommitted work around the rebase.
 .IP \(bu 3
 Output carries blank\-line padding only when stdout is a terminal. Piped or
