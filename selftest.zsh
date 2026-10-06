@@ -7495,6 +7495,29 @@ EN_SHIM
 	_ST_EQ "a carry into a rename destination holding what landed succeeds" "$RC" "0"
 	_ST_EQ "merging the stale edits there" "$(sed -n '3p;10p' moved.txt | tr '\n' ' ')" "X3 C10 "
 	_ST_CHECK "and taking the source along" test ! -e f.txt
+	# A rebuilt commit keeps its author line byte for byte, as a rebase does – quotes git would
+	# trim from a name it is handed, and a name it would refuse
+	_ST_PZ_NEW o8
+	_ST_PZ_C a.txt a "OP base"
+	OP_A=$(git rev-parse 'HEAD^{tree}')
+	OP_OLD=$(printf 'tree %s\nparent %s\nauthor "Q. Doe Jr." <q@x.invalid> 1600000000 +0530\ncommitter P <p@x.invalid> 1600000000 +0530\n\nOP quoted\n' \
+		"$OP_A" "$(git rev-parse HEAD)" | git hash-object -t commit -w --stdin)
+	git reset -q --hard "$OP_OLD"
+	_ST_RUN -M --text "OP quoted reworded" HEAD
+	_ST_EQ "a reword keeps a quoted author as written" "$(git cat-file commit HEAD | sed -n '/^author /p')" 'author "Q. Doe Jr." <q@x.invalid> 1600000000 +0530'
+	OP_OLD=$(printf 'tree %s\nparent %s\nauthor  <e@x.invalid> 1600000000 +0530\ncommitter P <p@x.invalid> 1600000000 +0530\n\nOP unnamed\n' \
+		"$OP_A" "$(git rev-parse HEAD)" | git hash-object -t commit -w --stdin)
+	git reset -q --hard "$OP_OLD"
+	OUT=$(GIT_EDIT_NO_REPLAY=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -M --text "OP quoted again" HEAD~1 </dev/null 2>&1)
+	RC=$?
+	_ST_EQ "a reword below an unnamed author lands" "$RC" "0"
+	_ST_EQ "rebuilding the unnamed one above it as it was" "$(git cat-file commit HEAD | sed -n '/^author /p')" 'author  <e@x.invalid> 1600000000 +0530'
+	# A trailing `.` was crud to git before 2.42, which a rebuild there must keep as well
+	OP_OLD=$(printf 'tree %s\nparent %s\nauthor Foo Jr. <f@x.invalid> 1600000000 +0530\ncommitter P <p@x.invalid> 1600000000 +0530\n\nOP dotted\n' \
+		"$OP_A" "$(git rev-parse HEAD)" | git hash-object -t commit -w --stdin)
+	git reset -q --hard "$OP_OLD"
+	OUT=$(GIT_EDIT_NO_REPLAY=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -M --text "OP below dotted" HEAD~1 </dev/null 2>&1)
+	_ST_EQ "a name ending in a dot is rebuilt as written" "$?:$(git cat-file commit HEAD | sed -n '/^author /p')" '0:author Foo Jr. <f@x.invalid> 1600000000 +0530'
 	cd "$TMP/repo"
 
 	# --- Summary ---
