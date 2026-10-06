@@ -6,7 +6,7 @@ An AI coding agent that commits as it works keeps rewriting what it committed �
 git edit <commit>                                     # edit that commit's content
 git edit -M --text="Better subject" <commit>          # reword it, working tree untouched
 git edit -d <commit>                                  # drop it
-git edit HEAD~2..HEAD                                 # squash a range into its oldest commit
+git edit HEAD~2..HEAD                                 # squash all three into the oldest – ranges include both ends
 git edit --amend-into=auto                            # fold staged changes into the commit that owns the lines
 git edit --split=<commit> --text="Icons" -- src/svg/  # cut the icons out into a commit of their own
 git edit --move=<commit> --after=<anchor>             # slot a commit where it belongs
@@ -15,7 +15,7 @@ git edit --undo                                       # take the last operation 
 
 What it's good at:
 
-- **Leaving your checkout alone.** The plumbing modes never check anything out, and the rest work in a throwaway worktree – so history can be restructured with uncommitted work sitting right there, yours or another session's. Where a rewrite does change files you have checked out, it names the targeted `git restore` rather than a blanket `reset --hard`.
+- **Leaving your checkout alone.** The plumbing modes never check anything out, and the rest work in a throwaway worktree – an edit, drop or squash typed at a terminal with no verify gate configured aside, which runs in place – so history can be restructured with uncommitted work sitting right there, yours or another session's. Where a rewrite does change files you have checked out, it names the targeted `git restore` rather than a blanket `reset --hard`.
 - **Sharing a checkout with parallel sessions.** Every ref move is a compare-and-swap and nothing is consumed until it lands, so a commit another session lands meanwhile is never overwritten, and a failure or `--abort` leaves nothing to roll back. Folds take `-- <paths>`, since a peer can stage into the shared index mid-call.
 - **Being driven by an agent.** One call per intent, a closing status line to dispatch on, stale SHAs that resolve to their rewritten identity, refusals that name their fix – and guards against the ways agents fail, like staged conflict markers or a marker-less conflict read as resolved.
 - **Folding a fix into the commit that owns the lines.** `--amend-into=auto` finds it by blame, then folds in isolation – gated by your test suite, if you pass `--verify`.
@@ -34,7 +34,7 @@ Or clone the repo and add the folder to your `PATH`, e.g. by adding this line to
 export PATH="$PATH:/your/path/to/git-edit"
 ```
 
-Either way `man git-edit` works right away – the formula installs the page, and on the `PATH` route `man` derives `<dir>/man` from each entry and finds the bundled `man/man1/git-edit.1`. Needs `zsh` and `git` 2.31+ – `git replay` (2.44+) rebuilds linear spans in one pass where it exists, and is never required.
+Either way `man git-edit` works right away – the formula installs the page, and on the `PATH` route `man` derives `<dir>/man` from each entry and finds the bundled `man/man1/git-edit.1`. Needs `zsh` and `git` 2.31+, `--snapshot` 2.40+ – `git replay` (2.44+) rebuilds linear spans in one pass where it exists, and is never required.
 
 ## The modes
 
@@ -44,8 +44,8 @@ Either way `man git-edit` works right away – the formula installs the page, an
 | --- | --- |
 | `git edit <commit>` | **Edit** its content. Pauses for your changes, then amends the commit and replays the descendants |
 | `git edit -M <commit>` | **Reword** only – pure plumbing, no checkout. `--text` skips the editor |
-| `git edit -d <commit>...` | **Drop** commits or ranges. Their content stays in your checkout as uncommitted work |
-| `git edit -s <commit>...` | **Squash** into the oldest of them – `-s=<target>` into a named one, `-S` to demand the plumbing path instead of a rebase fallback |
+| `git edit -d <commit>...` | **Drop** commits or ranges. Run isolated, their content stays in your checkout as uncommitted work |
+| `git edit -s <commit>...` | **Squash** into the oldest of them, a single commit into its parent – `-s=<target>` into a named one, `-S` to demand the plumbing path instead of a rebase fallback |
 | `git edit --amend-into=<sha>` | **Fold** the staged changes into a past commit |
 | `git edit --commit --text <msg> -- <path>...` | **Commit** files whole from the checkout, as `git commit -- <paths>` does – composed apart from the shared index |
 | `git edit --split=<sha>` | **Split** one commit into two |
@@ -55,7 +55,7 @@ Either way `man git-edit` works right away – the formula installs the page, an
 | `git edit --onto=<upstream>` | **Replant** the branch onto a moved upstream |
 | `git edit --exec -- <cmd>...` | **Anything else**, run in an isolated worktree and applied only if it moved HEAD |
 
-Edit is the default mode, and `-e` / `--edit` names it – which refuses a second commit where the bare form would take two as a squash. The other short flags have long spellings too – `--reword`, `--drop`, `--squash`, `--resquash`, `--message`, `--dir`, `--yes` – and mode and flags can be given in any order.
+Edit is the default mode, and `-e` / `--edit` names it – which refuses a second commit where the bare form would take two as a squash. The other short flags have long spellings too – `--reword`, `--drop`, `--squash`, `--resquash`, `--message`, `--dir`, `--yes` – and mode and flags can be given in any order. A range `A..B` includes both its ends, unlike git's own. Every mode needs a checked-out branch but `-M`, `-S`, a split by pathspec and an edit, drop or squash run in place, which move a detached `HEAD` too.
 
 ## Folding staged changes into a past commit
 
@@ -83,9 +83,9 @@ git edit --commit --text "Subject" -- src/foo.js src/new.js   # commit these fil
 git edit --amend-into=<sha> --whole -- src/foo.js             # or fold them whole into a past commit
 ```
 
-`--commit` takes what `git commit -- <paths>` takes – each file as it stands, a new one with no `git add`, a deleted one removed, a moved one named at both paths – into a private index seeded from `HEAD`, read through the files' filters as `git add` reads them, and lands the commit the way `--exec` lands its result: the repo's hooks and `edit.verifyCmd` run on it, the branch moves only from the tip the files were composed on, and the journal and reflog name the caller. Files staged beside them stay staged and out of the commit. A file-mode change refuses unless `--allow-mode-change` says it is meant.
+`--commit` takes files as `git commit -- <paths>` does, though only named one by one, no directory or glob – each as it stands, a new one with no `git add`, a deleted one removed, a moved one named at both paths – into a private index seeded from `HEAD`, read through the files' filters as `git add` reads them, and lands the commit the way `--exec` lands its result: the repo's hooks run on it, `--no-verify` or not, and so does `edit.verifyCmd`, the branch moves only from the tip the files were composed on, and the journal and reflog name the caller. Files staged beside them stay staged and out of the commit. A file-mode change refuses unless `--allow-mode-change` says it is meant.
 
-A checkout other callers share has one more way to lose work: a rewrite one of them lands – a drop, a fold built elsewhere – changes a file at the tip without passing through the checkout, so a file edited on the old content and committed whole takes that change back. `--commit` and `--whole` refuse where a file lacks what another `GIT_EDIT_ACTOR` caller's run of the last 7 days landed on it and the tip still carries, would bring back a file such a run removed or remove one it added – naming the run and the remedy: `git edit --carry=<old tip>` to merge edits onto what landed, a rename's too, a `git restore` where the file holds no edits of its own or is one the run added, and leaving out one it removed. Runs under the caller's own label never count – for an unlabeled caller, every unlabeled one – nor do edits made on the landed lines afterwards, which conflict rather than merge. `--base=<sha>` names the commit the files rest on instead, refusing any path changed since – the tip's own SHA where taking a landing back is the point.
+A checkout other callers share has one more way to lose work: a rewrite one of them lands – a drop, a fold built elsewhere – changes a file at the tip without passing through the checkout, so a file edited on the old content and committed whole takes that change back. `--commit` and `--whole` refuse where a file lacks what another `GIT_EDIT_ACTOR` caller's run of the last 7 days landed on it and the tip still carries, would bring back a file such a run removed or remove one it added – naming the run and the remedy: `git edit --carry=<old tip>` to merge edits onto what landed, a rename's too, a `git restore` where the file holds no edits of its own or is one the run added, and leaving out one it removed. Runs under the caller's own label never count – for an unlabeled caller, every unlabeled one – nor do edits made on the landed lines afterwards, which conflict rather than merge. A rename of your own made on a file such a run changed refuses too, naming the `git merge-file` that brings what landed into the new name. `--base=<sha>` names the commit the files rest on instead, refusing any path changed since – the tip's own SHA where taking a landing back is the point.
 
 ## Rewording a whole span in one pass
 
@@ -123,11 +123,11 @@ It reports the triage up front: what the upstream gained, and which of your comm
 
 ## When it pauses
 
-A conflict, an edit and a content split all pause the same way: the branch has not moved, the worktree the run is using holds the state to fix, and the trailer names it. Resolve or author there, stage what you changed, then `git edit --continue` – or `git edit --abort`, which has nothing to roll back. A cascade just repeats the loop, and `git edit --status` reprints the pause for a session that arrives without the original context. An edit or a content split re-reads the branch at `--continue`, carrying along a commit that landed while you worked – a conflict resolution, built on the old tip, refuses to apply over one instead, and keeps your resolution in the worktree. A repository holds one pause at a time: every mutating mode refuses as in flight while one is open, and so does a run that reaches a pause of its own after a parallel session's took the slot – removing the temporary worktree it made, as nothing there is authored yet.
+A conflict, an edit and a content split all pause the same way: the branch has not moved, the worktree the run is using holds the state to fix, and the trailer names it. Resolve or author there, stage what you changed, then `git edit --continue` – or `git edit --abort`, which has nothing to roll back. A cascade just repeats the loop, and `git edit --status` reprints the pause for a session that arrives without the original context. An edit or a content split re-reads the branch at `--continue`, carrying along a commit that landed while you worked – a conflict resolution, built on the old tip, refuses to apply over one instead, and keeps your resolution in the worktree. A repository holds one pause at a time: every mutating mode refuses as in flight while one is open – `--commit`, `--exec` and `--undo` only where it is on the branch they move – and so does a run that reaches a pause of its own after a parallel session's took the slot – removing the temporary worktree it made, as nothing there is authored yet.
 
 Some steps need no answer from you. A reorder preserves the tree and a fold's result is the staged tree, so on the final step the right content is provable before anything is committed and `git edit` applies it itself, handing back only where the proof fails. What is left over is the genuinely ambiguous case: an intermediate reorder step rebuilds a state that never existed in history, which has to be authored rather than derived, and the pause says so.
 
-Without a TTY – an agent, CI, any script – the modes that would otherwise touch your checkout isolate themselves into a temp worktree automatically (`GIT_EDIT_NO_AUTO_ISOLATE=1` opts out). In a terminal, a worktree run opens that worktree in your GUI editor when git's editor cascade points at one (Sublime Text, VS Code, Cursor, Zed, a JetBrains IDE): `Space` re-opens it, `Enter` continues, `Escape` cancels, and `GIT_EDIT_NO_AUTO_OPEN=1` turns it off.
+Without a TTY – an agent, CI, any script, or wherever `CI` or `CLAUDECODE` is set – the modes that would otherwise touch your checkout isolate themselves into a temp worktree automatically, and so do they at a terminal where a verify gate is configured, since only a worktree run can be gated. Otherwise an edit, drop or squash at a terminal runs in place, stashing and restoring your uncommitted work around it. `GIT_EDIT_NO_AUTO_ISOLATE=1` opts out, naming any gate that then never runs. In a terminal, a worktree run opens that worktree in your GUI editor when git's editor cascade points at one (Sublime Text, VS Code, Cursor, Zed, a JetBrains IDE): `Space` re-opens it, `Enter` continues, `Escape` cancels, and `GIT_EDIT_NO_AUTO_OPEN=1` turns it off.
 
 ## Verifying what a rewrite built
 
@@ -138,7 +138,7 @@ git edit --amend-into=<sha> --verify='npm test' -- src/foo.js
 git config edit.verifyCmd 'npm test'      # or as a standing gate on every operation
 ```
 
-The command runs in the operation's own worktree – at the commit the mode authored, at the first one it rebuilt, at each one a move or reorder puts below a commit that came before it, at each commit a conflict resolution wrote, and at the new tip, `--verify-span` upgrading that to every rebuilt commit and `--no-verify-span` stepping a standing span back down for one run – before the compare-and-swap applies anything. That covers `--exec` too, whose command authors content nothing else has checked. A failure pauses with nothing applied – or, in the two modes that have no pause, refuses outright, a split re-deriving its halves from its own worktree and `--exec` leaving its built commits addressable by SHA. Either way it answers the two questions a failure raises: it runs the same check at the commit the failing one replaces, so a failure that predates the rewrite is cleared rather than blamed on it, and it climbs to the first commit above that passes, which for a fold is the commit carrying what the folded code now needs earlier. From there `git edit --continue` re-verifies, `--no-verify --continue` applies the result anyway, and `--abort` cancels.
+The command runs in the operation's own worktree – at the commit the mode authored, at the first one it rebuilt, at each one a move or reorder puts below a commit that came before it, at each commit a conflict resolution wrote, and at the new tip, `--verify-span` upgrading that to every rebuilt commit and `--no-verify-span` stepping a standing span back down for one run – before the compare-and-swap applies anything. That covers `--exec` too, whose command authors content nothing else has checked. A failure pauses with nothing applied – or, in the modes that have no pause, refuses outright, a split re-deriving its halves from its own worktree, `--exec` and `--commit` leaving their built commits addressable by SHA. Files left untracked in that worktree feed the check yet never land, so a gated resume refuses while it holds any that aren't ignored, `--exec` removes what its command left before the gate runs, and what the check itself leaves is removed after each run, so no run sees another's. Either way it answers the two questions a failure raises: it runs the same check at the commit the failing one replaces, so a failure that predates the rewrite is cleared rather than blamed on it, and it climbs to the first commit above that passes, which for a fold is the commit carrying what the folded code now needs earlier. From there `git edit --continue` re-verifies, `--no-verify --continue` applies the result anyway, and `--abort` cancels.
 
 Pair it with `edit.worktreeLink`. A fresh worktree holds none of what the repo deliberately doesn't track, so `npm test` there would fail on a missing `node_modules` rather than on the commit – name those paths once and every temp worktree gets them symlinked in:
 
@@ -153,6 +153,9 @@ Every run ends with a single status line, written as prose and anchored by `git-
 ```
 git-edit: ok – refs/heads/main moved <old-sha> → <new-sha>
 git-edit: ok – refs/heads/main unchanged
+git-edit: ok – dry run built <new-sha> on <old-sha>, refs/heads/main unchanged
+git-edit: ok – carried <n> path(s) across <old-sha>..<new-sha>
+git-edit: ok – no operation in flight
 git-edit: error – <reason>
 git-edit: paused – edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 git-edit: paused – verify failed at <sha> in <worktree>; output in <path>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
@@ -160,17 +163,17 @@ git-edit: paused – mode change at <sha> in <worktree>; then 'git edit --contin
 git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 ```
 
-**Dispatch on the trailer, not on the exit code.** A pipeline reports its last command's status, while the trailer is always the last stdout line: `grep '^git-edit: (ok|error|conflict|paused)'` decides what happens next, and the rest reads as text rather than as brittle key=value pairs.
+**Dispatch on the trailer, not on the exit code.** A pipeline reports its last command's status, while the trailer is always the last stdout line: `grep -E '^git-edit: (ok|error|conflict|paused)'` decides what happens next, and the rest reads as text rather than as brittle key=value pairs.
 
 **Keep the lines above it.** Blank-line padding is added only when stdout is a terminal, so a captured run comes out tight and even a `| tail -3` reaches the trailer and the line naming the commit the run touched. Above those sit the findings a rewrite reports about the *rest* of history – an edit's net history change, the commits a replay dropped as empty, a tip that differs from the staged result – and they move with the commit. A wrapper that forwards only the last line drops exactly those. What a gate did is one of them, so reach for a name rather than a line count: colour goes with the padding, a captured line starts at column zero, and `grep -E '^(Verif|git-edit:)'` answers what landed and what checked it, wherever the summary sits – the trailer alone where the repo configured no gate at all, or where a failing one turned into the pause the trailer names. The verification line carries its own shortfall – `Verified 2 of 7 commit(s) … in 3s – 5 unchecked in between` – so that one grep cannot read a sampled run as a complete one, and it carries what the check took, with what a standing `edit.verifySpan` ran beyond the default tier, so the price of the tier reaches the next run's flags. A run that had a gate and declined it says so rather than going quiet like an ungated one, naming the check that never ran: `Verify skipped – --no-verify was passed, so \`npm test\` never ran`. So silence has one meaning left: this repo has no gate configured, which is a question for `git config edit.verifyCmd` rather than for any single run's output.
 
-**Judge a pause by its trailer, then by the unmerged index** (`git -C <worktree> diff --name-only --diff-filter=U`) – never by grepping for conflict markers. A verify or mode pause has nothing unmerged, an emptied step has nothing to resolve, an add/add or modify/delete places one side's file whole with no textual merge to mark, and a `rerere` replay arrives pre-filled. All four read as finished to a marker grep.
+**Judge a pause by its trailer, then by the unmerged index** (`git -C <worktree> -c core.quotePath=false diff --name-only --diff-filter=U`, which names a non-ASCII file as `git add` takes it) – never by grepping for conflict markers. A verify or mode pause has nothing unmerged, an emptied step has nothing to resolve, an add/add or modify/delete places one side's file whole with no textual merge to mark, and a `rerere` replay arrives pre-filled. All four read as finished to a marker grep.
 
 **Validate before staging, one file at a time.** "No markers left" is not validation – `--continue` refuses staged `<<<<<<<` blocks on its own, but semantically wrong content passes every marker check. A blanket `git add -A` chained into `--continue` stages whatever a broken resolver left behind before anything could look at it.
 
 ```
 git edit --amend-into=<sha> -- <paths>       # exit 2 -> the conflict trailer names the worktree
-git -C <worktree> diff --name-only --diff-filter=U
+git -C <worktree> -c core.quotePath=false diff --name-only --diff-filter=U
 # resolve one file, validate it, then stage it singly:
 git -C <worktree> add <file>
 git edit --continue                          # dispatch on the fresh trailer, cascades repeat the loop
@@ -180,13 +183,13 @@ git edit --continue                          # dispatch on the fresh trailer, ca
 
 `man git-edit` carries the rest under SCRIPTING: the pause states in full, what `rerere` replays into a later conflict, and the snapshot-map recipe for a mechanical change across many commits, which belongs in a single `--exec` rather than in one fold per commit.
 
-Worth putting in an agent's own instructions verbatim: *commit through `git edit --commit --text "…" -- <paths>`, and for any history-rewriting git command reach for `git edit` – for one it doesn't cover, `git edit --exec -- …` – so it can't disturb another session's working tree or take back what one landed.*
+Worth putting in an agent's own instructions verbatim: *with `GIT_EDIT_ACTOR` set to your session's id, commit through `git edit --commit --text "…" -- <paths>`, and for any history-rewriting git command reach for `git edit` – for one it doesn't cover, `git edit --exec -- …` – so it can't disturb another session's working tree or take back what one landed.* The label is what tells another session's landing from your own – unlabeled, every unlabeled run counts as yours, and the guard lets a file take it back.
 
 ## Flags and standalone commands
 
 | | |
 | --- | --- |
-| `-m`, `--message` | Also edit the commit message after applying the changes |
+| `-m`, `--message` | Also edit the commit message after applying the changes – at a terminal, as an edit without one refuses it, its pause taking `--continue --text` instead |
 | `--text <msg>` | Inline message for `-M`, `-s`/`-S`, `--split` (the extracted commit's – the remainder keeps the original), `--amend-into` and `--commit`, which requires it, skipping the editor – `-` reads it from stdin |
 | `-C`, `--dir[=<path>]` | Run in a separate worktree (default `<repo>.git-edit`), as non-interactive runs do by themselves |
 | `--allow-pushed` | Rewrite a commit that already exists on a remote-tracking ref – the landing then prints the push that publishes it, its `--force-with-lease` pinned to the upstream it replaced |
@@ -204,9 +207,9 @@ Worth putting in an agent's own instructions verbatim: *commit through `git edit
 | `-h` | Print the usage. Prefer it to `--help`, which git routes through `man` – without a terminal that arrives as backspace-overstruck text |
 | `--continue` / `--abort` | Resume or cancel the paused operation |
 | `--undo` / `--status` | Revert the last completed operation, or report the in-flight one |
-| `--carry[=<old tip>]` | Merge the checkout's uncommitted edits onto what a rewrite landed – the branch's last one by default – where a commit of the file as it stands would take the rewrite back, and move a renamed file's edits to its new path. A clean merge is written, a conflict named and left |
+| `--carry[=<old tip>]` | Merge the checkout's uncommitted edits onto what a rewrite landed – the branch's last one by default, a `--commit` aside – where a commit of the file as it stands would take the rewrite back, and move a renamed file's edits to its new path, one the checkout holds as landed included. A clean merge is written, a conflict named and left |
 | `--version` | Print the released version – it tracks the tag, so a checkout following `main` reports the last one cut |
-| `--selftest[=<ids>]` | Run the end-to-end suite in a scratch repo – several hundred assertions driving the installed script as a subprocess, including a check that every flag it declares is documented in the man page and here. `=83-87,90` runs just those scenarios, with the ones they need, for development – a commit or a release takes the whole suite |
+| `--selftest[=<ids>]` | Run the end-to-end suite in a scratch repo – nearly 1,900 assertions driving the installed script as a subprocess, including a check that every flag it declares is documented in the man page, in `-h` and here. `=83-87,90` runs just those scenarios, with the ones they need, for development – a commit or a release takes the whole suite |
 
 Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_ISOLATE`, `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them.
 

@@ -41,19 +41,29 @@ overwritten.
 The plumbing modes
 .RB ( \-M ,
 .BR \-S ,
-.BR \-\-amend\-into ,
+a pathspec
 .BR \-\-split )
 and the isolated modes
-.RB ( \-\-reorder ,
-.BR \-\-exec )
+.RB ( \-\-amend\-into ,
+a content
+.BR \-\-split ,
+.BR \-\-reorder ,
+.BR \-\-exec ,
+.BR \-\-commit )
 never touch the main working tree, and folds do not consume staged changes
 until the final CAS lands \(em so a failure or
 .B \-\-abort
 leaves your staged changes exactly as they were, with nothing to roll back.
 .IP \(bu 3
-In non\-interactive contexts (stdin is not a TTY, e.g. an agent or CI) the
-modes that would otherwise touch the working tree auto\-isolate into a unique
-temporary worktree.
+In non\-interactive contexts (stdin is not a TTY, or
+.B CI
+or
+.B CLAUDECODE
+is set, e.g. an agent) the modes that would otherwise touch the working tree
+auto\-isolate into a unique temporary worktree \(em and so do they at a
+terminal where a verify gate is configured, since only a worktree run can be
+gated. Otherwise an edit, drop or squash at a terminal runs in place, stashing
+and restoring uncommitted work around the rebase.
 .IP \(bu 3
 Output carries blank\-line padding only when stdout is a terminal. Piped or
 captured it comes out tight \(em same lines, no padding \(em so even a
@@ -121,7 +131,14 @@ is given, records its ref move in the branch reflog and a journal, and warns
 about tags and branches left pointing into the rewritten span.
 .PP
 It needs git 2.31 or later and refuses an older one outright, since below
-that some of its checks would read as off rather than fail.
+that some of its checks would read as off rather than fail. Every mode needs a
+checked\-out branch but
+.BR \-M ,
+.BR \-S ,
+a split by pathspec and an edit, drop or squash run in place, which move a
+detached
+.B HEAD
+too.
 .B \-h
 and
 .B \-\-version
@@ -137,12 +154,15 @@ A mode or option that takes one value \(em
 .BR \-\-tree ,
 .BR \-\-text ,
 .BR \-\-verify ,
-.BR \-C / \-\-dir
-or
+.BR \-\-base ,
+.BR \-C / \-\-dir ,
 .B \-\-selftest
-\(em refuses to be given twice, where only the last value would count.
+or
+.B \-\-carry
+\(em refuses to be given twice, where only one value would count.
 .B \-\-move
-alone repeats, each time naming more of what it moves.
+alone repeats, each time naming more of what it moves. A \fIcommit\fR may be
+a range \fIA\fB..\fIB\fR, which includes both its ends, unlike git's own.
 .TP
 .B \-e, \-\-edit
 Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
@@ -199,15 +219,17 @@ A stale SHA resolves by patch id. A commit whose own message contains a
 line is refused (that line is the record separator) \(em reword it singly.
 .TP
 .B \-d, \-\-drop
-Delete one or more \fIcommit\fRs or ranges. The checkout is not touched, so the
-dropped content stays there as uncommitted work \(em keep it, or discard it with
-the
+Delete one or more \fIcommit\fRs or ranges. Run isolated, the checkout is not
+touched, so the dropped content stays there as uncommitted work \(em keep it,
+or discard it with the
 .B git\-restore
-command printed.
+command printed. Run in place at a terminal, it goes with the commit.
 .TP
 .B \-s, \-\-squash
 Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
-.BR \-s= \fItarget\fR). Auto\-routes to the plumbing path when the selection is a
+.BR \-s= \fItarget\fR),
+a single \fIcommit\fR into its parent. Auto\-routes to the plumbing path
+when the selection is a
 contiguous, merge\-free range whose target is the oldest commit.
 .TP
 .B \-S, \-\-resquash
@@ -386,7 +408,8 @@ steps over it.
 .B \-\-commit \-\-text \fImsg\fR \fB\-\-\fR \fIpath\fR...
 Commit each \fIpath\fR as it stands in the checkout, as
 .B "git commit \-\- <paths>"
-does \(em a new file needs no
+does, though only files named one by one, no directory or glob \(em a new
+file needs no
 .BR "git add" ,
 a deleted one is removed, a moved one is named at both paths \(em on top of
 the tip. The tree is composed in a private index seeded from
@@ -397,10 +420,12 @@ reads it, so the shared index is neither read nor written and a file staged
 beside them stays staged. The commit is then made in a temporary worktree and
 landed as
 .B \-\-exec
-lands its result: the repo's hooks and
-.B edit.verifyCmd
-run on it, the branch moves only from the tip the files were composed on, and
-the journal and reflog name the caller. A file\-mode change refuses unless
+lands its result: the repo's hooks run on it whatever
+.B \-\-no\-verify
+says, as does
+.BR edit.verifyCmd ,
+the branch moves only from the tip the files were composed on, and the
+journal and reflog name the caller. A file\-mode change refuses unless
 .B \-\-allow\-mode\-change
 says it is meant.
 .IP
@@ -421,7 +446,10 @@ to merge edits onto what landed, a rename's too, a
 where the file holds no edits of its own or is one the run added, and
 leaving out one it removed. Runs under the caller's own label never count
 \(em for an unlabeled caller, every unlabeled one \(em nor do edits made on
-the landed lines afterwards, which conflict rather than merge.
+the landed lines themselves afterwards. A rename of the caller's own made on
+a file such a run changed refuses too, naming the
+.B git merge\-file
+that brings what landed into the new name.
 .B \-\-base
 names the commit the files rest on instead, refusing a path changed since
 \(em the tip's SHA where taking a landing back is the point.
@@ -506,7 +534,12 @@ its working tree.
 .SH OPTIONS
 .TP
 .B \-m, \-\-message
-Also edit the commit message after applying changes.
+Also edit the commit message after applying changes \(em at a terminal. An
+edit without one refuses it, as its pause amends from
+.BR \-\-continue ,
+which takes the message as
+.B \-\-text
+instead.
 .TP
 .B \-\-text \fImsg\fR
 Inline message for
@@ -532,7 +565,11 @@ restate, the run names it and the commit it is still readable at.
 Run the rebase in a separate worktree (default:
 .IR <repo> .git\-edit)
 so it does not touch the main checkout. Enabled automatically in
-non\-interactive contexts.
+non\-interactive contexts, and wherever a verify gate is configured. A
+worktree that exists already is reused only detached and clean \(em one
+holding a branch or tracked changes refuses, and under a gate so does one
+holding untracked files, which the check would run over \(em in the default
+path, which this tool manages, they are removed instead.
 .TP
 .B \-\-allow\-pushed
 Permit rewriting a commit that exists on a remote\-tracking ref. Refused by
@@ -551,8 +588,10 @@ above under
 .TP
 .B \-\-allow\-mode\-change
 Let
+.B \-\-commit
+take, or
 .B \-\-amend\-into
-fold a file\-mode change \(em a flipped executable bit \(em against the
+fold, a file\-mode change \(em a flipped executable bit \(em against the
 refusal above under
 .BR MODES ,
 and on
@@ -676,7 +715,14 @@ content\-edit pause: nothing authored in that worktree can join the result,
 so a resume refuses while any edit is present rather than check out over it
 \(em repair the commit itself with a
 .B git edit \fIcommit\fR
-pass after the result applies.
+pass after the result applies. Files left untracked in the worktree feed the
+check yet never land, so a resume with a gate refuses while it holds any that
+are not ignored \(em bar an edit or content split being authored, which takes
+them into the commit \(em and
+.B \-\-exec
+removes what its \fIcommand\fR left untracked before its gate runs, the
+links standing in for ignored paths and so kept. What the check itself
+leaves is removed after each run, so no run sees another's.
 .B \-\-continue
 re\-verifies \(em with the pause's own command and tier, or with what a
 .B \-\-verify
@@ -689,11 +735,14 @@ cancels with nothing consumed \(em the built result is recorded, so a
 resume restores the worktree to it if an inspect checkout moved it.
 Overrides
 .BR edit.verifyCmd .
-A reword reuses every tree byte\-for\-byte and runs no verification \(em an
-explicit
+A reword,
+.B \-S
+and a squash routed to plumbing reuse every tree byte\-for\-byte and run no
+verification \(em an explicit
 .B \-\-verify
 on one refuses rather than promise a gate the run never keeps. Every mode
-that can change a tree does verify, including
+that can change a tree does verify \(em bar an edit, drop or squash run in
+place, which says so \(em including
 .BR \-\-exec ,
 whose command authors content nothing else has checked \(em the case a gate
 is worth most on. A split verifies too \(em its extracted half is a tree no
@@ -792,8 +841,11 @@ set, a run made under another label, or none, is refused too.
 Merge the checkout's uncommitted edits onto what a rewrite landed, for each
 path it changed whose file holds edits on the pre\-rewrite content \(em the
 files a landing names as taking the rewrite back if committed whole \(em and
-move a renamed file's edits to its new path. The rewrite is the branch's last
-one on record, or the one from \fIold\-tip\fR to \fBHEAD\fR. Only a clean merge
+move a renamed file's edits to its new path, also where the checkout holds
+that path exactly as the rewrite landed it. The rewrite is the branch's last
+one on record, a
+.B \-\-commit
+landing aside, or the one from \fIold\-tip\fR to \fBHEAD\fR. Only a clean merge
 that keeps the edits' own lines whole is written, and only over the file as it
 was read; a conflict, a binary, a symlink, a path changed again since or one
 the rewrite removed is named and left as it was, and the run exits 1. A rewrite that took
@@ -840,13 +892,16 @@ reports the last tag cut rather than the commits since it.
 Every run ends with a single line, anchored by
 .BR "git\-edit:" ,
 that a caller can dispatch on with
-.BR "grep '^git\-edit: (ok|error|conflict|paused)'" :
+.BR "grep \-E '^git\-edit: (ok|error|conflict|paused)'" :
 .PP
 .nf
 .RS
 git\-edit: ok \(en refs/heads/main moved <old-sha> \(-> <new-sha>
 git\-edit: ok \(en refs/heads/main unchanged
 git\-edit: ok \(en dry run built <new-sha> on <old-sha>, refs/heads/main unchanged
+git\-edit: ok \(en carried <n> path(s) across <old-sha>..<new-sha>
+git\-edit: ok \(en no operation in flight
+git\-edit: ok \(en selftest <passed>/<total> passed
 git\-edit: error \(en <reason>
 git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en edit|split <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
@@ -922,8 +977,10 @@ pause externally:
 .IP 1. 4
 Take the worktree path from the trailer, and list what needs resolving from
 the index \(em
-.B "git \-C <worktree> diff \-\-name\-only \-\-diff\-filter=U"
-\(em never by grepping for markers (see the pause states below).
+.B "git \-C <worktree> \-c core.quotePath=false diff \-\-name\-only \-\-diff\-filter=U"
+\(em which names a non\-ASCII file as
+.B git add
+takes it \(em never by grepping for markers (see the pause states below).
 .IP 2. 4
 Resolve one file at a time, and validate each result before staging it:
 parse it, run the test that covers it, compare its row or line count against
@@ -1064,13 +1121,23 @@ counting them: each is a later commit the fold's text reached.
 Success (including a no\-op that left the ref unchanged).
 .TP
 .B 1
-Error \(em nothing was applied.
+Error \(em nothing was applied, bar what
+.B \-\-carry
+names as carried before the paths it left.
 .TP
 .B 2
-Paused on a conflict awaiting
+Paused \(em on a conflict, for an edit or content split, or at a failed
+verify or mode gate \(em awaiting
 .B \-\-continue
 or
 .BR \-\-abort .
+.TP
+.I other
+.B \-\-exec
+exits with its \fIcommand\fR's own failing status, so a command exiting 2
+or 130 returns that too \(em the trailer, an
+.BR error ,
+tells them apart.
 .TP
 .BR 129 ", " 130 ", " 141 ", " 143
 Stopped by SIGHUP, SIGINT, SIGPIPE or SIGTERM before the branch moved, with an
@@ -1126,7 +1193,8 @@ rather than
 .IR data )
 \(em nested values work, and their parent directories are created in the
 worktree. A value added while an operation is paused reaches the existing
-worktree on \fB\-\-continue\fR.
+worktree on \fB\-\-continue\fR. A value the checkout has nothing at is named
+rather than skipped silently, as a check needing it fails on that alone.
 .TP
 .B edit.verifyCmd
 Standing verification command, applied as if every operation passed
@@ -1152,6 +1220,17 @@ Seconds the post\-failure climb for the first passing commit may spend, zero
 to skip it altogether. Unset, it is five times the failing run's own duration
 (at least 30s), so a slow check stops early on its own.
 .SH ENVIRONMENT
+Set to
+.BR 0 ,
+.BR false ,
+.B no
+or
+.BR off ,
+a
+.B GIT_EDIT_NO_*
+switch or
+.B GIT_EDIT_PROGRESS
+counts as unset.
 .TP
 .B GIT_EDIT_ACTOR
 A label for whoever runs git\-edit \(em an agent session's id, a CI job \(em
@@ -1162,10 +1241,15 @@ digits,
 .B _
 and
 .B \-
-is left out, since it could break the command the message rides in. An
-undo's entry names only whoever undid. The journal records the label too, for
+is dropped, since it could break the command the message rides in, and the
+run goes unlabeled throughout. An undo's entry names only whoever undid. The
+journal records the label too, for
 .B \-\-undo
-to refuse a labeled caller another's run.
+to refuse a labeled caller another's run \(em and for the
+.BR \-\-commit / \-\-whole
+landing guard to tell another caller's landing from the caller's own: runs
+under the caller's label never count, so for an unlabeled caller every
+unlabeled run is its own, and a file may take any of them back.
 .TP
 .B GIT_EDIT_WORKTREE_LINK
 Colon\-separated paths to link into temporary worktrees, added to whatever
@@ -1185,7 +1269,9 @@ If set, disables resolving a stale \fIcommit\fR to its post\-rewrite identity;
 every unreachable commit is then simply refused.
 .TP
 .B GIT_EDIT_NO_AUTO_ISOLATE
-If set, disables the non\-interactive auto\-isolation into a temp worktree.
+If set, disables the auto\-isolation into a temp worktree. A run kept in place
+that way skips a configured gate, and says so:
+.BR "Verify skipped \(en GIT_EDIT_NO_AUTO_ISOLATE keeps the run in place, so `npm test` won't run" .
 .TP
 .B GIT_EDIT_NO_AUTO_OPEN
 If set, does not auto\-open the worktree in a detected GUI editor at
@@ -1207,7 +1293,13 @@ shares them.
 The paused operation \(em its worktree, branch, target and phase. Only one can
 be paused at a time: while this file exists every mutating mode refuses rather
 than move the branch under a resolution that has not applied yet, whose own
-compare\-and\-swap would then fail at the end. A run reaching a pause of its
+compare\-and\-swap would then fail at the end \(em
+.BR \-\-commit ,
+.B \-\-exec
+and
+.B \-\-undo
+only where the pause is on the branch they move. A run
+reaching a pause of its
 own after a parallel session's took the slot refuses the same way and removes
 the temporary worktree it made, as nothing there is authored yet.
 .B \-\-continue
