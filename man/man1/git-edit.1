@@ -24,6 +24,8 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
+\fBgit edit\fR {\fB\-\-commit \-\-text\fR \fImsg\fR | \fB\-\-amend\-into=\fR\fIsha\fR} [\fB\-\-base=\fR\fIsha\fR] {\fB\-\-edits=\fR\fIjson\fR | \fB\-\-patch=\fR\fIfile\fR | \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR | \fB\-\-rm=\fR\fIpath\fR | \fB\-\-chmod=\fR\fIpath\fR\fB=\fR{\fB+x\fR|\fB\-x\fR}}...
+\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR \fB\-\-tree=\fR\fIcommit\fR
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] [\fB\-\-jobs\fR[\fB=\fR\fIn\fR]] | \fB\-\-version\fR
 .fi
 .SH DESCRIPTION
@@ -469,6 +471,31 @@ does, with nothing landed, so
 leaves the branch as it was, and a pushed commit or a merge above the anchor
 refuses before anything is built.
 .IP
+Where a file also holds another caller's uncommitted lines, taking it whole would
+take those too, so the inputs compose the commit from the caller's own changes alone,
+on the tip's content in a private index, in this order:
+.BR \-\-patch
+applies hunks split by hand,
+.B \-\-put
+replaces a file with one rebuilt elsewhere,
+.B \-\-edits
+replays the replacements made \(em each old text matching exactly once, so a peer's
+line inside it refuses rather than merging \(em and
+.B \-\-chmod
+and
+.B \-\-rm
+set a bit and remove a path. A put or removal is checked against other callers'
+landings as whole files are \(em or against the commit it was rebuilt from, named by
+.BR \-\-base ,
+refused where that path changed since, never the tip looked up in the same call; a
+new path takes the mode
+.B "git add"
+would give the checkout's file.
+.B \-\-amend\-into
+takes the same inputs, and
+.B "\-\-commit \-\-tree="\fIcommit\fR
+lands a commit composed on the tip by anything else.
+.IP
 In a checkout other callers share, a rewrite one of them lands \(em a drop, a
 fold built elsewhere \(em changes a file at the tip without passing through
 the checkout, and a file edited on the old content and committed whole would
@@ -661,8 +688,54 @@ fold \fItree\-ish\fR's diff from
 .B HEAD
 instead of the index's \(em composed apart from the shared index, a commit
 pinning the tip it was composed on, a bare tree checked against other
-callers' landings; see
+callers' landings; with
+.BR \-\-commit ,
+commit the tree of a commit composed on the tip; see
 .BR MODES .
+.TP
+.B \-\-edits=\fIfile\fR|\fIjson\fR
+With
+.B \-\-commit
+or
+.BR \-\-amend\-into ,
+replay
+.B {\(dq<path>\(dq: [[\(dq<old>\(dq, \(dq<new>\(dq], ...]}
+onto the tip's text, given as a file or inline, each old text matching exactly
+once; see
+.BR MODES .
+.TP
+.B \-\-patch=\fIfile\fR
+With
+.B \-\-commit
+or
+.BR \-\-amend\-into ,
+apply a patch split by hand onto the tip \(em keep its context, no
+.BR \-U0 .
+.TP
+.B \-\-put=\fIpath\fR=\fIfile\fR
+With
+.B \-\-commit
+or
+.BR \-\-amend\-into ,
+replace \fIpath\fR with \fIfile\fR's content, checked against
+.B \-\-base
+where given, else against other callers' landings.
+.TP
+.B \-\-rm=\fIpath\fR
+With
+.B \-\-commit
+or
+.BR \-\-amend\-into ,
+remove \fIpath\fR, checked as
+.B \-\-put
+is.
+.TP
+.B \-\-chmod=\fIpath\fR=\fB+x\fR|\fB\-x\fR
+With
+.B \-\-commit
+or
+.BR \-\-amend\-into ,
+give \fIpath\fR that executable bit, whether or not it has it.
 .TP
 .B \-\-whole
 With

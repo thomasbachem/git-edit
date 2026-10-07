@@ -66,34 +66,35 @@ _UNSET_OWN ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_SCAN C COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO D DIFF_N DIFF_O DIFF_PATHS DIR_HAS_EQUALS EDIT_TARGET EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
-	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA IDX_ENT IS_REF LEFT_ALONE LOCKED \
-	MARKED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
+	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA I IDX_ENT IS_REF LEFT_ALONE \
+	LOCKED MARKED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
 	MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD \
 	MOVE_TO ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER \
 	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
-	OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT \
-	OPT_EXEC OPT_HELP OPT_JOBS OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO \
-	OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH \
-	OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES \
-	ORIG_BRANCH ORIG_HEAD PARSE_ERR PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REBASE_OUT \
-	REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS \
-	RESUME_GD RESUME_HEAD RESUME_STRAY RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR \
-	SELFTEST_JOBS SELFTEST_SCOPE SHA SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS \
-	STATE_ACTION STATE_ACTOR STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE \
-	STATE_DEPTH STATE_FILES STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR \
-	STATE_MESSAGE STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS \
-	STATE_PLACED STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE \
-	STATE_RRPRE_SET STATE_SPAN STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOP_HEAD STATE_TARGET \
-	STATE_TARGETS STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
+	OPT_BASE OPT_BEFORE OPT_CARRY OPT_CHMOD OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN \
+	OPT_EDIT OPT_EDITS OPT_EXEC OPT_HELP OPT_JOBS OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY \
+	OPT_NO_VERIFY_SPAN OPT_ONTO OPT_PATCH OPT_PUT OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_RM \
+	OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO \
+	OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD PARSE_ERR \
+	PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REBASE_OUT REORDER_NEW_HEAD REORDER_REF RESET_DONE \
+	RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD RESUME_HEAD RESUME_STRAY \
+	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR SELFTEST_JOBS SELFTEST_SCOPE SHA \
+	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STATE_ACTION STATE_ACTOR \
+	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
+	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MESSAGE \
+	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
+	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
+	STATE_SPAN STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOP_HEAD STATE_TARGET STATE_TARGETS \
+	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_APART \
 	TEXT_VALUE TREE_BASE TREE_SHA UNTOLD VERIFY_APART VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_OURS _ACTOR _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR _LITB \
-	_MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY _RED \
-	_REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE \
-	_RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
+	_DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HOOK_RUN_PROBED _INPUT_FLIPS _LANDED_MOVE _LANDING \
+	_LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR \
+	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
+	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATE_PATH _STATUS_EMITTED \
 	_SYNC_VERDICT _TEMP_FILES _TEMP_WORKTREES _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
@@ -462,6 +463,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --exec [--base=<sha>] [--dry-run] [--after|--before=<sha>] -- <command>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --commit --text <msg> -- <path>...          # commit these files whole from the checkout, at the tip\e[0m"
 	ECHO_E "\e[0;94m       git edit --commit --text <msg> --after|--before=<sha> -- <path>... # or right beside <sha>, in the same run\e[0m"
+	ECHO_E "\e[0;94m       git edit --commit --text <msg> <input>...            # or composed from your own changes alone (inputs below)\e[0m"
+	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto <input>...          # fold them into <sha> likewise\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto [--tree=<tree-ish>] # fold staged changes (or a composed tree) into <sha> (auto = the unpushed commit owning the lines)\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto --whole -- <path>... # fold these files whole from the checkout into <sha>\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
@@ -489,8 +492,9 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
 	ECHO_E "\e[0;94m       --base=<sha>                    With --exec: the tip its result was built on – refused where the branch\e[0m"
 	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run.\e[0m"
-	ECHO_E "\e[0;94m                                       With --commit, --whole or a staged fold: the commit the files rest on – one changed since\e[0m"
-	ECHO_E "\e[0;94m                                       refuses, in place of the 7-day check (the tip's SHA takes a landing back)\e[0m"
+	ECHO_E "\e[0;94m                                       With --commit, --whole, a staged fold, --put or --rm: the commit the files rest on, or were\e[0m"
+	ECHO_E "\e[0;94m                                       rebuilt from – one changed since refuses, in place of the 7-day check (the tip's SHA, looked\e[0m"
+	ECHO_E "\e[0;94m                                       up in the same call as \$(git rev-parse HEAD), checks the tip against itself)\e[0m"
 	ECHO_E "\e[0;94m       --commit --text <msg> -- <path>...\e[0m"
 	ECHO_E "\e[0;94m                                       Commit <path>s as they stand in the checkout, as git commit -- <paths>\e[0m"
 	ECHO_E "\e[0;94m                                       does – a new file needs no git add, a deleted one goes – composed apart\e[0m"
@@ -508,7 +512,16 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       auto = the unpushed commit that last touched the staged lines\e[0m"
 	ECHO_E "\e[0;94m                                       (per git blame; a purely additive change falls back to the paths)\e[0m"
 	ECHO_E "\e[0;94m       --tree=<tree-ish>               With --amend-into: fold <tree-ish>'s diff from HEAD instead of the index's –\e[0m"
-	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on\e[0m"
+	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on.\e[0m"
+	ECHO_E "\e[0;94m                                       With --commit: commit the tree of a commit composed on the tip\e[0m"
+	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – composed on the tip in a private index, in this order:\e[0m"
+	ECHO_E "\e[0;94m       --patch=<file>                  Apply a patch you split by hand (keep its context – no -U0)\e[0m"
+	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with <file>'s content, its mode the tip's – a new path's\e[0m"
+	ECHO_E "\e[0;94m                                       what git add would give the checkout's file\e[0m"
+	ECHO_E "\e[0;94m       --edits=<file|json>             Replay {\"<path>\": [[\"<old>\", \"<new>\"], ...]} onto the tip's text, each <old>\e[0m"
+	ECHO_E "\e[0;94m                                       matching exactly once – a peer's line in the same file stays out\e[0m"
+	ECHO_E "\e[0;94m       --chmod=<path>=+x|-x            Give <path> that executable bit, whether or not it has it\e[0m"
+	ECHO_E "\e[0;94m       --rm=<path>                     Remove <path>\e[0m"
 	ECHO_E "\e[0;94m       --snapshot                      With --amend-into: merge the fold into each commit from its target up instead of\e[0m"
 	ECHO_E "\e[0;94m                                       replaying those above it – a conflict stops once per distinct content (git 2.40+)\e[0m"
 	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
@@ -3788,12 +3801,7 @@ _COMPOSE_WHOLE () {
 	fi
 	local TOP=$(git rev-parse --show-toplevel) IDX=$(MKTEMP_FILE git-edit-index) ERR P
 	_TEMP_FILES+=("$IDX")
-	# Each index entry as it stands before the files are read – a peer staging one in between then
-	# differs from it, keeping that staging through the re-sync
-	WHOLE_IDX=()
-	for P in "${WHOLE_PATHS[@]}"; do
-		WHOLE_IDX[$P]=$(git -C "$TOP" --literal-pathspecs ls-files -s -- "$P" 2>/dev/null | awk '{ if ($3 != 0) c = 1; else e = $1" "$2 } END { print (c ? "conflict" : e) }')
-	done
+	_RECORD_WHOLE_IDX "$TOP"
 	# An empty file is no index – read-tree writes its own
 	rm -f "$IDX"
 	if ! ERR=$(cd "$TOP" && GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" 2>&1 && GIT_INDEX_FILE=$IDX git update-index --add --remove -- "${WHOLE_PATHS[@]}" 2>&1); then
@@ -3806,6 +3814,457 @@ _COMPOSE_WHOLE () {
 		PRINT_ERR "Nothing to take – each of the ${#WHOLE_PATHS} file(s) named is as the tip has it"
 		exit 1
 	fi
+}
+
+# Records each of `WHOLE_PATHS`' index entries as it stands before the landing – a peer staging one
+# in between then differs from it, keeping that staging through the re-sync
+_RECORD_WHOLE_IDX () {
+	# Args: <top>
+	local P
+	WHOLE_IDX=()
+	for P in "${WHOLE_PATHS[@]}"; do
+		WHOLE_IDX[$P]=$(git -C "$1" --literal-pathspecs ls-files -s -- "$P" 2>/dev/null | awk '{ if ($3 != 0) c = 1; else e = $1" "$2 } END { print (c ? "conflict" : e) }')
+	done
+}
+
+# Takes a commit composed on the tip as `--commit`'s tree – pinned to that tip, which a parent
+# other than `HEAD` refuses, as a fold's `--tree` does
+_COMPOSE_FROM_TREE () {
+	local PARENT
+	if ! WHOLE_HEAD=$(git rev-parse --verify -q HEAD); then
+		PRINT_ERR "No commit to build on – the branch has none yet"
+		exit 1
+	fi
+	if ! WHOLE_TREE=$(git rev-parse -q --verify "$AMEND_TREE^{tree}" 2>/dev/null); then
+		PRINT_ERR "Unknown <tree-ish>: $AMEND_TREE"
+		exit 1
+	fi
+	PARENT=$(git rev-parse -q --verify "$AMEND_TREE^{commit}^" 2>/dev/null)
+	if [ "$PARENT" != "$WHOLE_HEAD" ]; then
+		PRINT_ERR "--commit --tree takes a commit composed on the tip ${WHOLE_HEAD:0:7}${PARENT:+ – $AMEND_TREE rests on ${PARENT:0:7}}${PARENT:-, its parent pinning what it was composed on}"
+		exit 1
+	fi
+	WHOLE_PATHS=(${(0)"$(git -c core.quotePath=false diff-tree -r -z --name-only "$WHOLE_HEAD" "$WHOLE_TREE")"})
+	if [ ${#WHOLE_PATHS} -eq 0 ]; then
+		PRINT_ERR "--tree $AMEND_TREE differs from the tip in nothing – nothing to commit"
+		exit 1
+	fi
+	_RECORD_WHOLE_IDX "$(git rev-parse --show-toplevel)"
+}
+
+# Decodes one JSON string's content into `REPLY` – `\\` and `\"` already held as \x01 and \x02 –
+# failing on a raw control character, an unknown escape or a lone surrogate
+_EDITS_DECODE () {
+	local S=$1 HEAD PIECE
+	local -a PIECES
+	local -i K CP LO B
+	[[ "$S" == *[$'\x03'-$'\x1f']* ]] && return 1
+	S=${S//\\\//\/}
+	S=${S//\\b/$'\b'} S=${S//\\f/$'\f'} S=${S//\\n/$'\n'} S=${S//\\r/$'\r'} S=${S//\\t/$'\t'}
+	# Any backslash left but a `\u` opened an escape JSON has no use for
+	[[ "${S//\\u/}" == *\\* ]] && return 1
+	# The held `\` and `"` come back in each piece before a decoded character joins it, so one
+	# decoded as \x01 or \x02 stays itself
+	PIECES=("${(@ps:\\u:)S}")
+	REPLY=${${PIECES[1]//$'\x01'/\\}//$'\x02'/\"}
+	for (( K = 2; K <= ${#PIECES}; K++ )); do
+		PIECE=${PIECES[K]}
+		HEAD=${PIECE[1,4]}
+		[[ "$HEAD" == [[:xdigit:]][[:xdigit:]][[:xdigit:]][[:xdigit:]] ]] || return 1
+		CP=$(( 16#$HEAD ))
+		PIECE=${PIECE[5,-1]}
+		if (( CP >= 0xD800 && CP <= 0xDBFF )); then
+			# The low half opens the next piece, which nothing may come before
+			[ -z "$PIECE" ] && (( K < ${#PIECES} )) || return 1
+			K+=1
+			HEAD=${PIECES[K][1,4]}
+			[[ "$HEAD" == [[:xdigit:]][[:xdigit:]][[:xdigit:]][[:xdigit:]] ]] || return 1
+			LO=$(( 16#$HEAD ))
+			(( LO >= 0xDC00 && LO <= 0xDFFF )) || return 1
+			CP=$(( 0x10000 + ((CP - 0xD800) << 10) + (LO - 0xDC00) ))
+			PIECE=${PIECES[K][5,-1]}
+		elif (( CP >= 0xDC00 && CP <= 0xDFFF )); then
+			return 1
+		fi
+		# As UTF-8, a byte at a time
+		if (( CP < 0x80 )); then
+			REPLY+=${(#)CP}
+		elif (( CP < 0x800 )); then
+			B=$(( 0xC0 | CP >> 6 )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP & 0x3F )); REPLY+=${(#)B}
+		elif (( CP < 0x10000 )); then
+			B=$(( 0xE0 | CP >> 12 )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP >> 6 & 0x3F )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP & 0x3F )); REPLY+=${(#)B}
+		else
+			B=$(( 0xF0 | CP >> 18 )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP >> 12 & 0x3F )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP >> 6 & 0x3F )); REPLY+=${(#)B}
+			B=$(( 0x80 | CP & 0x3F )); REPLY+=${(#)B}
+		fi
+		REPLY+=${${PIECE//$'\x01'/\\}//$'\x02'/\"}
+	done
+	return 0
+}
+
+# Takes <token> from the `--edits` structure at the parser's `I`, counting strings in `S`
+_EDITS_EXPECT () {
+	[ "${T[I]}" = "$1" ] || { PRINT_ERR "--edits takes $SHAPE – '$1' expected where '${T[I]:-the end}' stands"; exit 1; }
+	I+=1
+	[ "$1" = S ] && S+=1
+}
+
+# Parses `--edits` – {"<path>": [["<old>", "<new>"], ...]} and nothing else – into the parallel
+# arrays `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` in the order given, byte for byte, or refuses
+# Its own, needing no more than zsh and git – whole-text substitutions, as a walk by character
+# made a large replacement quadratic
+_EDITS_PARSE () {
+	# Args: <JSON text>
+	setopt local_options no_multibyte
+	local J=$1 SHAPE='{"<path>": [["<old>", "<new>"], ...]}' T KEY OLD
+	local -a PARTS SEEN STRS
+	local -i K I S
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	# Raw control characters are JSON nowhere, which frees two to hold the escaped `\` and `"`
+	if [[ "$J" == *[$'\x01'-$'\x08'$'\x0b'$'\x0c'$'\x0e'-$'\x1f']* ]]; then
+		PRINT_ERR "--edits takes $SHAPE – a raw control character, which JSON escapes"
+		exit 1
+	fi
+	J=${J//\\\\/$'\x01'}
+	J=${J//\\\"/$'\x02'}
+	PARTS=("${(@ps:\":)J}")
+	if (( ${#PARTS} % 2 == 0 )); then
+		PRINT_ERR "--edits takes $SHAPE – a string left open"
+		exit 1
+	fi
+	# The structure with each string as `S`, whitespace dropped, read by a small state machine
+	T=""
+	for (( K = 1; K <= ${#PARTS}; K++ )); do
+		if (( K % 2 )); then
+			# Between strings only punctuation – a bare word would read as a string's place
+			if [[ "${PARTS[K]//[$' \t\n\r']/}" == *[^\{\}\[\]:,]* ]]; then
+				PRINT_ERR "--edits takes $SHAPE – a value outside quotes, where only strings belong"
+				exit 1
+			fi
+			T+=${PARTS[K]//[$' \t\n\r']/}
+		else
+			_EDITS_DECODE "${PARTS[K]}" || { PRINT_ERR "--edits takes $SHAPE – string $(( K / 2 )) holds an escape or character JSON does not allow"; exit 1; }
+			STRS+=("$REPLY")
+			T+=S
+		fi
+	done
+	I=1 S=0
+	_EDITS_EXPECT '{'
+	if [ "${T[I]}" = '}' ]; then
+		I+=1
+	else
+		while :; do
+			_EDITS_EXPECT S
+			KEY=${STRS[S]}
+			if (( ${SEEN[(Ie)$KEY]} )); then
+				PRINT_ERR "--edits names $(_SHQ "$KEY") twice – give each path one list of edits"
+				exit 1
+			fi
+			SEEN+=("$KEY")
+			_EDITS_EXPECT :
+			_EDITS_EXPECT '['
+			if [ "${T[I]}" = ']' ]; then
+				I+=1
+			else
+				while :; do
+					_EDITS_EXPECT '['
+					_EDITS_EXPECT S
+					OLD=${STRS[S]}
+					_EDITS_EXPECT ,
+					_EDITS_EXPECT S
+					EDITS_PATH+=("$KEY") EDITS_OLD+=("$OLD") EDITS_NEW+=("${STRS[S]}")
+					_EDITS_EXPECT ']'
+					[ "${T[I]}" = , ] || break
+					I+=1
+				done
+				_EDITS_EXPECT ']'
+			fi
+			[ "${T[I]}" = , ] || break
+			I+=1
+		done
+		_EDITS_EXPECT '}'
+	fi
+	if (( I <= ${#T} )); then
+		PRINT_ERR "--edits takes $SHAPE – nothing may follow it"
+		exit 1
+	fi
+}
+
+# Tells whether the run names any of the inputs `--commit` and `--amend-into` compose from
+_INPUTS_GIVEN () {
+	(( ${#OPT_PATCH} + ${#OPT_PUT} + ${#OPT_EDITS} + ${#OPT_RM} + ${#OPT_CHMOD} > 0 ))
+}
+
+# Reads a repeatable option's values, as given glued or apart, into `reply`
+_OPT_VALUES () {
+	# Args: <option array name>
+	local -a A=("${(@P)1}")
+	local -i K
+	reply=()
+	for (( K = 2; K <= ${#A}; K += 2 )); do reply+=("${A[K]#=}"); done
+}
+
+# Resolves an input's path as `git commit` reads one, from where the caller stands, to the repo's
+# own spelling – a name outside it refuses
+_INPUT_PATH () {
+	# Args: <flag> <path> – sets `REPLY`
+	local P
+	if [[ "$2" == *$'\n'* ]] || [ -z "$2" ]; then
+		PRINT_ERR "$1 names no path git can take: $(_SHQ "$2")"
+		exit 1
+	fi
+	if [[ "$2" == /* ]]; then
+		P=${2:h:A}/${2:t}
+		[[ "$P" == "${_IN_TOP:A}/"?* ]] && P=${P#"${_IN_TOP:A}/"} || P=""
+	else
+		P=${${:-/@top@/$_IN_PREFIX$2}:a}
+		[[ "$P" == /@top@/?* ]] && P=${P#/@top@/} || P=""
+	fi
+	if [ -z "$P" ]; then
+		PRINT_ERR "$1 $2 names no file inside the repository"
+		exit 1
+	fi
+	REPLY=$P
+}
+
+# Prints the "<mode> <blob>" the composer's index holds at exactly <path> – nothing for a path it
+# lacks or a directory, whose files a pathspec would name instead
+_INPUT_ENTRY () {
+	local REC
+	for REC in "${(@0)$(GIT_INDEX_FILE=$IDX git -C "$_IN_TOP" ls-files -s -z -- ":(top,literal)$1")}"; do
+		[ "${REC#*$'\t'}" = "$1" ] && { print -r -- "${${REC%%$'\t'*}% *}"; return 0; }
+	done
+	return 0
+}
+
+# Composes the tip's tree with the caller's own changes – patches, whole replacements, edits
+# replayed onto the tip's text, mode bits and removals, in that order – in a private index, so
+# a peer's line in the same checkout file never comes along and the shared index stays untouched
+_COMPOSE_INPUTS () {
+	# Args: <"commit" or "fold"> – sets WHOLE_HEAD, WHOLE_TREE, WHOLE_PATHS and WHOLE_IDX,
+	# `_INPUT_FLIPS` to the mode flips `--chmod` named
+	setopt local_options no_multibyte
+	local _IN_TOP=$(git rev-parse --show-toplevel) _IN_PREFIX=$(git rev-parse --show-prefix)
+	local IDX=$(MKTEMP_FILE git-edit-index) ERR P SPEC SRC MODE BLOB TEXT OLD NEW BASE_AT TIP_AT FILE
+	local -a PATCHES PUTS PUT_SRCS RMS CHMODS CHMOD_X NAMED FLIPS UNNAMED
+	local -i K C HITS
+	_TEMP_FILES+=("$IDX")
+	# Mid-merge the commit would split it, as `git commit -- <paths>` refuses to
+	for P in MERGE CHERRY_PICK REVERT; do
+		if [ -e "$(git rev-parse --git-path "${P}_HEAD")" ]; then
+			PRINT_ERR "A ${${P//_/-}:l} is in progress – finish it with git commit before committing your own changes apart"
+			exit 1
+		fi
+	done
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	if ! WHOLE_HEAD=$(git rev-parse --verify -q HEAD); then
+		PRINT_ERR "No commit to build on – the branch has none yet"
+		exit 1
+	fi
+	# Every value read and checked before anything is composed – a typo never reaches the index
+	_OPT_VALUES OPT_PATCH
+	for SPEC in "${reply[@]}"; do
+		[ -f "$SPEC" ] || { PRINT_ERR "--patch $SPEC: no such file"; exit 1; }
+		PATCHES+=("${SPEC:A}")
+	done
+	_OPT_VALUES OPT_PUT
+	for SPEC in "${reply[@]}"; do
+		if [[ "$SPEC" != ?*=?* ]]; then
+			PRINT_ERR "--put takes <path>=<file>, got $(_SHQ "$SPEC")"
+			exit 1
+		fi
+		SRC=${SPEC#*=}
+		[ -f "$SRC" ] || { PRINT_ERR "--put $SPEC: no such file $SRC"; exit 1; }
+		_INPUT_PATH --put "${SPEC%%=*}"
+		PUTS+=("$REPLY") PUT_SRCS+=("${SRC:A}")
+	done
+	if [ ${#OPT_EDITS} -gt 0 ]; then
+		_OPT_VALUES OPT_EDITS
+		SPEC=${reply[1]}
+		# Inline as `--edits "$(cat edits.json)"`, or a file
+		if [ -f "$SPEC" ]; then
+			_EDITS_PARSE "$(<"$SPEC")"
+		elif [[ "${SPEC//[[:space:]]/}" == \{* ]]; then
+			_EDITS_PARSE "$SPEC"
+		else
+			PRINT_ERR "--edits $SPEC: no such file, nor inline JSON"
+			exit 1
+		fi
+		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
+			_INPUT_PATH --edits "${EDITS_PATH[K]}"
+			EDITS_PATH[K]=$REPLY
+		done
+	fi
+	_OPT_VALUES OPT_CHMOD
+	for SPEC in "${reply[@]}"; do
+		if [[ "$SPEC" != ?*=[+-]x ]]; then
+			PRINT_ERR "--chmod takes <path>=+x or <path>=-x, got $(_SHQ "$SPEC")"
+			exit 1
+		fi
+		_INPUT_PATH --chmod "${SPEC%=*}"
+		CHMODS+=("$REPLY") CHMOD_X+=("${SPEC##*=}")
+	done
+	_OPT_VALUES OPT_RM
+	for SPEC in "${reply[@]}"; do
+		_INPUT_PATH --rm "$SPEC"
+		RMS+=("$REPLY")
+	done
+	# Puts of checkout files onto their own paths alone are files taken whole, which that form takes
+	# guarded against another caller's landing
+	if [ ${#PUTS} -gt 0 ] && [ ${#PATCHES} -eq 0 ] && [ ${#OPT_EDITS} -eq 0 ] && [ ${#CHMODS} -eq 0 ] && [ ${#RMS} -eq 0 ]; then
+		for (( K = 1; K <= ${#PUTS}; K++ )); do
+			[ "${PUT_SRCS[K]}" -ef "$_IN_TOP/${PUTS[K]}" ] || break
+		done
+		if (( K > ${#PUTS} )); then
+			PRINT_ERR "Every --put takes a checkout file onto its own path – take them whole, which refuses where that would take back what another caller landed: ${${1:#fold}:+git edit --commit --text \"…\" -- }${${1:#commit}:+git edit --amend-into=<sha> --whole -- }${(j: :)${(@q-)PUTS}}"
+			exit 1
+		fi
+	fi
+	# A put or removal replaces what the tip holds – where the caller names the commit it rests on,
+	# a path changed since refuses rather than be reverted, a rename's old path most of all, as no
+	# put check sees a path new to the tip – without one the landings below stand in for it
+	for (( K = 1; K <= ${#PUTS} + ${#RMS}; K++ )); do
+		[ -n "$EXEC_BASE" ] || break
+		if (( K <= ${#PUTS} )); then P=${PUTS[K]} SPEC=--put; else P=${RMS[K - ${#PUTS}]} SPEC=--rm; fi
+		TIP_AT=$(git rev-parse -q --verify "$WHOLE_HEAD:$P" 2>/dev/null)
+		BASE_AT=$(git rev-parse -q --verify "$EXEC_BASE:$P" 2>/dev/null)
+		if [ "$BASE_AT" != "$TIP_AT" ]; then
+			PRINT_ERR "$P: changed between --base ${EXEC_BASE:0:9} and the tip ${WHOLE_HEAD:0:9} (git log --oneline ${EXEC_BASE:0:9}..${WHOLE_HEAD:0:9} -- $(_SHQ ":(literal)$P"))"
+			if [ $SPEC = --put ]; then
+				ECHO_E "\e[0;31m  Rebuild it from the tip and put it again, or replay your change with --edits.\e[0m" >&2
+			else
+				ECHO_E "\e[0;31m  See whether it still goes, then remove it with the tip as --base.\e[0m" >&2
+			fi
+			exit 1
+		fi
+	done
+	rm -f "$IDX"
+	GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" || exit 1
+	WHOLE_PATHS=()
+	# Patches as cut, paths read from the top as `git apply` reads them
+	for FILE in "${PATCHES[@]}"; do
+		if ! ERR=$(cd "$_IN_TOP" && GIT_INDEX_FILE=$IDX git apply --cached -- "$FILE" 2>&1); then
+			PRINT_ERR "--patch ${FILE:t} does not apply to the tip: ${ERR//$'\n'/ }"
+			exit 1
+		fi
+	done
+	[ ${#PATCHES} -gt 0 ] && WHOLE_PATHS+=(${(0)"$(GIT_INDEX_FILE=$IDX git diff-index -z --cached --name-only "$WHOLE_HEAD")"})
+	# A put keeps the mode the tip gives the path – a new one takes what `git add` would give the
+	# checkout's file, the source's where the checkout lacks one, as sources are often 644 copies
+	for (( K = 1; K <= ${#PUTS}; K++ )); do
+		P=${PUTS[K]} SRC=${PUT_SRCS[K]}
+		MODE=$(_INPUT_ENTRY "$P")
+		MODE=${MODE%% *}
+		if [ "$MODE" = 160000 ]; then
+			PRINT_ERR "--put $P: a submodule at the tip – a file put there would read as a broken one"
+			exit 1
+		fi
+		if [ -z "$MODE" ]; then
+			MODE=100644
+			if [ "$(git config --type=bool core.fileMode 2>/dev/null)" != false ]; then
+				FILE=$_IN_TOP/$P
+				{ [ -f "$FILE" ] && [ ! -L "$FILE" ]; } || FILE=$SRC
+				[ -x "$FILE" ] && MODE=100755
+			fi
+		fi
+		BLOB=$(git hash-object -w --path="$P" -- "$SRC") || exit 1
+		if ! GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "$MODE,$BLOB,$P" 2>/dev/null; then
+			PRINT_ERR "--put $P: a directory, or a file where one should be, stands in its way at the tip"
+			exit 1
+		fi
+		WHOLE_PATHS+=("$P")
+	done
+	# Each edit replays onto the text the tip holds, after the inputs above – an old text matching
+	# anything but once refuses, a peer's line inside it or the change already landed
+	local -a EPATHS=("${(@u)EDITS_PATH}")
+	for P in "${EPATHS[@]}"; do
+		MODE=$(_INPUT_ENTRY "$P")
+		if [[ "$MODE" != 100644\ * && "$MODE" != 100755\ * ]]; then
+			PRINT_ERR "--edits $P: not a file at the tip – --put it if it is new"
+			exit 1
+		fi
+		TEXT=$(git cat-file blob "${MODE#* }"; print -n x)
+		TEXT=${TEXT%x}
+		C=0
+		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
+			[ "${EDITS_PATH[K]}" = "$P" ] || continue
+			OLD=${EDITS_OLD[K]} NEW=${EDITS_NEW[K]}
+			C+=1
+			if [ -z "$OLD" ]; then
+				PRINT_ERR "--edits $P: edit $C has an empty old text, which matches everywhere"
+				exit 1
+			fi
+			HITS=$(( (${#TEXT} - ${#${TEXT//$OLD}}) / ${#OLD} ))
+			if (( HITS != 1 )); then
+				(( HITS )) && SPEC="$HITS matches" || SPEC="no match"
+				PRINT_ERR "--edits $P: $SPEC for edit $C ($(_SHQ "${OLD[1,60]}")) – a peer's line sits inside it, or the tip already carries it: rebuild the file and --put it"
+				exit 1
+			fi
+			TEXT=${TEXT/$OLD/$NEW}
+		done
+		BLOB=$(print -rn -- "$TEXT" | git hash-object -w --no-filters --stdin) || exit 1
+		GIT_INDEX_FILE=$IDX git update-index --cacheinfo "${MODE%% *},$BLOB,$P" || exit 1
+		WHOLE_PATHS+=("$P")
+	done
+	# A mode bit as `chmod` sets it, whatever the path has – a link or a missing path refuses
+	for (( K = 1; K <= ${#CHMODS}; K++ )); do
+		P=${CHMODS[K]}
+		MODE=$(_INPUT_ENTRY "$P")
+		if [[ "${MODE%% *}" != 100644 && "${MODE%% *}" != 100755 ]]; then
+			PRINT_ERR "--chmod $P: not a file in the commit – nothing to chmod"
+			exit 1
+		fi
+		GIT_INDEX_FILE=$IDX git update-index --cacheinfo "$([ "${CHMOD_X[K]}" = +x ] && print 100755 || print 100644),${MODE#* },$P" || exit 1
+		WHOLE_PATHS+=("$P")
+	done
+	for P in "${RMS[@]}"; do
+		if [ -z "$(_INPUT_ENTRY "$P")" ]; then
+			PRINT_ERR "--rm $P: not at the tip – nothing to remove"
+			exit 1
+		fi
+		(cd "$_IN_TOP" && GIT_INDEX_FILE=$IDX git update-index --force-remove -- "$P") || exit 1
+		WHOLE_PATHS+=("$P")
+	done
+	WHOLE_TREE=$(GIT_INDEX_FILE=$IDX git write-tree)
+	rm -f "$IDX"
+	WHOLE_PATHS=("${(@u)WHOLE_PATHS}")
+	if [ "$WHOLE_TREE" = "$(git rev-parse "$WHOLE_HEAD^{tree}")" ]; then
+		PRINT_ERR "Nothing to ${${1:#fold}:+commit}${${1:#commit}:+fold} – every input left the tree as it was"
+		exit 1
+	fi
+	# A flip `--chmod` names is meant – any other, a patch's mode lines say, refuses as a whole
+	# file's does unless `--allow-mode-change` says it is meant
+	NAMED=("${CHMODS[@]}")
+	FLIPS=(${(f)"$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | LC_ALL=C sed -n 's/^ mode change [0-7]* => [0-7]* //p')"})
+	UNNAMED=(${FLIPS:|NAMED})
+	if [ ${#UNNAMED} -gt 0 ] && [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
+		PRINT_ERR "A mode change outside --chmod rides along: ${(j:, :)UNNAMED} – drop the patch's mode lines, or name the path with --chmod where the flip is meant"
+		exit 1
+	fi
+	_INPUT_FLIPS=${#FLIPS}
+	# Without a `--base`, puts and removals are checked as whole files are, against other callers'
+	# landings of the last 7 days – on a tree holding them alone, as edits and patches apply to the
+	# tip itself and take nothing back
+	if [ -z "$EXEC_BASE" ] && [ $(( ${#PUTS} + ${#RMS} )) -gt 0 ]; then
+		rm -f "$IDX"
+		GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" || exit 1
+		for P in "${PUTS[@]}"; do
+			GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "$(git ls-tree --full-tree "$WHOLE_TREE" -- ":(literal)$P" | awk '{ print $1 "," $3 }'),$P" || exit 1
+		done
+		for P in "${RMS[@]}"; do
+			(cd "$_IN_TOP" && GIT_INDEX_FILE=$IDX git update-index --force-remove -- "$P") || exit 1
+		done
+		WHOLE_TREE=$(GIT_INDEX_FILE=$IDX git write-tree) _WHOLE_WHAT='Put or removed' _GUARD_WHOLE_LANDINGS
+		rm -f "$IDX"
+	fi
+	_RECORD_WHOLE_IDX "$_IN_TOP"
 }
 
 # Merges a landing's change into <ours> – the result's blob on stdout, or a failure where it
@@ -4035,6 +4494,10 @@ _GUARD_WHOLE_LANDINGS () {
 			ECHO_E "\e[0;31m  The tree predates what landed – compose it again on the current tip, then run this again.\e[0m" >&2
 			RESTORE=() RENAMED=()
 			;;
+		'Put or removed')
+			ECHO_E "\e[0;31m  What you put predates what landed – rebuild it from the tip, or replay your change with --edits, then run this again.\e[0m" >&2
+			RESTORE=() RENAMED=()
+			;;
 		*)
 			[ -n "$OLDEST_OLD" ] && ECHO_E "\e[0;31m  Merge your edits onto what landed with 'git edit --carry=${OLDEST_OLD:0:12}', then run this again.\e[0m" >&2
 			;;
@@ -4167,8 +4630,15 @@ GIT_COMMIT_WHOLE () {
 		PRINT_ERR "--commit requires being on a branch (got detached HEAD)"
 		exit 1
 	fi
-	_COMPOSE_WHOLE "$@"
-	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
+	if [ -n "$AMEND_TREE" ]; then
+		_COMPOSE_FROM_TREE
+	elif _INPUTS_GIVEN; then
+		_COMPOSE_INPUTS commit
+	else
+		_COMPOSE_WHOLE "$@"
+	fi
+	# The inputs' composer refused the flips no `--chmod` named already
+	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ] && ! _INPUTS_GIVEN; then
 		local FLIPS=$(git -c core.quotePath=false diff-tree -r --summary "$WHOLE_HEAD" "$WHOLE_TREE" | LC_ALL=C grep -a '^ mode change')
 		if [ -n "$FLIPS" ]; then
 			PRINT_ERR "A file-mode change rides along – a lost executable bit, most often – so nothing landed"
@@ -4178,11 +4648,16 @@ GIT_COMMIT_WHOLE () {
 		fi
 	fi
 	_GUARD_WHOLE_MARKERS
-	_GUARD_WHOLE
+	# Inputs and a composed tree rest on the tip itself, a put or removal on the `--base` it names
+	[ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN && _GUARD_WHOLE
 	local MSG=$(MKTEMP_FILE git-edit-message)
 	_TEMP_FILES+=("$MSG")
 	print -r -- "$TEXT_VALUE" > "$MSG"
-	PRINT_ACTION "Committing ${#WHOLE_PATHS} whole file(s) on %s..." "$WHOLE_HEAD"
+	if [ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN; then
+		PRINT_ACTION "Committing ${#WHOLE_PATHS} whole file(s) on %s..." "$WHOLE_HEAD"
+	else
+		PRINT_ACTION "Committing ${#WHOLE_PATHS} file(s) on %s..." "$WHOLE_HEAD"
+	fi
 	EXEC_BASE=$WHOLE_HEAD
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
@@ -9566,7 +10041,7 @@ zmodload zsh/zutil
 # Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
 # where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer
 PARSE_ERR=$(MKTEMP_FILE git-edit-parse 2>/dev/null) && _TEMP_FILES+=("$PARSE_ERR")
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -patch+:=OPT_PATCH -put+:=OPT_PUT -edits+:=OPT_EDITS -rm+:=OPT_RM -chmod+:=OPT_CHMOD -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
 	USAGE
 	PARSE_MSG=""
 	[ -n "$PARSE_ERR" ] && PARSE_MSG=$(<"$PARSE_ERR")
@@ -9601,7 +10076,7 @@ for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 
 		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' \
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
 		--before OPT_BEFORE 2 'names one commit' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
-		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' \
+		--text OPT_TEXT 2 'takes one message' --verify OPT_VERIFY 2 'runs one command' --edits OPT_EDITS 2 'takes one list of edits' \
 		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios' \
 		--jobs OPT_JOBS 1 'takes one count' \
 		--carry OPT_CARRY 1 'names one old tip'; do
@@ -9674,9 +10149,9 @@ if [ ${#OPT_TREE} -gt 0 ]; then
 		PRINT_ERR "--tree needs a tree-ish (--tree=<sha>)"
 		exit 1
 	fi
-	if [ ${#OPT_AMEND_INTO} -eq 0 ]; then
+	if [ ${#OPT_AMEND_INTO} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ]; then
 		USAGE
-		PRINT_ERR "--tree only applies to --amend-into"
+		PRINT_ERR "--tree only applies to --amend-into and --commit"
 		exit 1
 	fi
 fi
@@ -9693,6 +10168,19 @@ if [ ${#OPT_WHOLE} -gt 0 ]; then
 	fi
 	if [ ${#OPT_TREE} -gt 0 ]; then
 		PRINT_ERR "--whole and --tree cannot be combined – --whole composes the tree from the files itself"
+		exit 1
+	fi
+fi
+# The inputs compose a change from the caller's own edits – for a new commit or a fold alone, and
+# instead of whole files or a tree, which compose it otherwise
+if _INPUTS_GIVEN; then
+	if [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ]; then
+		USAGE
+		PRINT_ERR "--patch, --put, --edits, --rm and --chmod only apply to --commit and --amend-into"
+		exit 1
+	fi
+	if [ ${#OPT_WHOLE} -gt 0 ] || [ ${#OPT_TREE} -gt 0 ]; then
+		PRINT_ERR "--patch, --put, --edits, --rm and --chmod compose the change themselves – no --whole or --tree beside them"
 		exit 1
 	fi
 fi
@@ -10143,7 +10631,13 @@ if [ ${#OPT_COMMIT} -gt 0 ]; then
 	if [ "$1" = "--" ]; then
 		shift
 	fi
-	if [ $# -eq 0 ]; then
+	if _INPUTS_GIVEN || [ -n "$AMEND_TREE" ]; then
+		if [ $# -gt 0 ]; then
+			USAGE
+			PRINT_ERR "--commit takes files whole, or composes the commit from --tree or the inputs – not both"
+			exit 1
+		fi
+	elif [ $# -eq 0 ]; then
 		USAGE
 		PRINT_ERR "--commit needs the files to take: git edit --commit --text \"…\" -- <path>..."
 		exit 1
@@ -10444,6 +10938,21 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		for WHOLE_PATH in "${WHOLE_PATHS[@]}"; do
 			AMEND_PATHSPECS+=(":(top,literal)$WHOLE_PATH")
 		done
+	# The inputs compose it too, on the tip, as a new commit's are – a flip `--chmod` named is meant
+	elif _INPUTS_GIVEN; then
+		if [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
+			USAGE
+			PRINT_ERR "--amend-into takes paths or the inputs – the inputs name their own paths"
+			exit 1
+		fi
+		_COMPOSE_INPUTS fold
+		_GUARD_WHOLE_MARKERS
+		AMEND_TREE=$(git commit-tree "$WHOLE_TREE" -p "$WHOLE_HEAD" -m "git edit: inputs composed on ${WHOLE_HEAD:0:7}" </dev/null)
+		AMEND_PATHSPECS=()
+		for WHOLE_PATH in "${WHOLE_PATHS[@]}"; do
+			AMEND_PATHSPECS+=(":(top,literal)$WHOLE_PATH")
+		done
+		(( _INPUT_FLIPS )) && OPT_ALLOW_MODE_CHANGE=(--allow-mode-change)
 	fi
 	# The fold's source, as `git diff` reads it – the staged index, or a `--tree` composed apart
 	# from it against `HEAD`, where a commit given pins the tip it was composed on, so a tip
@@ -10477,6 +10986,8 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 	fi
 	if [ ${#OPT_WHOLE} -gt 0 ]; then
 		PRINT_ACTION "Amending ${#WHOLE_PATHS} whole file(s) into %s..." "$AMEND_INTO_TARGET"
+	elif _INPUTS_GIVEN; then
+		PRINT_ACTION "Amending ${#WHOLE_PATHS} file(s) into %s..." "$AMEND_INTO_TARGET"
 	elif [ -n "$AMEND_TREE" ]; then
 		PRINT_ACTION "Amending --tree $AMEND_TREE_GIVEN into %s..." "$AMEND_INTO_TARGET"
 	else
