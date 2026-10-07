@@ -1,4 +1,5 @@
 # --exec's result guard refuses to orphan a remote ref
+
 # --exec can't know its targets up front, so the pushed guard runs on
 # the result – a remote ref reachable from the old tip but not the new
 # one refuses the apply

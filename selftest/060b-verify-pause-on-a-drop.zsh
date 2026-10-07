@@ -162,8 +162,7 @@ _ST_CHECK "with the edit landed" sh -c "git show HEAD:vs.txt | grep -qx edited"
 
 # An explicit `--verify` on a mode with no gate refuses up front, since ignoring it would
 # promise a gate the run never keeps – the standing config stays exempt there, so a reword
-# under `edit.verifyCmd` must land untouched. `--exec` is no such mode: it authors a tree
-# like any rewrite, so the flag is taken rather than refused
+# under `edit.verifyCmd` must land untouched, and `--exec`, authoring a tree, takes the flag
 local XM_TIP=$(git rev-parse HEAD)
 _ST_RUN --verify=false -M "$XM_TIP" --text="XM reworded"
 _ST_EQ "an explicit --verify on -M refuses" "$RC" "1"

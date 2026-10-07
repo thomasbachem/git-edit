@@ -1,4 +1,5 @@
 # --verify gates the CAS on the caller's own check
+
 # A rewrite can land semantically wrong yet green – a bad resolution, a fold that breaks a
 # later commit – so `--verify=<cmd>` or `edit.verifyCmd` runs the caller's check over the
 # built result before the CAS, primary plus tip by default, all of it under `--verify-span`
@@ -161,8 +162,7 @@ _ST_OUT_LACKS "nor a worktree its exit removes" 'Inspect the failing state'
 _ST_RUN --no-verify --exec -- sh -c 'printf "EXBAD\n" > ex.txt && git commit -qam "EX bad, ungated"'
 _ST_EQ "--no-verify lets the same --exec through" "$RC" "0"
 _ST_EQ "and it landed" "$(git rev-parse HEAD~1)" "$EX_GOOD"
-# The gate sits behind the HEAD-unchanged return, so a command that commits nothing
-# pays for no check at all
+# The gate sits behind the `HEAD`-unchanged return, so a commit-less command pays for no check
 _ST_RUN --exec -- true
 _ST_EQ "an --exec that moves nothing completes" "$RC" "0"
 _ST_OUT_LACKS "without running the check" 'Verified'

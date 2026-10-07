@@ -5,7 +5,7 @@ local TF_BASE=$(git rev-parse HEAD)
 echo "tf-later" > tf2.txt && git add tf2.txt && git commit -qm "TF later"
 # A peer's staging on the very path, with its WIP on top – both must survive the fold
 printf 'peer\n' > tf.txt && git add tf.txt && printf 'peer\nwip\n' > tf.txt
-# Composed by `_ST_COMPOSE` as a caller would, and handed over as a commit on HEAD
+# Composed by `_ST_COMPOSE` as a caller would, and handed over as a commit on `HEAD`
 local TF_IDX="$TMP/tf-index"
 local TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-folded")
 _ST_RUN --amend-into="$TF_BASE" --tree="$TF_COMPOSED" -- tf.txt
@@ -31,8 +31,8 @@ TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-folded-thrice")
 _ST_RUN --amend-into=auto --tree="$TF_COMPOSED"
 _ST_EQ "auto targets from the tree's diff" "$RC" "0"
 _ST_OUT_HAS "naming the commit that owns the line" 'amended: [0-9a-f]* TF base'
-# Refusals: a tree composed on a tip that moved since, one matching HEAD, a bad tree-ish, and
-# `--tree` outside a fold
+# Refusals: a tree composed on a tip that moved since, one matching `HEAD`,
+# a bad tree-ish, and `--tree` outside a fold
 git reset -q --hard
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf-stale")
 echo "tf-moved" > tf3.txt && git add tf3.txt && git commit -qm "TF moved"

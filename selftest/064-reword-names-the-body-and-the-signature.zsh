@@ -1,4 +1,5 @@
 # A reword names what it discarded: message body, signature
+
 # Both summary lines above are subjects, so a caller comparing those reads a body-dropping
 # `--text` as clean – and a rebuild mints new objects, so a signature cannot come along
 # either, with neither showing in a tree or a subject

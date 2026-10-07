@@ -12,8 +12,7 @@ printf '#!/bin/sh\necho sm1-folded\n' > sm.sh && git add sm.sh
 _ST_RUN --amend-into="$SM_BASE" -- sm.sh
 _ST_EQ "the fold stops" "$RC" "2"
 local SM_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
-# The resolver writes the file anew through `_ST_REWRITE` – a temp file moved into place comes
-# back at 644
+# The resolver writes the file anew through `_ST_REWRITE` – a temp file moved into place, at 644
 _ST_REWRITE "$SM_WT" sm.sh $'#!/bin/sh\necho sm1-folded'
 _ST_EQ "and staged it without the bit" "$(git -C "$SM_WT" ls-files -s -- sm.sh | cut -d' ' -f1)" "100644"
 _ST_RUN --continue

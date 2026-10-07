@@ -1,4 +1,5 @@
 # The one-git-log rebuild walk preserves empty-message and merge commits
+
 # The walk packs each commit's fields into one NUL-separated `git log`, so an
 # empty message (a trailing empty field) and a merge (a multi-value parents
 # field) are the two shapes a format/index drift would corrupt silently

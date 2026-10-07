@@ -8,7 +8,7 @@ local BL_BASE=$(git rev-parse HEAD)
 git reset -q --hard "$(printf 'BL two\n\nbody\n\n' | git commit-tree "$(git rev-parse HEAD^{tree})" -p HEAD)"
 git commit -q --allow-empty -m "BL three"
 cat > "$TMP/bl-loop.sh" <<'EOF'
-# Rebuilds $1..HEAD, each tree kept, the message read raw by %B, byte-exact, or trimmed
+# Rebuilds `$1..HEAD`, each tree kept, the message read raw by `%B`, byte-exact, or trimmed
 N=$1
 for C in $(git rev-list --reverse "$1..HEAD"); do
 case $2 in

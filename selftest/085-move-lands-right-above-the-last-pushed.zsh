@@ -10,8 +10,8 @@ for PA in one two mine; do
 	echo "$PA" > "pa_$PA.txt" && git add "pa_$PA.txt" && git commit -qm "PA $PA"
 done
 _ST_CHECK "the fixture pushed its base" git merge-base --is-ancestor "$PA_PUSHED" origin/pa-pushed
-# Each move starts out of position whether or not the one before it landed, so a refusal
-# cannot pass as a no-op
+# Each move starts out of position whether or not the one before it
+# landed, so a refusal cannot pass as a no-op
 _ST_RUN --move="$(git rev-parse ':/PA two')..$(git rev-parse ':/PA mine')" --after="$PA_PUSHED"
 _ST_EQ "a run right above it applies" "$RC" "0"
 _ST_OUT_LACKS "without calling it pushed" 'already pushed'

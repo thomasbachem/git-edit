@@ -1,4 +1,5 @@
 # A fold's final conflicted step resolves itself, mid steps pause
+
 # The finished tip is the pre-op tip plus the staged changes, so the final
 # step's resolution is provable (staged-tree identity) before anything is
 # committed – earlier steps have no such answer and must keep pausing

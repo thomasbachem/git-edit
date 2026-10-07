@@ -65,7 +65,7 @@ _ST_TTY -- -d -y "$BC_X" "$BC_Y"
 _ST_EQ "a file staged whole merges, staged" "$RC:$(git show :f.txt | tr '\n' ' '):$(git diff --name-only -- f.txt)" "0:1 2 3 4 :"
 _ST_EQ "one staged and edited past that is left" "$(tr '\n' ' ' < g.txt)" "0 1 2x 3 4 "
 _ST_OUT_HAS "named as such" 'g.txt – staged and unstaged edits both'
-# A rename carries the edits to the new path, a removed file's stay untracked, a deleted one stays so
+# A rename carries edits to its new path, a removed file's stay untracked, a deleted one stays so
 _ST_PZ_NEW bc5
 _ST_PZ_C a.txt $'1\n2\n3\n4\n5\n6\n7\n8' "BC5 base"
 _ST_PZ_C d.txt $'d1\nd2' "BC5 d"

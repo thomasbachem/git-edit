@@ -1,7 +1,8 @@
 # --exec lands a history built before the run only on the tip --base names
+
 # The CAS covers only the command's own run, so `reset --hard` to a history built earlier
-# dropped whatever reached the branch meanwhile, with `ok`. The harness clock dates every
-# commit it makes long before any run, so a `commit-tree` here is a history built elsewhere
+# would drop whatever reached the branch meanwhile, with `ok`
+# The harness clock dates its commits before any run, so a `commit-tree` here is built elsewhere
 _ST_SCENARIO "\e[1;96m[89] exec lands a pre-built history only on the tip --base names\e[0m"
 git reset -q --hard
 echo "pb" > pb.txt && git add pb.txt && git commit -qm "PB one"
@@ -33,7 +34,7 @@ local PB_BUILT2=$(git commit-tree "$(git rev-parse HEAD^{tree})" -p HEAD^ -m "PB
 _ST_RUN --exec --base="$PB_TIP" -- git reset -q --hard "$PB_BUILT2"
 _ST_EQ "pinned to the unmoved tip, a pre-built history lands" "$RC" "0"
 _ST_EQ "as built" "$(git rev-parse HEAD)" "$PB_BUILT2"
-# A descendant drops nothing, however old; a rewind drops the tip, whoever made it
+# A descendant drops nothing, however old, while a rewind drops the tip, whoever made it
 local PB_AHEAD=$(git commit-tree "$(git rev-parse HEAD^{tree})" -p HEAD -m "PB ahead")
 _ST_RUN --exec -- git reset -q --hard "$PB_AHEAD"
 _ST_EQ "a pre-built descendant lands without --base" "$RC" "0"

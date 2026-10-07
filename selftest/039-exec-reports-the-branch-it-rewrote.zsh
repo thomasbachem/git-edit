@@ -68,7 +68,7 @@ _ST_EQ "their stages survive" "$(git ls-files -u -- xv.txt xs.txt | wc -l | tr -
 git reset -q --hard
 # A checkout carrying uncommitted edits in a changed path holds neither tip's content, so
 # calling it stale is false and the restore would discard those lines – it is named as left
-# alone instead. The everyday shape here: a shared checkout where the file always has WIP
+# alone instead, the everyday shape of a shared checkout where the file always has WIP
 echo "xk" > xk.txt && git add xk.txt && git commit -qm "XK to change"
 printf 'xk\nlocal wip\n' > xk.txt
 _ST_RUN --exec -- sh -c 'echo changed > xk.txt && git add xk.txt && git commit -q --amend --no-edit'

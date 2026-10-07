@@ -9,8 +9,8 @@ local RG_REF=$(git symbolic-ref HEAD) RG_HOOKS=$(git rev-parse --path-format=abs
 local RG_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
 local RG_TIP=$(git rev-parse HEAD) RG_LINE
 git config edit.verifyCmd "'$TMP/st-hold' '$TMP/rg-release'"
-# The reader leaves as the check starts, so the run's next line finds nobody – released only once
-# the reading end is closed
+# The reader leaves as the check starts, so the run's next line finds
+# nobody – released only once the reading end is closed
 local RG_PID RG_FD
 rm -f "$TMP/rg-fifo" "$TMP/rg-release" && mkfifo "$TMP/rg-fifo"
 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --move="$(git rev-parse ':/RG two')" --after="$(git rev-parse ':/RG base')" </dev/null >"$TMP/rg-fifo" 2>&1 &

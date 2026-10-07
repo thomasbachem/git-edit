@@ -1,4 +1,5 @@
 # Rerere records are operation-scoped under an explicit opt-out
+
 # `rerere.enabled` false still records during the run, the cascade carry being the point,
 # but the records are forgotten once the operation ends, completed and aborted alike
 # Without the opt-out they persist, and an abort leaving fresh resolutions behind names them

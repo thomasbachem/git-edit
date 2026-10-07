@@ -37,12 +37,10 @@
 # under the MIT License
 
 
-# zsh sources the caller's `.zshenv` for every invocation, scripts included – a `setopt
-# sh_word_split` or `ksh_arrays` there would run a different script than the selftest proves.
-# Every option that changes parsing goes back to zsh's default here, first, since `pipefail`
-# below is one of them. Its aliases go too – zsh expands them in scripts, and a colored `grep`
-# put an escape into a SHA. Functions stay: a `git ()` wrapper there is deliberate, and passes
-# through
+# A caller's `.zshenv` runs for every zsh invocation, scripts included – its `setopt sh_word_split`
+# would run a different script than the selftest proves, its colored `grep` alias put an escape
+# into a SHA, so every option that changes parsing goes back to zsh's default here, first, as it
+# would reset the `pipefail` below, and aliases go too – a `git ()` function there stays
 emulate zsh
 unalias -a
 
@@ -130,8 +128,7 @@ export GIT_CONFIG_PARAMETERS
 unset _K _V
 # Pathspec semantics are git-edit's own – a caller's glob setting refuses the `:(literal)` names
 # it passes, a literal one reads them as file names – and so are its diffs and greps, which
-# `GIT_DIFF_OPTS` widens past `-U0` and `GREP_OPTIONS` colors on BSD – all kept for what runs on
-# the caller's behalf
+# `GIT_DIFF_OPTS` widens past `-U0` and `GREP_OPTIONS` colors on BSD, kept for the caller's commands
 for _V in GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS GIT_LITERAL_PATHSPECS GIT_DIFF_OPTS GREP_OPTIONS; do
 	[ -n "${(P)_V+set}" ] && _CALLER_ENV+=("$_V=${(P)_V}")
 done
@@ -316,7 +313,7 @@ _CLEANUP_HOOK=""
 # gate prints no hint pointing at a worktree its exit removes, or at a resume there is none of
 _VERIFY_NO_RESUME=false
 
-# The gate command a `--no-verify` run bypassed, printed once above the trailer. A repo with no
+# The gate command a `--no-verify` run bypassed, printed once above the trailer – a repo with no
 # `edit.verifyCmd` prints nothing either, so without this the two read alike from outside: the
 # run that had a check and declined it looks like the one that never had one
 _VERIFY_BYPASSED=""
@@ -420,7 +417,7 @@ _GLOBAL_EXIT_TRAP () {
 trap '_GLOBAL_EXIT_TRAP' EXIT
 
 # Routes a termination signal through the exit trap, as a failed run leaves – untrapped, zsh
-# dies without running it and the operation's worktree stays registered, PIPE included: a
+# dies without running it and the operation's worktree stays registered, `PIPE` included: a
 # reader gone mid-run, a GUI quitting say, ends the run at its next line of output
 _TRAP_TERMINATION () {
 	trap '_ON_TERMINATION HUP 129' HUP
@@ -579,6 +576,7 @@ USAGE () {
 	ECHO_E "\e[0;94m         git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'\e[0m"
 }
 
+# Prints a printf-style <message> in <color>, each `%s` argument in the color's bright form
 PRINT_TEXT () {
 	local MSG=$1; shift
 	local COLOR=$1; shift
@@ -668,6 +666,7 @@ _PRINT_COMMIT_LINE () {
 	print -r -- "$REPLY" | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
+# Prints a command the run is about to run, dimmed like its output
 PRINT_CMD () {
 	# Args: <command string> [<color – default 90 gray, matching the command's own output>]
 	local CMD="$1"
@@ -679,6 +678,7 @@ PRINT_CMD () {
 	ECHO_E "${_PAD}\e[0;${COLOR}m${CMD_FILTERED//\\/$_LITB}\e[0;90m"
 }
 
+# Prints an error to stderr, its lead-in before `: ` in bold, and keeps it for the trailer
 PRINT_ERR () {
 	local MSG="$1"
 	# Remember the message for the status trailer in _GLOBAL_EXIT_TRAP
@@ -803,6 +803,7 @@ MKTEMP_DIR () {
 	mktemp -d "${BASE%/}/$1.XXXXXX"
 }
 
+# Makes a temp file named after <prefix> under `TMPDIR`, printing its path
 MKTEMP_FILE () {
 	local BASE="${TMPDIR:-/tmp}"
 	mktemp "${BASE%/}/$1.XXXXXX"
@@ -850,6 +851,7 @@ EMIT_DRY_RUN () {
 	_STATUS_EMITTED=true
 }
 
+# Emits the conflict trailer, naming the worktree to resolve in and its unmerged files
 EMIT_CONFLICT () {
 	# Args: <worktree-path> [<unmerged files, one per line>]
 	local FILES_PART=""
@@ -887,7 +889,7 @@ EMIT_VERIFY_PAUSED () {
 }
 
 # Emits the pause a completed rewrite takes when its tip carries a file mode nothing asked for –
-# built, not applied, the state kept, as a verify pause is; `mode_stray` marks it for `--status`
+# built, not applied, the state kept, as a verify pause is, `mode_stray` marking it for `--status`
 EMIT_MODE_PAUSED () {
 	# Args: <commit-sha> <worktree-path> [<result-tip>]
 	[ "$STATE_MODE_STRAY" != "$1" ] && _STATE_NOTE "mode_stray=$1"
@@ -1245,8 +1247,8 @@ _JOURNAL_FILE_PATH () {
 	print -r -- "$DIR/git-edit-journal"
 }
 
-# Takes the journal's lock, as git takes the index's – every append and an undo's rewrite hold it, so
-# none lands between an undo's read and its write – breaking one a killed run left past 10 s
+# Takes the journal's lock, as git takes the index's – every append and an undo's rewrite hold
+# it, so none lands between an undo's read and its write – breaking one a killed run left past 10 s
 _JOURNAL_LOCK () {
 	# Args: <journal>
 	local -i W=0
@@ -1392,7 +1394,7 @@ _RECORD_REF_MOVE () {
 		[ -z "$HIT" ] && HIT=$(_RESOLVE_STALE "$BSHA" "$3")
 		# A branch checked out in a worktree is that worktree's to move, as git's own update leaves
 		# it – but skipping it silently reads exactly like no stranded branch at all, while it sits
-		# on pre-rewrite history either way. So name it and its counterpart and stop there: the move
+		# on pre-rewrite history either way, so name it and its counterpart and stop there: the move
 		# is that checkout's to make, over whatever work is sitting in it, and a command prescribed
 		# from here would be one aimed at someone else's worktree
 		if [ -n "${ENTRY#* }" ]; then
@@ -1440,6 +1442,7 @@ _RECORD_REWRITE () {
 	_REWRITE_PAIRS+=("$1 $2")
 }
 
+# Delivers the held-back rewrite list once the run lands – notes copied, `post-rewrite` run
 _EMIT_REWRITES () {
 	# A held-back list that a hand-typed `git rebase --continue` let git deliver is not delivered twice
 	if [ ${#_REWRITE_PAIRS[@]} -eq 0 ] || [ "$_REWRITES_GIT_DELIVERED" = "true" ]; then
@@ -1482,7 +1485,7 @@ _HOOK_RUN_AVAILABLE () {
 
 # A rebase route's rewrite delivery, held back for the landing to make – git copies notes and
 # runs `post-rewrite` as its rebase finishes, ahead of the verify and the CAS, so an aborted or
-# refused rewrite used to be announced as one (see `_CAPTURE_BEGIN`)
+# refused rewrite would be announced as one (see `_CAPTURE_BEGIN`)
 _CAPTURE_REWRITES=false
 _CAPTURE_DIR=""
 _CAPTURE_PIN_ARGS=()
@@ -1491,7 +1494,7 @@ _CAPTURE_EXEC_ARGS=()
 _CAPTURE_EXEC=""
 _REWRITES_GIT_DELIVERED=false
 
-# Whether anything consumes a rewrite's old->new list – a `post-rewrite` hook, a file or one
+# Tells whether anything consumes a rewrite's old->new list – a `post-rewrite` hook, a file or one
 # defined in config, or notes told to follow rewrites – since only then is there one to hold back
 _REWRITE_CONSUMED () {
 	[ -n "$GIT_NOTES_REWRITE_REF" ] && return 0
@@ -1980,8 +1983,7 @@ _BRANCH_CHECKOUT () {
 		esac
 	done
 	(( ${#FOUND} )) || return 1
-	# A branch checked out twice, as `git worktree add -f` allows, is the caller's own copy where it
-	# stands in one
+	# Of a branch checked out twice (`git worktree add -f`), the caller's copy is the one it stands in
 	[ -n "$HERE" ] && (( ${FOUND[(Ie)$HERE]} )) && { print -r -- "$HERE"; return 0; }
 	print -r -- "${FOUND[1]}"
 }
@@ -2102,7 +2104,7 @@ _RESYNC_FOLDED () {
 # plain commit sweeps in – guarded per path on exactly that equality, so a peer's staging (or
 # the caller's own) on a changed path stays put and is named instead
 _RESYNC_STRANDED_ENTRIES () {
-	# Args: <checkout> <old tip> <new tip> – fills the caller's RESYNCED, LEFT_ALONE and LOCKED
+	# Args: <checkout> <old tip> <new tip> – fills the caller's `RESYNCED`, `LEFT_ALONE` and `LOCKED`
 	local CO=$1 OLD=$2 NEW=$3 P IDXENT
 	local -a PAIRS DIFF_PATHS
 	local -A DIFF_O DIFF_N IDX_ENT
@@ -2195,8 +2197,8 @@ _SYNCS_CHECKOUT () {
 	_SYNC_VERDICT="yes:$1"
 }
 
-# Prints the "<mode> <blob>" an index holds for <path> at stage 0, `conflict` where it holds stages,
-# nothing where it holds none
+# Prints the "<mode> <blob>" an index holds for <path> at stage 0,
+# `conflict` where it holds stages, nothing where it holds none
 _INDEX_ENTRY () {
 	# Args: <checkout> <path>
 	local -x GIT_LITERAL_PATHSPECS=1
@@ -2210,9 +2212,9 @@ _TREE_ENTRY () {
 	git ls-tree --full-tree "$1" -- "$2" 2>/dev/null | awk 'NR == 1 { print $1" "$3 }'
 }
 
-# Merges the edits a checkout file holds on <old blob> onto <new blob>, in the form a checkout writes
-# – filters applied – into <out>, returning `git merge-file`'s status: 0 clean, a conflict count, or
-# above 127 where it can't merge, a binary say
+# Merges the edits a checkout file holds on <old blob> onto <new blob>, in the form a checkout
+# writes – filters applied – into <out>, returning `git merge-file`'s status: 0 clean, a conflict
+# count, or above 127 where it can't merge, a binary say
 _SYNC_MERGE () {
 	# Args: <checkout> <file> <old rev:path> <new rev:path> <out>
 	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) RC
@@ -2250,8 +2252,8 @@ _SYNC_CHECKOUT () {
 	for P in "${CHANGED[@]}"; do
 		if (( ${+UNSTAGED[$P]} || ${+STAGED[$P]} )); then
 			IS_DIRTY[$P]=1
-		# One the rewrite adds needs its place free – an untracked or ignored file there, or a
-		# directory, is the caller's
+		# One the rewrite adds needs its place free – an untracked or ignored
+		# file there, or a directory, is the caller's
 		elif [ -z "${DIFF_O[$P]}" ] && { [ -e "$CO/$P" ] || [ -L "$CO/$P" ]; }; then
 			IS_DIRTY[$P]=1
 		fi
@@ -2545,11 +2547,11 @@ _PRINT_SUBMODULES_MOVED () {
 # Reconciles the branch's checkout after a tree-changing rewrite: re-syncs the index entries
 # the ref move stranded, then names the paths whose worktree still holds the pre-rewrite blob
 # exactly – one carrying edits on top is named as left alone instead, since reconciling it would
-# discard a peer's lines or your own, and the restore never names `--staged` either. Even for a
-# stale path it stays an offer, never an instruction: a rewrite that takes content out of history
-# hands it back through exactly that path, so the blob it discards is often the point of the run
+# discard a peer's lines or your own, and the restore never names `--staged` either
+# Even for a stale path it stays an offer, never an instruction: a rewrite that takes content
+# out of history hands it back through that very path, so its blob is often the point of the run
 _RECONCILE_CHECKOUT () {
-	# Args: <checkout> <old tip> <new tip> <headline when stale> [<headline when current>] [<restore's lead>]
+	# Args: <checkout> <old tip> <new tip> <stale headline> [<current headline>] [<restore's lead>]
 	local CO=$1 OLD=$2 NEW=$3 STALE_HEADLINE=$4 CURRENT_HEADLINE=$5 RESTORE_LEAD=$6 P SRC
 	local -a RESYNCED LEFT_ALONE LOCKED STALE MODIFIED REVERTING RENAMED GONE MODE_ONLY HOOKED SUBMODULES
 	# A person at a terminal gets the checkout brought along instead
@@ -2618,10 +2620,10 @@ _RECONCILE_CHECKOUT () {
 			if (( ${+VS_HEAD[$P]} )); then
 				# Only the pre-rewrite blob itself is stale content a restore reclaims – a
 				# worktree matching neither tip carries edits on top, a peer's or your own,
-				# and naming those for reconciling would prescribe discarding them. The new
-				# tip's content under another mode is neither: no edit, just a bit a file moved
-				# into place lost, a chmod not committed, or one the rewrite made and the
-				# checkout never got – told apart, since "uncommitted edits" on a file just
+				# and naming those for reconciling would prescribe discarding them
+				# The new tip's content under another mode is neither: no edit, just a bit a
+				# file moved into place lost, a chmod not committed, or one the rewrite made and
+				# the checkout never got – told apart, since "uncommitted edits" on a file just
 				# committed whole invites committing "the rest"
 				SRC=${RENAMED_FROM[$P]}
 				if (( ! ${+VS_CONTENT[$P]} )); then
@@ -2745,8 +2747,8 @@ _PRINT_REWRITE_APPLY_HINT () {
 		CHANGED=(${(0)"$(git diff --ignore-submodules=dirty -z --name-only --no-renames "$2" "$3" 2>/dev/null)"})
 	fi
 	if [ -n "${CHANGED[1]}" ]; then
-		# A person at a terminal gets the checkout brought along, a drop's content leaving it as the
-		# commit left the history
+		# A person at a terminal gets the checkout brought along, a drop's
+		# content leaving it as the commit left the history
 		local SYNC_CO=$(_BRANCH_CHECKOUT "refs/heads/$BRANCH")
 		if [ -n "$SYNC_CO" ] && _SYNCS_CHECKOUT "$SYNC_CO"; then
 			PRINT_TEXT "Branch %s $MOVED." 32 "$BRANCH"
@@ -2918,9 +2920,9 @@ _REFUSE_MOVED_BRANCH () {
 	exit 1
 }
 
-# Saves a drop's or squash's pause – at a conflict, or where a gate refused the result – for
-# `--continue` to resume in its worktree, a squash's `--text` beside it, as a state line can't
-# hold a multi-line message
+# Saves a drop's or squash's pause – at a conflict, or where a gate refused the result –
+# for `--continue` to resume in its worktree, a squash's `--text` beside it in a file
+# of its own, as a state line can't hold a multi-line message
 _SAVE_REBASE_STATE () {
 	_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" "wt_ours=${WT_OURS:-0}" \
 		"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}" \
@@ -2929,9 +2931,9 @@ _SAVE_REBASE_STATE () {
 	_CLEANUP_HOOK=""
 }
 
-# Puts into `REPLY` the command resuming a drop's or squash's rebase. The override carrying a
+# Puts into `REPLY` the command resuming a drop's or squash's rebase – the override carrying a
 # squash's message lasts one rebase invocation, so each resume re-establishes it, aimed at the
-# fold, since a resume commits the conflicted step too – `--text` from <file>, else `-m`'s editor
+# fold, since a resume commits the conflicted step too: `--text` from <file>, else `-m`'s editor
 _REBASE_CONTINUE_CMD () {
 	# Args: <--continue|--skip> [<file holding --text>] [real – `-m` asked for the editor]
 	local SUBCMD=$1 FOLD_EDITOR
@@ -3004,8 +3006,8 @@ _REBASE_DRIVE () {
 	done
 }
 
-# Names how a rebase stopped where nothing was left to resolve – git's own first words, since
-# no resume decides it
+# Names how a rebase stopped where nothing was left to resolve – git's
+# own first words, since no resume decides it
 _REBASE_STOPPED () {
 	local LINE
 	for LINE in ${(f)REBASE_OUT}; do
@@ -3055,9 +3057,9 @@ _REBASE_FROM_START () {
 	exit 1
 }
 
-# The rebase every drop and squash starts with, from the parent of its oldest commit – `--empty=drop`
-# so a commit the rewrite leaves empty goes, as one rebuilt any other way does, and full SHAs in
-# the todo, as two commits can share the 7 hex its edits would otherwise match
+# Builds the rebase every drop and squash starts with, from the parent of its oldest commit –
+# `--empty=drop` so a commit the rewrite leaves empty goes, as one rebuilt any other way does, and
+# full SHAs in the todo, as two commits can share the 7 hex its edits would otherwise match
 _REBASE_ARGS () {
 	# Args: <oldest commit> – fills `reply`
 	reply=(-c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= -c core.abbrev=no $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --empty=drop --interactive)
@@ -3069,6 +3071,7 @@ _REBASE_ARGS () {
 	fi
 }
 
+# Drops `COMMITS` by a rebase from the oldest one's parent
 GIT_REBASE_DROP () {
 	_CAPTURE_BEGIN
 	_REBASE_ARGS "$COMMIT"
@@ -3083,6 +3086,7 @@ GIT_REBASE_DROP () {
 	_REBASE_FROM_START "LC_ALL=C sed -i.git-edit$SED_SCRIPT" "" "" "${CMD[@]}"
 }
 
+# Squashes `COMMITS` into the oldest by a rebase – `squash` given a message or `-m`, else `fixup`
 GIT_REBASE_SQUASH () {
 	_CAPTURE_BEGIN
 	# `squash` opens `GIT_EDITOR` on the combined message where `fixup` does not, so it is used
@@ -3264,7 +3268,7 @@ _SQUASH_LEAVES_REACHABLE () {
 
 # Refuses an `--exec` result carrying commits made before the run that would take commits off
 # the branch – built elsewhere, on a tip nothing names, so whatever reached the branch since
-# would leave with the rest. The newest of those lead the list, being the likeliest someone else's
+# would leave with the rest, the newest of those leading the list as the likeliest someone else's
 _REFUSE_EXEC_PREBUILT () {
 	# Args: <orig-head> <new-head> <ref> <commits-made-before-the-run>
 	local ORIG_HEAD=$1
@@ -3317,10 +3321,10 @@ _REFUSE_EXEC_BASE_MOVED () {
 }
 
 # Lists each commit an `--exec` result brings in whose message ends in more blank lines than
-# the one it replaces, as a line of SHA and subject. The one it replaces shares its subject or
-# its author and author date, which a reword keeps – a commit matching neither came from
-# elsewhere, a branch brought in, and carries its message as it was. Only a byte count sees
-# them: `git log` and `git range-diff` both trim
+# the one it replaces, as a line of SHA and subject – the one it replaces shares its subject or
+# its author and author date, which a reword keeps, so a commit matching neither came from
+# elsewhere, a branch brought in, and carries its message as it was
+# Only a byte count sees them – `git log` and `git range-diff` both trim
 _EXEC_GAINED_BLANK_LINES () {
 	# Args: <orig-head> <new-head>
 	setopt local_options extended_glob
@@ -3409,7 +3413,7 @@ GIT_EXEC () {
 	cd "$WT" || exit 1
 
 	# Run the caller's command – no `eval`, the array passes straight through so quoting
-	# and special characters survive. The clock is read first: a result committed before it
+	# and special characters survive, the clock read first: a result committed before it
 	# was built somewhere else, on a tip nothing here can name
 	local RUN_START=$(date +%s)
 	# A labeled run is git-edit's own, already named by its action line
@@ -3460,10 +3464,10 @@ GIT_EXEC () {
 	fi
 
 	# Built-elsewhere guard – the CAS covers only the command's own run, so a history built before
-	# it, landed as a rewrite, would drop whatever reached the branch after it was built, reporting
-	# `ok`. Every commit the result brings in counts, not just its tip, which a commit made on top
-	# in the run would date anew; and a reset to an ancestor predates the run by definition. A
-	# descendant drops nothing, and `--base` names the tip the history was built on
+	# it, landed as a rewrite, would drop whatever reached the branch since, reporting `ok`
+	# Every commit the result brings in counts, not just its tip, which a commit made on top in the
+	# run would date anew, and a reset to an ancestor predates the run by definition – a descendant
+	# drops nothing, and `--base` names the tip the history was built on
 	if [ -z "$EXEC_BASE" ] && ! git merge-base --is-ancestor "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null; then
 		local -i PRE_RUN=0
 		if ! git merge-base --is-ancestor "$NEW_HEAD" "$ORIG_HEAD" 2>/dev/null; then
@@ -3483,9 +3487,9 @@ GIT_EXEC () {
 		exit 1
 	fi
 
-	# A dry run stops at the result – no gate, no CAS – and hands over the landing, pinned to
-	# the tip it built on, so running the command outside `--exec` never looks like the way to
-	# inspect a rewrite first
+	# A dry run stops at the result – no gate, no CAS – and hands over the landing,
+	# pinned to the tip it built on, so running the command outside `--exec` never
+	# looks like the way to inspect a rewrite first
 	if [ ${#OPT_DRY_RUN} -gt 0 ]; then
 		EXEC_DRY_BASE=$ORIG_HEAD
 		local MB=$(git merge-base "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null)
@@ -3505,10 +3509,10 @@ GIT_EXEC () {
 		[ -n "$CLEANED" ] && PRINT_TEXT "Removed what the command left untracked, which never lands: %s" 90 "$(_JOIN_PATHS "$CLEANED")"
 	fi
 
-	# The command authored this content rather than replaying a commit somebody already made,
-	# so a standing gate is worth more here than anywhere else – and the worktree already sits
-	# at the result. Having no pause to offer, a failure refuses outright: the built commits
-	# stay in the object store, reachable by SHA, and `--no-verify` applies them
+	# The command authored this content rather than replaying a commit somebody already made, so
+	# a standing gate is worth more here than anywhere else, the worktree already at the result
+	# Having no pause to offer, a failure refuses outright: the built commits stay in the object
+	# store, reachable by SHA, and `--no-verify` applies them
 	_VERIFY_NO_RESUME=true
 	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
 		ECHO_E "\e[0;31m  Built history is at $NEW_HEAD – --no-verify runs the command again unchecked, or land that history as is: git edit --exec --no-verify --base=${ORIG_HEAD:0:12} -- git reset --hard ${NEW_HEAD:0:12}\e[0m" >&2
@@ -4014,8 +4018,8 @@ _FOLD_SOURCE () {
 	fi
 }
 
-# Refuses a fold whose tree was composed on a tip the branch has moved past – it would take back what
-# landed since – named as the caller gave it, whole files or a `--tree`
+# Refuses a fold whose tree was composed on a tip the branch has moved past – it would take back
+# what landed since – named as the caller gave it, whole files or a `--tree`
 _TREE_MOVED () {
 	# Args: <the tip now>
 	if [ ${#OPT_WHOLE} -gt 0 ]; then
@@ -4437,8 +4441,8 @@ SEQEOF
 
 	# Re-sync exactly the folded paths' index entries to the new `HEAD`, those staged changes
 	# being history now – path-scoped, so anything a parallel session staged meanwhile keeps
-	# its staged state where a whole-index reset would wipe it. A `--tree` fold staged nothing,
-	# so the summary reconciles its entries like any other rewrite's instead
+	# its staged state where a whole-index reset would wipe it
+	# A `--tree` fold staged nothing, so the summary reconciles its entries like any other rewrite's
 	[ -z "$AMEND_TREE" ] && _RESYNC_FOLDED "$MAIN_DIR" "$STAGED_TREE" "${STAGED_PATHS[@]}"
 
 	_PRINT_AMENDED_SUMMARY "$NEW_HEAD" "$DEPTH" "$STAGED_FILES" "$MAIN_DIR" "$REBASE_BASE" "$ORIG_HEAD" "$STAGED_TREE" ""
@@ -4507,10 +4511,9 @@ _AMEND_INTO_SNAPSHOT () {
 # message kept – `git merge-tree` against the pre-op tip as base carries a renamed path's fold to
 # its old name, and a conflict takes the resolution recorded for that path and content, or stops
 _SNAPSHOT_BUILD () {
-	# Args: <resolution map>
-	# • Reads `STATE_TARGET`, `STATE_ORIG_HEAD` and `STATE_FOLD`
-	# • Sets `_SNAPSHOT_TIP`, or on a stop `_SNAPSHOT_ERA`, `_SNAPSHOT_TREE` and `_SNAPSHOT_STAGES`
-	# • Returns 2 on a stop, 1 on a refusal it has printed
+	# Args: <resolution map> – reads `STATE_TARGET`, `STATE_ORIG_HEAD` and `STATE_FOLD`, sets
+	# `_SNAPSHOT_TIP`, or on a stop `_SNAPSHOT_ERA`, `_SNAPSHOT_TREE` and `_SNAPSHOT_STAGES`, and
+	# returns 2 on a stop, 1 on a refusal it has printed
 	local MAP=$1 C OUT RC TREE PARENT NEWC P BLOB LINE KEY IDX
 	local -a ERAS MT_LINES STAGES PATHS PENDING SUBST NF
 	local -A RES SEEN
@@ -5181,8 +5184,8 @@ _SPLIT_APPLY () {
 
 	# A split authors an intermediate tree no commit ever carried, so it earns the gate as much
 	# as any replay, even with the tip tree unchanged by construction – always in a throwaway
-	# worktree, since the gate's failure path checks out over whatever it was handed. A
-	# `--no-verify` split authors that tree too, and the guard below is skipped on exactly that
+	# worktree, since the gate's failure path checks out over whatever it was handed
+	# A `--no-verify` split authors that tree too, and the guard below is skipped on exactly that
 	# flag – so record the bypass ahead of it, where every other mode records it from the gate
 	_VERIFY_NOTE_BYPASS
 	if _VERIFY_CONFIGURED; then
@@ -5192,9 +5195,8 @@ _SPLIT_APPLY () {
 		if _WORKTREE_ADD "$VWT" "$PREV_NEW" quiet >/dev/null 2>&1; then
 			_LINK_WORKTREE_EXTRAS "$VWT"
 			local VERIFY_OK=true
-			# The gate's own hints name a worktree removed two lines below and a resume that
-			# re-derives the halves rather than applying this result – the refusal below is the
-			# recourse here
+			# The gate's own hints name a worktree removed two lines below and a resume re-deriving
+			# the halves rather than applying this result, so the refusal below is the recourse
 			_VERIFY_NO_RESUME=true
 			_VERIFY_REWRITE "$VWT" "$PREV_NEW" "$ORIG_HEAD" "$C1" || VERIFY_OK=false
 			_VERIFY_NO_RESUME=false
@@ -5460,7 +5462,7 @@ _CONTINUE_SPLIT () {
 
 	# So is a mode neither the target nor its parent carries – a file written anew into the
 	# worktree comes back without its executable bit, and the remainder would flip it straight
-	# back, a stray pair no diffstat shows; `--allow-mode-change` keeps it
+	# back, a stray pair no diffstat shows – `--allow-mode-change` keeps it
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -eq 0 ]; then
 		local -a MODE_STRAYS
 		local MP M1 MB MX
@@ -5641,7 +5643,7 @@ GIT_REORDER () {
 
 	# Scripted sequence editor – drop the span's `pick` lines and re-emit them at the first
 	# one's position in the desired order, matching the todo's abbreviated SHAs as prefixes
-	# of our full ones, with the order traveling by env so the script needs no interpolation.
+	# of our full ones, with the order traveling by env so the script needs no interpolation
 	# Under `sh`, like the other editors written for git – as a zsh script it would start a
 	# zsh of its own, which reads the caller's `.zshenv` past the `emulate` at the top
 	local SEQ=$(MKTEMP_FILE git-edit-reorder-seq)
@@ -6141,6 +6143,7 @@ _PRINT_ONTO_SUMMARY () {
 	fi
 }
 
+# Resumes a paused replant in its worktree
 _CONTINUE_ONTO () {
 	if [ ! -d "$STATE_WORKTREE" ]; then
 		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
@@ -6223,6 +6226,7 @@ _ABORT_ONTO () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
+# Resumes a paused reorder or move in its worktree
 _CONTINUE_REORDER () {
 	if [ ! -d "$STATE_WORKTREE" ]; then
 		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
@@ -6286,9 +6290,8 @@ _CONTINUE_REORDER () {
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
 }
 
-# Resumes a paused drop or squash – same shape as `_CONTINUE_REORDER`, the rebase living in an
-# isolated worktree with the branch moving only at the final CAS, so a pause costs nothing and can
-# repeat
+# Resumes a paused drop or squash like `_CONTINUE_REORDER` – the rebase lives in an isolated
+# worktree and the branch moves only at the final CAS, so a pause costs nothing and can recur
 _CONTINUE_REBASE () {
 	if [ ! -d "$STATE_WORKTREE" ]; then
 		PRINT_ERR "Worktree no longer exists: $STATE_WORKTREE"
@@ -6362,6 +6365,7 @@ _CONTINUE_REBASE () {
 	PRINT_COMPLETED "$(git rev-parse "$STATE_BRANCH")" "$STATE_BRANCH" true
 }
 
+# Cancels a paused drop or squash, removing its worktree unless it is the caller's `-C` path
 _ABORT_REBASE () {
 	PRINT_ACTION "Aborting $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
 	local LANDED=""
@@ -6598,8 +6602,8 @@ _CONTINUE_EDIT () {
 		_CAPTURE_RECORD "$STATE_TARGET" "$STATE_AMENDED"
 		_EDIT_START_REPLAY
 	else
-		# Anything else – a reset elsewhere, the paused commit dropped – lands nothing; a replay
-		# aborted by hand left the amend standing, which a reset to it resumes from
+		# Anything else – a reset elsewhere, the paused commit dropped – lands nothing, while a
+		# replay aborted by hand left the amend standing, which a reset to it resumes from
 		_CLEANUP_HOOK=""
 		PRINT_ERR "The edit's worktree no longer builds on ${STATE_TARGET:0:7} or its parent – nothing was applied"
 		ECHO_E "\e[0;31m  Reset it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") reset --hard ${${STATE_AMENDED:-$STATE_TARGET}:0:12}') and edit again, or 'git edit --abort'.\e[0m" >&2
@@ -6682,9 +6686,9 @@ _EDIT_HAND_COMMITS () {
 	done
 }
 
-# Tells whether commits made by hand at an edit's stop stand in for the paused commit – an amend of
-# it, or ones on top of it, all on its parent; a root has none, so there the worktree's history must
-# be a single line from one root of its own
+# Tells whether commits made by hand at an edit's stop stand in for the paused commit – an amend
+# of it, or ones on top of it, all on its parent, and for a root, which has none, a worktree
+# history that is a single line from one root of its own
 _EDIT_COMMITTED_AT_STOP () {
 	# Args: <worktree HEAD>
 	if git rev-parse -q --verify "$STATE_TARGET^" >/dev/null; then
@@ -6694,6 +6698,7 @@ _EDIT_COMMITTED_AT_STOP () {
 	fi
 }
 
+# Cancels a paused edit, removing its worktree unless it is the caller's `-C` path
 _ABORT_EDIT () {
 	PRINT_ACTION "Aborting edit of %s..." "${STATE_TARGET:0:7}"
 	local LANDED=""
@@ -6750,6 +6755,7 @@ _STATE_FILE_PATH () {
 	print -r -- "$DIR/git-edit-state"
 }
 
+# Writes the pause's state file, one key a line
 _SAVE_STATE () {
 	# Args: key=value pairs to persist (one per arg)
 	local SF
@@ -6778,8 +6784,8 @@ _SAVE_STATE () {
 		elif [ ${#OPT_NO_VERIFY_SPAN} -gt 0 ] || [ "$STATE_VERIFY_SPAN" = "0" ]; then echo "verify_span=0"; fi
 		# And a mode change a continue let through – the landing must not refuse what a stop allowed
 		if [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then echo "allow_mode_change=1"; fi
-		# And a gate the run declined, and the trees resolvers staged at earlier stops, which the gate
-		# checks in the default tier
+		# And a gate the run declined, and the trees resolvers staged at earlier
+		# stops, which the gate checks in the default tier
 		if [ ${#OPT_NO_VERIFY} -gt 0 ] || [ "$STATE_NO_VERIFY" = 1 ]; then echo "no_verify=1"; fi
 		if [ -n "$STATE_RESOLVED" ]; then print -r -- "resolved=$STATE_RESOLVED"; fi
 		# And a held-back rewrite delivery, which the resuming run must re-arm around its saved list
@@ -6909,10 +6915,10 @@ _LOAD_STATE () {
 	fi
 	# A verify flag on a resume sticks to the operation, as it does on the first invocation –
 	# noted here rather than at the next pause, since a re-pause of any kind (a verify failure,
-	# a further conflict) keeps the state file as it stands rather than rewriting it. The command
-	# first, so the tier can see it, and a span tier with no command in hand refuses here, before
-	# anything is rebuilt: recorded, it would refuse every plain resume for want of one, and the
-	# pause would be a dead end
+	# a further conflict) keeps the state file as it stands rather than rewriting it
+	# The command first, so the tier can see it, and a span tier with no command in hand refuses
+	# here, before anything is rebuilt: recorded, it would refuse every plain resume for want of
+	# one, and the pause would be a dead end
 	if [ ${#OPT_CONTINUE} -gt 0 ] || [ ${#OPT_SKIP} -gt 0 ]; then
 		if [ -n "$VERIFY_VALUE" ] && [ "$VERIFY_VALUE" != "$STATE_VERIFY_CMD" ]; then
 			_STATE_NOTE "verify_cmd=$VERIFY_VALUE"
@@ -6977,6 +6983,7 @@ _STATE_WT_OURS () {
 	[ "$STATE_WT_OURS" = 1 ] || { [ -z "$STATE_WT_OURS" ] && [[ "${STATE_WORKTREE:t}" == git-edit-* ]]; }
 }
 
+# Removes the pause's state file and capture dirs, freeing the slot
 _CLEAR_STATE () {
 	local SF=${_STATE_PATH:-$(_STATE_FILE_PATH)}
 	[ -n "$SF" ] || return 0
@@ -6988,6 +6995,7 @@ _CLEAR_STATE () {
 	_STATE_OWNED=""
 }
 
+# Tells whether a pause's state file exists
 _STATE_EXISTS () {
 	local SF=$(_STATE_FILE_PATH)
 	[ -n "$SF" ] && [ -f "$SF" ]
@@ -7228,17 +7236,17 @@ _STATE_NOTE () {
 	return 0
 }
 
-# The ` mode change` lines of a diff, as the landing's mode note reads them – paths unquoted,
-# so the commit search can look one up as it stands
+# Prints the ` mode change` lines of a diff, as the landing's mode note reads them – paths
+# unquoted, so the commit search can look one up as it stands
 _MODE_LINES () {
 	# Args: <worktree> <from> <to>
 	git -C "$1" -c core.quotePath=false diff --summary "$2" "$3" 2>/dev/null | LC_ALL=C grep -a '^ mode change'
 	return 0
 }
 
-# The mode git's own merge gives a path at a stop: the replayed commit's where that commit
-# changed it, else the new parent's – and none where both changed it (the resolver's call) or
-# the commit removed the path
+# Prints the mode git's own merge gives a path at a stop: the replayed commit's where that
+# commit changed it, else the new parent's – and none where both changed it (the resolver's
+# call) or where the commit removed the path
 _MERGED_MODE () {
 	# Args: <base> <theirs> <ours>
 	[ -z "$2" ] && return 0
@@ -7263,7 +7271,7 @@ _TREE_MODES () {
 # Refuses a stop's staged resolution that leaves a path at a mode neither the replayed commit
 # nor its new parent carries – a file written anew into the worktree and staged comes back
 # without its executable bit, which every commit above then inherits, surfacing only in the
-# landing's mode note; `--allow-mode-change` on the continue keeps it, for the landing too
+# landing's mode note – `--allow-mode-change` on the continue keeps it, for the landing too
 _GUARD_STOP_MODES () {
 	local WT=$1
 	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
@@ -7322,7 +7330,7 @@ _MODE_STRAY_AT=""
 
 # Refuses a landing whose tip changed a file mode the operation never asked for – beyond a fold's
 # staged flip, an edit's, or the ones a dropped commit undoes – naming the rebuilt commit that
-# brought it in, since a resolution at a stop is where one enters unasked; `--allow-mode-change`
+# brought it in, since a resolution at a stop is where one enters unasked – `--allow-mode-change`
 # on the continue applies it anyway, as it does for a stop it let through
 _GUARD_TIP_MODES () {
 	# Args: <worktree> <new_head> <orig_head> [<meant mode lines>]
@@ -7332,8 +7340,8 @@ _GUARD_TIP_MODES () {
 	local MEANT=$4
 	_MODE_STRAY_AT=""
 	if [ ${#OPT_ALLOW_MODE_CHANGE} -gt 0 ] || [ "$STATE_ALLOW_MODE_CHANGE" = "1" ]; then
-		# Given on a continue, the flag carries to the next – a verify pause in between must not
-		# bring the refusal back
+		# Given on a continue, the flag carries to the next, so a verify
+		# pause in between can't bring the refusal back
 		if [ ${#OPT_CONTINUE} -gt 0 ] && [ "$STATE_ALLOW_MODE_CHANGE" != "1" ]; then
 			STATE_ALLOW_MODE_CHANGE=1
 			_STATE_NOTE "allow_mode_change=1"
@@ -7370,10 +7378,10 @@ _GUARD_TIP_MODES () {
 	return 1
 }
 
-# Records the gate a `--no-verify` run bypassed, for the note `EMIT_STATUS` prints. The command
+# Records the gate a `--no-verify` run bypassed, for the note `EMIT_STATUS` prints – the command
 # is resolved here only to name it, so the multi-line refusal the gate itself makes stays out of
-# a path where nothing ever runs it – hence the first line alone. With nothing configured it
-# records nothing: no gate existed, so none was skipped, and a note there would invent one
+# a path where nothing ever runs it, hence the first line alone
+# With nothing configured it records nothing: no gate existed, so none was skipped
 _VERIFY_NOTE_BYPASS () {
 	[ ${#OPT_NO_VERIFY} -gt 0 ] || return 0
 	local CMD=$VERIFY_VALUE
@@ -7395,7 +7403,7 @@ _VERIFY_CONFIGURED () {
 
 # Answers whether the span tier is in force – the flag, the tier a pause recorded, or the standing
 # `edit.verifySpan`, whose config is only read where the gate runs, so it stays exempt
-# on the modes an explicit flag is refused on, and names a tier rather than a check.
+# on the modes an explicit flag is refused on, and names a tier rather than a check
 # `--no-verify-span` declines it for one run, and a pause records the declined tier as `0`,
 # since a resume that fell back to the config would climb to the span the run stepped down from
 _VERIFY_SPAN_ON () {
@@ -7494,8 +7502,8 @@ _VERIFY_DIAGNOSE () {
 		if [ $CP_RC -ne 0 ]; then
 			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
 			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
-			# Naming the cause without the remedy leaves the reader to find it in the page. The
-			# commonest one is what a fresh worktree does not have – said only where nothing is
+			# Naming the cause without the remedy leaves the reader to find it in the page – the
+			# commonest one is what a fresh worktree does not have, said only where nothing is
 			# linked at all, so a repo that configured it hears nothing
 			if [ -z "$(git config --get-all edit.worktreeLink 2>/dev/null)" ] && [ -z "$GIT_EDIT_WORKTREE_LINK" ]; then
 				PRINT_TEXT "Nothing is linked into the isolated worktree – a check needing gitignored files fails there on that alone: %s" 33 "git config --add edit.worktreeLink node_modules"
@@ -7739,10 +7747,10 @@ _VERIFY_REWRITE () {
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 	# One line for the whole outcome, since that is the line a caller greps: a bare "Verified 2
 	# commit(s)" over a span of seven reads as verified when it was sampled, and a second line
-	# carrying the shortfall is a second line to miss. So the denominator is what the rewrite
-	# built, and every commit short of it is named with its reason – the tier that closes the
-	# gap included, which helps nobody who never learns it exists. A dropped tip rebuilds
-	# nothing while still verifying where it lands, so the built count can be the lower one
+	# carrying the shortfall is a second line to miss
+	# So the denominator is what the rewrite built, and every commit short of it is named with its
+	# reason – the tier that closes the gap included, which helps nobody who never learns it exists
+	# A dropped tip rebuilds nothing yet verifies where it lands, so its built count can be lower
 	local RAN=$(( ${#COMMITS[@]} - SKIPPED ))
 	local BUILT=$(git rev-list --count "${BUILT_RANGE[@]}" 2>/dev/null)
 	local -i TOTAL=${#COMMITS[@]}
@@ -7755,9 +7763,9 @@ _VERIFY_REWRITE () {
 	[ $(( TOTAL - ${#COMMITS[@]} )) -gt 0 ] && SHORT+=("$(( TOTAL - ${#COMMITS[@]} )) unchecked in between, \`--verify-span\` covers them (also: edit.verifySpan)")
 	# The span tier's mirror of that note: what it ran beyond the default tier, with the lever
 	# that steps one run back down – only where the standing config raised the tier, since a
-	# run that passed the flag chose the cost. The elapsed rides on every line, both tiers: a
-	# caller picks its flags before running, so the price that reaches it in time is the
-	# previous run's
+	# run that passed the flag chose the cost
+	# The elapsed rides on every line, both tiers: a caller picks its flags before running, so
+	# the price that reaches it in time is the previous run's
 	local -i BEYOND=$(( ${#COMMITS[@]} - DEFAULT_N ))
 	if [ "$SPANNED" = true ] && [ $BEYOND -gt 0 ] && [ ${#OPT_VERIFY_SPAN} -eq 0 ] \
 		&& [ "$(git config --type=bool --get edit.verifySpan 2>/dev/null)" = "true" ]; then
@@ -7996,8 +8004,8 @@ _REQUIRE_TTY_FOR_EDITOR () {
 	fi
 }
 
-# Puts into `REPLY` the comment string `stripspace` strips – the last one configured, either key, and
-# `#` for `auto`, as only `git commit` picks another
+# Puts into `REPLY` the comment string `stripspace` strips – the last one configured, either key,
+# and `#` for `auto`, as only `git commit` picks another
 _COMMENT_STRING () {
 	# Asked of git, as git before 2.45 knows no `core.commentString` and strips `#` lines under one
 	REPLY=$(print -r -- x | git stripspace -c 2>/dev/null)
@@ -8491,8 +8499,8 @@ GIT_REWORD_BATCH () {
 
 # Names the body lines of <commit> that <new message> no longer carries, and prints them – every
 # summary line is a subject, so a caller comparing those reads a replacing `--text` as clean
-# whether it dropped the body whole or restated only part of it, and a count alone would not say
-# which lines went. Lines compare trimmed, and one moved into the subject counts as kept
+# whether it dropped the body whole or restated only part, and a count would not say which went
+# Lines compare trimmed, and one moved into the subject counts as kept
 _PRINT_LOST_BODY () {
 	# Args: <noun for the old message> <commit> <new message>
 	local NOUN=$1 C=$2 NEW=$3
@@ -8829,8 +8837,8 @@ _OPEN_WORKTREE_IN_EDITOR () {
 	( _CALLER_ENV_FULL; eval "$OPEN_EDITOR_CMD \"\$DIR\" >/dev/null 2>&1 &"; disown 2>/dev/null )
 }
 
-# Resumes or cancels this run's pause as a caller's own `--continue` or `--abort` would – in a run of
-# its own, as every pause resumes, back in the caller's directory and environment
+# Resumes or cancels this run's pause as a caller's own `--continue` or `--abort` would – in a run
+# of its own, as every pause resumes, back in the caller's directory and environment
 _RESUME_EXEC () {
 	# Args: --continue | --abort, <the pause's identity, which the resumed run must find>
 	# What the exit trap would clear – an exec skips it, and the pause keeps the rest
@@ -9246,7 +9254,7 @@ _SELFTEST_PICK () {
 			fi
 		done
 	done
-	# An open end runs to the suite's own, as a commit range's empty side means HEAD
+	# An open end runs to the suite's own, as a commit range's empty side means `HEAD`
 	for ITEM in ${(s:,:)2}; do
 		FROM=${ITEM%%-*}
 		TO=${ITEM#*-}
@@ -9470,8 +9478,9 @@ fi
 
 # An option taking one value, given twice, kept one alone – a fold landing on the wrong
 # commit or folding the wrong tree, a message or a check dropped with nothing said – so a repeat
-# refuses. `-s`, `-C`, `--selftest` and `--carry` hold their value in the element they name, the
-# others take it as a second one. `--move` alone may repeat, by design
+# refuses, `--move` alone repeating by design
+# `-s`, `-C`, `--selftest` and `--carry` hold their value in the element they
+# name, the others take it as a second one
 for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 2 'names one commit' \
 		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' \
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
@@ -9571,9 +9580,10 @@ if [ ${#OPT_WHOLE} -gt 0 ]; then
 		exit 1
 	fi
 fi
-# Resolve --base's value – the tip an --exec result was built on, or the commit whole files rest
-# on, both `--base=<sha>` and `--base <sha>` forms. Hex only: a name like HEAD resolves to
-# wherever the branch is now, the very tip the flag exists to check the build against
+# Resolve `--base`'s value – the tip an `--exec` result was built on, or the commit whole files
+# rest on, both `--base=<sha>` and `--base <sha>` forms
+# Hex only – a name like `HEAD` resolves to wherever the branch is now, the very tip the flag
+# exists to check the build against
 EXEC_BASE=""
 # Set by `--commit` alone – one in the caller's environment would rename every exec run
 EXEC_LABEL=""
@@ -9597,8 +9607,8 @@ if [ ${#OPT_BASE} -gt 0 ]; then
 	fi
 fi
 # A dry run builds and reports – it never verifies, the landing run does, so an explicit gate
-# here would be a promise the run never keeps, and an opt-out one its landing line drops. Which
-# checks to skip is also best settled once the result has been inspected
+# here would be a promise the run never keeps, and an opt-out one its landing line drops
+# Which checks to skip is also best settled once the result has been inspected
 if [ ${#OPT_DRY_RUN} -gt 0 ]; then
 	if [ ${#OPT_EXEC} -eq 0 ]; then
 		USAGE
@@ -10048,8 +10058,7 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 	fi
 	# Two shapes seen in the wild that run something other than what was meant: one quoted
 	# shell line, which `"$@"` runs as a program of that name, and a commit ahead of the
-	# command, which runs the SHA – neither exists as a program, so name the shape rather
-	# than leave a bare 127
+	# command, which runs the SHA – neither exists as a program, so name the shape, not a bare 127
 	if ! command -v -- "$1" >/dev/null 2>&1; then
 		if [ $# -eq 1 ] && [[ "$1" == *[[:space:]]* ]]; then
 			PRINT_ERR "'$1' is one argument, run as a program of that name – a shell line goes through the shell: --exec -- sh -c '…'"
@@ -10071,10 +10080,10 @@ fi
 
 # `--move` dispatches early – repositions commits directly after or before an anchor by computing
 # the minimal span and desired order, then delegating to the reorder machinery, so span derivation,
-# the error-prone part of hand-rolled calls, is owned here. Each `--move` names a commit or an
-# inclusive run, and several move together as one block in their history order, whatever lies
-# between them staying where it is – in one replay, where a commit at a time would replay the
-# span, and verify it under a standing `edit.verifySpan`, once per commit
+# the error-prone part of hand-rolled calls, is owned here
+# Each `--move` names a commit or an inclusive run, and several move together as one block in
+# their history order, whatever lies between them staying put – in one replay, where a commit at
+# a time would replay the span, and verify it under a standing `edit.verifySpan`, once each
 if [ ${#OPT_MOVE} -gt 0 ]; then
 	MOVE_ARGS=()
 	for (( MOVE_I = 2; MOVE_I <= ${#OPT_MOVE}; MOVE_I += 2 )); do
@@ -10189,7 +10198,7 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 	fi
 	# Minimal span: the moved commits and the anchor inclusive, oldest-first – contiguous by
 	# construction, so the reorder pre-flight checks pass or refuse cleanly (merge in span,
-	# pushed base). The anchor may lie below them, above them, or between them
+	# pushed base), the anchor below them, above them, or between them
 	if git merge-base --is-ancestor "$MOVE_LAST" "$MOVE_ANCHOR" 2>/dev/null; then
 		MOVE_SPAN_OLD=$MOVE_FIRST
 		MOVE_SPAN_NEW=$MOVE_ANCHOR
@@ -10209,8 +10218,8 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 	else
 		MOVE_SPAN=($(git rev-list --reverse "$MOVE_SPAN_NEW"))
 	fi
-	# Desired order: the span minus the moved commits, which go back in together, in their own
-	# order, at the anchor
+	# Desired order: the span minus the moved commits, which go back in
+	# together, in their own order, at the anchor
 	COMMITS_DESIRED=()
 	for MOVE_STEP in "${MOVE_SPAN[@]}"; do
 		if (( ${MOVE_SET[(Ie)$MOVE_STEP]} )); then
@@ -10242,9 +10251,9 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 		PRINT_COMPLETED "$(git rev-parse HEAD)" "$(_CURRENT_REF)" false
 		exit 0
 	fi
-	# Commits at the old end of the span that keep their place are never rebuilt – so they leave
-	# the span, whose oldest commit the pushed guard reads. Kept in, a move to just above the last
-	# pushed commit was refused as rewriting the anchor it lands after
+	# Commits at the old end of the span that keep their place are never rebuilt, so they leave
+	# the span, whose oldest commit the pushed guard reads – kept in, they would refuse a move to
+	# just above the last pushed commit as rewriting the anchor it lands after
 	while [ ${#MOVE_SPAN[@]} -gt 0 ] && [ "${MOVE_SPAN[1]}" = "${COMMITS_DESIRED[1]}" ]; do
 		MOVE_SPAN=("${(@)MOVE_SPAN[2,-1]}")
 		COMMITS_DESIRED=("${(@)COMMITS_DESIRED[2,-1]}")
@@ -10319,7 +10328,7 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		done
 	fi
 	# The fold's source, as `git diff` reads it – the staged index, or a `--tree` composed apart
-	# from it against `HEAD`; a commit given there pins the tip it was composed on, so a tip
+	# from it against `HEAD`, where a commit given pins the tip it was composed on, so a tip
 	# that moved since is refused rather than have the diff carry a newer commit's reversal
 	AMEND_SOURCE=(--cached --ignore-submodules=none)
 	if [ -n "$AMEND_TREE" ]; then
@@ -10677,9 +10686,8 @@ if [[ "$ACTION" == "reorder" ]]; then
 	exit 0
 fi
 
-# A drop, edit or squash runs in a worktree of its own, never in the checkout – so a session sharing
-# it never finds files moving under it, nor a rebase halfway – and lands on the branch, which a
-# detached `HEAD` has none of
+# A drop, edit or squash runs in its own worktree, so a session sharing the checkout never finds
+# files moving or a rebase halfway, and lands on a branch, which a detached `HEAD` lacks
 ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 if [ -z "$ORIG_BRANCH" ]; then
 	PRINT_ERR "$ACTION requires being on a branch (got detached HEAD)"
@@ -10689,8 +10697,8 @@ fi
 ORIG_HEAD=$(git rev-parse HEAD)
 _REQUIRE_IN_TIP "$ORIG_HEAD" "${COMMITS[@]}" "$TARGET"
 
-# An edit pauses with a worktree at the commit – the caller edits its content there, and `--continue`
-# amends, replays and lands it, while a person at a terminal answers the pause's prompt instead
+# An edit pauses with a worktree at the commit – the caller edits its content there, and
+# `--continue` amends, replays and lands it, while a person at a terminal answers its prompt
 if [[ "$ACTION" == "edit" ]]; then
 	# `-m` opens an editor on the message at the amend, which a run with no terminal has none for
 	if [ ${#OPT_MESSAGE} -gt 0 ] && _IS_NON_INTERACTIVE; then
@@ -10701,8 +10709,8 @@ if [[ "$ACTION" == "edit" ]]; then
 	EDIT_TARGET=$(git rev-parse "$COMMIT^{commit}")
 	PRINT_ACTION "Editing %s..." "$EDIT_TARGET"
 	_PREPARE_RUN_WORKTREE "$EDIT_TARGET" git-edit-edit
-	# The cleanup hook holds the worktree until the pause is recorded, as a parallel run's may take
-	# the slot first
+	# The cleanup hook holds the worktree until the pause is recorded,
+	# as a parallel run's may take the slot first
 	_SAVE_STATE "operation=edit" "worktree=$WORKTREE_DIR" "wt_ours=$WT_OURS" "branch=refs/heads/$ORIG_BRANCH" \
 		"orig_head=$ORIG_HEAD" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)" \
 		"message=${OPT_MESSAGE:+editor}"

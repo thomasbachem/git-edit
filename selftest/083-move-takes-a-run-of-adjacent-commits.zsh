@@ -1,8 +1,8 @@
 # A run of adjacent commits moves as one block, in one replay
-# Landing several new commits at one spot a commit at a time replays the span once per commit
-# – and verifies it once per commit under a standing `edit.verifySpan`, which cost a
-# landing three passes over 185 commits. A run `<oldest>..<newest>` moves in one, read
-# inclusive and either way round, as `-d` reads a range
+
+# Landing several new commits at one spot a commit at a time replays the span once per commit,
+# and verifies it once per commit under a standing `edit.verifySpan`
+# A run `<oldest>..<newest>` moves in one, read inclusive either way round, as `-d` reads a range
 _ST_SCENARIO "\e[1;96m[83] --move takes a run of adjacent commits as one block\e[0m"
 local RN
 for RN in anchor x1 x2 "run a" "run b" "run c"; do

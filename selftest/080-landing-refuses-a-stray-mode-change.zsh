@@ -34,8 +34,8 @@ _ST_EQ "--allow-mode-change --continue applies it" "$RC" "0"
 _ST_OUT_HAS "and the landing names the mode change" 'mode change 100755 => 100644 lm\.sh'
 _ST_EQ "the fold landed" "$(git show "$(git rev-parse HEAD~2):lm.sh" | tail -1)" "echo lm1-folded"
 _ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
-# Flips an operation asks for pass the landing: a drop's undoing of its commit's own, and one
-# authored at an edit pause
+# Flips an operation asks for pass the landing: a drop's undoing of its
+# commit's own, and one authored at an edit pause
 git reset -q --hard
 printf '#!/bin/sh\necho dm\n' > dm.sh && git add dm.sh && git commit -qm "DM base"
 chmod +x dm.sh && git add dm.sh && git commit -qm "DM flip"

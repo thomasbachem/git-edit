@@ -17,9 +17,9 @@ _ST_EQ "the fold pauses at the amended commit" "$RC" "2"
 _ST_OUT_HAS "the walk names the commit that heals it" 'first green: [0-9a-f]* NV bootstrap line'
 _ST_OUT_LACKS "and does not disown the failure" 'not this operation'
 _ST_RUN --abort
-# The commit under test reaches the command by name too – documented, and unset through 1.2.1,
-# since a prefix assignment on the `eval` builtin never exported to the child. A command that
-# insists on it pins all three sites: the gate, the counterpart run and the climb
+# The commit under test reaches the command by name too, exported, as a prefix assignment on
+# the `eval` builtin never reaches the child
+# A command insisting on it pins all three sites: the gate, the counterpart run and the climb
 printf '#!/bin/sh\n[ "$GIT_EDIT_VERIFY_COMMIT" = "$(git rev-parse HEAD)" ] || exit 1\ngrep -q USE nv_app.txt 2>/dev/null || exit 0\ngrep -q NEEDED nv_boot.txt\n' > "$TMP/need_env.sh"
 chmod +x "$TMP/need_env.sh"
 git config edit.verifyCmd "$TMP/need_env.sh"
@@ -74,7 +74,7 @@ _ST_OUT_HAS "verifying the primary commit and the tip alone" 'Verified 2 of 3 co
 _ST_OUT_HAS "naming the shortfall as the default tier does" 'unchecked in between'
 _ST_OUT_LACKS "and not the step it just took" 'beyond the default tier'
 # The lever is not named where nothing lies beyond the default tier – a fold at the tip
-# rebuilds one commit under either. On the tip's own file, so the later folds below still
+# rebuilds one commit under either, on the tip's own file, so the later folds below still
 # replay over descendants that leave theirs alone
 printf 'nv\nat the tip\n' > nv_late.txt && git add nv_late.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" -- nv_late.txt

@@ -1,6 +1,6 @@
 # A range takes every commit between its ends, whoever made it – in a checkout other sessions
-# commit to, a peer's commit landed between two of a landing's moves with them. Naming each
-# moves those alone, together and in their history order, the rest staying where it is
+# commit to, a peer's commit lands between two of a landing's moves and goes with them, while
+# naming each moves those alone, together and in their history order, the rest staying put
 _ST_SCENARIO "\e[1;96m[86] --move given more than once moves exactly the commits it names\e[0m"
 local LS
 for LS in anchor x mine1 peer mine2; do

@@ -1,4 +1,4 @@
-# amend-into=auto: consensus target, new file follows
+# The auto target is the consensus one, and a new file follows it
 _ST_SCENARIO "\e[1;96m[15] amend-into=auto\e[0m"
 echo "em" > m.txt && git add m.txt && git commit -qm "M commit"
 echo "en" > n.txt && git add n.txt && git commit -qm "N commit"

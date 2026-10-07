@@ -1,4 +1,4 @@
-# Man page, README and -h document every flag the parser takes
+# Man page, `README` and `-h` document every flag the parser takes
 _ST_SCENARIO "\e[1;96m[22] man page coverage\e[0m"
 # The suite ships with the script, which sits either in its checkout or in an install prefix
 # that puts the manual under `../share/man` – take whichever layout this copy was laid out in,

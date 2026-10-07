@@ -1,4 +1,5 @@
 # A squash's --text has to outlive the conflicts it pauses on
+
 # The override applying it lasts one rebase invocation, so every `--continue`
 # spawned its own process without it and the fold silently kept git's default
 # combined message – a wrong result the run still reported as ok

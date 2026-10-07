@@ -116,8 +116,8 @@ GIT_SELFTEST () {
 		ECHO_E "$@"
 	}
 	# `-e` throughout: a pattern of ours often starts with `--`, which grep reads as its own
-	# options otherwise – a LACKS check on one then passes however wrong the output is.
-	# A LACKS is only as good as the proof that the run reached the code that would have
+	# options otherwise – a `LACKS` check on one then passes however wrong the output is
+	# A `LACKS` is only as good as the proof that the run reached the code that would have
 	# printed it, so pair one with a positive from the same output rather than trusting it alone
 	_ST_OUT_HAS () {
 		local DESC=$1
@@ -166,11 +166,11 @@ GIT_SELFTEST () {
 			return 1
 		fi
 	}
-	# Composes in a private index from HEAD's own entries, as a caller would, into a commit on
-	# HEAD, which pins the tip it was composed on – what `--amend-into --tree` takes
+	# Composes in a private index from `HEAD`'s own entries, as a caller would, into a commit on
+	# `HEAD`, which pins the tip it was composed on – what `--amend-into --tree` takes
 	_ST_COMPOSE () {
-		# Args: <path> <content>... – prints the commit carrying HEAD's tree with each <path>
-		# replaced, at the mode HEAD holds it at
+		# Args: <path> <content>... – prints the commit carrying `HEAD`'s tree with each <path>
+		# replaced, at the mode `HEAD` holds it at
 		local IDX="$TMP/compose-index"
 		rm -f "$IDX"
 		GIT_INDEX_FILE=$IDX git read-tree HEAD
@@ -296,8 +296,8 @@ GIT_SELFTEST () {
 	local SHA_B=$(git rev-parse HEAD~3)
 	local SHA_C=$(git rev-parse HEAD~2)
 
-	# Sources each scenario file into this function, so what one leaves – its locals too – is there
-	# for the ones after it
+	# Sources each scenario file into this function, so what one leaves,
+	# its locals too, is there for the ones after it
 	local ST_FILE ST_ERR
 	for ST_FILE in "${SELFTEST_FILES[@]}"; do
 		# One failing to parse would run up to its error and pass, so it parses first as a function

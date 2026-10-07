@@ -1,4 +1,5 @@
 # A fold that lands nothing, or less than was staged, says so
+
 # The fold's correct tip is knowable up front, the pre-op tip plus the staged changes, so
 # a run falling short of it must not read as ok – nothing landed is refused with staging
 # intact, a dissolved hunk lands with a note, and an emptied replay gets its drop counted

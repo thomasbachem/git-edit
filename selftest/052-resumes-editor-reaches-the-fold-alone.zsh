@@ -1,4 +1,5 @@
 # A resume's editor reaches the fold and nothing else
+
 # `-m` needs a TTY this suite can never present, so its guarantee is asserted
 # on the discriminator both message modes route through – driven directly,
 # the way git invokes an editor, against a fabricated rebase state
@@ -103,7 +104,7 @@ rm -rf "$QR"
 local -a _FE_EDS
 local FE_GUARD FE_CLEAN FE_CMDLINE FE_IED FE_TXT=$TMP/fe-text.txt
 print -r -- "FE inline message" > "$FE_TXT"
-# The editor a resume's command installs, unquoted from its `GIT_EDITOR=`
+# Sets `FE_IED` to the editor a resume's command installs, unquoted from its `GIT_EDITOR=`
 _FE_IEDITOR_OF () {
 	FE_IED=${(Q)${${1#*GIT_EDITOR=}%% git *}}
 	_FE_EDS+=("$FE_IED")

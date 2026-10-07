@@ -1,4 +1,5 @@
 # A rewrite that lands a mode change says so
+
 # A diffstat shows line counts only, so a dropped executable bit on a
 # file that also changed content rides invisibly – the completion
 # summary names it, tip vs pre-op tip

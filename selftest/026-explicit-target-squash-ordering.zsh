@@ -1,4 +1,5 @@
 # Explicit-target squash: same-second span, short SHAs
+
 # The rebuilt-commit case: descendants of one rewrite all share a committer
 # second, so timestamp sorts tie – the span must sort from `HEAD`'s history,
 # and short SHAs must normalize for that sort's exact match to hit

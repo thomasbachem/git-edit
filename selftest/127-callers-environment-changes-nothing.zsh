@@ -18,7 +18,7 @@ _ST_PZ_C g.txt g "CE other"
 print -l new {1..9} 10p {11..20} > f.txt && git add f.txt
 GIT_DIFF_OPTS=--unified=3 _ST_RUN --amend-into=auto -- f.txt
 _ST_OUT_HAS "GIT_DIFF_OPTS leaves an insertion's auto-target as the newest commit on the file" 'Amending staged changes into [0-9a-f]* (CE peer)'
-# i18n.logOutputEncoding re-encodes what a rebuild reads of a message and an author
+# `i18n.logOutputEncoding` re-encodes what a rebuild reads of a message and an author
 _ST_PZ_NEW ce2
 _ST_PZ_C a.txt a "CE2 base"
 _ST_PZ_C b.txt b "CE2 Привет"
@@ -32,7 +32,7 @@ git config core.commentChar ';'
 _ST_TTY GIT_EDITOR=: -- -S -m -y HEAD~1 HEAD
 git config --unset core.commentChar
 _ST_EQ "a -S -m left as opened keeps no line of its template" "$RC:$(git log -1 --format=%B | grep -c 'Combined message')" "0:0"
-# GREP_OPTIONS colours every grep the tool reads on BSD
+# `GREP_OPTIONS` colors every grep the tool reads on BSD
 GREP_OPTIONS=--color=always _ST_RUN -M --text "CE2 under GREP_OPTIONS" HEAD
 _ST_EQ "GREP_OPTIONS changes nothing" "$RC:$(git log -1 --format=%s)" "0:CE2 under GREP_OPTIONS"
 # A path the upstream renamed takes a replant past edits on it, which its guard reads by both names

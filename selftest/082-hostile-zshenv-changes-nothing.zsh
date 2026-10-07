@@ -1,10 +1,10 @@
 # A caller's .zshenv sets no option the script runs under
-# zsh sources `$ZDOTDIR/.zshenv` for every invocation, scripts included, so a `setopt
-# sh_word_split` or `ksh_arrays` there would run a different tool than this suite proves.
-# `emulate zsh` as the script's first statement puts every option that changes parsing
-# back – first, since it resets `pipefail` along with the rest. This suite is sourced into
-# the script's process and runs under its options as they stand, so a reset in here would
-# reach every check after it
+
+# A caller's `$ZDOTDIR/.zshenv` runs for every zsh invocation, scripts included, so a `setopt
+# sh_word_split` or `ksh_arrays` there would run a different tool than this suite proves
+# `emulate zsh` as the script's first statement puts every option that changes parsing back,
+# first since it resets `pipefail` too – and this suite, sourced into the script's process,
+# runs under its options as they stand, so a reset in here would reach every check after it
 _ST_SCENARIO "\e[1;96m[82] a hostile .zshenv changes nothing\e[0m"
 _ST_EQ "git-edit opens with emulate zsh" "$(command grep -v -E -m1 '^(#|$)' "$SELF")" "emulate zsh"
 _ST_EQ "the suite runs under the script's pipefail" "$([[ -o pipefail ]] && echo on || echo off)" "on"

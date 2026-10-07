@@ -1,4 +1,5 @@
 # The pause hint reads a todo's object, not its second word
+
 # `amend!` autosquashes into `fixup -C <sha>`, whose second word is a flag –
 # read as the object it drops that step from the hint, and hands `git log`
 # its own copy-detection flag on the way

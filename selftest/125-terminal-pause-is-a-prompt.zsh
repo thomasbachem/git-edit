@@ -52,8 +52,8 @@ _ST_EQ "asking again rather than discarding the edit" "$RC:$(<"${PP_WT:-$ST_NO_W
 rm -f .git/hooks/pre-commit
 _ST_RUN --continue
 _ST_EQ "which lands once the hook lets it" "$RC:$(git show HEAD~1:b.txt)" "0:b4"
-# A conflict at a terminal resolves at its prompt – Enter stages a file left without markers, never
-# one still holding them
+# A conflict at a terminal resolves at its prompt – Enter stages a file
+# left without markers, never one still holding them
 _ST_PZ_NEW pp2
 _ST_PZ_C f.txt $'1\n2\n3' "PP2 base"
 _ST_PZ_C f.txt $'1\n2x\n3' "PP2 x"

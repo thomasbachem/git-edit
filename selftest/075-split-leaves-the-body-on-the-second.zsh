@@ -1,4 +1,5 @@
 # A split leaves the message, body included, on the second commit
+
 # `--text` names the extracted commit alone and the remainder keeps the original whole – a
 # caller reading the pause as "--text is the first commit's subject" rewords the remainder
 # next with `-M --text` and cuts the body, so the pause names it, and `--status` again

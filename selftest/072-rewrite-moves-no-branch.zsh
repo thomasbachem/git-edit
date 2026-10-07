@@ -1,6 +1,6 @@
-# git applies `rebase.updateRefs` as its rebase completes, ahead of the verify and the CAS, so
-# an aborted or refused rewrite left a branch in the span rewritten – pinned off now, with the
-# branch named instead, on either route, and never one a worktree has checked out
+# Git applies `rebase.updateRefs` as its rebase completes, ahead of the verify and the CAS, so
+# an aborted or refused rewrite would leave a branch in the span rewritten – pinned off, with
+# the branch named instead, on either route, and never one a worktree has checked out
 _ST_SCENARIO "\e[1;96m[72] a rewrite moves no branch but its own, whatever rebase.updateRefs says\e[0m"
 cd "$TMP/repo"
 git checkout -q main 2>/dev/null
@@ -27,7 +27,7 @@ _ST_OUT_HAS "with its exact counterpart" "Branch ub-side .*the same change: UB m
 _ST_OUT_HAS "and the command moving it there" "git branch -f ub-side $(git rev-parse --short=12 HEAD~1)$"
 _ST_OUT_HAS "and why the key moved nothing" 'rebase.updateRefs is set, but git edit moves only the branch it rewrites'
 # A checked-out branch is stranded exactly as ub-side is – the difference is that someone may
-# be working in it right now, which made silence there the worse of the two. It is named
+# be working in it right now, which makes silence there the worse of the two, so it is named
 # without a command, since moving it is that checkout's to do over whatever sits in it
 _ST_OUT_HAS "and a branch a worktree has checked out, the same way" '^Branch ub-live points into the rewritten span, checked out in '
 _ST_OUT_HAS "with its counterpart" "its counterpart here is $(git rev-parse --short=12 HEAD~1) – the same change: UB mid"
