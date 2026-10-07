@@ -79,10 +79,10 @@ _UNSET_OWN ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS
 	OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD PARSE_ERR \
 	PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REBASE_OUT REORDER_NEW_HEAD REORDER_REF RESET_DONE \
 	RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD RESUME_HEAD RESUME_STRAY \
-	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_FILE SELFTEST_JOBS SELFTEST_SCOPE \
-	SELFTEST_TEXT SHA SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STATE_ACTION \
-	STATE_ACTOR STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH \
-	STATE_FILES STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MESSAGE \
+	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR SELFTEST_JOBS SELFTEST_SCOPE SHA \
+	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STATE_ACTION STATE_ACTOR \
+	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
+	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MESSAGE \
 	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE \
 	STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET STATE_SPAN STATE_SQUASH_TARGET \
 	STATE_STAGEDTREE STATE_STOP_HEAD STATE_TARGET STATE_TARGETS STATE_TODO_LEFT STATE_TREE \
@@ -9193,36 +9193,50 @@ _PREPARE_RUN_WORKTREE () {
 	_LINK_WORKTREE_EXTRAS "$WORKTREE_DIR"
 }
 
-# Cuts the suite down to the scenarios `--selftest=<pick>` names, for runs during development –
-# the full suite stays the gate. Scenarios share one scratch repo, so one that starts from an
-# earlier one's state says so with `# needs <ids>` on its `_ST_SCENARIO` line, and those come
-# along. The setup before the first scenario and everything from `# --- Summary ---` always stay
+# Picks the scenarios `--selftest=<pick>` names from the suite dir, a file `<id>-<name>.zsh` each,
+# for runs during development – the full suite stays the gate
+# Scenarios share one scratch repo, so one starting from an earlier one's state says so with
+# `# needs <ids>` on its `_ST_SCENARIO` line, and those come along
 _SELFTEST_PICK () {
-	# Args: <suite file> <pick> – sets `SELFTEST_TEXT` to the cut suite and `SELFTEST_SCOPE` to
-	# what it kept, or refuses
-	local -a SUITE IDS KEPT RUNS
-	local -A AT NEEDS WANT
-	local I ID ITEM FROM TO N SUMMARY=0 RUN_FROM="" RUN_TO=""
-	SUITE=("${(@f)$(<"$1")}")
-	for (( I = 1; I <= ${#SUITE}; I++ )); do
-		if [[ "${SUITE[I]}" =~ '^	_ST_SCENARIO "\\e\[1;96m\[([0-9]+[a-z]?)\]' ]]; then
-			ID=${match[1]}
-			if (( ${+AT[$ID]} )); then
-				PRINT_ERR "Selftest scenario $ID is declared twice"
-				return 1
-			fi
-			IDS+=("$ID")
-			AT[$ID]=$I
-			[[ "${SUITE[I]}" =~ '# needs ([0-9a-z, ]+)$' ]] && NEEDS[$ID]=${match[1]// /}
-		elif [ "${SUITE[I]}" = $'\t# --- Summary ---' ]; then
-			SUMMARY=$I
+	# Args: <suite dir> <pick> – sets `SELFTEST_FILES` to the files picked, in suite order, and
+	# `SELFTEST_SCOPE` to what they hold, or refuses
+	local -a IDS RUNS CONTENT BANNER
+	local -A AT NEEDS WANT FILE_OF KEY_OF SIZE_OF
+	local I F ID ITEM FROM TO N KEY RUN_FROM="" RUN_TO=""
+	# Every other file there is a scenario, so a misnamed one refuses rather than drop out unrun
+	for F in "$1"/*.zsh(N); do
+		[ "${F:t}" = lib.zsh ] && continue
+		if ! [[ "${F:t}" =~ '^0*([0-9]+)([a-z]?)-[a-z0-9-]+\.zsh$' ]]; then
+			PRINT_ERR "Selftest scenario file ${F:t} is not named <id>-<name>.zsh"
+			return 1
 		fi
+		ID=${match[1]}${match[2]}
+		if (( ${+FILE_OF[$ID]} )); then
+			PRINT_ERR "Selftest scenario $ID is declared twice"
+			return 1
+		fi
+		FILE_OF[$ID]=$F
+		# Number and letter apart, as a collation that skips the `-` sorts `60b-` before `60-`
+		KEY_OF[$(printf '%06d%s' "${match[1]}" "${match[2]}")]=$ID
+		# Its one banner names the id its file does, `# needs` riding on the same line
+		CONTENT=("${(@f)$(<"$F")}")
+		SIZE_OF[$ID]=${#CONTENT}
+		BANNER=(${(M)CONTENT:#_ST_SCENARIO \"*})
+		if [ ${#BANNER} -ne 1 ] || ! [[ "${BANNER[1]}" =~ '^_ST_SCENARIO "\\e\[1;96m\[([0-9]+[a-z]?)\]' ]] || [ "${match[1]}" != "$ID" ]; then
+			PRINT_ERR "Selftest scenario file ${F:t} must open one _ST_SCENARIO line for [$ID]"
+			return 1
+		fi
+		[[ "${BANNER[1]}" =~ '# needs ([0-9a-z, ]+)$' ]] && NEEDS[$ID]=${match[1]// /}
 	done
-	if [ ${#IDS} -eq 0 ] || (( SUMMARY < ${AT[${IDS[-1]}]} )); then
-		PRINT_ERR "The selftest suite has no scenarios, or no summary after them"
+	for KEY in ${(o)${(k)KEY_OF}}; do
+		IDS+=("${KEY_OF[$KEY]}")
+		AT[${KEY_OF[$KEY]}]=${#IDS}
+	done
+	if [ ${#IDS} -eq 0 ]; then
+		PRINT_ERR "The selftest suite has no scenarios in $1"
 		return 1
 	fi
-	# Needs point back, since blocks run in file order – checked on every pick, so a wrong one
+	# Needs point back, since files run in suite order – checked on every run, so a wrong one
 	# refuses the next run instead of waiting for the scenario that carries it
 	for ID in "${IDS[@]}"; do
 		for N in ${(s:,:)NEEDS[$ID]}; do
@@ -9263,16 +9277,17 @@ _SELFTEST_PICK () {
 			WANT[$N]=1
 		done
 	done
-	KEPT=("${(@)SUITE[1,${AT[${IDS[1]}]}-1]}")
+	# What `--jobs` splits the pick by – its scenarios in suite order, what each needs, its length
+	typeset -ga SELFTEST_FILES SELFTEST_IDS
+	typeset -gA SELFTEST_NEEDS SELFTEST_SIZE
+	SELFTEST_FILES=() SELFTEST_IDS=() SELFTEST_NEEDS=() SELFTEST_SIZE=()
 	for (( I = 1; I <= ${#IDS}; I++ )); do
 		ID=${IDS[I]}
 		if (( ${+WANT[$ID]} )); then
-			if (( I < ${#IDS} )); then
-				TO=$(( ${AT[${IDS[I+1]}]} - 1 ))
-			else
-				TO=$(( SUMMARY - 1 ))
-			fi
-			KEPT+=("${(@)SUITE[${AT[$ID]},TO]}")
+			SELFTEST_FILES+=("${FILE_OF[$ID]}")
+			SELFTEST_IDS+=("$ID")
+			SELFTEST_NEEDS[$ID]=${NEEDS[$ID]}
+			SELFTEST_SIZE[$ID]=${SIZE_OF[$ID]}
 			[ -z "$RUN_FROM" ] && RUN_FROM=$ID
 			RUN_TO=$ID
 		fi
@@ -9282,38 +9297,21 @@ _SELFTEST_PICK () {
 			RUN_FROM=""
 		fi
 	done
-	KEPT+=("${(@)SUITE[SUMMARY,-1]}")
-	SELFTEST_TEXT=${(F)KEPT}
 	SELFTEST_SCOPE="scenario${${${#WANT}:#1}:+s} ${(j:, :)RUNS} (${#WANT} of ${#IDS})"
-	# What `--jobs` splits the pick by – its scenarios in suite order, what each needs, its length
-	typeset -ga SELFTEST_IDS
-	typeset -gA SELFTEST_NEEDS SELFTEST_SIZE
-	SELFTEST_IDS=() SELFTEST_NEEDS=() SELFTEST_SIZE=()
-	for (( I = 1; I <= ${#IDS}; I++ )); do
-		ID=${IDS[I]}
-		(( ${+WANT[$ID]} )) || continue
-		SELFTEST_IDS+=("$ID")
-		SELFTEST_NEEDS[$ID]=${NEEDS[$ID]}
-		if (( I < ${#IDS} )); then
-			SELFTEST_SIZE[$ID]=$(( ${AT[${IDS[I+1]}]} - ${AT[$ID]} ))
-		else
-			SELFTEST_SIZE[$ID]=$(( SUMMARY - ${AT[$ID]} ))
-		fi
-	done
 }
 
 # Runs a pick of the suite – all of it by default – <jobs> processes at once, each one a
 # `--selftest=<ids>` of a scenario with the ones it needs, in a temp dir of its own, the longest
 # first, then prints their output in suite order under one count and trailer, as a serial run would
 _SELFTEST_JOBS () {
-	# Args: <script> <suite file> <the `--selftest` option as given> <jobs>
-	local SELF=$1 FILE=$2 PICK=${${3#--selftest}#=} ID N A B R LINE JT
+	# Args: <script> <suite dir> <the `--selftest` option as given> <jobs>
+	local SELF=$1 DIR=$2 PICK=${${3#--selftest}#=} ID N A B R LINE JT
 	local -i JOBS=$4 RUNNING=0 NEXT=1 DONE=0 TOTAL=0 FAILED=0 P T
 	local -a ORDER QUEUE
 	local -A ROOT MEMBERS WEIGHT PID_OF
 	# A bare `--selftest` is the whole suite, an empty pick refused as a run alone refuses it
 	[ "$3" = --selftest ] && PICK=-
-	_SELFTEST_PICK "$FILE" "$PICK" || return 1
+	_SELFTEST_PICK "$DIR" "$PICK" || return 1
 	# The whole suite says nothing of what ran, as a serial run of it doesn't
 	[ "$3" = --selftest ] && SELFTEST_SCOPE=""
 	# One unit per set of scenarios the needs tie together, so each runs once and its needs with it
@@ -9821,12 +9819,11 @@ if [ ${#OPT_CARRY} -gt 0 ]; then
 	exit 0
 fi
 if [ ${#OPT_SELFTEST} -gt 0 ]; then
-	# The suite is a sibling file, sourced only here: 1500 lines of scaffolding
-	# in the middle of the tool made both harder to read, and every other run
-	# should not pay to parse it
-	SELFTEST_FILE="${0:A:h}/selftest.zsh"
-	if [ ! -f "$SELFTEST_FILE" ]; then
-		PRINT_ERR "Selftest suite not found: $SELFTEST_FILE"
+	# The suite is a sibling dir, sourced only here: its scaffolding in the middle of the tool made
+	# both harder to read, and every other run should not pay to parse it
+	SELFTEST_DIR="${0:A:h}/selftest"
+	if [ ! -f "$SELFTEST_DIR/lib.zsh" ]; then
+		PRINT_ERR "Selftest suite not found: $SELFTEST_DIR"
 		ECHO_E "\e[0;31m  It ships alongside this script – copy it from the repository.\e[0m" >&2
 		exit 1
 	fi
@@ -9848,20 +9845,20 @@ if [ ${#OPT_SELFTEST} -gt 0 ]; then
 			PRINT_ERR "--jobs takes a count of 1 or more (got: $SELFTEST_JOBS)"
 			exit 1
 		fi
-		_SELFTEST_JOBS "${0:A}" "$SELFTEST_FILE" "${OPT_SELFTEST[1]}" "$SELFTEST_JOBS"
+		_SELFTEST_JOBS "${0:A}" "$SELFTEST_DIR" "${OPT_SELFTEST[1]}" "$SELFTEST_JOBS"
 		exit $?
 	fi
 	export GIT_EDIT_SELFTEST_DEPTH=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} + 1 ))
-	# `--selftest=<pick>` loads the suite cut down to those scenarios, `--selftest 83` arriving
-	# glued as `--selftest83`
-	SELFTEST_SCOPE=""
+	# `--selftest=<pick>` runs those scenarios alone, `--selftest 83` arriving glued as
+	# `--selftest83` – the whole suite, a pick of every one, says nothing of what ran
 	if [ "${OPT_SELFTEST[1]}" = "--selftest" ]; then
-		source "$SELFTEST_FILE"
+		_SELFTEST_PICK "$SELFTEST_DIR" - || exit 1
+		SELFTEST_SCOPE=""
 	else
-		_SELFTEST_PICK "$SELFTEST_FILE" "${${OPT_SELFTEST[1]#--selftest}#=}" || exit 1
-		eval "$SELFTEST_TEXT"
+		_SELFTEST_PICK "$SELFTEST_DIR" "${${OPT_SELFTEST[1]#--selftest}#=}" || exit 1
 		PRINT_TEXT "Running %s – a commit or a release takes the full suite" 33 "$SELFTEST_SCOPE"
 	fi
+	source "$SELFTEST_DIR/lib.zsh"
 	# ${0:A} resolves the running script's absolute path at top level (inside
 	# functions zsh rebinds $0 to the function name)
 	GIT_SELFTEST "${0:A}"
