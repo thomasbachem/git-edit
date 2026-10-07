@@ -65,35 +65,36 @@ _UNSET_OWN () {
 _UNSET_OWN ACTION AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_SCAN C COMMANDLINE COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO D DIFF_N DIFF_O DIFF_PATHS DIR_HAS_EQUALS EDIT_TARGET EXEC_BASE \
-	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_REF EXTRA \
-	IDX_ENT IS_REF LEFT_ALONE LOCKED MARKED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST \
-	MOVE_FROM MOVE_FROM_RESOLVED MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED \
-	MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_TO ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM \
-	OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH \
-	OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT \
-	OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT OPT_EXEC OPT_HELP OPT_JOBS OPT_MESSAGE \
-	OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO OPT_REORDER OPT_RESQUASH OPT_REWORD \
-	OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO \
-	OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES ORIG_BRANCH ORIG_HEAD PARSE_ERR \
-	PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REBASE_OUT REORDER_NEW_HEAD REORDER_REF RESET_DONE \
-	RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_GD RESUME_HEAD RESUME_STRAY \
-	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR SELFTEST_JOBS SELFTEST_SCOPE SHA \
-	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS STATE_ACTION STATE_ACTOR \
-	STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE STATE_DEPTH STATE_FILES \
-	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MESSAGE \
-	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_REBASEBASE \
-	STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET STATE_SPAN STATE_SQUASH_TARGET \
-	STATE_STAGEDTREE STATE_STOP_HEAD STATE_TARGET STATE_TARGETS STATE_TODO_LEFT STATE_TREE \
-	STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED STATE_VERIFY_RESULT STATE_VERIFY_SPAN \
-	STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_APART TEXT_VALUE TREE_BASE TREE_SHA UNTOLD \
-	VERIFY_APART VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS WHOLE_TREE WORKTREE_DIR WT_DEFAULT \
-	WT_OURS _ACTOR _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO _CALLER_ENV _CALLER_GCP _CALLER_GCP_SET \
-	_CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS _CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES \
-	_CLEANUP_HOOK _COLOR _CONFIG_ADOPTED _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HOOK_RUN_PROBED \
-	_LANDED_MOVE _LANDING _LAST_ERROR _LITB _MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD \
-	_REAL_EDITOR _REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR \
-	_RERERE_OPTOUT _RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET \
-	_REWORDED_TIP _REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
+	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
+	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA IDX_ENT IS_REF LEFT_ALONE LOCKED \
+	MARKED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
+	MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD \
+	MOVE_TO ONTO_NEW_HEAD ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER \
+	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
+	OPT_BASE OPT_BEFORE OPT_CARRY OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN OPT_EDIT \
+	OPT_EXEC OPT_HELP OPT_JOBS OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY OPT_NO_VERIFY_SPAN OPT_ONTO \
+	OPT_REORDER OPT_RESQUASH OPT_REWORD OPT_SELFTEST OPT_SKIP OPT_SNAPSHOT OPT_SPLIT OPT_SQUASH \
+	OPT_STATUS OPT_TEXT OPT_TREE OPT_UNDO OPT_VERIFY OPT_VERIFY_SPAN OPT_VERSION OPT_WHOLE OPT_YES \
+	ORIG_BRANCH ORIG_HEAD PARSE_ERR PARSE_MSG PREV_NEW PREV_OLD RAW_TEXT_VALUE REBASE_OUT \
+	REORDER_NEW_HEAD REORDER_REF RESET_DONE RESET_KEPT RESET_LOCKED RESOLVE_SCAN_MAX RESUME_ABSORBS \
+	RESUME_GD RESUME_HEAD RESUME_STRAY RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR \
+	SELFTEST_JOBS SELFTEST_SCOPE SHA SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS \
+	STATE_ACTION STATE_ACTOR STATE_ALLOW_MODE_CHANGE STATE_AMENDED STATE_BRANCH STATE_CAPTURE \
+	STATE_DEPTH STATE_FILES STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR \
+	STATE_MESSAGE STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS \
+	STATE_PLACED STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE \
+	STATE_RRPRE_SET STATE_SPAN STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOP_HEAD STATE_TARGET \
+	STATE_TARGETS STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
+	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP T TARGET TEXT_APART \
+	TEXT_VALUE TREE_BASE TREE_SHA UNTOLD VERIFY_APART VERIFY_VALUE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
+	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_OURS _ACTOR _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
+	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
+	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
+	_DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HOOK_RUN_PROBED _LANDED_MOVE _LANDING _LAST_ERROR _LITB \
+	_MODE_STRAY_AT _OFF _ONTO_FORK _ONTO_FORK_GUESSED _PAD _REAL_EDITOR _REBUILT_VIA_REPLAY _RED \
+	_REFLOG_TAG _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT _RERERE_PRE \
+	_RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
+	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_OWNED _STATE_PATH _STATUS_EMITTED \
 	_SYNC_VERDICT _TEMP_FILES _TEMP_WORKTREES _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WHOLE_WHAT
@@ -458,8 +459,9 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit [-M | --reword] [--text <msg>] <commit>\e[0m"
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
-	ECHO_E "\e[0;94m       git edit --exec [--base=<sha>] [--dry-run] -- <command>...\e[0m"
+	ECHO_E "\e[0;94m       git edit --exec [--base=<sha>] [--dry-run] [--after|--before=<sha>] -- <command>...\e[0m"
 	ECHO_E "\e[0;94m       git edit --commit --text <msg> -- <path>...          # commit these files whole from the checkout, at the tip\e[0m"
+	ECHO_E "\e[0;94m       git edit --commit --text <msg> --after|--before=<sha> -- <path>... # or right beside <sha>, in the same run\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto [--tree=<tree-ish>] # fold staged changes (or a composed tree) into <sha> (auto = the unpushed commit owning the lines)\e[0m"
 	ECHO_E "\e[0;94m       git edit --amend-into=<sha>|auto --whole -- <path>... # fold these files whole from the checkout into <sha>\e[0m"
 	ECHO_E "\e[0;94m       git edit --split=<sha> --text <msg> -- <pathspec>... # split <sha>: extract pathspec changes into their own commit\e[0m"
@@ -523,6 +525,8 @@ USAGE () {
 	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
 	ECHO_E "\e[0;94m       --move=<a> --move=<b>...        Move each named commit together, one block in history order, those\e[0m"
 	ECHO_E "\e[0;94m                                       between them staying put – one replay, not one per commit\e[0m"
+	ECHO_E "\e[0;94m       --after|--before=<sha>          With --commit or --exec, land the commits they add right after/before <sha>\e[0m"
+	ECHO_E "\e[0;94m                                       in the same run, rather than at the tip – a conflict pauses as --move does\e[0m"
 	ECHO_E "\e[0;94m       --move=<oldest>..<newest>       Name a run of adjacent commits, both ends included, whoever made them\e[0m"
 	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, deriving the fork point\e[0m"
 	ECHO_E "\e[0;94m                                       (recovers it from the reflog when a rewrite orphaned the old base)\e[0m"
@@ -3373,6 +3377,94 @@ _REFUSE_EXEC_BLANK_LINES () {
 	ECHO_E "\e[0;31m  Take each message from git cat-file commit, or trim its trailing newlines to one, and rebuild.\e[0m" >&2
 }
 
+# Resolves where `--commit` or `--exec` places the commits it adds, `--after` or `--before` an
+# anchor the tip reaches – a pushed commit or a merge above it refuses before anything is built
+_RESOLVE_PLACE () {
+	EXEC_PLACE_KIND="" EXEC_PLACE_ANCHOR="" EXEC_PLACE_BASE=""
+	[ ${#OPT_AFTER} -gt 0 ] || [ ${#OPT_BEFORE} -gt 0 ] || return 0
+	if [ ${#OPT_AFTER} -gt 0 ] && [ ${#OPT_BEFORE} -gt 0 ]; then
+		PRINT_ERR "Take exactly one of --after=<sha> or --before=<sha>, not both"
+		exit 1
+	fi
+	local ANCHOR=${OPT_AFTER[2]#=}
+	EXEC_PLACE_KIND=after
+	[ ${#OPT_BEFORE} -gt 0 ] && { ANCHOR=${OPT_BEFORE[2]#=}; EXEC_PLACE_KIND=before; }
+	if [ -z "$ANCHOR" ] || ! git rev-parse --quiet --verify "$ANCHOR^{commit}" >/dev/null 2>&1; then
+		PRINT_ERR "Unknown <sha>: $ANCHOR"
+		exit 1
+	fi
+	_GUARD_REACHABLE "$ANCHOR"
+	EXEC_PLACE_ANCHOR=$(git rev-parse "$_RESOLVED_SHA^{commit}")
+	EXEC_PLACE_BASE=$EXEC_PLACE_ANCHOR
+	if [ $EXEC_PLACE_KIND = before ] && ! EXEC_PLACE_BASE=$(git rev-parse -q --verify "$EXEC_PLACE_ANCHOR^" 2>/dev/null); then
+		PRINT_ERR "--before ${EXEC_PLACE_ANCHOR:0:7} would place it below the root commit"
+		exit 1
+	fi
+	local FIRST=$(git rev-list --reverse "$EXEC_PLACE_BASE..HEAD" 2>/dev/null | head -1)
+	if [ -n "$FIRST" ]; then
+		_GUARD_UNPUSHED "$FIRST"
+		_GUARD_NO_MERGE_SPAN "$FIRST"
+	fi
+}
+
+# Places the commits a `--commit` or an `--exec` command added on top `--after` or `--before` the
+# anchor, replayed in the run's own worktree, so the branch never holds them at the tip – a
+# conflict pauses as a reorder's does, nothing landed and the tip it read recorded
+_EXEC_PLACE () {
+	# Args: <worktree> <orig-head> <ref> – sets `EXEC_PLACED` to the placed commits, oldest first
+	local WT=$1 ORIG_HEAD=$2 REF=$3 BUILT=$(git rev-parse HEAD)
+	local -a ADDED REPLAY
+	EXEC_PLACED=""
+	[ "$BUILT" = "$ORIG_HEAD" ] && return 0
+	if ! git merge-base --is-ancestor "$ORIG_HEAD" "$BUILT" 2>/dev/null || [ -n "$(git rev-list --merges "$ORIG_HEAD..$BUILT" 2>/dev/null)" ]; then
+		PRINT_ERR "--$EXEC_PLACE_KIND places commits added on top of the tip – the command rewrote history instead, so nothing landed"
+		exit 1
+	fi
+	ADDED=($(git rev-list --reverse "$ORIG_HEAD..$BUILT"))
+	REPLAY=($(git rev-list --reverse "$EXEC_PLACE_BASE..$ORIG_HEAD"))
+	# Already in place right above the tip
+	if [ ${#REPLAY} -eq 0 ]; then
+		EXEC_PLACED=${(j: :)ADDED}
+		return 0
+	fi
+	PRINT_ACTION "Placing ${#ADDED} commit(s) $EXEC_PLACE_KIND %s..." "$EXEC_PLACE_ANCHOR"
+	# What the command left uncommitted never lands, and in the way it would stop the replay
+	local LEFT=$(git -c core.quotePath=false status --porcelain --untracked-files=all 2>/dev/null | cut -c4-)
+	if [ -n "$LEFT" ]; then
+		git reset -q --hard && git clean -fdq
+		PRINT_TEXT "Dropped what the command left uncommitted, which never lands: %s" 90 "$(_JOIN_PATHS "$LEFT")"
+	fi
+	_ORDER_EDITOR
+	local SEQ=$REPLY
+	_CAPTURE_BEGIN
+	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${ADDED[*]} ${REPLAY[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive ${EXEC_PLACE_BASE}"
+	PRINT_CMD "GIT_SEQUENCE_EDITOR=<placement script> git rebase --interactive ${EXEC_PLACE_BASE:0:12}" 90
+	_RERERE_SCOPE_BEGIN
+	if ! eval "$REBASE_CMD" >/dev/null 2>&1 && \
+	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$BUILT" && _FINISH_AUTO_RESOLVED_STEP "$WT" "built" }; then
+		rm -f "$SEQ"
+		# The branch was never moved, so --abort has nothing to roll back, and a resume lands the
+		# placement against the tip this run read
+		_SAVE_STATE \
+			"operation=reorder" \
+			"worktree=$WT" \
+			"branch=$REF" \
+			"orig_head=$ORIG_HEAD" \
+			"target=${REPLAY[1]}" \
+			"placed=$BUILT" \
+			"place_label=${EXEC_LABEL:-exec} $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7}"
+		_CLEANUP_HOOK=""
+		PRINT_ERR "Conflict placing it $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7} – nothing landed; resolve in the worktree, then 'git edit --continue'"
+		PRINT_TEXT "Worktree: %s" 33 "$WT"
+		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT" "$BUILT")
+		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
+		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
+		_PAUSE_EXIT 2 conflict
+	fi
+	rm -f "$SEQ"
+	EXEC_PLACED=${(j: :)${(f)"$(git rev-list --reverse "$EXEC_PLACE_BASE..HEAD" | head -${#ADDED})"}}
+}
+
 # Runs an arbitrary command inside a fresh per-invocation worktree, detached at the branch
 # tip – where the command rewrites `HEAD`, the original ref moves by atomic CAS, refusing
 # if the branch moved, so raw rewriting commands never touch the main checkout
@@ -3392,6 +3484,7 @@ GIT_EXEC () {
 	EXEC_PEER_MOVE=""
 	EXEC_DRY_BUILT=""
 	EXEC_DRY_BASE=""
+	EXEC_PLACED=""
 
 	# A pinned tip the branch has moved past refuses before the command runs – whatever it
 	# builds on that base would drop what reached the branch since
@@ -3437,6 +3530,7 @@ GIT_EXEC () {
 		fi
 		exit $STATUS
 	fi
+	[ -n "$EXEC_PLACE_KIND" ] && _EXEC_PLACE "$WT" "$ORIG_HEAD" "$REF"
 
 	# Did the command move `HEAD`? If so, apply the new tip to the original ref
 	local NEW_HEAD=$(git rev-parse HEAD)
@@ -3514,7 +3608,7 @@ GIT_EXEC () {
 	# Having no pause to offer, a failure refuses outright: the built commits stay in the object
 	# store, reachable by SHA, and `--no-verify` applies them
 	_VERIFY_NO_RESUME=true
-	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" ""; then
+	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$EXEC_PLACED"; then
 		ECHO_E "\e[0;31m  Built history is at $NEW_HEAD – --no-verify runs the command again unchecked, or land that history as is: git edit --exec --no-verify --base=${ORIG_HEAD:0:12} -- git reset --hard ${NEW_HEAD:0:12}\e[0m" >&2
 		exit 1
 	fi
@@ -3524,6 +3618,7 @@ GIT_EXEC () {
 	# a run that only added commits on top replaced none, and those commits say what it did
 	local REPLACED=$(git rev-list --reverse --topo-order "$NEW_HEAD..$ORIG_HEAD" 2>/dev/null | head -1)
 	local LABEL="${EXEC_LABEL:-exec}${REPLACED:+ ${REPLACED:0:7}}"
+	[ -n "$EXEC_PLACED" ] && [ -n "$REPLACED" ] && LABEL="${EXEC_LABEL:-exec} $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7}"
 
 	# Atomic compare-and-swap – refuse where the branch moved during execution, such as a
 	# concurrent commit from another session
@@ -3546,6 +3641,11 @@ GIT_EXEC () {
 	# Update status trailer outputs (head moved, CAS succeeded)
 	EXEC_NEW_HEAD=$NEW_HEAD
 	EXEC_CHANGED=true
+	if [ -n "$EXEC_PLACED" ] && [ -n "$REPLACED" ] && [ -z "$EXEC_LABEL" ]; then
+		local C
+		PRINT_TEXT "Placed $EXEC_PLACE_KIND %s:" 32 "${EXEC_PLACE_ANCHOR:0:7}"
+		for C in ${=EXEC_PLACED}; do _PRINT_COMMIT_LINE "$C" '  %h %s'; done
+	fi
 }
 
 # Quotes paths for a printed command – one git would read as a pattern marked literal, as
@@ -4087,8 +4187,9 @@ GIT_COMMIT_WHOLE () {
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
 	if [ "$EXEC_CHANGED" = true ]; then
-		git --no-pager -c core.quotePath=false show --no-color --stat --summary --format= "$EXEC_NEW_HEAD" | LC_ALL=C sed '/./!d'
-		_PRINT_COMMIT_LINE "$EXEC_NEW_HEAD" '  committed: %h %s'
+		local MADE=${${EXEC_PLACED:-$EXEC_NEW_HEAD}%% *}
+		git --no-pager -c core.quotePath=false show --no-color --stat --summary --format= "$MADE" | LC_ALL=C sed '/./!d'
+		_PRINT_COMMIT_LINE "$MADE" "  committed${EXEC_PLACED:+ $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7}}: %h %s"
 	fi
 }
 
@@ -5538,6 +5639,34 @@ _REORDER_CHECKS () {
 	print -r -- "${CHECKS[*]}"
 }
 
+# Writes the sequence editor a reorder or a placement runs, its path in `REPLY` – it re-emits the
+# span's `pick` lines in the order `GIT_EDIT_REORDER_ORDER` names, todo SHAs matched as prefixes
+# Under `sh`, as a zsh script would read the caller's `.zshenv` past the `emulate` at the top
+_ORDER_EDITOR () {
+	REPLY=$(MKTEMP_FILE git-edit-reorder-seq)
+	cat > "$REPLY" <<'SEQEOF'
+#!/bin/sh
+awk -v order="$GIT_EDIT_REORDER_ORDER" '
+	BEGIN { n = split(order, O, " ") }
+	/^pick / {
+		member = 0
+		for (i = 1; i <= n; i++) {
+			if (index(O[i], $2) == 1) { member = 1; break }
+		}
+		if (member) {
+			if (!done) {
+				for (i = 1; i <= n; i++) print "pick", O[i]
+				done = 1
+			}
+			next
+		}
+	}
+	{ print }
+' "$1" > "$1.new" && mv "$1.new" "$1"
+SEQEOF
+	chmod +x "$REPLY"
+}
+
 # Reorders a contiguous span, the positional args giving the new order oldest-first – runs
 # the rebase in an isolated temp worktree under a scripted `GIT_SEQUENCE_EDITOR`, reusing
 # the conflict pause machinery, and the branch ref only moves at the end
@@ -5641,33 +5770,8 @@ GIT_REORDER () {
 	_LINK_WORKTREE_EXTRAS "$WT"
 	cd "$WT" || exit 1
 
-	# Scripted sequence editor – drop the span's `pick` lines and re-emit them at the first
-	# one's position in the desired order, matching the todo's abbreviated SHAs as prefixes
-	# of our full ones, with the order traveling by env so the script needs no interpolation
-	# Under `sh`, like the other editors written for git – as a zsh script it would start a
-	# zsh of its own, which reads the caller's `.zshenv` past the `emulate` at the top
-	local SEQ=$(MKTEMP_FILE git-edit-reorder-seq)
-	cat > "$SEQ" <<'SEQEOF'
-#!/bin/sh
-awk -v order="$GIT_EDIT_REORDER_ORDER" '
-	BEGIN { n = split(order, O, " ") }
-	/^pick / {
-		member = 0
-		for (i = 1; i <= n; i++) {
-			if (index(O[i], $2) == 1) { member = 1; break }
-		}
-		if (member) {
-			if (!done) {
-				for (i = 1; i <= n; i++) print "pick", O[i]
-				done = 1
-			}
-			next
-		}
-	}
-	{ print }
-' "$1" > "$1.new" && mv "$1.new" "$1"
-SEQEOF
-	chmod +x "$SEQ"
+	_ORDER_EDITOR
+	local SEQ=$REPLY
 
 	_CAPTURE_BEGIN
 	local REBASE_CMD="GIT_EDIT_REORDER_ORDER='${COMMITS_DESIRED[*]}' GIT_SEQUENCE_EDITOR=${(q-)SEQ} GIT_EDITOR=true git -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --no-autosquash --no-autostash --interactive $REBASE_BASE"
@@ -5718,6 +5822,8 @@ SEQEOF
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reorder ${OLDEST:0:7}..${NEWEST:0:7}"
+	# A resolution that changed content leaves the checkout behind, as any rewrite does
+	git diff --quiet "$ORIG_HEAD" "$NEW_HEAD" 2>/dev/null || _PRINT_REWRITE_APPLY_HINT "$ORIG_BRANCH" "$ORIG_HEAD" "$NEW_HEAD"
 
 	# Completion summary – tree identity, which a clean reorder preserves and a resolution may
 	# not, plus the rewritten span in its new order
@@ -6238,7 +6344,11 @@ _CONTINUE_REORDER () {
 
 	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
-	PRINT_ACTION "Continuing reorder around %s..." "${STATE_TARGET:0:7}"
+	# A placement's pause holds commits the branch never had – what it built on the tip is the
+	# result a clean replay reproduces, and the tip it read the one the CAS guards
+	local BUILT=${STATE_PLACED:-$STATE_ORIG_HEAD}
+	local LABEL=${STATE_PLACE_LABEL:-reorder around ${STATE_TARGET:0:7}}
+	PRINT_ACTION "Continuing ${LABEL%% *}${STATE_PLACED:+ placed ${${LABEL#* }%% *}} %s..." "${${STATE_PLACE_LABEL:+${LABEL##* }}:-${STATE_TARGET:0:7}}"
 
 	# If no rebase is in progress but `HEAD` has moved on, the resolution was
 	# completed manually in the worktree – apply the result instead of
@@ -6246,7 +6356,7 @@ _CONTINUE_REORDER () {
 	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 	if [ ! -d "$GITDIR/rebase-merge" ] && [ ! -d "$GITDIR/rebase-apply" ]; then
 		# A same order refuses up front, so a reorder back on its tip was aborted by hand
-		[ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ] && _REFUSE_HAND_ABORT
+		[ "$(git rev-parse HEAD)" = "$BUILT" ] && _REFUSE_HAND_ABORT
 		_REQUIRE_REPLAY_DONE "$STATE_WORKTREE"
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
@@ -6258,11 +6368,11 @@ _CONTINUE_REORDER () {
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
 		if ! CONTINUE_OUTPUT=$( export LC_ALL=C; eval "$CMD" 2>&1 ) && \
-		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "pre-op" }; then
+		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$BUILT" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "${${STATE_PLACED:+built}:-pre-op}" }; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "Conflict continues – resolve more files, then 'git edit --continue'"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
-			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$CONTINUE_OUTPUT")
+			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$BUILT" "$CONTINUE_OUTPUT")
 			PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 			EMIT_CONFLICT "$STATE_WORKTREE" "$UNMERGED_LIST"
 			_PAUSE_EXIT 2 conflict
@@ -6271,20 +6381,22 @@ _CONTINUE_REORDER () {
 
 	local NEW_HEAD=$(git rev-parse HEAD)
 
-	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_REORDER_CHECKS "$STATE_ORIG_HEAD" "$NEW_HEAD")"; then
+	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$BUILT" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_REORDER_CHECKS "$STATE_ORIG_HEAD" "$NEW_HEAD")"; then
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
 		_PAUSE_EXIT 2 gate
 	fi
 
-	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: reorder around ${STATE_TARGET:0:7}$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
+	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: $LABEL$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
-	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "reorder around ${STATE_TARGET:0:7}"
+	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$LABEL"
+	# A placement, or a resolution that changed content, leaves the checkout behind as any rewrite does
+	git diff --quiet "$STATE_ORIG_HEAD" "$NEW_HEAD" 2>/dev/null || _PRINT_REWRITE_APPLY_HINT "${STATE_BRANCH#refs/heads/}" "$STATE_ORIG_HEAD" "$NEW_HEAD"
 
-	_PRINT_REORDER_SUMMARY "$STATE_ORIG_HEAD" "$NEW_HEAD"
+	_PRINT_REORDER_SUMMARY "$BUILT" "$NEW_HEAD"
 
 	_CLEAR_STATE
 	PRINT_COMPLETED "$NEW_HEAD" "$STATE_BRANCH" true
@@ -6858,6 +6970,8 @@ _LOAD_STATE () {
 	STATE_ACTOR=""
 	STATE_STOP_HEAD=""
 	STATE_TODO_LEFT=""
+	STATE_PLACED=""
+	STATE_PLACE_LABEL=""
 	local KEY VAL
 	while IFS='=' read -r KEY VAL; do
 		case "$KEY" in
@@ -6901,6 +7015,8 @@ _LOAD_STATE () {
 			actor)           STATE_ACTOR=$VAL ;;
 			stop_head)       STATE_STOP_HEAD=$VAL ;;
 			todo_left)       STATE_TODO_LEFT=$VAL ;;
+			placed)          STATE_PLACED=$VAL ;;
+			place_label)     STATE_PLACE_LABEL=$VAL ;;
 		esac
 	done < "$SF"
 	# The resuming or aborting run takes the pause over – `--status` only reads it
@@ -9985,9 +10101,9 @@ if [ ${#OPT_ONTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o 
 	PRINT_ERR "Option --onto cannot be combined with other modes (it replays the whole branch, not a named commit)"
 	exit 1
 fi
-if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
+if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
 	USAGE
-	PRINT_ERR "--after/--before only apply to --move"
+	PRINT_ERR "--after/--before only apply to --move, --commit and --exec"
 	exit 1
 fi
 # `-e` names the default mode rather than adding one, so it pairs with `-m` and `-C` as the
@@ -10036,6 +10152,7 @@ if [ ${#OPT_COMMIT} -gt 0 ]; then
 		PRINT_ERR "--commit needs a message: --text \"…\", or --text - to read it from stdin"
 		exit 1
 	fi
+	_RESOLVE_PLACE
 	GIT_COMMIT_WHOLE "$@"
 	PRINT_COMPLETED "$EXEC_NEW_HEAD" "$EXEC_REF" "$EXEC_CHANGED"
 	exit 0
@@ -10069,6 +10186,7 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 			exit 1
 		fi
 	fi
+	_RESOLVE_PLACE
 	GIT_EXEC "$@"
 	if [ -n "$EXEC_DRY_BUILT" ]; then
 		EMIT_DRY_RUN "$EXEC_DRY_BUILT" "$EXEC_DRY_BASE" "$EXEC_REF"

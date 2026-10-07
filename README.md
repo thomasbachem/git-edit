@@ -47,7 +47,7 @@ Either way `man git-edit` works right away – the formula installs the page, an
 | `git edit -d <commit>...` | **Drop** commits or ranges. At a terminal their content leaves your checkout too, edits of yours on it kept – an agent's run leaves it there, uncommitted and unstaged |
 | `git edit -s <commit>...` | **Squash** into the oldest of them, a single commit into its parent – `-s=<target>` into a named one, `-S` to demand the plumbing path instead of a rebase fallback |
 | `git edit --amend-into=<sha>` | **Fold** the staged changes into a past commit |
-| `git edit --commit --text <msg> -- <path>...` | **Commit** files whole from the checkout, as `git commit -- <paths>` does – composed apart from the shared index |
+| `git edit --commit --text <msg> -- <path>...` | **Commit** files whole from the checkout, as `git commit -- <paths>` does – composed apart from the shared index, at the tip or, with `--after=<anchor>` or `--before=<anchor>`, right beside that commit |
 | `git edit --split=<sha>` | **Split** one commit into two |
 | `git edit --reorder <commit>...` | **Reorder** a contiguous span, the arguments giving the new order oldest-first |
 | `git edit --move=<sha> --after=<anchor>` | **Move** one commit (`--before=<anchor>` likewise) – span and ordering derived |
@@ -80,10 +80,13 @@ Where the shared index is itself the hazard – a parallel session's uncommitted
 
 ```
 git edit --commit --text "Subject" -- src/foo.js src/new.js   # commit these files as they stand
+git edit --commit --text "Subject" --after=<sha> -- src/foo.js # or land the commit beside the run it continues
 git edit --amend-into=<sha> --whole -- src/foo.js             # or fold them whole into a past commit
 ```
 
 `--commit` takes files as `git commit -- <paths>` does, though only named one by one, no directory or glob – each as it stands, a new one with no `git add`, a deleted one removed, a moved one named at both paths – into a private index seeded from `HEAD`, read through the files' filters as `git add` reads them, and refuses a file carrying conflict markers its tip version lacks. It lands the commit the way `--exec` lands its result: the repo's hooks run on it whatever `--no-verify` says, `edit.verifyCmd` unless `--no-verify` skips it, the branch moves only from the tip the files were composed on, and the journal and reflog name the caller. Files staged beside them stay staged and out of the commit. A file-mode change refuses unless `--allow-mode-change` says it is meant.
+
+With `--after=<anchor>` or `--before=<anchor>`, the commit lands right beside that commit instead of at the tip, in the same run – built on the tip, then replayed into place in the run's own worktree, so the branch never holds it at the tip, no second command moves it, and the gate checks it where it lands. A conflict placing it pauses as `--move` does, with nothing landed, and a pushed commit or a merge above the anchor refuses before anything is built. `--exec` takes the same flags for the commits its command adds on top.
 
 A checkout other callers share has one more way to lose work: a rewrite one of them lands – a drop, a fold built elsewhere – changes a file at the tip without passing through the checkout, so a file edited on the old content and committed whole takes that change back. `--commit`, `--whole` and a fold of what is staged or of a bare `--tree` refuse where a file lacks what another `GIT_EDIT_ACTOR` caller's run of the last 7 days landed on it and the tip still carries, would bring back a file such a run removed or remove one it added – naming the run and the remedy: `git edit --carry=<old tip>` to merge edits onto what landed, a rename's too, a `git restore` where the file holds no edits of its own or is one the run added – `--staged` for a fold of what is staged, which takes what landed – and leaving out one it removed. Runs under the caller's own label never count – for an unlabeled caller, every unlabeled one – nor do edits made on the landed lines afterwards, which conflict rather than merge. A rename of your own made on a file such a run changed refuses too, naming the `git merge-file` that brings what landed into the new name. A file another such run added counts as taken back where yours stands in its place – one keeping most of its lines, or of the tip's since, is edits on top. `--base=<sha>` names the commit the files rest on instead, refusing any path changed since – the tip's own SHA where taking a landing back is the point.
 

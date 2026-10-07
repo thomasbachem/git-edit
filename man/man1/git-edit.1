@@ -21,8 +21,8 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
-\fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...
-\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
+\fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIcommand\fR...
+\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] [\fB\-\-jobs\fR[\fB=\fR\fIn\fR]] | \fB\-\-version\fR
 .fi
@@ -457,6 +457,18 @@ opening and a closing marker line at its
 makes such lines a file's content, as for
 .BR "git diff \-\-check" .
 .IP
+With
+.BR \-\-after=\fIsha\fR " or " \-\-before=\fIsha\fR ,
+the commit lands right after or before that commit instead of at the tip, in
+the same run \(em built on the tip, then replayed into place in the run's
+worktree, so the branch never holds it at the tip and the gate checks it where
+it lands. A conflict placing it pauses as
+.B \-\-move
+does, with nothing landed, so
+.B \-\-abort
+leaves the branch as it was, and a pushed commit or a merge above the anchor
+refuses before anything is built.
+.IP
 In a checkout other callers share, a rewrite one of them lands \(em a drop, a
 fold built elsewhere \(em changes a file at the tip without passing through
 the checkout, and a file edited on the old content and committed whole would
@@ -492,6 +504,11 @@ inside a fresh temporary worktree; the branch ref is CAS\-updated only if
 cover. A commit it makes runs the repo's hooks, a relative
 .B core.hooksPath
 read from the checkout as every mode's worktree reads it.
+.IP
+.BR \-\-after=\fIsha\fR " or " \-\-before=\fIsha\fR
+places the commits \fIcommand\fR adds on top there, as
+.B \-\-commit
+places its commit \(em a \fIcommand\fR that rewrote history instead refuses.
 .IP
 The pushed guard runs on the result here, since a wrapped \fIcommand\fR's
 targets are its own: a remote\-tracking ref that was an ancestor of the old tip
