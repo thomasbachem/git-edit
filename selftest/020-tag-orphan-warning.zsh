@@ -7,8 +7,8 @@ git tag marker
 _ST_RUN -M --text="T1 reworded" "$(git rev-parse HEAD~1)"
 _ST_EQ "exits 0" "$RC" "0"
 _ST_OUT_HAS "warns about the tag" 'points into the rewritten span'
-_ST_OUT_HAS "suggests exact counterpart" 'Tag marker .*the same subject'
-_ST_OUT_HAS "with the command to re-point it" 'git tag -f marker [0-9a-f]\{12\}$'
+_ST_OUT_HAS "suggests exact counterpart" 'Tag marker .*its counterpart, the same change'
+_ST_OUT_HAS "with the command to re-point it" "git tag -f marker $(git rev-parse --short=12 HEAD)\$"
 git tag -f marker >/dev/null 2>&1   # re-point to current `HEAD` for the next check
 # Rewriting above the tag leaves it reachable – expect no warning
 git tag -f marker "$(git rev-parse HEAD~1)" >/dev/null 2>&1

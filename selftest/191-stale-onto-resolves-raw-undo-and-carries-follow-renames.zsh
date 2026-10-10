@@ -254,7 +254,7 @@ for OV_I in 1 2 3; do
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV7 A" -- h
 	_ST_EQ "the file committed whole then refuses ($OV_I)" "$RC" "1"
 	_ST_OUT_LACKS "offering no move back ($OV_I)" "mv -- h f"
-	_ST_OUT_HAS "but the merge into the new name ($OV_I)" "^  Merge what landed into the new name with: git show [0-9a-f]* > .* && git merge-file -- h "
+	_ST_OUT_HAS "but the merge into the new name ($OV_I)" "^  Merge what landed into the new name with: T=\$(mktemp -d) && git show [0-9a-f]* > .* && git merge-file -- h "
 	OV_CMD=$(sed -n 's/^  Merge what landed into the new name with: //p' <<<"$OUT")
 	GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "$OV_CMD"
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV7 A" -- h

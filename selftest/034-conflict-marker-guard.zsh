@@ -26,5 +26,5 @@ printf 'm1\nMS\nm3\n' > "${MK_WT:-$ST_NO_WT}/mk.txt" && git -C "$MK_WT" add mk.t
 _ST_RUN --continue
 _ST_OUT_LACKS "clean resolution passes the guard" 'still contains conflict markers'
 _ST_RUN --abort
-_ST_CHECK "state cleared afterwards" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared afterwards" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 git reset -q --hard

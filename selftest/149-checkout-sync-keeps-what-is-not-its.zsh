@@ -195,7 +195,7 @@ if [ -n "$CS_CI" ]; then
 	print -r -- $'1\n2\n3\n4\n5\n6\n7\n8mine' > README.md
 	_ST_TTY -- -d -y HEAD~1
 	_ST_OUT_HAS "a case-only rename's conflict is named" 'conflict with what landed.*README.md → readme.md'
-	eval "$(print -r -- "$OUT" | sed -n 's/^  \(git cat-file --filters .*git-edit-landed\)$/\1/p')"
+	eval "$(print -r -- "$OUT" | sed -n 's/^  \(T=\$(mktemp -d) && git cat-file --filters .*"\$T\/landed"\)$/\1/p')"
 	_ST_EQ "its merge brings in the landed side, markers and all" "$(grep -c '^8$' readme.md):$(grep -c '^8mine$' readme.md):$(grep -c '^<<<<<<<' readme.md)" "1:1:1"
 	_ST_EQ "the file named as landed" "$(ls | grep -ix readme.md)" "readme.md"
 	git reset -q --hard

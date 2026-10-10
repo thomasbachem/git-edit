@@ -11,12 +11,18 @@ _ST_RUN --exec -- env GIT_SEQUENCE_EDITOR="sed -i.bak 2s/^pick/edit/" git rebase
 _ST_EQ "an exec leaving a rebase stopped lands nothing" "${RC}:$(git rev-parse HEAD)" "1:$XG_T"
 _ST_OUT_HAS "naming it" 'rebase-merge left in its worktree'
 # A history built on the old tip in the very second the run starts still counts as built before it
-XG_S=$(date +%s); until [ "$(date +%s)" != "$XG_S" ]; do :; done
-XG_N=$(git commit-tree "HEAD^{tree}" -p HEAD~1 -m "XG1 d reworded")
+# The build is dated just past a second's start, the peer's commit made before it so nothing else
+# delays the run – a machine too loaded to start it within that second passes the check untested,
+# never fails it
 _ST_PZ_C e.txt e "XG1 peer e"
 XG_T=$(git rev-parse HEAD)
+zmodload zsh/datetime
+XG_S=$EPOCHREALTIME
+sleep $(( 1.01 - (XG_S - ${XG_S%.*}) ))
+XG_N=$(GIT_COMMITTER_DATE="@$EPOCHSECONDS +0000" git commit-tree "HEAD~1^{tree}" -p HEAD~2 -m "XG1 d reworded")
 _ST_RUN --exec -- git reset -q --hard "$XG_N"
 _ST_EQ "a history built in the run's first second refuses, the peer's commit kept" "${RC}:$(git rev-parse HEAD)" "1:$XG_T"
+_ST_OUT_HAS "as made before the run, not only as built below the tip" 'carrying 1 commit(s) made before this run'
 # A placement whose replay runs clean but ends on another tree lands nothing
 _ST_PZ_NEW xg2
 printf '%s\n' b a a c b a > f.txt && git add f.txt && git commit -qm "XG2 anchor"

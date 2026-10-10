@@ -15,7 +15,7 @@ printf 'x\nTIP\nz\n' > "${PZ_WT:-$ST_NO_WT}/pz.txt" && git -C "$PZ_WT" add pz.tx
 _ST_RUN --continue
 _ST_EQ "continue completes the drop" "$RC" "0"
 _ST_EQ "dropped commit is gone" "$(git log --format=%s -2 | tr '\n' ' ')" "PZ tip PZ base "
-_ST_CHECK "state cleared after continue" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared after continue" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 printf 'x\nMID2\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ mid2"
 printf 'x\nTIP2\nz\n' > pz.txt && git add pz.txt && git commit -qm "PZ tip2"
 local PZ_TIP2=$(git rev-parse HEAD)

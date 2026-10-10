@@ -53,7 +53,7 @@ _ST_EQ "extracted carries only the first half" "$(git show "$CS_KEPT^:cs.txt")" 
 _ST_EQ "remainder carries the rest" "$(git show "${CS_KEPT}:cs.txt")" "$(printf 'FIRST\nsecond\nthird')"
 _ST_CHECK "descendants rebuilt" git cat-file -e 'HEAD:cs2.txt'
 _ST_CHECK "worktree cleaned up" test ! -d "$CS_WT"
-_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 # The tip tree is only unchanged relative to the pre-split tip, so compare
 # against the commit that was `HEAD` before the mid-pause commit landed
 _ST_EQ "pre-split tip tree preserved" "$(git rev-parse 'HEAD~1^{tree}')" "$CS_TIP_TREE"

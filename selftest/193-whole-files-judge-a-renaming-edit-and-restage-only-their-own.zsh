@@ -139,7 +139,7 @@ for GA_I in alice alone; do
 	if [ $GA_I = alice ]; then
 		_ST_OUT_LACKS "with another caller's line in the checkout, no 'git add' of it" "git add --"
 		_ST_OUT_HAS "but the staging rebuilt alone, at the entry's mode" \
-			"^  Then rebuild the staging of doc alone, what landed merged in, as the checkout holds more than you staged there, which 'git add' would take in too: git cat-file blob .* && git merge-file -- .* && git update-index --add --cacheinfo 100755,\$(git hash-object -w --no-filters -- .*),doc; rm -f .* – and run this again\.$"
+			"^  Then rebuild the staging of doc alone, what landed merged in, as the checkout holds more than you staged there, which 'git add' would take in too: T=\$(mktemp -d) && git cat-file blob .* && git merge-file -- .* && git update-index --add --cacheinfo 100755,\$(git hash-object -w --no-filters -- .*),doc – and run this again\.$"
 		GA_REB=$(sed -n "s/^  Then rebuild the staging of doc alone, .*, which 'git add' would take in too: \\(.*\\) – and run this again\\.\$/\\1/p" <<<"$OUT")
 		# Else whatever stages it again – once, a `git add` of the checkout file took in alice's line
 		[ -n "$GA_REB" ] || GA_REB=$(sed -n 's/^  Then stage them again with: \(.*\) (.*$/\1/p' <<<"$OUT")

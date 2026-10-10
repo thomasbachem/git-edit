@@ -19,5 +19,5 @@ _ST_RUN --continue
 _ST_EQ "unprovable final step still pauses" "$RC" "2"
 _ST_OUT_LACKS "never claims an unproven auto-resolve" 'auto-resolved'
 _ST_RUN --abort
-_ST_CHECK "abort leaves no state" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "abort leaves no state" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 git reset -q --hard

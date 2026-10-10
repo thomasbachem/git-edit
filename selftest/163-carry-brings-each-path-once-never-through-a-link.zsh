@@ -36,7 +36,7 @@ _CZ_RAW
 _ST_RUN --carry="$CZ_OLD"
 mv .git/index.lock "$TMP/cz1-index.lock"
 _ST_EQ "a locked index fails the carry" "$RC" "1"
-_ST_OUT_HAS "each file it wrote named once, as written with its entry left, and the re-sync" 'Index entries left on the pre-rewrite content, the index locked: a\.txt (written, edits carried), b\.txt (written, brought to what landed), g\.txt, m\.txt (written, brought to what landed) – re-sync them once it is free, the files left as they are: git restore --source=HEAD --staged -- a\.txt b\.txt g\.txt m\.txt$'
+_ST_OUT_HAS "each file it wrote named once, as written with its entry left, and the re-sync" 'Index entries left on the pre-rewrite content, the index locked: a\.txt (written, edits carried), b\.txt (written, brought to what landed), g\.txt, m\.txt (written, brought to what landed) – re-sync each still so once it is free, the files left as they are: git diff-index --cached --exit-code --name-only '"${CZ_OLD:0:12}"' -- a\.txt b\.txt g\.txt m\.txt && git restore --source=HEAD --staged -- a\.txt b\.txt g\.txt m\.txt$'
 _ST_OUT_LACKS "never as carried, nor as left to merge by hand" 'Carried onto the new content\|to merge by hand'
 _ST_RUN --carry="$CZ_OLD"
 _ST_EQ "the next carry re-syncs every entry left behind" "$RC:$(git diff --cached --name-only | tr '\n' ' ')" "0:"
@@ -150,8 +150,8 @@ _CZ_RAW
 _ST_RUN --carry="$CZ_OLD"
 _ST_EQ "a conflict fails the carry, the new path as landed, the edits where they were" "$RC:$(tr '\n' ' ' < b.txt):$(tr '\n' ' ' < a.txt):$(git status --porcelain | tr '\n' '|')" "1:1 2 THEIRS 4 5 6 :1 2 MINE 4 5 6 : M c.txt|?? a.txt|"
 _ST_OUT_HAS "the rename named by both paths and where the edits are" 'to merge by hand: a\.txt → b\.txt – 1 conflict(s), the edits left at a\.txt, c\.txt – 1 conflict(s)$'
-_ST_OUT_HAS "with the command that merges them into the new path" "^  git cat-file --filters ${CZ_OLD:0:12}:a\.txt > [^ ]*/\.git/git-edit-base && git merge-file -- b\.txt [^ ]*/\.git/git-edit-base a\.txt; rm -f [^ ]*/\.git/git-edit-base$"
-_ST_OUT_HAS "and the one in place its own" "^  git cat-file --filters ${CZ_OLD:0:12}:c\.txt > [^ ]*/\.git/git-edit-base && git cat-file --filters $(git rev-parse --short=12 HEAD):c\.txt > [^ ]*/\.git/git-edit-landed && git merge-file -- c\.txt"
+_ST_OUT_HAS "with the command that merges them into the new path" "^  T=\$(mktemp -d) && git cat-file --filters ${CZ_OLD:0:12}:a\.txt > \"\$T/base\" && git merge-file -- b\.txt \"\$T/base\" a\.txt\$"
+_ST_OUT_HAS "and the one in place its own" "^  T=\$(mktemp -d) && git cat-file --filters ${CZ_OLD:0:12}:c\.txt > \"\$T/base\" && git cat-file --filters $(git rev-parse --short=12 HEAD):c\.txt > \"\$T/landed\" && git merge-file -- c\.txt"
 # One whose entries a locked index kept on the old tip says so on its own line, with the re-sync
 _ST_PZ_NEW cz8l
 print -l 1 2 3 4 5 6 > a.txt
@@ -162,7 +162,7 @@ _CZ_RAW
 : > .git/index.lock
 _ST_RUN --carry="$CZ_OLD"
 mv .git/index.lock "$TMP/cz8l-index.lock"
-_ST_OUT_HAS "a conflicting rename's entries left by a locked index named on its line, once" 'to merge by hand: a\.txt → b\.txt – 1 conflict(s), the edits left at a\.txt, its index entry not re-synced, the index locked – once it is free: git restore --source=HEAD --staged -- a\.txt b\.txt$'
+_ST_OUT_HAS "a conflicting rename's entries left by a locked index named on its line, once" 'to merge by hand: a\.txt → b\.txt – 1 conflict(s), the edits left at a\.txt, its index entry not re-synced, the index locked – once it is free, where still on the pre-rewrite content: git diff-index --cached --exit-code --name-only '"${CZ_OLD:0:12}"' -- a\.txt b\.txt && git restore --source=HEAD --staged -- a\.txt b\.txt$'
 _ST_OUT_LACKS "never on a line of their own" 'Index entries left'
 
 # A merged file takes the mode that landed, unless the checkout changed its own

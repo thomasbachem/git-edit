@@ -67,7 +67,7 @@ printf 'tt\n' > te-t.txt && git add te-t.txt && git commit -qm "TE-T below"
 printf 'tt2\n' >> te-t.txt && git commit -qam 'TE-T reset \e[0m | kept'
 git tag te-tag && git branch te-br
 _ST_RUN -M --text "TE-T below reworded" "$(git rev-parse HEAD~1)"
-_ST_OUT_HAS "a tag's re-point hint shows the subject as itself" 'Tag te-tag .*same subject: TE-T reset \\e\[0m | kept$'
+_ST_OUT_HAS "a tag's re-point hint shows the subject as itself" 'Tag te-tag .*same [a-z]*: TE-T reset \\e\[0m | kept$'
 _ST_OUT_HAS "as does a branch's" 'Branch te-br .*same [a-z]*: TE-T reset \\e\[0m | kept$'
 git tag -d te-tag >/dev/null && git branch -q -D te-br
 git reset -q --hard "$TE_BASE"

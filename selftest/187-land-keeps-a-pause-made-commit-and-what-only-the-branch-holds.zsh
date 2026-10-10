@@ -144,7 +144,7 @@ KP_U=$(_KP_STEP 'Undo: git edit --undo  (or, the ref alone: ')
 KP_U=${KP_U%)}
 KP_S=$(_KP_STEP 'After the raw undo, re-sync them back – [^:]*: ')
 _ST_EQ "the raw undo said to move the ref alone" "${KP_U%% -m *}" "git update-ref"
-_ST_EQ "the step beside the re-synced entries" "$KP_S" "git diff --cached --exit-code --name-only $(git rev-parse --short=12 HEAD) -- a.txt f.txt && git restore --staged -- a.txt f.txt"
+_ST_EQ "the step beside the re-synced entries" "$KP_S" "git diff-index --cached --exit-code --name-only $(git rev-parse --short=12 HEAD) -- a.txt f.txt && git restore --staged -- a.txt f.txt"
 eval "${KP_S:-false}" >/dev/null
 _ST_EQ "run before the undo, the step changes nothing" "$?:$(git status --short | LC_ALL=C sort | tr '\n' '|')" "0: D a.txt| M f.txt|A  peer.txt|"
 eval "${KP_U:-false}" && eval "${KP_S:-false}" >/dev/null

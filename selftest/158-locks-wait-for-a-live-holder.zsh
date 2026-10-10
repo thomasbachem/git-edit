@@ -104,7 +104,7 @@ _ST_EQ "while a gone run's lock is broken at once, the abort cancelling under it
 # Waiters breaking a gone run's journal lock all at once take it one at a time, every one in turn
 JL_GD="$TMP/jl-g"
 mkdir -p "$JL_GD"
-functions _JOURNAL_LOCK _JOURNAL_UNLOCK _LOCK_STALE _LOCK_BREAK _LOCK_MARK_SET _PID_START > "$TMP/jl-fns.zsh" 2>/dev/null
+functions _JOURNAL_LOCK _JOURNAL_UNLOCK _LOCK_STALE _HOLDER_GONE _LOCK_BREAK _LOCK_MARK_SET _PID_START > "$TMP/jl-fns.zsh" 2>/dev/null
 print -r -- '
 J=$1 NAME=$2 G=$3
 _JOURNAL_HELD="" _LOCK_MARK=""

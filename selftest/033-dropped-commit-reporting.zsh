@@ -16,7 +16,7 @@ _ST_RUN --continue
 _ST_EQ "a resolution emptying the later commit into the stop's refuses" "$RC:$(git rev-parse HEAD)" "1:$DR_TIP"
 _ST_OUT_HAS "naming the commit it emptied" 'DR one – dr\.txt (left out as emptied)'
 _ST_RUN --abort
-_ST_CHECK "state cleared by the abort" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared by the abort" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 git reset -q --hard
 # One the new order cancels – a line it adds that the stop's own commit removes – drops it
 printf 'c1\nc2\nc3\n' > dc.txt && git add dc.txt && git commit -qm "DC base"
@@ -30,7 +30,7 @@ _ST_EQ "resolution completes in one continue" "$RC" "0"
 _ST_OUT_HAS "continue path prints the new order too" 'new order (oldest-first)'
 _ST_OUT_HAS "reports the dropped commit" 'resolved to empty and were dropped'
 _ST_OUT_HAS "and names it" 'dropped: .*DC one'
-_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 git reset -q --hard
 
 # The dissolution workflow rests on the same drop staying silent at the

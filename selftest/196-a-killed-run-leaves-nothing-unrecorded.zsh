@@ -45,12 +45,15 @@ KM_TIP=$(git rev-parse HEAD)
 _ST_EQ "the killed commit moved the branch, unjournaled, its file staged as before it" \
 	"$([ "$KM_TIP" != "$KM_BASE" ] && echo moved):$(cat .git/git-edit-journal 2>/dev/null | grep -c .):$(git diff --cached --name-only)" "moved:0:F"
 # Not while a live run holds the journal's lock – pid 1's here – which may be about to record it
+KM_HAND=$(<.git/git-edit-journal.lock)
 _PID_START 1
 print -r -- "1 $REPLY" > .git/git-edit-journal.lock
 GIT_EDIT_ACTOR=A _ST_RUN --status
 _ST_OUT_LACKS "a live run's journal lock keeps --status from journaling the move" 'journaled from the reflog'
 _ST_EQ "the journal and index left as they are" "$(cat .git/git-edit-journal 2>/dev/null | grep -c .):$(git diff --cached --name-only)" "0:F"
-rm -f .git/git-edit-journal.lock
+# The lock the killed run left put back – what tells its move, made a moment ago, from a live older
+# build's not yet journaled
+print -r -- "$KM_HAND" > .git/git-edit-journal.lock
 GIT_EDIT_ACTOR=A _ST_RUN --status
 _ST_OUT_HAS "--status journals the killed run's move from the reflog" "journaled from the reflog: commit by A (${KM_BASE:0:7} → ${KM_TIP:0:7}) – index entries re-synced to it: F"
 _ST_EQ "under the run's own label, its entry re-synced" \

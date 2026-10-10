@@ -27,7 +27,7 @@ local ED_NEW=$(git log --format='%H %s' | grep 'ED target, edited' | cut -d' ' -
 _ST_CHECK "reword applied" test -n "$ED_NEW"
 _ST_EQ "content edited at the target" "$(git show "${ED_NEW}:ed.txt" 2>/dev/null | sed -n 2p)" "EDITED"
 _ST_CHECK "mid-pause commit absorbed" sh -c "git log --format=%s | grep -q 'ED mid-pause'"
-_ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+_ST_CHECK "state cleared" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 # Abort leaves everything untouched
 git reset -q --hard
 local ED_TIP2=$(git rev-parse HEAD)
