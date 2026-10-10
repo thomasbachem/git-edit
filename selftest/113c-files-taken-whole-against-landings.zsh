@@ -12,7 +12,7 @@ _ST_EQ "as does a version of it staged before" "$RC:$(git status --porcelain -- 
 printf '\0bin1' > wc.bin && ln -s wc.txt wc-ln
 _ST_RUN --commit --text "WC bin and link" -- wc.bin wc-ln
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "echo peer > wc-peer-new.txt && printf '\0bin2' > wc.bin && ln -sf wc-g.txt wc-ln && git add -A wc-peer-new.txt wc.bin wc-ln && git commit -qm 'WC peer adds and changes'"
+_ST_RUN_UNSYNCED --exec -- sh -c "echo peer > wc-peer-new.txt && printf '\0bin2' > wc.bin && ln -sf wc-g.txt wc-ln && git add -A wc-peer-new.txt wc.bin wc-ln && git commit -qm 'WC peer adds and changes'"
 export GIT_EDIT_ACTOR=wc-self
 _ST_RUN --commit --text "x" -- wc-peer-new.txt wc.bin wc-ln
 _ST_OUT_HAS "removing a file another caller added refuses" 'wc-peer-new.txt – wc-peer.*which added it'
@@ -27,9 +27,9 @@ printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
 _ST_RUN --commit --text "WC two base" -- wc-two.txt
 local WC_P1=$(git rev-parse HEAD)
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\no6\no7\no8\n' > wc-two.txt && git commit -qam 'WC p1'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\no6\no7\no8\n' > wc-two.txt && git commit -qam 'WC p1'"
 export GIT_EDIT_ACTOR=wc-other
-_ST_RUN --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\nP2\no7\no8\n' > wc-two.txt && git commit -qam 'WC p2'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'o1\nP1\no3\no4\no5\nP2\no7\no8\n' > wc-two.txt && git commit -qam 'WC p2'"
 export GIT_EDIT_ACTOR=wc-self
 printf 'o1\no2\no3\no4\no5\no6\no7\nMINE\n' > wc-two.txt
 _ST_RUN --commit --text "x" -- wc-two.txt
@@ -45,9 +45,9 @@ git checkout -q -- wc-two.txt
 printf 'a1\na2\na3\na4\n' > wc-adj.txt && printf 'v0\0bin' > wc-adj.bin
 _ST_RUN --commit --text "WC adjacent base" -- wc-adj.txt wc-adj.bin
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "printf 'a1\nP1\na3\na4\n' > wc-adj.txt && printf 'v1\0bin' > wc-adj.bin && git commit -qam 'WC adj one'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'a1\nP1\na3\na4\n' > wc-adj.txt && printf 'v1\0bin' > wc-adj.bin && git commit -qam 'WC adj one'"
 export GIT_EDIT_ACTOR=wc-other
-_ST_RUN --exec -- sh -c "printf 'a1\nP1\nP2\na4\n' > wc-adj.txt && printf 'v2\0bin' > wc-adj.bin && git commit -qam 'WC adj two'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'a1\nP1\nP2\na4\n' > wc-adj.txt && printf 'v2\0bin' > wc-adj.bin && git commit -qam 'WC adj two'"
 export GIT_EDIT_ACTOR=wc-self
 printf 'a1\na2\na3\na4\n' > wc-adj.txt && printf 'v0\0bin' > wc-adj.bin
 local WC_TIP=$(git rev-parse HEAD)
@@ -60,9 +60,9 @@ git checkout -q -- wc-adj.txt wc-adj.bin
 printf 'k1\nk2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt
 _ST_RUN --commit --text "WC order base" -- wc-ord.txt
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt && git commit -qam 'WC order one'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt && git commit -qam 'WC order one'"
 export GIT_EDIT_ACTOR=wc-other
-_ST_RUN --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nK7\nk8\n' > wc-ord.txt && git commit -qam 'WC order two'"
+_ST_RUN_UNSYNCED --exec -- sh -c "printf 'k1\nK2\nk3\nk4\nk5\nk6\nK7\nk8\n' > wc-ord.txt && git commit -qam 'WC order two'"
 export GIT_EDIT_ACTOR=wc-self
 printf 'k1\nk2\nk3\nk4\nMINE\nk6\nK7\nk8\n' > wc-ord.txt
 WC_TIP=$(git rev-parse HEAD)
@@ -87,14 +87,14 @@ printf '#!/bin/sh\nfor f in $(git diff --cached --name-only -- wc-hk.txt); do tr
 echo lower > wc-hk.txt
 _ST_RUN --commit --text "WC hooked" -- wc-hk.txt
 rm -f "$WC_HOOK"
-_ST_OUT_HAS "a file the commit's hooks changed is named as such" 'still as the commit read them, which its hooks then changed: wc-hk.txt'
+_ST_OUT_HAS "a file the commit's hooks changed is named as such" 'still as the commit read them, which its hooks then changed, now as they landed: wc-hk.txt'
 _ST_OUT_LACKS "never as taking a landing back" 'take the landing back'
-git restore --source=HEAD --worktree -- wc-hk.txt
+_ST_EQ "and it takes what they made of it" "$(<wc-hk.txt):$(git status --porcelain -- wc-hk.txt)" "LOWER:"
 # A landing's rename is carried rather than left out, the carry following it
 echo r1 > wc-rn.txt
 _ST_RUN --commit --text "WC rename base" -- wc-rn.txt
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "git mv wc-rn.txt wc-rn2.txt && git commit -qm 'WC peer renames'"
+_ST_RUN_UNSYNCED --exec -- sh -c "git mv wc-rn.txt wc-rn2.txt && git commit -qm 'WC peer renames'"
 export GIT_EDIT_ACTOR=wc-self
 echo mine >> wc-rn.txt
 _ST_RUN --commit --text "x" -- wc-rn.txt

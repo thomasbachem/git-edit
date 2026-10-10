@@ -72,7 +72,7 @@ _ST_PZ_C t.txt t "CS2 tip"
 CS_OLD=$(git rev-parse HEAD)
 git sparse-checkout set --cone in
 print -l 1 2 3 4 5 EDIT > in/f.txt && print mine > in/notes.txt
-_ST_RUN --exec -- sh -c "$CS_MV in/f.txt out/f.txt && git commit -qm 'CS2 move f out'"
+_ST_RUN_UNSYNCED --exec -- sh -c "$CS_MV in/f.txt out/f.txt && git commit -qm 'CS2 move f out'"
 _ST_OUT_HAS "the landing names the rename the edits are left behind by" 'with uncommitted edits left untracked at the old path and the new one missing: in/f\.txt → out/f\.txt$'
 _ST_OUT_HAS "and the untracked file as outside the cone" "in/notes\.txt – untracked, its place out/notes\.txt $CS_WHY\$"
 _ST_EQ "the new path's entry flagged outside it, never read as deleted" "$(git ls-files -t -- out/f.txt):$(git status --porcelain -- out)" "S out/f.txt:"
@@ -154,7 +154,7 @@ print c > c.txt && git add -A && git commit -qm "CS4 base"
 _CS_STAND_IN "$TMP/cs4-bin" "*\" update-ref -m \"*) : > ${(q)PWD}/.git/cs-armed ;; *\" ls-files -v -z \"*" "[ -e ${(q)PWD}/.git/cs-armed ] && [ ! -e ${(q)PWD}/.git/cs-fired ] && : > ${(q)PWD}/.git/cs-fired && echo PEER > ${(q)PWD}/n.txt"
 _ST_TTY PATH="$TMP/cs4-bin:$PATH" -- --exec -y -- sh -c 'echo landed-n > n.txt && echo C > c.txt && git add -A && git commit -qm "CS4 landed"'
 _ST_EQ "the peer's file stays, as a change to what landed" "$RC:$([ -e .git/cs-fired ] && print fired):$(cat n.txt):$(git status --porcelain | tr '\n' '|')" "0:fired:PEER: M n.txt|"
-_ST_OUT_HAS "named as a file of someone's" 'Files of yours stood where the landing put its own – yours stay, as changes to them: n\.txt$'
+_ST_OUT_HAS "named as a file of someone's" 'Files stood where the landing put its own – they stay, as changes to what landed: n\.txt$'
 _ST_OUT_LACKS "never as one git refused, to take" 'Not brought along'
 
 # A peer editing a renamed file as the sync runs has its edits carried to the new path
@@ -163,7 +163,7 @@ print -l 1 2 3 4 5 > r.txt && print o > o.txt && git add -A && git commit -qm "C
 _CS_STAND_IN "$TMP/cs5-bin" "*\" update-ref -m \"*) : > ${(q)PWD}/.git/cs-armed ;; *\" ls-files -v -z \"*" "[ -e ${(q)PWD}/.git/cs-armed ] && [ ! -e ${(q)PWD}/.git/cs-fired ] && : > ${(q)PWD}/.git/cs-fired && printf '1\n2\n3\n4\n5\nPEER\n' > ${(q)PWD}/r.txt"
 _ST_TTY PATH="$TMP/cs5-bin:$PATH" -- --exec -y -- sh -c 'mkdir s && git mv r.txt s/r.txt && git commit -qm "CS5 move r"'
 _ST_EQ "the late edits follow the rename" "$RC:$([ -e .git/cs-fired ] && print fired):$([ -e r.txt ] && print there):$(tr '\n' ' ' < s/r.txt)" "0:fired::1 2 3 4 5 PEER "
-_ST_OUT_HAS "named as merged by both paths" 'Your uncommitted edits merged onto what landed: r\.txt → s/r\.txt$'
+_ST_OUT_HAS "named as merged by both paths" 'Uncommitted edits merged onto what landed: r\.txt → s/r\.txt$'
 
 # A landing adding `eol=crlf` merges edits beside its own as a carry and a sync alike
 _ST_PZ_NEW cs6
@@ -227,7 +227,7 @@ fi
 _ST_PZ_NEW cs9
 print u > u.txt && git add -A && git commit -qm "CS9 base"
 CS_OLD=$(git rev-parse HEAD)
-_ST_RUN --exec -- sh -c 'echo U > u.txt && git commit -qam "CS9 landed"'
+_ST_RUN_UNSYNCED --exec -- sh -c 'echo U > u.txt && git commit -qam "CS9 landed"'
 _CS_STAND_IN "$TMP/cs9-bin" '*" cat-file --filters --path="*' "[ -e ${(q)PWD}/.git/cs-fired ] || { : > ${(q)PWD}/.git/cs-fired; ${(q)CS_REAL} -C ${(q)PWD} add -A; }"
 PATH="$TMP/cs9-bin:$PATH" _ST_RUN --carry="$CS_OLD"
 _ST_EQ "the carry's temporary is never staged" "$RC:$([ -e .git/cs-fired ] && print fired):$(git ls-files | grep -c git-edit)" "0:fired:0"

@@ -3,7 +3,8 @@
 # ignored one, or any in a directory renamed only in part – as a terminal run's sync does
 _ST_SCENARIO "\e[1;96m[156] --carry and a terminal sync take a directory renamed whole along\e[0m"
 local DR_A DR_OLD DR_WT
-# An agent's landing names the untracked files left behind, and `--carry` brings the lot along
+# A landing that can't bring the checkout along names the untracked files left behind, and
+# `--carry` brings the lot along
 _ST_PZ_NEW dr1
 mkdir -p 'old [a]/cases' outside other && print -r -- $'1\n2\n3' > 'old [a]/test.js' && print -r -- a > 'old [a]/cases/a 1.json'
 ln -s test.js 'old [a]/t.lnk' && print -r -- f > outside/f.txt && print -r -- o > other/o.txt
@@ -19,9 +20,9 @@ ln -s ../outside 'old [a]/ext' && print -r -- u > other/u.txt
 _ST_RUN "$DR_A"
 DR_WT=$(_ST_PZ_WT)
 git -C "${DR_WT:-$ST_NO_WT}" mv 'old [a]' 'new *x'
-_ST_RUN --continue
+_ST_RUN_UNSYNCED --continue
 _ST_OUT_HAS "the landing names an untracked file left in the directory it renamed whole" 'renamed whole: .*old \[a\]/cases/b \[1\]\.json → new \*x/cases/b \[1\]\.json'
-_ST_OUT_HAS "with the carry that takes it along" "and take the untracked files along, with: git edit --carry=${DR_OLD:0:12}"
+_ST_OUT_HAS "with the carry that takes it along" "edits merged onto it: git edit --carry=${DR_OLD:0:12}"
 _ST_OUT_HAS "and one whose place is taken as left" 'to move by hand: old \[a\]/cases/c\.json – untracked, new \*x/cases/c\.json exists already'
 _ST_OUT_LACKS "never an ignored one" 'x\.log'
 _ST_RUN --carry="$DR_OLD"
@@ -90,8 +91,8 @@ git mv 'new *x' 'old [a]/back' && mkdir 'new *x' && print -r -- v > 'new *x/v.tx
 _ST_RUN --commit --text "DR4 back" -- 'new *x/t.js' 'new *x/t2.js' 'old [a]/back/t.js' 'old [a]/back/t2.js'
 _ST_EQ "as does an agent's" "$RC:$(git log -1 --format=%s):$(cat 'new *x/v.txt' 2>/dev/null)" "0:DR4 back:v"
 _ST_OUT_LACKS "naming none either" 'renamed whole\|only in part'
-# A branch landed into a dirty checkout by a fast-forward, then one carry: edits merged onto what
-# landed, every file still as before brought to it, untracked files kept – nothing left stale
+# A branch landed into a dirty checkout it could not bring along, then one carry: edits merged onto
+# what landed, every file still as before brought to it, untracked files kept – nothing left stale
 _ST_PZ_NEW dr5
 mkdir 'sub [s]' && print -r -- $'1\n2\n3' > a.txt && print -r -- c > 'sub [s]/c *.txt' && print -r -- g > g.txt && print -r -- x > x.sh
 git add . && git commit -qm "DR5 base" && DR_OLD=$(git rev-parse HEAD)
@@ -99,7 +100,7 @@ git checkout -q -b topic
 print -r -- $'1\n2\nthree' > a.txt && print -r -- c2 > 'sub [s]/c *.txt' && git rm -q g.txt && print -r -- n > 'sub [s]/n.txt' && chmod +x x.sh
 git add . && git commit -qm "DR5 topic" && git checkout -q main
 print -r -- $'one\n2\n3' > a.txt && print -r -- u > u.txt
-_ST_RUN --exec -- git merge -q --ff-only topic
+_ST_RUN_UNSYNCED --exec -- git merge -q --ff-only topic
 _ST_EQ "the fast-forward lands" "$RC:$(git log -1 --format=%s)" "0:DR5 topic"
 _ST_RUN --carry="$DR_OLD"
 _ST_EQ "one carry merges the edits onto what landed" "$RC:$(tr '\n' ' ' < a.txt)" "0:one 2 three "

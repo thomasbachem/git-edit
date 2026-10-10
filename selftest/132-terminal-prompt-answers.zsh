@@ -116,7 +116,7 @@ _ST_PZ_C c.txt c "TP5 c"
 printf 'b\0mine' > b.bin
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a binary's edits stay unstaged, its entry what landed" "$RC:$(git diff --cached --name-only):$(git status --porcelain -- b.bin)" "0:: M b.bin"
-_ST_OUT_HAS "named as kept" 'Your edits stay as they were, now changes to what landed'
+_ST_OUT_HAS "named as kept" 'edits stay as they were, now changes to what landed'
 git checkout -q -- b.bin
 # An entry flagged assume-unchanged hides edits the sync merges, never overwrites
 _ST_PZ_NEW tp6
@@ -128,7 +128,7 @@ print -r -- $'1\n2x\n3\n4\n5\n6\n7\n8 mine' > f.txt
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a hidden edit is merged onto what landed" "$RC:$(tr '\n' ' ' < f.txt)" "0:1 2 3 4 5 6 7 8 mine "
 git update-index --no-assume-unchanged f.txt; git checkout -q -- f.txt
-# A locked index is named with the command for once it is free, never as a change while it ran
+# A locked index is named with the carry for once it is free, never as a change while it ran
 _ST_PZ_C h.txt h1 "TP6 h1"
 _ST_PZ_C h.txt h2 "TP6 h2"
 TP_GD=$(git rev-parse --absolute-git-dir)
@@ -136,7 +136,8 @@ printf '#!/bin/sh\n[ "$1" = committed ] || exit 0\ngrep -q " refs/heads/main$" |
 chmod +x .git/hooks/reference-transaction
 _ST_TTY -- -d -y HEAD
 rm -f .git/hooks/reference-transaction "$TP_GD/index.lock"
-_ST_OUT_HAS "a locked index is named with the restore for later" 'once it is free'
+_ST_OUT_HAS "a locked index is named with the carry for later" 'its index was locked by another run past the wait'
+_ST_OUT_HAS "the carry right above the trailer" 'Once that is done, bring your checkout along.*git edit --carry='
 _ST_OUT_LACKS "never as a change while it ran" 'changed while it ran'
 git restore -q --source=HEAD --staged --worktree -- h.txt
 # A rename the carry can't take lands its destination all the same, a file standing there kept

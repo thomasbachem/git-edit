@@ -67,8 +67,8 @@ _ST_OUT_HAS "and it is the husk, not its surviving twin" "dropped: $DP_HUSK"
 _ST_EQ "the surviving twin kept its content" "$(git show HEAD:dp.txt | tail -1)" "p3"
 git reset -q --hard
 
-# A reword in the same run leaves a subject with no counterpart – that is no
-# drop, so the naming stands down while the count stays
+# A reword in the same run leaves the edited commit's subject with no counterpart – an edit
+# counts only what followed that commit, so the husk is still named beside the count
 printf 'r1\n' > rw.txt && git add rw.txt && git commit -qm "RW origin"
 printf 'r1\nr2\n' > rw.txt && git add rw.txt && git commit -qm "RW husk"
 _ST_RUN "$(git rev-parse HEAD~1)"
@@ -77,7 +77,7 @@ printf 'r1\nr2\n' > "${RW_WT:-$ST_NO_WT}/rw.txt"
 _ST_RUN --continue --text "RW origin reworded"
 _ST_EQ "the reworded dissolution applies" "$RC" "0"
 _ST_OUT_HAS "the drop is still counted" 'resolved to empty and were dropped'
-_ST_OUT_LACKS "but nothing is named on ambiguous subjects" 'dropped: '
+_ST_OUT_HAS "and, the edited commit counted on neither side, the husk is named" 'dropped: [0-9a-f]* RW husk$'
 git reset -q --hard
 
 # Subjects are shell text, and this repo's own are full of backticks – an

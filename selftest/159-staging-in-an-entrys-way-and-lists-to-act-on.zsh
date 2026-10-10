@@ -83,7 +83,7 @@ print a > a.txt && print notes > P && git add -A && git commit -qm "SW7 base"
 git rm -q P && git commit -qm "SW7 rm P"
 _ST_PZ_C t.txt t "SW7 tip"
 mkdir P && print mine1 > P/a.md && print mine2 > P/b.md && git add P
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_EQ "an agent's drop keeps files staged under a path it puts a file at" "$RC:$(git ls-files P | tr '\n' ' ')" "0:P/a.md P/b.md "
 _ST_OUT_HAS "naming them left alone" '^Index entries left alone .*: P$'
 _ST_PZ_NEW sw8
@@ -91,7 +91,7 @@ print a > a.txt && mkdir d && print x > d/x.txt && git add -A && git commit -qm 
 git rm -rq d && git commit -qm "SW8 rm d"
 _ST_PZ_C t.txt t "SW8 tip"
 print mine > d && git add d
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_EQ "as it does a file staged where it puts a directory" "$RC:$(git ls-files | tr '\n' ' ')" "0:a.txt d t.txt "
 _ST_OUT_HAS "naming that file left alone" '^Index entries left alone .*: d$'
 _ST_PZ_NEW sw8b
@@ -114,7 +114,7 @@ _ST_EQ "a replant refused over 12 dirty paths names every one" "$RC:$(print -r -
 # While a report no action follows still names ten
 git checkout -q -- .
 _ST_RUN -d -y HEAD
-_ST_OUT_HAS "while a report names ten and how many more" 're-synced to the new tip: .* … and 2 more$'
+_ST_OUT_HAS "while a report names ten and how many more" 'now as they landed: .* … and 2 more$'
 # A commit taking back 12 removals names each to leave out
 _ST_PZ_NEW sw10
 for SW_I in {01..12}; do print -l a$SW_I b$SW_I > f$SW_I.txt; done

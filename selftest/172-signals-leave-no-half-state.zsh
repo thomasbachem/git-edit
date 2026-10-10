@@ -109,7 +109,7 @@ if [ -n "$SG_GROUP" ]; then
 	_SG_REPO sg2
 	_SG_GO group TERM update-ref "--name-only --no-renames" -d -y HEAD~1
 	_ST_EQ "a group signal at the re-sync's diff leaves no entry stranded" "$RC:$(git diff --cached --name-only HEAD)" "0:"
-	_ST_OUT_HAS "the re-sync named" 'Index entries re-synced to the new tip: f4.txt'
+	_ST_OUT_HAS "the re-sync named" 'now as they landed: f4.txt'
 	_ST_OUT_LACKS "and the checkout not called untouched" 'left as it was'
 	# As after a commit, whose file stayed staged at its old blob
 	print -r -- "line 1 more" > f1.txt

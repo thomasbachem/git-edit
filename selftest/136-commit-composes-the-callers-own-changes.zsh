@@ -37,7 +37,7 @@ _ST_OUT_HAS "a missing input refuses" 'no such file, nor inline JSON'
 _ST_RUN --commit --text "IN bad" --edits '{"app.js": [["a"]]}'
 _ST_OUT_HAS "JSON of another shape refuses, saying where" "',' expected where ']' stands"
 _ST_RUN --commit --text "IN both" --edits '{"app.js": [["a", "b"]]}' -- app.js
-_ST_OUT_HAS "files taken whole and inputs at once refuse" 'not both'
+_ST_OUT_HAS "a file taken whole and edited at once refuses" 'named after -- to take whole, and by --edits too'
 _ST_RUN -M --text "IN x" --edits '{"app.js": [["a", "b"]]}' HEAD
 _ST_OUT_HAS "inputs on another mode refuse" 'only apply to --commit and --amend-into'
 _ST_EQ "no refusal moved the branch" "$(git rev-parse HEAD)" "$IN_T"
@@ -164,7 +164,7 @@ print -r -- $'1\n2\nPEER' > f.txt && git add f.txt
 print -r -- $'1\n2\nPEER 2' > f.txt
 _ST_RUN --commit --text "IN2 mine" --edits '{"f.txt": [["1\n", "MINE\n"]]}'
 _ST_EQ "a peer's staging on a path an edit changes stays staged" "${RC}:$(git show HEAD:f.txt | tr '\n' ' '):$(git show :f.txt | tr '\n' ' ')" "0:MINE 2 3 :1 2 PEER "
-_ST_OUT_HAS "named as left alone" 'Index entries left alone.*: f.txt'
+_ST_OUT_HAS "named as left alone" 'Left as they were.*: f.txt'
 IN_O=$(_ST_COMPOSE f.txt $'MINE\n2\n3\n4')
 _ST_RUN --commit --text "IN2 tree" --tree="$IN_O"
 _ST_EQ "as on a path a composed tree changes" "${RC}:$(git show :f.txt | tr '\n' ' ')" "0:1 2 PEER "

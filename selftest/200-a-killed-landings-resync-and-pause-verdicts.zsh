@@ -142,7 +142,7 @@ mkdir sub && print -l {1..20} > sub/f && print -r -- o > other && git add -A && 
 print -r -- x >> other && git commit -qam "M200 other"
 cd sub
 M2_HERE=$PWD
-_P200_AS m-a --exec -- sh -c 'git mv f g && { echo ONE; sed 1d g; } > g.new && mv g.new g && git commit -qam "M200 rename f to g"'
+_ST_UNSYNCED _P200_AS m-a --exec -- sh -c 'git mv f g && { echo ONE; sed 1d g; } > g.new && mv g.new g && git commit -qam "M200 rename f to g"'
 { print -l {1..19}; print TWENTY; } > f
 mv f g
 _P200_AS m-b --commit --text "M200 B" -- g

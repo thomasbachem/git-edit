@@ -22,15 +22,11 @@ _ST_EQ "an agent's drop over 3,000 long paths lands" "${RC}:$(git log -1 --forma
 _ST_EQ "every stranded entry re-synced" "$(git diff --cached --name-only | wc -l | tr -d ' ')" "0"
 _ST_EQ "each keeping its assume-unchanged flag" "$(git ls-files -v | grep -c '^h')" "$(( AL_N + 1 ))"
 _ST_EQ "and the intent-to-add entry superseded, the file kept" "$(git diff --cached --name-only -- n.txt):$(cat n.txt)" ":mine"
-# Unflagged, the same drop leaves the dropped content stale in the checkout – the discard it offers
-# over all of it runs, the paths read from a file it names, and the output stays short
+# Unflagged, the same drop brings the checkout along in one two-tree merge, the output short
 git ls-files -z | git update-index -z --no-assume-unchanged --stdin
 git reset -q --hard "$AL_H"
 _ST_RUN -d -y HEAD~1
-AL_H=${(M)${(f)OUT}:#*discard it with: *}
-AL_H=${AL_H#*discard it with: }
-_ST_EQ "an unflagged drop over them names the stale content in short" "${RC}:$(( ${#OUT} < 20000 ))" "0:1"
-_ST_CHECK "and the discard it offers runs" sh -c "${AL_H:-false}"
+_ST_EQ "an unflagged drop over them names what it brought along in short" "${RC}:$(( ${#OUT} < 20000 ))" "0:1"
 _ST_EQ "taking the checkout to what landed" "$(git status --porcelain | wc -l | tr -d ' ')" "0"
 # A terminal sync finds the one flagged file among them and merges its hidden edit
 git reset -q --hard

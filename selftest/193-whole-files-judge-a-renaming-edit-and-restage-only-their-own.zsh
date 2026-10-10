@@ -40,7 +40,7 @@ _GA_SETUP () {
 	print -l "f line "{1..20} > f && print -r -- x > t && git add -A && git commit -qm "GA base"
 	print -l "f line "{1..7} "f line 8 B" "f line "{9..20} > "$TMP/$1-h"
 	print -l "f line 1 A-EDIT" "f line "{2..20} > f
-	GIT_EDIT_ACTOR=ga-b _ST_RUN --exec -- sh -c "git mv f h && cat ${(q)TMP}/$1-h > h && git commit -qam 'GA B'"
+	GIT_EDIT_ACTOR=ga-b _ST_RUN_UNSYNCED --exec -- sh -c "git mv f h && cat ${(q)TMP}/$1-h > h && git commit -qam 'GA B'"
 }
 
 # A file moved to the new name by hand, committed whole or folded `--whole`, lacks the edit landed
@@ -99,7 +99,7 @@ GIT_INDEX_FILE=$GA_IDX git update-index --force-remove f
 GIT_INDEX_FILE=$GA_IDX git update-index --add --cacheinfo "100644,$(git rev-parse "$GA_C1:f"),h"
 git branch ga3b "$(git commit-tree "$(GIT_INDEX_FILE=$GA_IDX git write-tree)" -p "$GA_C1" -m "GA3 rename")"
 print -l "f line 1 A-EDIT" "f line "{2..20} > f
-GIT_EDIT_ACTOR=ga-b _ST_RUN --land=ga3b
+GIT_EDIT_ACTOR=ga-b _ST_RUN_UNSYNCED --land=ga3b
 _ST_EQ "a land of an edit then a rename lands both" "$RC:$(git log --format=%s -2 | tr '\n' '|')" "0:GA3 rename|composed|"
 mv f h
 GIT_EDIT_ACTOR=ga-a _ST_RUN --commit --text "GA3 A" -- h
@@ -113,7 +113,7 @@ _ST_EQ "followed as printed, the file lands keeping the land" "$RC:$(_GA_KEPT "$
 # A file of the caller's own in the renamed file's place keeps the addition's remedy, and one
 # carried as the landing said, so holding the edit, lands
 _GA_SETUP ga4
-GA_CMD=$(sed -n 's/^Merge those edits onto the new content with: //p' <<<"$OUT")
+GA_CMD=$(sed -n 's/^.*edits merged onto it: //p' <<<"$OUT")
 print -l "own "{1..20} > h
 GIT_EDIT_ACTOR=ga-a _ST_RUN --commit --text "GA4 A" -- h
 _ST_EQ "a file of the caller's own in its place refuses" "$RC" "1"
@@ -132,7 +132,7 @@ for GA_I in alice alone; do
 	_ST_PZ_C t y "GB target" && GA_T=$(git rev-parse HEAD)
 	print -l "doc line "{1..29} "doc line 30 bob" "doc line "{31..40} > doc && git add doc
 	[ $GA_I = alice ] && print -l "doc line "{1..9} "doc line 10 alice" "doc line "{11..29} "doc line 30 bob" "doc line "{31..40} > doc
-	GIT_EDIT_ACTOR=gb-cy _ST_RUN --commit --text "GB cy" --edits '{"doc": [["doc line 4\n", "doc line 4 cy\n"]]}'
+	GIT_EDIT_ACTOR=gb-cy _ST_RUN_UNSYNCED --commit --text "GB cy" --edits '{"doc": [["doc line 4\n", "doc line 4 cy\n"]]}'
 	GIT_EDIT_ACTOR=gb-bob _ST_RUN --amend-into="$GA_T" -- doc
 	_ST_EQ "a staged fold without the landing refuses ($GA_I)" "$RC" "1"
 	GA_C1=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
@@ -167,7 +167,7 @@ _ST_PZ_NEW gb2
 print -l "doc line "{1..40} > doc && print -r -- x > t && git add -A && git commit -qm "GB2 base"
 print -l "doc line "{1..4} "doc line 5 bob" "doc line "{6..40} > doc && git add doc
 print -l "doc line "{1..4} "doc line 5 bob" "doc line "{6..29} "doc line 30 alice" "doc line "{31..40} > doc
-GIT_EDIT_ACTOR=gb-cy _ST_RUN --commit --text "GB2 cy" --edits '{"doc": [["doc line 6\n", "doc line 6 cy\n"]]}'
+GIT_EDIT_ACTOR=gb-cy _ST_RUN_UNSYNCED --commit --text "GB2 cy" --edits '{"doc": [["doc line 6\n", "doc line 6 cy\n"]]}'
 # Past the landing, so the replay onto it rebuilds no commit holding the line beside
 print -r -- y > t && git commit -qm "GB2 target" -- t && GA_T=$(git rev-parse HEAD)
 GIT_EDIT_ACTOR=gb-bob _ST_RUN --amend-into="$GA_T" -- doc

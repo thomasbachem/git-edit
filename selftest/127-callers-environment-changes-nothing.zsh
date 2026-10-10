@@ -66,13 +66,16 @@ git mv 'q"old.txt' 'q"new.txt' && git commit -qm "CE5 rename"
 sed 's/^q line 3$/q line 3 fixed/' 'q"new.txt' > q.tmp && mv q.tmp 'q"new.txt' && git add 'q"new.txt'
 _ST_RUN --amend-into="$CE_T" -- 'q"new.txt'
 _ST_EQ "a fold follows a rename of a name holding a quote, into its old path" "$RC:$(git show 'HEAD~1:q"old.txt' | sed -n 3p)" "0:q line 3 fixed"
-# A name a hint pastes back holds its `!` single-quoted, which an interactive shell would expand
+# A name a printed step pastes back holds its `!` single-quoted, which an interactive shell would
+# expand – a conflict's merge here
 _ST_PZ_NEW ce6
 _ST_PZ_C a.txt a "CE6 base"
 print -r -- x > 'x!y.txt' && git add 'x!y.txt' && git commit -qm "CE6 adds"
+print -r -- y > 'x!y.txt' && git commit -qam "CE6 changes"
 _ST_PZ_C c.txt c "CE6 tip"
+print -r -- mine > 'x!y.txt'
 _ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "a hint's name holding ! comes single-quoted" "git clean -f -- 'x!y.txt'"
+_ST_OUT_HAS "a printed step's name holding ! comes single-quoted" "git merge-file -- 'x!y.txt'"
 # A command echoed keeps its own spacing – a path with two spaces names that path
 _ST_RUN -d -y -C="$TMP/ce two  spaces" HEAD
 _ST_OUT_HAS "a printed command keeps a path's double space" "ce two  spaces"

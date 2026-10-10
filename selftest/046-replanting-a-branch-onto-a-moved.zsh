@@ -19,7 +19,7 @@ _ST_OUT_HAS "reports what landed" 'Replanted 2 of 2'
 # left stale, every commit the upstream gained reads as a local deletion
 _ST_CHECK "the checkout came along" sh -c "test -f om2.txt"
 _ST_CHECK "and reports nothing pending" sh -c "git diff --quiet && git diff --cached --quiet"
-_ST_OUT_HAS "which is stated, not left to be discovered" 'Checkout updated'
+_ST_OUT_HAS "which is stated, not left to be discovered" 'Your checkout came along – now as they landed: om2.txt'
 _ST_RUN --onto=onto-main
 _ST_OUT_HAS "a second run is a no-op" 'Already on top of'
 

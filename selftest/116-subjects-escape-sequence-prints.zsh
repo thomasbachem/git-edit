@@ -43,11 +43,11 @@ _ST_RUN --move=HEAD~1 --after=HEAD
 _ST_OUT_HAS "a move's summary shows a raw escape in caret notation" 'TE-M raw ^\[\]0;x^G end'
 _ST_CHECK "there too with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
 git reset -q --hard "$TE_BASE"
-# A name holding a color code's text prints as itself in a hint – rendered, it hid part of the
-# name, and the command pasted would restore another file
+# A name holding a color code's text prints as itself in a report – rendered, it hid part of the
+# name
 printf 'v1\n' > 'te\e[0mx.txt' && printf 'v1\n' > tex.txt && git add -- ':(literal)te\e[0mx.txt' tex.txt && git commit -qm "TE-L names"
 _ST_RUN --exec -- sh -c 'printf "v2\n" > "$1" && git commit -qam "TE-L lands"' sh 'te\e[0mx.txt'
-_ST_OUT_HAS "a hint names such a file as itself" 'Reconcile those paths.*te\\e\[0mx\.txt'
+_ST_OUT_HAS "a sync names such a file as itself" 'came along – now as they landed: .*te\\e\[0mx\.txt'
 git reset -q --hard "$TE_BASE"
 rm -f 'te\e[0mx.txt' tex.txt
 # A conflict lists such a name, and a later step's subject holding one, as themselves
@@ -105,7 +105,7 @@ for TE_LC in C $TE_U8; do
 done
 # A name ending in a carriage return lists with it – only a command's output drops a CRLF ending
 printf 'cr1\n' > $'te-cr.txt\r' && git add -- $'te-cr.txt\r' && git commit -qm "TE-CR base"
-_ST_RUN --exec -- sh -c 'printf "cr2\n" > "$1" && git commit -qam "TE-CR lands"' sh $'te-cr.txt\r'
+_ST_RUN_UNSYNCED --exec -- sh -c 'printf "cr2\n" > "$1" && git commit -qam "TE-CR lands"' sh $'te-cr.txt\r'
 _ST_OUT_HAS "a name ending in a carriage return lists with it" '^  te-cr\.txt\^M$'
 git reset -q --hard "$TE_BASE"
 rm -f $'te-cr.txt\r'

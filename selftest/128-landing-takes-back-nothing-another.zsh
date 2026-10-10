@@ -5,8 +5,8 @@ local LA_GIT=$(whence -p git) LA_TIP LA_T LA_WT LA_N
 _ST_PZ_NEW la1
 print -l {1..10} > f.txt && git add f.txt && git commit -qm "LA base"
 print -l 1x {2..10} > f.txt && git add f.txt
-OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "sed 's/^7\$/7x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer'" </dev/null 2>&1)
-OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "echo g > g.txt && git add g.txt && git commit -qm 'LA target'" </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c "sed 's/^7\$/7x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer'" </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c "echo g > g.txt && git add g.txt && git commit -qm 'LA target'" </dev/null 2>&1)
 LA_TIP=$(git rev-parse HEAD)
 OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$LA_TIP" -- f.txt </dev/null 2>&1)
 RC=$?
@@ -17,7 +17,7 @@ RC=$?
 _ST_EQ "--base naming the tip takes it back deliberately" "$RC:$(git show HEAD:f.txt | sed -n 7p)" "0:7"
 # Under --snapshot as much
 print -l 1y {2..10} > f.txt && git add f.txt
-OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "sed 's/^8\$/8x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer 2'" </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c "sed 's/^8\$/8x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer 2'" </dev/null 2>&1)
 LA_TIP=$(git rev-parse HEAD)
 if _ST_MERGE_BASE_OK; then
 	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$(git rev-parse HEAD~1)" --snapshot -- f.txt </dev/null 2>&1)
@@ -49,7 +49,7 @@ git checkout -q -- f.txt
 # A file another caller added is taken back by one written in its place – never by edits on top
 _ST_PZ_NEW la2
 _ST_PZ_C a.txt a "LA2 base"
-OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c "printf '%s\\n' 1 2 3 4 5 6 7 8 > n.txt && git add n.txt && git commit -qm 'LA2 peer adds'" </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c "printf '%s\\n' 1 2 3 4 5 6 7 8 > n.txt && git add n.txt && git commit -qm 'LA2 peer adds'" </dev/null 2>&1)
 LA_TIP=$(git rev-parse HEAD)
 print -r -- mine > n.txt
 OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA2 self" -- n.txt </dev/null 2>&1)
@@ -141,8 +141,8 @@ rm ln.txt && print -r -- plain > ln.txt
 _ST_RUN --commit --text "LA3 unlink" -- ln.txt
 _ST_OUT_HAS "a symlink turned file is named as one, not a chmod" 'Put a symlink back where one was'
 git checkout -q -- ln.txt
-# A drop's content goes back unstaged, a peer's fold then leaving it, and the discard offered
-# spares a file holding edits on top of it, pointed at the carry instead
+# A drop's content leaves the checkout, nothing of it staged, and edits on top of it merge onto what
+# is left, so a carry after it finds nothing to do
 _ST_PZ_NEW la4
 _ST_PZ_C f.txt $'1\n2\n3' "LA4 base"
 print -r -- $'1\n2x\n3' > f.txt && print -r -- g > g.txt && git add f.txt g.txt && git commit -qm "LA4 drop"
@@ -151,9 +151,9 @@ _ST_PZ_C h.txt h "LA4 tip"
 print -r -- $'1\n2x\n3\n4' > f.txt
 _ST_RUN -d -y "$LA_T"
 _ST_EQ "a drop leaves nothing staged" "$RC:$(git diff --cached --name-only | tr '\n' ' ')" "0:"
-_ST_OUT_HAS "offering to discard the dropped file" 'Keep it, or discard it with: git clean -f -- g.txt'
-_ST_OUT_LACKS "never the one holding edits" 'discard it with: .*f.txt'
-_ST_OUT_HAS "which is named with the carry" 'git edit --carry='
+_ST_OUT_HAS "naming the dropped file taken out" 'Taken out of your checkout with the rewrite: .*g\.txt'
+_ST_OUT_HAS "and the edits merged" 'Uncommitted edits merged onto what landed: f\.txt'
+_ST_OUT_LACKS "offering no discard" 'git clean\|git restore \(--source\|--worktree\|-- \)'
 _ST_RUN --carry
 _ST_EQ "the carry keeps the edits, the dropped line gone, nothing staged" \
 	"$RC:$(tr '\n' ' ' < f.txt):$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:1 2 3 4 :0"

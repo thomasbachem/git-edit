@@ -15,13 +15,13 @@ _ST_EQ "keeping the committed modes" "$(git ls-tree HEAD -- mx.sh mz.txt | awk '
 _ST_OUT_HAS "names a lost bit by both modes" 'only their mode differing.*mx\.sh (100644 here, 100755 committed)'
 _ST_OUT_HAS "and a gained one" 'only their mode differing.*mz\.txt (100755 here, 100644 committed)'
 _ST_OUT_HAS "offering the chmods that match the commit" 'Match the committed mode: chmod -- +x mx\.sh && chmod -- -x mz\.txt'
-_ST_OUT_LACKS "never among uncommitted edits" 'Worktree files left alone'
+_ST_OUT_LACKS "never among uncommitted edits" 'Worktree files left alone\|edits merged onto'
 _ST_OUT_LACKS "nor claiming the checkout current" 'your checkout is current'
 _ST_CHECK "the content untouched" sh -c "test \"\$(cat mx.sh)\" = 'mx changed'"
 # A real edit on top stays among the edits, whatever its mode
 printf 'my changed\nlocal wip\n' > my.tmp && mv my.tmp my.sh
 _ST_RUN --exec -- sh -c 'printf "my changed\n" > my.sh && git commit -qam "MY changed"'
 _ST_EQ "an exec under a real edit lands too" "$RC" "0"
-_ST_OUT_HAS "that edit stays among the uncommitted ones" 'Worktree files left alone.*my\.sh'
+_ST_EQ "that edit stays, uncommitted" "$(sed -n 2p my.sh):$(git status --porcelain -- my.sh)" "local wip: M my.sh"
 _ST_OUT_LACKS "not named as a mode difference" 'only their mode differing'
 git reset -q --hard

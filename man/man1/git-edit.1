@@ -25,7 +25,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
-\fBgit edit\fR {\fB\-\-commit \-\-text\fR \fImsg\fR [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] | \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}} [\fB\-\-base=\fR\fIsha\fR] {\fB\-\-edits=\fR\fIjson\fR | \fB\-\-patch=\fR\fIfile\fR | \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR | \fB\-\-rm=\fR\fIpath\fR | \fB\-\-chmod=\fR\fIpath\fR\fB=\fR{\fB+x\fR|\fB\-x\fR}}...
+\fBgit edit\fR {\fB\-\-commit \-\-text\fR \fImsg\fR [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] | \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}} [\fB\-\-base=\fR\fIsha\fR] {\fB\-\-edits=\fR\fIjson\fR | \fB\-\-patch=\fR\fIfile\fR | \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR | \fB\-\-rm=\fR\fIpath\fR | \fB\-\-chmod=\fR\fIpath\fR\fB=\fR{\fB+x\fR|\fB\-x\fR}}... [[\fB\-\-whole\fR] \fB\-\-\fR \fIpath\fR...]
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR \fB\-\-tree=\fR\fIcommit\fR [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR]
 \fBgit edit\fR \fB\-\-continue\fR | \fB\-\-skip\fR | \fB\-\-abort\fR | \fB\-\-undo\fR | \fB\-\-status\fR | \fB\-\-carry\fR[\fB=\fR\fIsha\fR] | \fB\-\-selftest\fR[\fB=\fR\fIids\fR] [\fB\-\-jobs\fR[\fB=\fR\fIn\fR]] | \fB\-\-version\fR
 .fi
@@ -54,8 +54,8 @@ a content
 .BR \-\-exec ,
 .BR \-\-commit ,
 .BR \-\-land )
-build their result without touching the main working tree \(em only a
-terminal run, once it lands, brings the checkout along \(em and folds do not
+build their result without touching the main working tree \(em only once a
+run lands does it bring the checkout along \(em and folds do not
 consume staged changes until the final CAS lands \(em so a failure or
 .B \-\-abort
 leaves your staged changes exactly as they were, with nothing to roll back.
@@ -75,10 +75,11 @@ TTY, with none of
 .B CLAUDECODE
 or
 .B GIT_EDIT_ACTOR
-set \(em a pause asks rather than exits, and a run that lands brings the
-checkout along; elsewhere, an agent's run say, the checkout is left as it was,
-with the hints that reconcile it. See
+set \(em a pause asks rather than exits. See
 .BR "TERMINAL RUNS" .
+A run that lands, an agent's as a person's, brings the checkout it started in
+along. See
+.BR "THE CHECKOUT" .
 .IP \(bu 3
 Output carries blank\-line padding only when stdout is a terminal. Piped or
 captured it comes out tight \(em same lines, no padding \(em so even a
@@ -213,14 +214,14 @@ to also reword, or
 to replace the subject alone) amends, replays, prints the net history change,
 and
 CAS\-applies, or press Enter at a terminal's prompt. The branch never moves
-before the final apply. The edit was authored in that worktree, so outside a
-terminal the main checkout is left holding the pre\-edit content; the affected
-paths and a targeted
-.B git\-restore
-command are printed. That restore is an offer \(em it discards whatever the
-rewrite left in those paths, which for an edit that removed content is the work
-just handed back. A path carrying further uncommitted edits is named as left
-alone and kept out of it \(em as taking the rewrite back if committed whole
+before the final apply. The edit was authored in that worktree, and once it
+lands the main checkout comes along as after any landing \(em see
+.BR "THE CHECKOUT" .
+Where it can't, the index entries the move stranded are re\-synced and the
+paths still holding the pre\-edit content named, with the one
+.B \-\-carry
+that brings them along, never a restore. A path carrying further uncommitted
+edits is named apart \(em as taking the rewrite back if committed whole
 where those edits sit on the pre\-edit content, and beside its new path where
 the rewrite renamed it, the edits left untracked at the old one, or as missing
 where the checkout has no file there, deleted or never moved in from the old
@@ -229,9 +230,8 @@ untracked files left in a directory it renamed whole, each with its place under
 the new one, and those right in one it renamed only in part, which stay \(em
 as is a
 directory standing where a file lands, and a path under a symlink or a file
-of the caller's, which a restore would replace; a case\-only rename on a
-filesystem that ignores case reads as its new name alone, offering the old one
-no clean \(em and one
+of the caller's; a case\-only rename on a
+filesystem that ignores case reads as its new name alone \(em and one
 holding the new content under another mode
 \(em an executable bit lost to a file moved into place \(em is named apart,
 both modes given, with the
@@ -244,15 +244,18 @@ beside it names ten and how many more; a list no command covers names every
 path, as each needs its own action, and a name holding a newline is spelled as
 \fB$\(aq\&...\(aq\fR spells it, so a list keeps to its line. A fold and
 .B \-\-exec
-reconcile the checkout the same way, and where uncommitted edits would take the
-rewrite back, or untracked files sit in a directory renamed whole,
-.B \-\-carry
-merges them onto the new content and moves those files along. The amend stages the worktree wholesale, so a scratch file
-left there joins the commit \(em any untracked file it absorbs is named before
+bring the checkout along the same way. The amend stages the worktree
+wholesale, so a scratch file left there joins the commit \(em any untracked file it absorbs is named before
 the amend. Commits made at the stop stand in for the amend, what followed
 \fIcommit\fR replaying onto them: one amending \fIcommit\fR is named as the
 edited commit, while ones made on top of it are named as added after it, which
-stays as it was.
+stays as it was. A worktree reset there to a commit that followed \fIcommit\fR
+stands in for nothing and refuses, as does an edit that empties \fIcommit\fR
+\(em that refusal names
+.B \-\-abort
+and then
+.B \-d
+to drop it instead.
 .TP
 .B \-M, \-\-reword
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
@@ -287,14 +290,13 @@ A stale SHA resolves by patch id. A commit whose own message contains a
 line is refused (that line is the record separator) \(em reword it singly.
 .TP
 .B \-d, \-\-drop
-Delete one or more \fIcommit\fRs or ranges. At a terminal the dropped content
-leaves the checkout with the commit, edits of yours on it kept. Outside one the
-checkout is not touched, so the content stays there as uncommitted work,
-unstaged \(em as staged, a fold of everything staged would land it again.
-Keep it, or discard it with the command printed, which leaves out a file
-holding edits of its own on that content, naming
-.B \-\-carry
-for it instead. Dropping every commit of the branch refuses.
+Delete one or more \fIcommit\fRs or ranges. The dropped content leaves the
+checkout with the commit, edits on it kept, the run naming the paths it took
+out with the way back \(em
+.B "git edit \-\-undo"
+while it is the last run, else
+.BR "git show \fIold\-tip\fB:\fIpath\fR" .
+Dropping every commit of the branch refuses.
 .TP
 .B \-s, \-\-squash
 Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
@@ -352,8 +354,10 @@ how many more, and verifies what landed: it counts commits a conflict
 resolution left empty (the rebase drops them), and
 notes a tip that differs from the staged result \(em the pre\-op tip plus
 the staged changes, which a faithful fold must reproduce. A fold that would leave history unchanged
-\(em every staged hunk already carried by the target \(em is refused, with
-the staged changes left intact.
+\(em every staged hunk already carried by the target, or its fixup stepped
+over by hand with
+.B "git rebase \-\-skip"
+\(em is refused, with the staged changes left intact.
 A staged path that does not exist at \fIsha\fR is refused when a later
 commit introduces it \(em folded beneath its introduction, that commit
 replays as an add/add conflict of the whole file \(em with the introducing
@@ -408,9 +412,8 @@ Handed over as a commit on
 it pins the tip it was composed on, and a tip that moved since is refused
 rather than have the diff carry a newer commit's reversal; a bare tree
 carries no such pin, and is checked against other callers' landings instead.
-The shared index is neither read nor written \(em its
-entries are reconciled afterwards as any rewrite's are, re\-synced where they
-still hold the pre\-op tip and named where they do not.
+The shared index is neither read nor written \(em it comes along afterwards
+with the checkout as after any landing, an entry another caller staged kept.
 .IP
 A fold of what is staged is guarded as
 .B \-\-commit
@@ -585,9 +588,9 @@ can take in commits \fIupstream\fR already has. Before replaying it reports what
 gained and which of the branch's commits it already carries (by patch id);
 those are dropped by the replay, and the count is repeated afterwards so a
 shorter branch is never mistaken for lost work. Runs in an isolated worktree
-and CAS\-updates the branch, then brings the caller's checkout along \(em a
-replant changes its content, and left behind, every commit \fIupstream\fR
-gained would read there as a local deletion. Uncommitted work on a path
+and CAS\-updates the branch, then brings the caller's checkout along as after
+any landing \(em a replant changes its content, and left behind, every commit
+\fIupstream\fR gained would read there as a local deletion. Uncommitted work on a path
 \fIupstream\fR changed since the fork, which the replant rewrites, is refused
 before anything moves, rather than landing the branch and leaving the checkout
 unable to follow \(em each path named with its next step, a commit where the
@@ -735,13 +738,13 @@ tag, a remote\-tracking ref, a commit or a revision such as
 lands that, said as what it resolved to, and never moves either, no branch
 command offered for it.
 .IP
-The checkout is left as any landing leaves it: an agent's run re\-syncs the
-index entries the move stranded, a peer's staging kept, and names the files
-still holding the previous content, with the
+The checkout comes along as after any landing, a conflict's merge printed
+after the landed commits, right above the trailer \(em see
+.BR "THE CHECKOUT" .
+Where it can't, the run names the
 .B \-\-carry
-that merges edits made on it \(em from an earlier landing's old tip where the
-edits predate that one too, so one carry takes in both; a terminal run brings
-it along. \fIbranch\fR
+that brings it along \(em from an earlier landing's old tip where the
+edits predate that one too, so one carry takes in both. \fIbranch\fR
 itself never moves \(em a fast\-forward leaves it at the new tip, and after a
 replay it still holds the original commits, which the run names with the
 .B "git branch \-f"
@@ -814,10 +817,9 @@ takes it back, as does the raw
 printed beside it, which writes the reflog message
 .B \-\-undo
 would, so a later land reads either as undone \(em that one moving the ref
-alone, the land's re\-synced index entries put back by the step named beside
-them, as
+alone, where
 .B \-\-undo
-says. A land taken back any other
+brings the checkout back as it came. A land taken back any other
 way stays held: landing a fast\-forward's commits again ends
 .B "nothing to land" ,
 and a replay's, like the copies the target dropped, refuses \(em either
@@ -907,7 +909,9 @@ applies hunks split by hand,
 replaces a file with one rebuilt elsewhere,
 .B \-\-edits
 replays the replacements made \(em each old text matching exactly once, so a peer's
-line inside it refuses rather than merging \(em and
+line inside it refuses rather than merging, and in order, so one whose match
+an earlier edit of the same file rewrote refuses, naming that edit to merge it
+with \(em and
 .B \-\-chmod
 and
 .B \-\-rm
@@ -917,16 +921,43 @@ landings as whole files are \(em or against the commit it was rebuilt from, name
 refused where that path changed since, never the tip looked up in the same call; a
 new path takes the mode
 .B "git add"
-would give the checkout's file.
+would give the checkout's file. Files named after
+.B \-\-
+are taken whole beside the inputs, each exactly as
+.B "\-\-commit \-\- <paths>"
+alone takes it \(em the same checks and guards, against other callers'
+landings or
+.BR \-\-base ,
+a file the checkout lacks removed, its mode and links read from the
+checkout, its index entry re\-synced \(em a path an input names too
+refusing, naming both.
 .B \-\-amend\-into
-takes the same inputs, and
+takes the same inputs, files taken whole beside them after
+.B \-\-whole
+(its paths alone naming staged changes), and
 .B "\-\-commit \-\-tree="\fIcommit\fR
-lands a commit composed on the tip by anything else.
+lands a commit composed on the tip by anything else, no paths beside it.
+.IP
+A fold given as
+.B \-\-edits
+alone resolves its replay's stops itself: where the commit a stop builds holds
+each old text exactly once in every conflicted file \(em an edited one, under
+the name it had there, a rename followed \(em that file takes the edits in the
+commit's own content, which is what that commit holds with the fold made in it,
+and the replay goes on, so no later commit touching the lines beside them pauses
+it. At the first stop where that commit holds an old text other than once \(em
+one that changed that text \(em or another file conflicts, it pauses for
+.B \-\-continue
+or
+.B \-\-abort
+as any fold does, and stops after it are left to the resolver too. A replay
+running clean is the one it always was.
 .IP
 In a checkout other callers share, a rewrite one of them lands \(em a drop, a
-fold built elsewhere \(em changes a file at the tip without passing through
-the checkout, and a file edited on the old content and committed whole would
-take that change back. So
+fold built elsewhere \(em changes a file at the tip, and though the run brings
+the checkout along, a file still edited on the old content \(em a conflict its
+sync left, an editor's buffer read before it, a checkout it couldn't bring
+along \(em and committed whole would take that change back. So
 .B \-\-commit
 refuses a file lacking what another
 .B GIT_EDIT_ACTOR
@@ -1256,7 +1287,10 @@ or
 replay
 .B {\(dq<path>\(dq: [[\(dq<old>\(dq, \(dq<new>\(dq], ...]}
 onto the tip's text, given as a file or inline, each old text matching exactly
-once; see
+once, in order \(em one an earlier edit of the same file took its match from
+refuses, naming that edit, as the two overlap and want merging into one, and a
+fold of edits alone makes them itself at each stop of its replay whose commit
+holds every old text once, pausing at the first that doesn't; see
 .BR MODES .
 The text is the one the commit stores: under a clean/smudge filter, an old text
 read from the checkout holds the smudged form, refused as such, and
@@ -1312,7 +1346,7 @@ With
 .BR \-\-amend\-into ,
 fold each \fIpath\fR whole from the checkout, as
 .B \-\-commit
-takes it, rather than what is staged; see
+takes it, rather than what is staged \(em alone or beside the inputs; see
 .BR MODES .
 .TP
 .B \-\-snapshot
@@ -1346,9 +1380,9 @@ With
 .BR \-\-commit ,
 .B \-\-whole
 or a fold of what is staged, and beside
-.B \-\-put
-or
-.BR \-\-rm ,
+.BR \-\-put ,
+.B \-\-rm
+or files taken whole beside the inputs,
 the commit the files rest on: a path changed
 between it and the tip refuses,
 in place of the check against other callers' landings, and the tip's own SHA
@@ -1629,15 +1663,28 @@ and records the run as undone, so a further
 takes back the one before it. A line repeating the branch, old and new tip
 of a later one an undo took back \(em an older git\-edit journaling a move
 another run had journaled from the reflog \(em is passed over the same way.
-The raw
+The checkout follows as after any landing \(em
+but for what a
+.BR \-\-commit ,
+a fold or an
+.B \-\-exec
+that only added commits landed, which may have come from the checkout and so
+stays there as uncommitted changes, only the index entries re\-synced; an
+.B \-\-exec
+that rewrote history is undone as any rewrite is. The raw
 .B "git update\-ref"
 every landing prints beside
 .B "git edit \-\-undo"
-moves the ref alone: the index entries the run re\-synced stay as it staged
-them, and the run names, beside them, the step that re\-syncs them back \(em a
+moves the ref alone, the checkout left as it is: the index entries the run
+moved are named with the step that re\-syncs them back, the index alone,
+and, where
+.B \-\-undo
+would bring the files back, the
+.B \-\-carry
+that does it after \(em a
 .B "git restore \-\-staged"
 of exactly those paths, a no\-op before that undo, guarded by a
-.B "git diff \-\-cached \-\-exit\-code"
+.B "git diff\-index \-\-cached \-\-exit\-code"
 that resets none where one holds other staging since, a peer's say, and lists
 those. Where one of those paths is flagged skip\-worktree or lies outside a
 sparse checkout \(em any path, on a git before 2.42, which can't ask its
@@ -1649,7 +1696,8 @@ which re\-syncs them, their flags kept.
 .BR \-\-carry [ =\fIold\-tip\fR ]
 Merge the checkout's uncommitted edits onto what a rewrite landed, for each
 path it changed whose file holds edits on the pre\-rewrite content \(em the
-files a landing names as taking the rewrite back if committed whole \(em and
+files a landing that could not bring the checkout along names, or a sync's
+conflict left, as taking the rewrite back if committed whole \(em and
 move a renamed file's edits to its new path, also where the checkout holds
 that path exactly as the rewrite landed it, or as the old one's own file \(em a
 case\-only rename on a filesystem that ignores case. A renamed file still
@@ -1893,16 +1941,23 @@ or
 \(em its help worded for it, and under
 .B core.commentChar=auto
 with a comment character no line of the message starts with.
-.PP
-Once a terminal run lands \(em any mode, and an undo \(em it brings the
-checkout along: each file the move changed and the checkout left alone takes
+.SH "THE CHECKOUT"
+Once a run lands \(em any mode, and an undo, an agent's run as a person's at a
+terminal \(em it brings the checkout it started in along: each file the move
+changed and the checkout left alone takes
 what landed, through git's two\-tree merge, run under the index lock on what
 it checks there to be as it read it. Uncommitted edits on one merge
-onto it, staged where the file was staged whole. A merge that conflicts writes
+onto it, staged where the file was staged whole, and a file the merge leaves as
+it is \(em edits made on what landed, a change landed through the checkout
+first \(em is never written, its index entry alone taking what landed. A merge
+that conflicts writes
 nothing \(em the edits may be another session's, whose file and index markers
 would disrupt \(em and leaves them as changes to what landed, naming the
 .B git merge\-file
-that brings the markers in once someone means to resolve them. An untracked or ignored file standing where
+that brings the markers in: at a terminal for the caller to run once it means
+to resolve them, and in an agent's run for whoever owns the edits \(em edits of
+another session's are left to it, as its next commit of the file whole is
+refused, naming that merge. An untracked or ignored file standing where
 a file lands stays, the index taking what landed, so it shows as a change to
 that; a directory there, or a symlink or a file of the caller's where a
 directory goes, stays too, named, with no restore offered. A file the run
@@ -1912,8 +1967,9 @@ has it, while an entry a peer stages as the sync runs stays staged, named as
 such \(em among the merged files where its file merged. Staging in the way of
 an entry that landed \(em files staged under a path where a file lands, or a
 file staged where a directory goes \(em stays staged too, staged as the sync
-runs or before, the path left as it was and named, as an agent's run leaves
-it, never named as come along. A renamed file's edits follow it
+runs or before, the path left as it was and named, never named as come along.
+A file a peer writes between the sync's read and its write stays as written,
+named as changed while it ran. A renamed file's edits follow it
 to the new path, its destination
 landing on its own where they can't, and edits on a file the move removed
 stay, untracked \(em as do edits on one renamed out of a sparse checkout,
@@ -1931,13 +1987,51 @@ from its index entry where
 is off, and a directory renamed by case alone takes the new spelling. A file no
 text merge takes, a binary or a link, keeps the edits as changes to what
 landed, never as a staged revert; a removal staged
-by hand stays staged; and an index git can't write, a peer holding its lock,
-is named with the
+by hand stays staged. Each case is named, none as the caller's, and a file
+staged and edited both is left as it was, named with the
+.B \-\-carry
+that whoever staged it runs to bring what landed into the file before staging
+their part again. What the move took out of the checkout \(em a file it removed,
+or what a drop held \(em is named with the way back:
+.B "git edit \-\-undo"
+while it is the last run, else
+.BR "git show \fIold\-tip\fB:\fIpath\fR" ,
+the latter alone after a
+.BR \-\-commit ,
+a fold or an
+.B \-\-exec
+only adding commits, whose undo leaves what it landed as uncommitted changes.
+A branch checked out twice, by
+.BR "git worktree add \-f" ,
+has its other checkout named with the
+.B "git \-C \fIthere\fB edit \-\-carry"
+that brings it along.
+.PP
+Each run holds its checkout's sync from just before its ref move to the end of
+that sync, so a run landing a second later waits for it \(em up to 30 s \(em
+rather than read a file this one is still writing, which it would take as an
+uncommitted edit and merge the first run's change back out of.
+.PP
+Where the sync can't run \(em a checkout halfway through a merge, rebase or
+cherry\-pick, its index locked by another run past the wait, the other run's
+sync held past its wait, or the branch checked out elsewhere than the run
+started, a resume run from inside the pause's worktree say \(em the index
+entries the move stranded are re\-synced, the files still holding the content
+before it named, and one
+.B "git edit \-\-carry=\fIold\-tip\fR"
+named that brings the rest along once it can, never a
 .B git restore
-for once it is free. Each case is named, and a file staged and edited both is
-left as it was. A checkout halfway through a merge, rebase or cherry\-pick is
-left as it is, with the hints an agent's run prints instead, as is one a
-resume run from inside the pause's worktree lands on.
+or
+.BR "git clean" ,
+which run later would take an edit another session made since; an index git
+can't write as the sync runs is named with that carry too.
+.PP
+What a run leaves to do \(em a conflict's merge, or that carry \(em prints last,
+right above the trailer, after a land's landed commits. Where a commit line
+must stay among the last three \(em a
+.BR \-\-commit ,
+a fold, a drop, a split, an edit \(em it prints right above that line instead,
+and one line right above the trailer names it.
 .SH "CONFLICT RESOLUTION"
 When a rebase\- or autosquash\-based mode hits a conflict it pauses (exit
 status 2), prints the temporary worktree, the conflicted files, the failing
@@ -1993,9 +2087,16 @@ counting as made,
 .B \-\-status
 gives a pause aborted there the same verdict, and
 .B \-\-abort
-clears the pause. Every stop a rebase continued there by hand passed counts
-as one the run paused at, for the guards below. A rebase begun there by hand,
-rather than the run's own, is
+clears the pause. An edit keeps its amend in the pause, so for one whose
+replay was aborted there both name the way on instead: reset the worktree to
+that amend, then
+.BR \-\-continue .
+A pause whose worktree is no longer a checkout of this repository resumes
+nothing, and
+.B \-\-abort
+leaves whatever stands at its path, naming it. Every stop a rebase continued
+there by hand passed counts as one the run paused at, for the guards below.
+A rebase begun there by hand, rather than the run's own, is
 refused in progress, and a replant finished by hand on any base but the
 upstream it named lands nothing. Conflict markers are refused in a commit made
 at the stop, or committed by a rebase continued or finished there by hand, as
@@ -2240,10 +2341,12 @@ replay stops at each of them for a state written by hand. Then
 .B \-\-abort
 and fold with
 .B \-\-snapshot
-instead, which stops once per distinct content of the file, or map the fold by
-hand, restated as edits that every snapshot from its target up matches exactly
-once. Prove the tip against the result intended, and read
-each patch the range\-diff marks changed beyond the targets rather than
+instead, which stops once per distinct content of the file, or restate the fold
+as
+.B \-\-edits
+that every commit from its target up holds exactly once, whose replay resolves
+each of those stops itself. Prove the tip against the result intended,
+and read each patch the range\-diff marks changed beyond the targets rather than
 counting them: each is a later commit the fold's text reached.
 .SH "EXIT STATUS"
 .TP

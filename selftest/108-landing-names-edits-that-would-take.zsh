@@ -19,7 +19,8 @@ printf 'KAY\nl\nm\nn\n' > rh-f.txt
 # Edits on the line beside the rewrite's conflict whichever content they sit on – on the new one
 # they hold the rewrite, on the old one they take it back
 printf 'G1\nG2 beside\ng3\n' > rh-g.txt && printf 'h1\nH2 beside\nh3\n' > rh-h.txt
-_ST_RUN --exec --base="$RH_OLD" --no-verify -- git reset -q --hard "$RH_NEW"
+# A checkout the landing can't bring along, as one halfway through a cherry-pick sequence
+_ST_RUN_UNSYNCED --exec --base="$RH_OLD" --no-verify -- git reset -q --hard "$RH_NEW"
 _ST_EQ "the landing lands" "$RC:$(git rev-parse HEAD)" "0:$RH_NEW"
 _ST_OUT_HAS "naming edits a whole-file commit takes it back with" 'take the landing back there: rh-c.txt'
 _ST_OUT_LACKS "a landing on top taking nothing out of history" 'out of history'

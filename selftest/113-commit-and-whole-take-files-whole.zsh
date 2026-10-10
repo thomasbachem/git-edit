@@ -10,7 +10,7 @@ _ST_EQ "an executable one keeps its bit" "$(git ls-tree HEAD -- wc.sh | awk '{pr
 _ST_EQ "the reflog names it a commit, with its caller" "$(git reflog show -1 --format=%gs "$(git symbolic-ref -q HEAD)")" "git edit: commit [wc-self]"
 _ST_OUT_HAS "the run names what it commits" 'Committing 2 whole file(s) on'
 _ST_OUT_LACKS "with no internal command shown" '_COMMIT_WHOLE_TREE'
-_ST_OUT_HAS "the branch reads as advanced, not rewritten" 'advanced – index re-synced, your checkout is current'
+_ST_OUT_HAS "the branch reads as advanced, not rewritten" '^Branch main advanced\.$'
 _ST_CHECK "the checkout is clean there" test -z "$(git status --porcelain -- wc.txt wc.sh)"
 _ST_EQ "a staged file it was not named stays staged and out" "$(git show :wc-staged.txt):$(git cat-file -e HEAD:wc-staged.txt 2>/dev/null && echo in || echo out)" "staged:out"
 git restore --staged -- wc-staged.txt && rm -f wc-staged.txt
@@ -112,7 +112,7 @@ _ST_EQ "a hook under a repository path holding glob characters refuses it" "$RC:
 _ST_OUT_HAS "while the banner shows that path as itself" 'past commits .*wc-odd\[1\]\\e\[0m$'
 git config --unset core.hooksPath
 export GIT_EDIT_ACTOR=wc-peer
-_ST_RUN --exec -- sh -c "echo a > added.txt && git add added.txt && git commit -qm 'WC odd peer adds'"
+_ST_RUN_UNSYNCED --exec -- sh -c "echo a > added.txt && git add added.txt && git commit -qm 'WC odd peer adds'"
 export GIT_EDIT_ACTOR=wc-self
 cd sub
 _ST_RUN --commit --text "x" -- s.txt ../added.txt

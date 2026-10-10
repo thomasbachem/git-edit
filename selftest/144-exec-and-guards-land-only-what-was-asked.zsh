@@ -107,5 +107,5 @@ XG_S='a\e[0mb.txt'
 print x > "$XG_S" && git add -- "$XG_S" && git commit -qm "XG6 odd" && _ST_PZ_C t.txt t "XG6 top"
 OUT=$(_PT_RAW=1 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </dev/null 2>&1)
 _ST_OUT_LACKS "a caller's _PT_RAW leaves a printed name's backslash marked" "literal)ab\.txt"
-_ST_OUT_HAS "the hint naming the file as it is" 'clean -f'
+_ST_OUT_HAS "the report naming the file as it is" 'Taken out of your checkout with the rewrite: a\\e\[0mb\.txt'
 cd "$TMP/repo"

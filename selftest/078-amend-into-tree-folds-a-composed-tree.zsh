@@ -13,18 +13,18 @@ _ST_EQ "a composed tree folds" "$RC" "0"
 _ST_EQ "the target carries the composed content" "$(git show "$(git rev-parse HEAD~1):tf.txt")" "tf1-folded"
 _ST_EQ "with the mode HEAD had" "$(git ls-tree HEAD -- tf.txt | cut -d' ' -f1)" "100755"
 _ST_EQ "the peer's staging is untouched" "$(git show :tf.txt)" "peer"
-_ST_OUT_HAS "and named as left alone" 'Index entries left alone.*tf\.txt'
+_ST_OUT_HAS "and named as left as it was" 'Left as they were.*tf\.txt'
 _ST_EQ "the peer's WIP is untouched" "$(tr '\n' '|' < tf.txt)" "peer|wip|"
 _ST_OUT_LACKS "nothing reads as staged leftovers" 'Left staged'
-# Nothing staged on the path: its index entry, stranded on the pre-op tip, is re-synced
+# Nothing staged on the path: file and entry come along
 git reset -q --hard
 local TF_BASE2=$(git rev-parse HEAD~1)
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-folded-twice")
 _ST_RUN --amend-into="$TF_BASE2" --tree="$TF_COMPOSED" -- tf.txt
 _ST_EQ "a second composed fold lands" "$RC" "0"
-_ST_OUT_HAS "re-syncs the stranded entry" 'Index entries re-synced to the new tip: tf\.txt'
+_ST_OUT_HAS "brings the file along" 'Your checkout came along – now as they landed: tf\.txt'
 _ST_CHECK "so nothing reads as staged" sh -c "git diff --cached --quiet -- tf.txt"
-_ST_OUT_HAS "and names the worktree as stale, with a restore offer" 'git restore --source=HEAD --worktree -- tf\.txt'
+_ST_EQ "the file as it landed" "$(<tf.txt):$(git status --porcelain -- tf.txt)" "tf1-folded-twice:"
 # `auto` reads the tree's diff for its blame evidence, as it reads the index's
 git reset -q --hard
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-folded-thrice")
@@ -63,18 +63,18 @@ _ST_RUN --amend-into="$(git rev-parse HEAD~2)" --tree="$TF_COMPOSED" -- tf.txt
 _ST_EQ "a mode flip in the tree is refused" "$RC" "1"
 _ST_OUT_HAS "naming it" 'mode change 100755 => 100644 tf\.txt'
 # The intended use: the change made in main first and composed from there – the checkout reads
-# as current, and with WIP on top the file is named as left alone, the WIP intact
+# as current, and with WIP on top the file is kept as it is, never written, the WIP intact
 printf 'tf1-main\n' > tf.txt
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-main")
 _ST_RUN --amend-into="$(git rev-parse HEAD~2)" --tree="$TF_COMPOSED" -- tf.txt
 _ST_EQ "a change made in main first folds" "$RC" "0"
-_ST_OUT_HAS "and the checkout reads as current" 'Index re-synced, your checkout is current'
+_ST_OUT_LACKS "and nothing is named as left" 'came along\|Left as they were'
 _ST_EQ "with nothing left to show" "$(git status --porcelain -- tf.txt)" ""
 printf 'tf1-main2\nwip\n' > tf.txt
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf1-main2")
 _ST_RUN --amend-into="$(git rev-parse HEAD~2)" --tree="$TF_COMPOSED" -- tf.txt
 _ST_EQ "with WIP on top it folds too" "$RC" "0"
-_ST_OUT_HAS "naming the file as left alone" 'Worktree files left alone.*tf\.txt'
+_ST_OUT_LACKS "nothing named as left" 'Left as they were\|conflict with'
 _ST_EQ "the WIP intact, nothing staged" "$(git status --porcelain -- tf.txt)|$(git diff --no-color -- tf.txt | grep -c '^+wip')" " M tf.txt|1"
 # A scoped fold takes the named path alone from a tree touching two
 git reset -q --hard
@@ -96,7 +96,8 @@ _ST_RUN --continue
 _ST_EQ "and continues to completion" "$RC" "0"
 _ST_EQ "the target carries the resolution" "$(git show "$(git rev-parse HEAD~1):tc.txt")" "c1-folded"
 _ST_EQ "the tip the composed content" "$(git show HEAD:tc.txt)" "c3"
-_ST_OUT_HAS "and the continue re-syncs the stranded entry" 'Index entries re-synced to the new tip: tc\.txt'
+_ST_OUT_HAS "and the continue brings the file along" 'Your checkout came along – now as they landed: tc\.txt'
+_ST_EQ "file and entry both" "$(<tc.txt):$(git status --porcelain -- tc.txt)" "c3:"
 # An --abort names the tree as intact – nothing was staged to be "still staged"
 git reset -q --hard
 # What an earlier scenario left untracked stays as it was, measured against what is there now

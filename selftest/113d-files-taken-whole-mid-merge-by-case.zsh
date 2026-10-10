@@ -128,7 +128,7 @@ git config edit.verifyCmd "git -C '$TMP/repo' update-index --cacheinfo 100644,$W
 printf 'ps2\n' > wc-pst.txt
 _ST_RUN --commit --text "WC past a peer's staging" -- wc-pst.txt
 _ST_EQ "a peer's staging made meanwhile stays staged" "$RC:$(git ls-files -s -- wc-pst.txt | awk '{print $2}')" "0:$WC_PB"
-_ST_OUT_HAS "named as left alone" 'Index entries left alone.*wc-pst.txt'
+_ST_OUT_HAS "named as left alone" 'Left as they were.*wc-pst.txt'
 git restore --staged -- wc-pst.txt
 printf 'ps3\n' > wc-pst.txt && git add wc-pst.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" -- wc-pst.txt

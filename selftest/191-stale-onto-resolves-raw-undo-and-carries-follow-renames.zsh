@@ -114,7 +114,7 @@ mkdir in out && print a > in/a && print b > out/b && print c > in/c && print t >
 print x > in/c && git add in/c
 OV_PRE="$(git ls-files -t | LC_ALL=C sort | tr '\n' '|'):$(git status --short | LC_ALL=C sort | tr '\n' '|')"
 _ST_EQ "an out-of-cone file is flagged" "$(git ls-files -t -- out/b)" "S out/b"
-_ST_RUN --exec -- sh -c 'mkdir -p out && echo b2 > out/b && echo a2 > in/a && echo n > out/new && { git add --sparse out/b in/a out/new 2>/dev/null || git add out/b in/a out/new; } && git commit -qm "OV2 land"'
+_ST_RUN_UNSYNCED --exec -- sh -c 'mkdir -p out && echo b2 > out/b && echo a2 > in/a && echo n > out/new && { git add --sparse out/b in/a out/new 2>/dev/null || git add out/b in/a out/new; } && git commit -qm "OV2 land"'
 _ST_OUT_HAS "a landing re-syncs entries out of the cone" "^Index entries re-synced to the new tip: .*out/b"
 _ST_OUT_HAS "naming --undo for them, the raw undo moving the ref alone" "^The raw undo moves the ref alone, leaving these staged as the run's content – .* so undo with git edit --undo, which re-syncs them all$"
 _ST_OUT_LACKS "never the raw re-sync step" "After the raw undo"
@@ -123,7 +123,7 @@ _ST_EQ "the undo named puts every entry back, flags and all" \
 	"$RC:$(git ls-files -t | LC_ALL=C sort | tr '\n' '|'):$(git status --short | LC_ALL=C sort | tr '\n' '|')" "0:$OV_PRE"
 # Re-syncing paths inside the cone alone, a git that asks the patterns prints the raw step, which
 # works as printed – one that can't ask names `--undo` there too
-_ST_RUN --exec -- sh -c 'echo a3 > in/a && git add in/a && git commit -qm "OV2 in-cone"'
+_ST_RUN_UNSYNCED --exec -- sh -c 'echo a3 > in/a && git add in/a && git commit -qm "OV2 in-cone"'
 if _ST_SPARSE_RULES_OK; then
 	_ST_OUT_HAS "inside the cone the raw re-sync step is printed" "^After the raw undo, re-sync them back"
 	OV_RAW=$(sed -n 's/^Undo: git edit --undo  (or, the ref alone: \(.*\))$/\1/p' <<<"$OUT")
@@ -143,11 +143,11 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	print -l "f line "{1..20} > f && git add f && git commit -qm "OV3 base"
 	OV_T0=$(git rev-parse HEAD)
 	print -l "f line 1 A-EDIT" "f line "{2..20} > f
-	GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV3 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
-	GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "git mv f ov3.tmp && git mv ov3.tmp F && git commit -qm 'OV3 C'"
-	GIT_EDIT_ACTOR=ov-d _ST_RUN --commit --text "OV3 D" --edits '{"F": [["f line 18\n", "f line 18 D\n"]]}'
+	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV3 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
+	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f ov3.tmp && git mv ov3.tmp F && git commit -qm 'OV3 C'"
+	GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV3 D" --edits '{"F": [["f line 18\n", "f line 18 D\n"]]}'
 	_ST_OUT_HAS "a landing after a case-only rename names the carry from before the landing on the old spelling" \
-		"^Merge those edits onto the new content with: git edit --carry=${OV_T0:0:12}$"
+		"edits merged onto it: git edit --carry=${OV_T0:0:12}$"
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV3 A" -- F
 	_ST_EQ "the file committed whole without it refuses" "$RC" "1"
 	_ST_OUT_HAS "naming the landing on the old spelling" "^ *F – ov-b's commit run .* (${OV_T0:0:7}\.\.[0-9a-f]*), on its old name f$"
@@ -164,13 +164,13 @@ _ST_PZ_NEW ov4
 print -l "f line "{1..20} > f && git add f && git commit -qm "OV4 base"
 OV_T0=$(git rev-parse HEAD)
 print -l "f line 1 A-EDIT" "f line "{2..20} > f
-GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV4 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
-GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "git mv f h && git commit -qm 'OV4 C'"
+GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV4 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
+GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f h && git commit -qm 'OV4 C'"
 mv f h
-GIT_EDIT_ACTOR=ov-d _ST_RUN --commit --text "OV4 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
+GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV4 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
 _ST_OUT_HAS "a landing names the move back and the carry from before the landing on the old name" \
-	"^Merge those edits onto the new content with: \[ ! -e f \] && \[ ! -L f \] && mv -- h f && git edit --carry=${OV_T0:0:12}$"
-OV_CMD=$(sed -n 's/^Merge those edits onto the new content with: //p' <<<"$OUT")
+	"edits merged onto it: \[ ! -e f \] && \[ ! -L f \] && mv -- h f && git edit --carry=${OV_T0:0:12}$"
+OV_CMD=$(sed -n 's/^.*edits merged onto it: //p' <<<"$OUT")
 GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "$OV_CMD"
 _ST_EQ "followed as printed, the file holds every landing and its edits" "$?:$(_OV_KEPT "$(<h)"):$([ -e f ] && print f)" "0:3:"
 GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV4 A" -- h
@@ -183,11 +183,11 @@ for OV_I in 1 2; do
 	print -l "f line "{1..20} > f && git add f && git commit -qm "OV5 base"
 	OV_T0=$(git rev-parse HEAD)
 	[ $OV_I = 1 ] && print -l "f line 1 A-EDIT" "f line "{2..20} > f
-	GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV5 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
+	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV5 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
 	[ $OV_I = 2 ] && print -l "f line 1 A-EDIT" "f line "{2..7} "f line 8 B" "f line "{9..20} > f
-	GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "git mv f h && git commit -qm 'OV5 C'"
+	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f h && git commit -qm 'OV5 C'"
 	OV_T2=$(git rev-parse HEAD)
-	GIT_EDIT_ACTOR=ov-d _ST_RUN --commit --text "OV5 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
+	GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV5 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
 	mv f h
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV5 A" -- h
 	_ST_EQ "the file committed whole without a landing refuses ($OV_I)" "$RC" "1"
@@ -212,9 +212,9 @@ _ST_PZ_NEW ov6
 print -l "f line "{1..20} > f && print -r -- x > t && git add -A && git commit -qm "OV6 base"
 OV_T0=$(git rev-parse HEAD)
 print -l "f line 1 A-EDIT" "f line "{2..20} > f
-GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV6 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
-GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "git mv f h && git commit -qm 'OV6 C'"
-GIT_EDIT_ACTOR=ov-d _ST_RUN --commit --text "OV6 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
+GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV6 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
+GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f h && git commit -qm 'OV6 C'"
+GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV6 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
 _ST_PZ_C t y "OV6 target" && OV_TIP=$(git rev-parse HEAD)
 mv f h && git add h
 GIT_EDIT_ACTOR=ov-a _ST_RUN --amend-into="$OV_TIP" -- h
@@ -233,13 +233,13 @@ for OV_I in 1 2 3; do
 	_ST_PZ_NEW ov7-$OV_I
 	print -l "f line "{1..20} > f && git add f && git commit -qm "OV7 base"
 	print -l "f line 1 A-EDIT" "f line "{2..20} > f
-	GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV7 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
-	GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "git mv f h && git commit -qm 'OV7 C'"
+	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV7 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
+	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f h && git commit -qm 'OV7 C'"
 	mv f h
-	[ $OV_I = 2 ] && GIT_EDIT_ACTOR=ov-e _ST_RUN --exec -- sh -c "echo unrelated > f && git add f && git commit -qm 'OV7 E'"
+	[ $OV_I = 2 ] && GIT_EDIT_ACTOR=ov-e _ST_RUN_UNSYNCED --exec -- sh -c "echo unrelated > f && git add f && git commit -qm 'OV7 E'"
 	[ $OV_I = 3 ] && mkdir f && print -r -- kept > f/inside
 	OV_T2=$(git rev-parse HEAD)
-	GIT_EDIT_ACTOR=ov-d _ST_RUN --commit --text "OV7 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
+	GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV7 D" --edits '{"h": [["f line 18\n", "f line 18 D\n"]]}'
 	if [ $OV_I = 1 ]; then
 		GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV7 A" -- h
 		OV_CMD=$(sed -n 's/.*where the carry takes the edits from, with: \(.*\) – then run this again\.$/\1/p' <<<"$OUT")
@@ -248,7 +248,7 @@ for OV_I in 1 2 3; do
 		_ST_EQ "a file put at the old name since stops the move back as printed, kept" "$?:$(<f):$(_OV_KEPT "$(<h)")" "1:precious:1"
 	else
 		_ST_OUT_HAS "with the old name taken, a landing names the carry from its own old tip ($OV_I)" \
-			"^Merge those edits onto the new content with: git edit --carry=${OV_T2:0:12}$"
+			"edits merged onto it: git edit --carry=${OV_T2:0:12}$"
 		GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "git edit --carry=${OV_T2:0:12}"
 	fi
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV7 A" -- h
@@ -272,8 +272,8 @@ if [[ "$(git add -h 2>&1)" == *(--|\])sparse\ * ]]; then
 	_ST_PZ_C t y "OV8 target" && OV_TIP=$(git rev-parse HEAD)
 	{ git sparse-checkout set --cone x || { git sparse-checkout init --cone && git sparse-checkout set x; }; } >/dev/null 2>&1
 	print -l "f line 1 A-EDIT" "f line "{2..20} > x/f
-	GIT_EDIT_ACTOR=ov-b _ST_RUN --commit --text "OV8 B" --edits '{"x/f": [["f line 8\n", "f line 8 B\n"]]}'
-	GIT_EDIT_ACTOR=ov-c _ST_RUN --exec -- sh -c "mkdir -p y && git mv --sparse x/f y/h && git commit -qm 'OV8 C'"
+	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV8 B" --edits '{"x/f": [["f line 8\n", "f line 8 B\n"]]}'
+	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "mkdir -p y && git mv --sparse x/f y/h && git commit -qm 'OV8 C'"
 	mkdir -p y && mv x/f y/h && git add --sparse y/h
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --amend-into="$OV_TIP" -- y/h
 	_ST_OUT_LACKS "a staged fold outside the cone offers no unstaging" "git restore --staged"

@@ -80,6 +80,21 @@ GIT_SELFTEST () {
 				| head -3 | sed 's/^/       | /'
 		fi
 	}
+	# Runs <command> with the checkout reading as halfway through a cherry-pick sequence, so a landing
+	# leaves it as it was and names the carry, as one whose sync can't run does – for a scenario
+	# needing a checkout left on the old content, as a peer's write from a stale buffer leaves it
+	_ST_UNSYNCED () {
+		# Args: <command> <arg>...
+		local GD=$(command git rev-parse --absolute-git-dir 2>/dev/null) MADE="" RCU
+		[ -n "$GD" ] && [ ! -d "$GD/sequencer" ] && mkdir "$GD/sequencer" && MADE=1
+		"$@"
+		RCU=$?
+		[ -n "$MADE" ] && rmdir "$GD/sequencer"
+		return $RCU
+	}
+	_ST_RUN_UNSYNCED () {
+		_ST_UNSYNCED _ST_RUN "$@"
+	}
 	# Feeds <stdin> as the first argument, otherwise as `_ST_RUN`, for the records form
 	# form of reword (`-M --text -`) which reads its targets from stdin
 	_ST_RUN_IN () {

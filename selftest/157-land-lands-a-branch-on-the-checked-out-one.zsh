@@ -3,8 +3,8 @@
 # <branch> itself never moving, the checkout handled as after any landing
 _ST_SCENARIO "\e[1;96m[157] --land lands a branch on the checked-out one\e[0m"
 local LD_T LD_F LD_N LD_WT LD_P LD_C
-# A fast-forward into a dirty checkout – a peer's staging kept, uncommitted work untouched, the
-# hints naming what the landing left
+# A fast-forward into a dirty checkout – a peer's staging kept, uncommitted work merged onto what
+# landed, the checkout brought along
 _ST_PZ_NEW ld1
 _ST_PZ_C a.txt $'1\n2\n3' "LD base"
 LD_T=$(git rev-parse HEAD)
@@ -25,9 +25,9 @@ _ST_RUN --land=feat
 _ST_EQ "a fast-forward lands the branch's tip" "$RC:$(git rev-parse HEAD)" "0:$LD_F"
 _ST_OUT_HAS "said to be one" 'a fast-forward of 2 commit(s)'
 _ST_EQ "a peer's staging stays staged" "$(git diff --cached --name-only)" "p.txt"
-_ST_EQ "uncommitted work stays as it was" "$(tr '\n' ' ' < a.txt):$(<w.txt)" "1 2 3 4 :wip"
-_ST_OUT_HAS "the edits on what it changed named, with the carry" "git edit --carry=${LD_T:0:12}"
-_ST_OUT_HAS "and the file it added offered" 'git restore --source=HEAD --worktree -- f.txt'
+_ST_EQ "uncommitted work merged onto what landed" "$(tr '\n' ' ' < a.txt):$(<w.txt)" "1 2f 3 4 :wip"
+_ST_OUT_HAS "the edits on what it changed named" 'Uncommitted edits merged onto what landed: a.txt'
+_ST_OUT_HAS "and the file it added come along" 'Your checkout came along – now as they landed: f.txt'
 _ST_EQ "the branch landed stays where it was" "$(git rev-parse feat)" "$LD_F"
 _ST_EQ "journaled as a land of that branch" "$(git reflog -1 --format=%gs main):$(tail -1 .git/git-edit-journal | cut -d' ' -f5-)" "git edit: land feat:land feat"
 _ST_OUT_LACKS "nothing pushed, nothing said of it" 'already pushed'

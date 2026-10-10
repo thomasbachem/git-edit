@@ -45,7 +45,7 @@ git rm -q n.txt && git commit -qm "CS2 rm n again"
 _ST_PZ_C y.txt y "CS2 tip2"
 print -r -- x > n.txt && git add -N n.txt && rm -f n.txt
 _ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "as an agent's re-sync takes it" 'Index entries re-synced to the new tip: n.txt'
+_ST_EQ "as does an agent's" "$RC:$(git status --porcelain):$(<n.txt)" "0::landed2"
 # A plain commit at a terminal reads as nothing to merge, and one its hook added to as come along
 _ST_PZ_NEW cs3
 _ST_PZ_C f.txt $'1\n2' "CS3 base"
@@ -75,7 +75,7 @@ mkdir x && print -r -- precious > x/mine.txt && print -r -- mine > y
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a directory where a terminal drop lands a file keeps its files" "$RC:$(<x/mine.txt)" "0:precious"
 _ST_OUT_HAS "named as a directory" 'x – your directory stands where the rewrite put a file'
-_ST_OUT_HAS "while an untracked file there is offered the restore" 'Take what landed with: git restore -- y$'
+_ST_OUT_HAS "as is an untracked file there, offered no restore" 'they stay, as changes to what landed: y$'
 _ST_PZ_NEW cs4b
 _ST_PZ_C a.txt a "CS4b base"
 _ST_PZ_C x landed "CS4b add x"
@@ -83,7 +83,7 @@ git rm -q x && git commit -qm "CS4b rm x"
 _ST_PZ_C z.txt z "CS4b tip"
 mkdir x && print -r -- precious > x/mine.txt
 _ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "an agent's drop names the directory as such" 'Worktree directories left alone where the rewrite put a file'
+_ST_OUT_HAS "an agent's drop names the directory as such" 'x – your directory stands where the rewrite put a file'
 _ST_OUT_LACKS "offering it no discard" 'discard it with'
 _ST_EQ "and keeps its files" "$(<x/mine.txt)" "precious"
 # A path under a symlink of the caller's stays as it is – a restore would replace the link
@@ -105,7 +105,7 @@ git rm -rq d && git commit -qm "CS5b rm d"
 _ST_PZ_C z.txt z "CS5b tip"
 ln -s "$CS_EXT" d
 _ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "as does an agent's drop" 'Worktree paths left alone under a symlink of yours.*d/f.txt'
+_ST_OUT_HAS "as does an agent's drop" 'd/f.txt – under your symlink d, which git writes no file through'
 _ST_OUT_LACKS "offering no discard" 'discard it with'
 _ST_CHECK "the link kept" test -L d
 # An entry a peer stages while the sync waits for the index stays staged, named, offered no restore
@@ -172,16 +172,15 @@ print -r -- 1 > $'nl\nname' && git add -A && git commit -qm "CS9 add"
 print -r -- 2 > $'nl\nname' && git add -A && git commit -qm "CS9 edit"
 _ST_PZ_C z.txt z "CS9 tip"
 _ST_RUN -d -y HEAD~1
-_ST_EQ "a stale name holding a newline is one line of the list" "$(print -r -- "$OUT" | grep -cxF "  \$'nl\\nname'"):$(print -r -- "$OUT" | grep -cx '  name')" "1:0"
-# A removed name ending in a CR hashes as itself, not as the name without it, its clean pasteable
+_ST_EQ "a name holding a newline is named on one line" "$(print -r -- "$OUT" | grep -cF "now as they landed: \$'nl\\nname'"):$(print -r -- "$OUT" | grep -cx 'name')" "1:0"
+# A removed name ending in a CR hashes as itself, not as the name without it
 _ST_PZ_NEW cs9b
 _ST_PZ_C a.txt a "CS9b base"
 print -r -- gone > $'Icon\r' && print -r -- other > Icon && git add $'Icon\r' && git commit -qm "CS9b add"
 _ST_PZ_C z.txt z "CS9b tip"
 _ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "a dropped name ending in a CR is named as the dropped content" "discard it with: git clean -f -- \$'Icon\\\\r'"
-eval "$(print -r -- "$OUT" | sed -n 's/^Keep it, or discard it with: //p')"
-_ST_EQ "whose clean takes that file alone" "$(test -e $'Icon\r' && echo cr):$(<Icon)" ":other"
+_ST_OUT_HAS "a dropped name ending in a CR is named as taken out" 'Taken out of your checkout with the rewrite: Icon^M – '
+_ST_EQ "that file alone gone" "$(test -e $'Icon\r' && echo cr):$(<Icon)" ":other"
 # A case-only rename on a filesystem that ignores case merges the landed side, and a carry onto it
 # takes the landed spelling
 _ST_PZ_NEW cs10
@@ -209,7 +208,7 @@ if [ -n "$CS_CI" ]; then
 	_ST_OUT_HAS "edits carried over a case-only rename" 'merged onto what landed: README.md → readme.md'
 	_ST_EQ "take the landed spelling on disk and in the index" "$(ls | grep -ix readme.md):$(git ls-files | grep -ix readme.md):$(tail -1 readme.md)" "readme.md:readme.md:8mine"
 	# An agent's case-only rename offers no clean of the old name, which does nothing there – the file
-	# under it is the new name's, stale where it holds the old content and taking the restore
+	# under it is the new name's, brought along where it holds the old content
 	_ST_PZ_NEW cs12
 	_ST_PZ_C readme.md $'1\n2' "CS12 base"
 	_ST_PZ_C o.txt o "CS12 other"
@@ -218,8 +217,6 @@ if [ -n "$CS_CI" ]; then
 	_ST_OUT_LACKS "with no clean of the old name" 'git clean'
 	_ST_RUN --exec -- sh -c 'git rm -q README.md && echo new > readme.md && git add readme.md && git commit -qm "CS12 case back + edit"'
 	_ST_OUT_LACKS "nor where the content changed too" 'git clean'
-	_ST_OUT_HAS "where the new name is stale instead" 'Reconcile those paths.*git restore --source=HEAD --worktree -- readme.md$'
-	eval "$(print -r -- "$OUT" | sed -n 's/^Reconcile those paths[^:]*: //p')"
-	_ST_EQ "whose restore reads right" "$(ls | grep -ix readme.md):$(<readme.md):$(git status --porcelain)" "readme.md:new:"
+	_ST_EQ "where the new name was stale it comes along" "$(ls | grep -ix readme.md):$(<readme.md):$(git status --porcelain)" "readme.md:new:"
 fi
 cd "$TMP/repo"

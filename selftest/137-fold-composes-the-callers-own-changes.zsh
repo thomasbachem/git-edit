@@ -22,7 +22,9 @@ _ST_OUT_HAS "saying so" 'Nothing to fold'
 _ST_RUN --amend-into="$FI_F" --edits '{"app.js": [["a", "b"]]}' -- app.js
 _ST_OUT_HAS "paths beside the inputs refuse" 'the inputs name their own paths'
 _ST_RUN --amend-into="$FI_F" --edits '{"app.js": [["a", "b"]]}' --whole -- app.js
-_ST_OUT_HAS "as do --whole or --tree" 'no --whole or --tree beside them'
+_ST_OUT_HAS "as does a path taken whole and edited" 'app.js: named after -- to take whole, and by --edits too'
+_ST_RUN --amend-into="$FI_F" --edits '{"app.js": [["a", "b"]]}' --tree=HEAD
+_ST_OUT_HAS "and --tree" 'no --tree beside them'
 # A fold rewording its target, adding an executable and removing a file, and a chmod in a fold
 print -r -- '#!/bin/sh' > "$TMP/fi-tool.sh" && chmod +x "$TMP/fi-tool.sh"
 _ST_RUN --amend-into="$FI_F" --text "FI base, reworded" --put tool.sh="$TMP/fi-tool.sh" --rm other.txt --base="$FI_T"

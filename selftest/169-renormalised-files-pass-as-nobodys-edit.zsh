@@ -136,8 +136,8 @@ RN_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RN_WT:-$ST_NO_WT}" f.txt "$(print -l 1 2 F 4 5 6 7 8 9)"
 _ST_RUN --continue
 _ST_EQ "a replant's pause resumes" "$RC:$(git log --format=%s -2 | tr '\n' ' '):$(git rev-parse HEAD:crlf.txt)" "0:RN7 F RN7 U :$RN_CR"
-# One over an upstream rewriting the CRLF file lands, its shared checkout never rewritten to settle
-# the file – the update refused, naming it, the checkout left as it was
+# One over an upstream rewriting the CRLF file lands, its checkout brought along as any landing's,
+# the file holding no edits taking what landed
 _RN_REPO rn7b
 git branch rn7b-up
 _RN_F "RN7b F" 1 2 F 4 5 6 7 8 9
@@ -148,8 +148,8 @@ RN_X=$(git rev-parse rn7b-up:crlf.txt)
 touch -m -t 200001010000 crlf.txt
 _ST_RUN --onto rn7b-up
 _ST_EQ "a replant over an upstream rewriting the CRLF file lands" "$RC:$(git log --format=%s -2 | tr '\n' ' ')" "0:RN7b F RN7b U "
-_ST_EQ "its shared checkout left as it was" "$(git rev-parse :crlf.txt)" "$(git rev-parse rn7b-up~1:crlf.txt)"
-_ST_OUT_HAS "naming the file the update refused over" "crlf.txt"
+_ST_EQ "its checkout brought along" "$(git rev-parse :crlf.txt)" "$RN_X"
+_ST_OUT_HAS "naming the file" "now as they landed: crlf.txt"
 
 # A split takes no renormalisation for a change of the caller's
 _RN_REPO rn8
@@ -160,27 +160,27 @@ git -C "${RN_WT:-$ST_NO_WT}" checkout HEAD~1 -- f.txt
 _ST_RUN --continue --text "RN8 G"
 _ST_EQ "a split's first commit takes only what the caller left" "$RC:$(git show --name-only --format= HEAD~1 | tr '\n' ' '):$(git rev-parse HEAD:crlf.txt)" "0:g.txt :$RN_CR"
 
-# The hints after an agent's rewrite read a checkout file byte for byte a tip's blob as that tip's
-# content – the new one's as nothing to reconcile, the old one's as stale, never as edits
+# A rewrite that can't bring the checkout along reads a checkout file byte for byte a tip's blob as
+# that tip's content – the new one's as nothing to reconcile, the old one's as stale, never as edits
 _RN_REPO rn9
 _RN_RAW crlf.txt 'one\ntwo\n' && print -l 1 2 Y 4 5 6 7 8 9 > f.txt && git add f.txt && git commit -qm "RN9 renormalise"
 _ST_PZ_C t.txt top "RN9 top"
 printf 'one\r\ntwo\r\n' > crlf.txt
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_EQ "a drop taking a renormalisation back lands" "$RC:$(git rev-parse HEAD:crlf.txt)" "0:$RN_CR"
 _ST_OUT_HAS "naming the dropped file still in the checkout" '^  f\.txt$'
 _ST_OUT_LACKS "never the one holding the landed content" '^  crlf\.txt$'
 _RN_REPO rn9b
 _RN_RAW crlf.txt 'one\r\ntwo\r\nthree\r\n' && git commit -qm "RN9b three"
 _ST_PZ_C t.txt top "RN9b top"
-_ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "while one holding the dropped content is stale, its restore offered" 'restore --source=HEAD --worktree -- crlf\.txt'
+_ST_RUN_UNSYNCED -d -y HEAD~1
+_ST_OUT_HAS "while one holding the dropped content is stale" '^  crlf\.txt$'
 _ST_OUT_LACKS "not an edit" 'crlf\.txt.*edit\|edit.*crlf\.txt'
 _RN_REPO rn9c
 _RN_RAW crlf2.txt 'a\r\nb\r\n' && git commit -qm "RN9c add"
 _ST_PZ_C t.txt top "RN9c top"
-_ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "one the drop removes, still as before, is named for a clean" 'git clean -f -- crlf2\.txt'
+_ST_RUN_UNSYNCED -d -y HEAD~1
+_ST_OUT_HAS "one the drop removes, still as before, is named as left" '^  crlf2\.txt$'
 _ST_OUT_LACKS "never as edits" 'crlf2\.txt.*edit'
 # A terminal's sync brings it along as a file still as before, a removed one taken out
 _RN_REPO rn10
@@ -188,7 +188,7 @@ _RN_RAW crlf.txt 'one\r\ntwo\r\nthree\r\n' && git commit -qm "RN10 three"
 _ST_PZ_C t.txt top "RN10 top"
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a terminal drop syncs the CRLF file to what landed" "$RC:$(git hash-object --no-filters crlf.txt)" "0:$RN_CR"
-_ST_OUT_LACKS "never keeping it as an edit of the caller's" 'crlf\.txt –'
+_ST_OUT_LACKS "never keeping it as an edit of the caller's" 'Left as they were.*crlf\.txt'
 _ST_EQ "its index on the new tip" "$(git rev-parse :crlf.txt)" "$RN_CR"
 _RN_REPO rn10c
 _RN_RAW crlf2.txt 'a\r\nb\r\n' && git commit -qm "RN10c add"

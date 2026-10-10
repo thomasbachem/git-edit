@@ -15,7 +15,7 @@ _IX_PEER_LANDS () {
 	# Args: <name> <subject> <file> <line>...
 	git branch "$1" && git worktree add -q "$TMP/$1-wt" "$1" && print -l "${@:4}" > "$TMP/$1-wt/$3" && \
 		git -C "$TMP/$1-wt" commit -qam "$2" && \
-		GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --land="$1" </dev/null >/dev/null 2>&1
+		GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --land="$1" </dev/null >/dev/null 2>&1
 }
 
 # A command run from a subdirectory runs in the worktree's copy of it, `GIT_PREFIX` naming it –
@@ -68,14 +68,14 @@ _ST_RUN --commit --text "IX2 ws2" --patch "$TMP/ix2-ws2.patch"
 _ST_EQ "and under apply.whitespace=error applies all the same" "$RC:$(git show HEAD:f.txt | tail -1)" "0:x  "
 git config --unset apply.whitespace
 git config apply.ignoreWhitespace change
-print -r -- "y" >> f.txt && git diff > "$TMP/ix2-ws3.patch" && git checkout -q -- f.txt
+sed 's/^line 3$/line 3 y/' f.txt > f.tmp && mv f.tmp f.txt && git diff > "$TMP/ix2-ws3.patch" && git checkout -q -- f.txt
 sed 's/^ line 1$/ line   1/' "$TMP/ix2-ws3.patch" > "$TMP/ix2-ws3b.patch"
 IX_T=$(git rev-parse HEAD)
 _ST_RUN --commit --text "IX2 ws3" --patch "$TMP/ix2-ws3b.patch"
 _ST_EQ "context it lacks refuses under apply.ignoreWhitespace=change" "$RC:$(git rev-parse HEAD)" "1:$IX_T"
 _ST_OUT_HAS "as not applying" 'does not apply to the tip'
 _ST_RUN --commit --text "IX2 ws3" --patch "$TMP/ix2-ws3.patch"
-_ST_EQ "while the patch as cut applies" "$RC:$(git show HEAD:f.txt | tail -1)" "0:y"
+_ST_EQ "while the patch as cut applies" "$RC:$(git show HEAD:f.txt | sed -n 3p)" "0:line 3 y"
 git config --unset apply.ignoreWhitespace
 
 # A staged fold taking back a landing names the carry into the checkout and the re-stage, which
@@ -101,7 +101,7 @@ _ST_PZ_NEW ix3b
 print -r -- a > a.sh && print -r -- b > b.sh && chmod +x b.sh && git add . && git commit -qm "IX3B base"
 git branch ix3b-feat && git worktree add -q "$TMP/ix3b-wt" ix3b-feat
 chmod +x "$TMP/ix3b-wt/a.sh" && chmod -x "$TMP/ix3b-wt/b.sh" && git -C "$TMP/ix3b-wt" commit -qam "IX3B flips"
-GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --land=ix3b-feat </dev/null >/dev/null 2>&1
+GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --land=ix3b-feat </dev/null >/dev/null 2>&1
 chmod -x a.sh && chmod +x b.sh && print -r -- a2 > a.sh && print -r -- b2 > b.sh
 GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX3B self" --allow-mode-change -- a.sh b.sh
 _ST_OUT_HAS "the first bit named" '^  Take the bit that landed with: chmod -- +x a\.sh$'
@@ -115,7 +115,7 @@ print -l "line "{1..20} > f.txt && mkdir sub && print -l "line "{1..3} > sub/s.t
 git add . && git commit -qm "IX4 base"
 git branch ix4-feat && git worktree add -q "$TMP/ix4-wt" ix4-feat
 git -C "$TMP/ix4-wt" mv f.txt g.txt && git -C "$TMP/ix4-wt" commit -qm "IX4 B renames"
-GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --land=ix4-feat </dev/null >/dev/null 2>&1
+GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --land=ix4-feat </dev/null >/dev/null 2>&1
 IX_T=$(git rev-parse HEAD)
 print -l "line 1" "line 2 A" "line "{3..20} > f.txt
 GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX4 A" --edits '{"f.txt": [["line 2\n", "line 2 A\n"]]}'

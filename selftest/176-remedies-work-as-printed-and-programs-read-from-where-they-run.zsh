@@ -13,7 +13,7 @@ _ST_PZ_NEW ax1
 print -l {1..10} > f.txt && print -l {1..10} > h.txt && print -r -- x > t.txt && git add -A && git commit -qm "AX1 base"
 _ST_PZ_C t.txt y "AX1 target" && AX_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt && print -l 1 2-A {3..10} > h.txt && git add f.txt h.txt
-GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"git mv f.txt g.txt && printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > g.txt && printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > h.txt && git commit -qam 'AX1 B'" </dev/null >/dev/null 2>&1
 GIT_EDIT_ACTOR=ax-self _ST_RUN --amend-into="$AX_T"
 _ST_EQ "a staged fold over a file a landing renamed refuses" "$RC" "1"
@@ -35,7 +35,7 @@ _ST_PZ_NEW ax1b
 print -l {1..10} > h.txt && print -r -- x > t.txt && git add -A && git commit -qm "AX1B base"
 _ST_PZ_C t.txt y "AX1B target" && AX_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > h.txt && git add h.txt
-GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > h.txt && git commit -qam 'AX1B B'" </dev/null >/dev/null 2>&1
 GIT_EDIT_ACTOR=ax-self _ST_RUN --amend-into="$AX_T"
 _ST_OUT_HAS "a fold over a file a landing only edited names the carry alone" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which leaves the staging as it is\."

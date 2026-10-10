@@ -64,7 +64,8 @@ print -r -- w > w.txt
 _ST_RUN --commit --text "LG5 adds" -- w.txt
 _ST_RUN --undo
 _ST_OUT_HAS "an undo hands its run back as the checkout's" 'what the undone run landed stays in your checkout'
-_ST_OUT_HAS "to keep or discard" 'Keep it, or discard it with'
+_ST_EQ "its file kept, untracked" "$(<w.txt):$(git status --porcelain -- w.txt)" "w:?? w.txt"
+_ST_OUT_LACKS "nothing offered to discard it" 'Keep it, or discard\|git clean\|git restore \(--source\|--worktree\|-- \)'
 rm -f w.txt
 # A journal lock whose holder is gone is broken at once, the landing journaling under it,
 # while one a live run holds is waited on and then refused, moving nothing – that wait cut

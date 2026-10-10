@@ -203,6 +203,6 @@ _ST_RUN HEAD
 git -C "$(_ST_PZ_WT)" rm -q b.txt
 _ST_RUN --continue --text="WR5 emptied"
 _ST_EQ "an edit emptying a commit with a change refuses, nothing moved" "$RC:$(git rev-parse HEAD)" "1:$WR_HEAD"
-_ST_OUT_HAS "as git's amend does" 'would make'
+_ST_OUT_HAS "naming the commit it empties" 'The edit empties'
 _ST_RUN --abort
 cd "$TMP/repo"

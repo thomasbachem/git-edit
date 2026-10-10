@@ -86,7 +86,7 @@ _ST_EQ "which re-points it as an annotated tag" "$(git cat-file -t v8):$(git for
 mkdir -p "$TMP/ev9!dir" && cd "$TMP/ev9!dir" && git init -q -b main . && git config user.email p@x.invalid && git config user.name P
 _ST_PZ_C a.txt a "EV9 a" && _ST_PZ_C b.txt b "EV9 b"
 mkdir -p sub && cd sub
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "a cd a hint pastes holds its ! single-quoted" "cd '[^']*/ev9!dir' && "
 cd "$TMP"
 rm -rf "${TMP:?}/ev9!dir"

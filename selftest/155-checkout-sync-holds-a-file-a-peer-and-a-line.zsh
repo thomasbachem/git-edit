@@ -1,6 +1,7 @@
 # A checkout sync keeps a file of the caller's standing where a landed path's directory goes, writes
 # its index entries in one guarded step keeping a peer's late staging, and prints each list on its
-# line – while an agent's case-only rename undone onto edits reads as taking the rewrite back
+# line – while a drop that can't bring the checkout along, an agent's here, names what it leaves, a
+# case-only rename undone onto edits read as taking the rewrite back
 _ST_SCENARIO "\e[1;96m[155] a checkout sync keeps a file where a directory lands, a peer's late staging, and its lists whole and on one line\e[0m"
 local SY_BIN SY_REAL SY_BLOB SY_OLD SY_N SY_CI=""
 # A file of the caller's where a terminal drop lands a directory stays, named, unrestored
@@ -13,7 +14,7 @@ print -r -- precious > d
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a file of the caller's where a terminal drop lands a directory stays" "$RC:$(test -f d && cat d)" "0:precious"
 _ST_OUT_HAS "named as standing where its directory goes" 'd/x – your file d stands where its directory goes'
-_ST_OUT_LACKS "with no restore offered" 'git restore'
+_ST_OUT_LACKS "with no restore offered" 'git restore \(--source\|--worktree\|-- \)'
 # While a directory of the caller's there takes the landed file beside its own
 _ST_PZ_NEW sy1b
 _ST_PZ_C a.txt a "SY1b base"
@@ -30,7 +31,7 @@ mkdir d && _ST_PZ_C d/x landed "SY2 add d/x"
 git rm -rq d && git commit -qm "SY2 rm d"
 _ST_PZ_C z.txt z "SY2 tip"
 print -r -- precious > d
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "an agent's drop names the file standing where a directory lands" 'Worktree paths left alone where a file of yours stands in place of their directory.*d/x'
 _ST_OUT_LACKS "offering it no discard" 'discard it with'
 _ST_EQ "and keeps it" "$(test -f d && cat d)" "precious"
@@ -48,7 +49,7 @@ mkdir d && _ST_PZ_C d/x landed "SY2c add d/x"
 git rm -rq d && git commit -qm "SY2c rm d"
 _ST_PZ_C z.txt z "SY2c tip"
 print -r -- target > t.txt && ln -s t.txt d
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "a symlink to a file there still reads as a link" 'Worktree paths left alone under a symlink of yours.*d/x'
 _ST_CHECK "the link kept" test -L d
 # A peer staging a path while the terminal sync merges keeps its staging – every entry written in
@@ -89,7 +90,7 @@ if [ -n "$SY_CI" ]; then
 	_ST_PZ_C x x "SY4 tip"
 	printf 'L1\nl2\nl3\nl4\nl5-mine\n' > case.txt
 	SY_OLD=$(git rev-parse HEAD)
-	_ST_RUN -d -y HEAD~1
+	_ST_RUN_UNSYNCED -d -y HEAD~1
 	_ST_OUT_HAS "a case-only rename undone onto edits made on the rewrite reads as taking it back" 'on the pre-rewrite content.*: Case.txt$'
 	_ST_RUN --carry="$SY_OLD"
 	_ST_EQ "whose carry lands the edits on the new name" "$RC:$(ls | grep -ix case.txt):$(head -1 Case.txt):$(tail -1 Case.txt)" "0:Case.txt:l1:l5-mine"
@@ -98,7 +99,7 @@ if [ -n "$SY_CI" ]; then
 	git mv Case.txt case.txt && printf 'L1\nl2\nl3\nl4\nl5\n' > case.txt && git add -A && git commit -qm "SY4b rename + L1"
 	_ST_PZ_C x x "SY4b tip"
 	printf 'l1\nl2\nl3\nl4\nl5-mine\n' > case.txt
-	_ST_RUN -d -y HEAD~1
+	_ST_RUN_UNSYNCED -d -y HEAD~1
 	_ST_OUT_HAS "while edits on the new content read as edits there" 'uncommitted edits there, not the pre-rewrite content.*: Case.txt$'
 	_ST_OUT_LACKS "never as taking it back" 'on the pre-rewrite content –'
 fi
@@ -121,7 +122,7 @@ printf 'l1\nl2\nl3\nl4\nl5\n' > $'nl\nname' && git add -A && git commit -qm "SY5
 printf 'L1\nl2\nl3\nl4\nl5\n' > $'nl\nname' && git add -A && git commit -qm "SY5b L1"
 _ST_PZ_C z.txt z "SY5b tip"
 printf 'l1\nl2\nl3\nl4\nl5-mine\n' > $'nl\nname'
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "as does an agent's list" "uncommitted edits there, not the pre-rewrite content.*: \$'nl\\\\nname'\$"
 # As do the carry's lists, carried and left alike
 _ST_PZ_NEW sy5c
@@ -132,7 +133,7 @@ git add -A && git commit -qm "SY5c L1"
 _ST_PZ_C z.txt z "SY5c tip"
 printf 'L1\nl2\nl3\nl4\nl5-mine\n' > $'nl\nc' && printf 'L1-mine\nl2\nl3\nl4\nl5\n' > $'nl2\nd'
 SY_OLD=$(git rev-parse HEAD)
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_RUN --carry="$SY_OLD"
 _ST_OUT_HAS "a carried name holding a newline lists on its line" "Carried onto the new content: \$'nl\\\\nc'\$"
 _ST_OUT_HAS "as does one the carry leaves" "to merge by hand: \$'nl2\\\\nd' – 1 conflict(s)\$"
@@ -144,7 +145,7 @@ for SY_N in {01..12}; do printf 'L1\nl2\nl3\nl4\nl5\n' > "f$SY_N"; done
 git add -A && git commit -qm "SY6 L1"
 _ST_PZ_C z.txt z "SY6 tip"
 for SY_N in {01..12}; do printf 'l1\nl2\nl3\nl4\nl5-mine\n' > "f$SY_N"; done
-_ST_RUN -d -y HEAD~1
+_ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "an agent's edited files are named, every one" 'uncommitted edits there, not the pre-rewrite content.*: f01 .* f12$'
 _ST_OUT_LACKS "none cut short" 'uncommitted edits there,.*and 2 more'
 git reset -q --hard

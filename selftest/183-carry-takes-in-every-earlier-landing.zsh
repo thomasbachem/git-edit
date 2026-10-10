@@ -1,8 +1,9 @@
 # A printed carry starts from the earliest landing the file lacks, so one carry takes in every
 # later one too: the landings guard reads an edit a later landing renamed away at its new name,
-# and orders two landings of one second as journaled, while an agent's landing names the carry
-# from an earlier landing an edited file predates as well – once, each named the newest landing's
-# old tip, and followed as printed took the earlier landing's edit back under `ok`
+# and orders two landings of one second as journaled, while a landing that can't bring the
+# checkout along names the carry from an earlier landing an edited file predates as well – once,
+# each named the newest landing's old tip, and followed as printed took the earlier landing's edit
+# back under `ok`
 _ST_SCENARIO "\e[1;96m[183] a printed carry takes in every earlier landing the file lacks\e[0m"
 local CB_T CB_TIP CB_L1 CB_RS CB_C CB_ADD CB_JF
 local -i CB_NOW
@@ -12,9 +13,9 @@ _ST_PZ_NEW cb1
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CB1 base"
 CB_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt && git add f.txt
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB1 L1'" </dev/null >/dev/null 2>&1
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"git mv f.txt g.txt && printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > g.txt && git commit -qam 'CB1 L2'" </dev/null >/dev/null 2>&1
 CB_TIP=$(git rev-parse HEAD)
 GIT_EDIT_ACTOR=cb-self _ST_RUN --amend-into="$CB_TIP"
@@ -36,9 +37,9 @@ _ST_PZ_NEW cb2
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CB2 base"
 CB_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB2 L1'" </dev/null >/dev/null 2>&1
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"git mv f.txt g.txt && printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > g.txt && git commit -qam 'CB2 L2'" </dev/null >/dev/null 2>&1
 GIT_EDIT_ACTOR=cb-self _ST_RUN --commit --text "CB2 mine" -- f.txt
 _ST_OUT_HAS "a commit of it names the same carry, then the new name to commit" \
@@ -53,11 +54,11 @@ _ST_EQ "and followed as printed keeps both landings' edits" \
 _ST_PZ_NEW cb3
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CB3 base"
 _ST_PZ_C t.txt y "CB3 target" && CB_T=$(git rev-parse HEAD)
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB3 L1'" </dev/null >/dev/null 2>&1
 CB_L1=$(git rev-parse HEAD)
 print -l 1 2-A 3 4 5-L1 {6..10} > f.txt && git add f.txt
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"git mv f.txt g.txt && printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > g.txt && git commit -qam 'CB3 L2'" </dev/null >/dev/null 2>&1
 GIT_EDIT_ACTOR=cb-self _ST_RUN --amend-into="$CB_T"
 _ST_OUT_HAS "a fold holding the first landing names the rename's own carry" \
@@ -70,9 +71,9 @@ _ST_PZ_NEW cb4
 print -l {1..10} > a.txt && print -l {1..10} > b.txt && git add -A && git commit -qm "CB4 base"
 CB_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > a.txt && print -l 1 2-A {3..10} > b.txt
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > b.txt && git commit -qam 'CB4 L1'" </dev/null >/dev/null 2>&1
-GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --exec -- sh -c \
+GIT_EDIT_ACTOR=cb-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > a.txt && git commit -qam 'CB4 L2'" </dev/null >/dev/null 2>&1
 CB_JF="$(git rev-parse --git-common-dir)/git-edit-journal" CB_NOW=$(date +%s)
 sed -E "s/^[0-9]+ /$CB_NOW /" "$CB_JF" > "$CB_JF.x" && mv "$CB_JF.x" "$CB_JF"
@@ -90,18 +91,18 @@ _ST_PZ_NEW cb5
 print -l {1..10} > f.txt && git add -A && git commit -qm "CB5 base"
 CB_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt
-GIT_EDIT_ACTOR=cb-p1 _ST_RUN --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB5 L1'"
-_ST_OUT_HAS "the first landing names its own old tip" "Merge those edits onto the new content with: git edit --carry=${CB_T:0:12}$"
-GIT_EDIT_ACTOR=cb-p2 _ST_RUN --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > f.txt && git commit -qam 'CB5 L2'"
-_ST_OUT_HAS "and the next one the same, which the file predates too" "Merge those edits onto the new content with: git edit --carry=${CB_T:0:12}$"
+GIT_EDIT_ACTOR=cb-p1 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB5 L1'"
+_ST_OUT_HAS "the first landing names its own old tip" "edits merged onto it: git edit --carry=${CB_T:0:12}$"
+GIT_EDIT_ACTOR=cb-p2 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > f.txt && git commit -qam 'CB5 L2'"
+_ST_OUT_HAS "and the next one the same, which the file predates too" "edits merged onto it: git edit --carry=${CB_T:0:12}$"
 CB_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
 GIT_EDIT_ACTOR=cb-p2 _ST_RUN "$CB_C"
 _ST_EQ "followed as printed, the file keeps both landings and its edits" "$RC:$(sed -n '2p;5p;8p' f.txt | tr '\n' ' ')" "0:2-A 5-L1 8-B "
 # One edited after the first lacks only the second
 _ST_PZ_NEW cb6
 print -l {1..10} > f.txt && git add -A && git commit -qm "CB6 base"
-GIT_EDIT_ACTOR=cb-p1 _ST_RUN --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB6 L1'"
+GIT_EDIT_ACTOR=cb-p1 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CB6 L1'"
 CB_L1=$(git rev-parse HEAD)
 print -l 1 2-A 3 4 5-L1 {6..10} > f.txt
-GIT_EDIT_ACTOR=cb-p2 _ST_RUN --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > f.txt && git commit -qam 'CB6 L2'"
-_ST_OUT_HAS "while a file edited on the first names the second's old tip" "Merge those edits onto the new content with: git edit --carry=${CB_L1:0:12}$"
+GIT_EDIT_ACTOR=cb-p2 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8-B 9 10 > f.txt && git commit -qam 'CB6 L2'"
+_ST_OUT_HAS "while a file edited on the first names the second's old tip" "edits merged onto it: git edit --carry=${CB_L1:0:12}$"

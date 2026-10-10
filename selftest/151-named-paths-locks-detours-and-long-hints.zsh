@@ -69,7 +69,8 @@ _ST_RUN --exec -- sh -c 'git checkout -q HEAD~2 && git checkout -q - && git rese
 _ST_EQ "while one going below it after the detour still refuses" "${RC}:$(git rev-parse HEAD)" "1:$NP_TIP"
 _ST_OUT_HAS "naming where HEAD went" 'below the tip this run started on'
 # A hint over more than 10 paths reads them from a file it names, a bracketed one marked literal,
-# so it runs at any count – and over a few, lists them
+# so it runs at any count – and over a few, lists them – the raw undo's re-sync step where a drop
+# can't bring the checkout along, which brings it along otherwise
 _ST_PZ_NEW np5
 mkdir d && for NP_I in {1..12}; do print 1 > "d/f$NP_I.txt"; done
 print 1 > 'd/[x].txt' && print 1 > d/x.txt && print 1 > d/y.txt && print 1 > d/z.txt
@@ -79,18 +80,24 @@ print 2 > 'd/[x].txt'
 git add -A && git commit -qm "NP5 change" && _ST_PZ_C t.txt t "NP5 tip"
 print mine > d/x.txt
 _ST_RUN -d -y HEAD~1
-NP_H=${(M)${(f)OUT}:#*discard it with: *}
-NP_H=${NP_H#*discard it with: }
-_ST_EQ "a drop over 13 paths lands" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:NP5 tip|NP5 base|"
-_ST_EQ "its hint feeds them from a file the run names" "${NP_H%%< *}" "xargs -0 git restore --source=HEAD --worktree -- "
-_ST_EQ "its name giving the count" "${${NP_H##*/}%%.*}" "git-edit-13-paths"
+_ST_EQ "a drop over 13 paths lands, the checkout with it, the edited file kept" \
+	"${RC}:$(git log --format=%s | tr '\n' '|'):$(git status --porcelain | tr '\n' '|')" "0:NP5 tip|NP5 base|: M d/x.txt|"
+_ST_OUT_HAS "naming ten and how many more" 'now as they landed: .* … and 3 more$'
+for NP_I in {1..12}; do print 4 > "d/f$NP_I.txt"; done
+print 4 > 'd/[x].txt'
+git add -- d/f*.txt ':(literal)d/[x].txt' && git commit -qm "NP5 change 2" && _ST_PZ_C t3.txt t3 "NP5 tip 3"
+_ST_RUN_UNSYNCED -d -y HEAD~1
+NP_H=${(M)${(f)OUT}:#After the raw undo, re-sync them back*}
+NP_H=${NP_H#*listing those: }
+_ST_EQ "its hint feeds them from a file the run names" "${NP_H%%< *}" "xargs -0 git diff-index --cached --exit-code --name-only $(git rev-parse HEAD | cut -c1-12) -- "
+_ST_EQ "its name giving the count" "${${${NP_H%% && *}##*/}%%.*}" "git-edit-13-paths"
 _ST_CHECK "which runs" sh -c "${NP_H:-false}"
-_ST_EQ "restoring those paths alone, the bracketed one as itself" "$(git status --porcelain | tr '\n' '|')" " M d/x.txt|"
+git checkout -q -- d
 for NP_I in y z; do print 3 > "d/$NP_I.txt"; done
 git add d/y.txt d/z.txt && git commit -qm "NP5 yz" && _ST_PZ_C t2.txt t2 "NP5 tip 2"
-_ST_RUN -d -y HEAD~1
-_ST_OUT_HAS "a hint over two paths lists them" 'discard it with: git restore --source=HEAD --worktree -- d/y\.txt d/z\.txt'
-git restore -- d
+_ST_RUN_UNSYNCED -d -y HEAD~1
+_ST_OUT_HAS "a hint over two paths lists them" 'listing those: git diff-index --cached --exit-code --name-only [0-9a-f]* -- d/y\.txt d/z\.txt && git restore --staged -- d/y\.txt d/z\.txt$'
+git checkout -q -- d
 # Enter at a terminal edit's prompt resumes as `--continue`, refusing what was pushed meanwhile
 _ST_PZ_NEW np6
 git init -q --bare "$TMP/np6-remote.git" && git remote add origin "$TMP/np6-remote.git"

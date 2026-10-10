@@ -49,7 +49,8 @@ print -r -- mine > ign.txt
 _ST_TTY -- -d -y HEAD
 _ST_EQ "an untracked and an ignored file where the drop lands are kept" "$RC:$(<n.txt):$(<ign.txt)" "0:mine:mine"
 _ST_EQ "as changes to what landed" "$(git status --porcelain | tr '\n' '|')" " M ign.txt| M n.txt|"
-_ST_OUT_HAS "named with the restore" 'Take what landed with: git restore -- ign.txt n.txt'
+_ST_OUT_HAS "named, no restore offered" 'they stay, as changes to what landed: ign.txt, n.txt'
+_ST_OUT_LACKS "as whose they are no sync can tell" 'git restore \(--source\|--worktree\|-- \)'
 # Staged whole, a merge stays staged – staged and unstaged both, it is left
 _ST_PZ_NEW bc4
 _ST_PZ_C f.txt $'1\n2\n3' "BC4 base"
@@ -84,7 +85,7 @@ _ST_EQ "a removed file's edits stay, untracked" "$(<e.txt):$(git status --porcel
 _ST_OUT_HAS "named" 'your edits to them stay, untracked: e.txt'
 # Nothing the drop rewrote above d.txt, so it is no path of the move – still deleted
 _ST_CHECK "a file deleted beside it stays deleted" test ! -e d.txt
-# Halfway through a merge, the checkout is someone's work in progress – left, with the hints
+# Halfway through a merge, the checkout is someone's work in progress – left, with the carry
 _ST_PZ_NEW bc6
 _ST_PZ_C m.txt $'1\n2' "BC6 base"
 git checkout -q -b bc6-side && _ST_PZ_C m.txt $'1\n2s' "BC6 side" && git checkout -q main
@@ -93,7 +94,8 @@ _ST_PZ_C k.txt k "BC6 drop"
 git merge -q bc6-side >/dev/null 2>&1
 _ST_TTY -- -d -y HEAD
 _ST_EQ "a run beside a merge in progress lands, the merge kept" "$RC:$(test -e .git/MERGE_HEAD && echo merging)" "0:merging"
-_ST_OUT_HAS "the checkout left as it was" 'halfway through a merge, so it stays as it was'
+_ST_OUT_HAS "the checkout left as it was" 'not brought along – it is halfway through a merge – finish or abort that first'
+_ST_OUT_HAS "naming the carry for once it is done" 'Once that is done, bring your checkout along.*git edit --carry='
 _ST_CHECK "k.txt still there" test -e k.txt
 git merge --abort
 cd "$TMP/repo"

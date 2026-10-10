@@ -20,8 +20,8 @@ printf 'PEE\nq\nr\n' > cy-e.txt && printf 'g\nh\n' > cy-g.txt && printf 'a\nb\nc
 ln -sfn cy-f.txt cy-l
 # And edits on the new content, a change made in the checkout first
 printf 'KAY\nl\nm\nn\n' > cy-f.txt
-_ST_RUN --exec --base="$CY_OLD" --no-verify -- git reset -q --hard "$CY_NEW"
-_ST_OUT_HAS "the landing points at --carry, from its own old tip" "new content with: git edit --carry=${CY_OLD:0:12}"
+_ST_RUN_UNSYNCED --exec --base="$CY_OLD" --no-verify -- git reset -q --hard "$CY_NEW"
+_ST_OUT_HAS "the landing points at --carry, from its own old tip" "edits merged onto it: git edit --carry=${CY_OLD:0:12}"
 # A commit on top since brought content of its own, which carrying from the rewrite would revert
 local CY_IDX=$TMP/cy-index
 GIT_INDEX_FILE=$CY_IDX git read-tree HEAD

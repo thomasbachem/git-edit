@@ -5,7 +5,8 @@
 #   is wherever it is checked out – no move or deletion offered – while one the target held and
 #   dropped leaves the move onto the copies offered
 # • The raw undo moves the ref alone, and the step named beside the re-synced entries puts those
-#   back as printed, a no-op before the undo, stopping whole on a peer's staging
+#   back as printed, a no-op before the undo, stopping whole on a peer's staging – where the land
+#   could not bring the checkout along
 _ST_SCENARIO "\e[1;96m[187] --land keeps a pause-made commit, and names what only the branch holds\e[0m"
 local KP_WT KP_P KP_S KP_U
 # Prints the step after <lead> in `OUT`, its color codes cut
@@ -132,14 +133,14 @@ _ST_EQ "a --base past what main dropped lands what follows" "$RC:$(git log --for
 _ST_OUT_HAS "the move onto the copies offered still" 'point it at those (git branch -f feat '
 _ST_OUT_LACKS "no commit named as the branch's alone" 'is the only branch holding them'
 
-# The raw undo moves the ref alone, and the step beside the re-synced entries puts them back as
-# printed – a peer's staged file kept throughout
+# The raw undo moves the ref alone, and where the land could not bring the checkout along, the step
+# beside the re-synced entries puts them back as printed – a peer's staged file kept throughout
 _ST_PZ_NEW kp6
 _ST_PZ_C f.txt base "KP6 base"
 git worktree add -q -b feat "$TMP/kp6-wt" main 2>/dev/null
 ( cd "$TMP/kp6-wt" && _ST_PZ_C a.txt a1 "KP6 A" && print -r -- f2 >> f.txt && git commit -qam "KP6 F2" )
 print -r -- peer > peer.txt && git add peer.txt
-_ST_RUN --land=feat
+_ST_RUN_UNSYNCED --land=feat
 KP_U=$(_KP_STEP 'Undo: git edit --undo  (or, the ref alone: ')
 KP_U=${KP_U%)}
 KP_S=$(_KP_STEP 'After the raw undo, re-sync them back – [^:]*: ')
@@ -156,7 +157,7 @@ _ST_PZ_NEW kp7
 _ST_PZ_C f.txt base "KP7 base"
 git worktree add -q -b feat "$TMP/kp7-wt" main 2>/dev/null
 ( cd "$TMP/kp7-wt" && _ST_PZ_C a.txt a1 "KP7 A" && print -r -- f2 >> f.txt && git commit -qam "KP7 F2" )
-_ST_RUN --land=feat
+_ST_RUN_UNSYNCED --land=feat
 KP_U=$(_KP_STEP 'Undo: git edit --undo  (or, the ref alone: ')
 KP_U=${KP_U%)}
 KP_S=$(_KP_STEP 'After the raw undo, re-sync them back – [^:]*: ')
@@ -169,7 +170,7 @@ git worktree remove --force "$TMP/kp7-wt"
 # An undo prints no raw undo of its own, so no step for one either
 cd "$TMP/pz-kp6"
 _ST_RUN --undo
-_ST_OUT_HAS "an undo re-syncs the entries itself" 'Index entries re-synced to the new tip'
+_ST_OUT_HAS "an undo brings the checkout back itself" 'Your checkout came along'
 _ST_OUT_LACKS "naming no step after a raw undo" 'After the raw undo'
 git worktree remove --force "$TMP/kp6-wt"
 cd "$TMP/repo"
