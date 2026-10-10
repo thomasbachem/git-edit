@@ -14,7 +14,7 @@ _ST_EQ "the exec lands" "$RC" "0"
 _ST_EQ "keeping the committed modes" "$(git ls-tree HEAD -- mx.sh mz.txt | awk '{print $1}' | tr '\n' ' ')" "100755 100644 "
 _ST_OUT_HAS "names a lost bit by both modes" 'only their mode differing.*mx\.sh (100644 here, 100755 committed)'
 _ST_OUT_HAS "and a gained one" 'only their mode differing.*mz\.txt (100755 here, 100644 committed)'
-_ST_OUT_HAS "offering the chmods that match the commit" 'Match the committed mode: chmod +x -- mx\.sh && chmod -x -- mz\.txt'
+_ST_OUT_HAS "offering the chmods that match the commit" 'Match the committed mode: chmod -- +x mx\.sh && chmod -- -x mz\.txt'
 _ST_OUT_LACKS "never among uncommitted edits" 'Worktree files left alone'
 _ST_OUT_LACKS "nor claiming the checkout current" 'your checkout is current'
 _ST_CHECK "the content untouched" sh -c "test \"\$(cat mx.sh)\" = 'mx changed'"

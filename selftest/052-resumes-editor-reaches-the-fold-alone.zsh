@@ -48,7 +48,7 @@ print -r -- "squash 5555555" > "$FE_REB/done"
 sh -c "$FE_ED \"\$@\"" ge-editor "$FE_DEST"
 _ST_EQ "-m's editor opens on the fold" "$(grep -c . "$FE_LOG")" "1"
 _ST_CHECK "and the -m branch routes through the guard" \
-	sh -c "command grep -q '_FOLD_EDITOR_CMD \"\${(qq)_REAL_EDITOR}\"' '$SELF'"
+	sh -c "command grep -q '_FOLD_EDITOR_CMD \"\${(qq)_REAL_EDITOR}\"' \"\$1\"" _ "$SELF"
 
 # `sh` parses the emitted command, so a repo living under an apostrophe used
 # to close the quote and leave a syntax error – which surfaces only as a
@@ -115,11 +115,11 @@ FE_CMDLINE=$REPLY
 _FE_IEDITOR_OF "$FE_CMDLINE"
 FE_GUARD=no
 [[ -x "$FE_IED" ]] && grep -q 'rebase-merge/done' "$FE_IED" && grep -q 'cp ' "$FE_IED" && FE_GUARD=yes
-FE_CLEAN=no; [[ "$FE_CMDLINE" == *commit.cleanup=whitespace* ]] && FE_CLEAN=yes
+FE_CLEAN=no; [[ "$FE_CMDLINE" == *commit.cleanup=verbatim* ]] && FE_CLEAN=yes
 _ST_EQ "--text installs the stand-in around its message" "$FE_GUARD" "yes"
 # Safe only because the stand-in writes each replayed message back itself
 _ST_EQ "and the cleanup that keeps its '#' lines" "$FE_CLEAN" "yes"
-FE_GUARD=no; grep -q 'git log -1 --format=%B' "$FE_IED" && FE_GUARD=yes
+FE_GUARD=no; grep -q 'git log -1 .*--format=format:%B' "$FE_IED" && FE_GUARD=yes
 _ST_EQ "every other step is restored from the commit replayed" "$FE_GUARD" "yes"
 
 _REBASE_CONTINUE_CMD --continue "" real
@@ -142,17 +142,17 @@ _FE_IEDITOR_OF "$REPLY"
 FE_GUARD=no; grep -q 'cp ' "$FE_IED" && FE_GUARD=yes
 _ST_EQ "given both, --text wins as the initial run had it" "$FE_GUARD" "yes"
 
-# A resume commits its conflicted step too, whose own message git's default cleanup would strip of
-# every `#`-led line – so each writes it back, a fold keeping git's
+# A resume commits its conflicted step too, whose message file git ends on `# Conflicts:` and its
+# help, kept under the verbatim pin – so each writes the step's own back, a fold keeping git's
 _REBASE_CONTINUE_CMD --continue "" ""
 FE_CMDLINE=$REPLY
 _FE_IEDITOR_OF "$FE_CMDLINE"
 FE_GUARD=no
-[[ -x "$FE_IED" ]] && grep -q 'git log -1 --format=%B' "$FE_IED" && grep -q 'stripspace --strip-comments' "$FE_IED" && \
-	[[ "$FE_CMDLINE" == *commit.cleanup=whitespace* ]] && FE_GUARD=yes
+[[ -x "$FE_IED" ]] && grep -q 'git log -1 .*--format=format:%B' "$FE_IED" && grep -q 'stripspace --strip-comments' "$FE_IED" && \
+	[[ "$FE_CMDLINE" == *commit.cleanup=verbatim* ]] && FE_GUARD=yes
 _ST_EQ "every other resume writes each step's message back" "$FE_GUARD" "yes"
 
-unfunction _FE_EDITOR_OF
+unfunction _FE_IEDITOR_OF
 unset _REAL_EDITOR
 rm -f "$FE_TXT"
 # A silenced resume records `true`, which names no file to remove

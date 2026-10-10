@@ -109,8 +109,7 @@ _ST_OUT_HAS "the check run where it landed" 'PL3 use'
 _ST_RUN --commit --text "PL3 use" -- use.txt
 _ST_EQ "where at the tip it passes" "${RC}:$(git log -1 --format=%s)" "0:PL3 use"
 git config --unset edit.verifyCmd
-# A move whose resolution brings content in re-syncs the checkout's index, as any rewrite does,
-# rather than leave the new path reading as a staged removal
+# A move whose resolution brings content in lands nothing, as a move only moves commits
 _ST_PZ_NEW pl4
 _ST_PZ_C f.txt $'1\n2\n3\n4' "PL4 A"
 _ST_PZ_C f.txt $'1\n2b\n3\n4' "PL4 B"
@@ -122,6 +121,7 @@ print -r -- g > "${PL_WT:-$ST_NO_WT}/g.txt" && git -C "${PL_WT:-$ST_NO_WT}" add 
 _ST_RUN --continue
 _ST_RESOLVE "$PL_WT" f.txt $'1\n2b\n3c\n4'
 _ST_RUN --continue
-_ST_EQ "a move whose resolution added a file lands it" "${RC}:$(git show HEAD:g.txt 2>/dev/null)" "0:g"
-_ST_EQ "the checkout's index re-synced, the file named as missing there" "$(git status --porcelain -- g.txt)" " D g.txt"
+_ST_EQ "a move whose resolution added a file refuses, nothing landed" "${RC}:$(git show HEAD:g.txt 2>/dev/null)" "1:"
+_ST_OUT_HAS "naming the file" 'a resolution changed g.txt'
+_ST_RUN --abort
 cd "$TMP/repo"

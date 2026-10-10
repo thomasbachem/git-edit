@@ -113,7 +113,7 @@ WC_TIP=$(git rev-parse HEAD)
 _ST_RUN --commit --text "x" -- wc-rnm.txt wc-rnm2.txt
 _ST_EQ "a rename made on stale content refuses" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 _ST_OUT_HAS "naming both names" 'wc-rnm.txt – wc-peer.*which this commit renames to wc-rnm2.txt'
-_ST_OUT_HAS "and the merge bringing what landed into the new one" 'git merge-file -- wc-rnm2.txt wc-rnm2.txt.git-edit-base wc-rnm2.txt.git-edit-landed'
+_ST_OUT_HAS "and the merge bringing what landed into the new one" "git merge-file -- wc-rnm2\.txt [^ ]*/\.git/git-edit-base [^ ]*/\.git/git-edit-landed"
 # Run as printed, by a plain `sh`
 sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name with: //p")"
 _ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(ls wc-rnm2.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "P3 C7 :0"

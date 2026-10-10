@@ -18,7 +18,7 @@ _ST_EQ "and staged it without the bit" "$(git -C "$SM_WT" ls-files -s -- sm.sh |
 _ST_RUN --continue
 _ST_EQ "the continue refuses" "$RC" "2"
 _ST_OUT_HAS "naming the path and both modes" 'sm\.sh: staged 100644, the replay carries 100755'
-_ST_OUT_HAS "and the restore, worktree and index both" 'chmod +x .*sm\.sh && git -C .* add --chmod=+x -- sm\.sh'
+_ST_OUT_HAS "and the restore, worktree and index both" 'chmod -- +x .*sm\.sh && git -C .* add --chmod=+x -- sm\.sh'
 _ST_OUT_HAS "as a conflict pause on the path" '^git-edit: conflict – resolve in .*(sm\.sh)'
 _ST_EQ "the branch never moved" "$(git rev-parse HEAD)" "$SM_TIP"
 # Restored as told, the replay goes on – to the later commit's own stop, resolved in place

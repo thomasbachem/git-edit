@@ -92,6 +92,11 @@ _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --put notes.txt="$TMP/fi4-put2.tx
 _ST_EQ "and a fold putting it" "$RC:$(git rev-parse HEAD)" "1:$FI_T"
 _ST_RUN --commit --text "FI4 edit" --edits '{"notes.txt": [["peer", "peer, then mine"]]}'
 _ST_EQ "while edits replay onto the tip, the landing kept" "$RC:$(git show HEAD:notes.txt | tr '\n' ' ')" "0:notes mine peer, then mine "
+# An auto target is the commit that last touched the lines the inputs change, named as folded
+_ST_PZ_C a.txt $'1\n2\n3' "FI4 a" && _ST_PZ_C b.txt b "FI4 b"
+_ST_RUN --amend-into=auto --edits '{"a.txt": [["2\n", "2x\n"]]}'
+_ST_EQ "--amend-into=auto finds the commit the edit's lines came from" "$RC:$(git log -1 --format=%s HEAD~1):$(git show HEAD~1:a.txt | tr '\n' ' ')" "0:FI4 a:1 2x 3 "
+_ST_OUT_HAS "naming the lines folded, not staged" 'auto-target: commit that last touched the folded lines'
 # Names git would read as a pattern, as magic, or as two words are each taken as themselves
 _ST_PZ_NEW fi3
 print -r -- x > x.txt && print -r -- br > '[x].txt' && print -r -- c > ':c.txt' && print -r -- spaced > 'a b.txt'
@@ -126,6 +131,27 @@ _ST_OUT_HAS "naming it" 'already pushed'
 _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --allow-pushed --edits '{"x.txt": [["x", "x, pushed"]]}'
 _ST_EQ "--allow-pushed lands it" "${RC}:$(git show HEAD~1:x.txt)" "0:x, pushed"
 _ST_PZ_C y.txt y "FI3 y"
-_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --allow-pushed --snapshot --edits '{"x.txt": [["x, pushed", "x, snap"]]}'
-_ST_EQ "--snapshot merges the fold into the commits above" "${RC}:$(git show HEAD~1:x.txt):$(git show HEAD:x.txt)" "0:x, snap:x, snap"
+# `--snapshot` needs git 2.40's `merge-tree --merge-base`
+if _ST_MERGE_BASE_OK; then
+	_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --allow-pushed --snapshot --edits '{"x.txt": [["x, pushed", "x, snap"]]}'
+	_ST_EQ "--snapshot merges the fold into the commits above" "${RC}:$(git show HEAD~1:x.txt):$(git show HEAD:x.txt)" "0:x, snap:x, snap"
+fi
+# A peer's staging on a path the inputs change stays staged, through a pause's resume too
+_ST_PZ_NEW fi5
+_ST_PZ_C f.txt $'a\nb\nc\nx\ny\nz' "FI5 A"
+_ST_PZ_C f.txt $'a\nB2\nc\nx\ny\nz' "FI5 B"
+print -r -- $'a\nB2\nc\nx\ny\nPEER' > f.txt && git add f.txt
+_ST_RUN --amend-into="$(git rev-parse HEAD)" --edits '{"f.txt": [["a\n", "A\n"]]}'
+_ST_EQ "a peer's staging on a path a fold changes stays staged" "${RC}:$(git show HEAD:f.txt | head -1):$(git show :f.txt | tail -1)" "0:A:PEER"
+_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --edits '{"f.txt": [["B2\n", "B3\n"]]}'
+_ST_EQ "a fold into the older commit pauses on its replay" "$RC" "2"
+# Each stop resolved to what its own commit holds – the fold's B3 on the older commit, then the later
+# one's A on top – as taking the later A in early is an absorption the replay refuses
+local FI_N
+for FI_N in $'a\nB3\nc\nx\ny\nz' $'A\nB3\nc\nx\ny\nz'; do
+	[ "$RC" = 2 ] || break
+	_ST_RESOLVE "$(_ST_PZ_WT)" f.txt "$FI_N"
+	_ST_RUN --continue
+done
+_ST_EQ "and through a resume" "${RC}:$(git show HEAD:f.txt | sed -n 2p):$(git show :f.txt | tail -1)" "0:B3:PEER"
 cd "$TMP/repo"

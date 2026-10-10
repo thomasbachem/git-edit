@@ -35,9 +35,10 @@ _ST_RUN -M --text="UA by the peer again" "$UA_BASE"
 export GIT_EDIT_ACTOR=
 _ST_RUN --undo
 _ST_EQ "as it does a labeled one" "$RC:$(git rev-parse HEAD)" "0:$UA_BASE"
-# A label's other characters map to `_`, so none breaks the journal's fields, and the run says so
+# A label's other characters map to `_` in the reflog, and the run says so, while the journal keeps
+# it as given, `$'…'`-quoted, so none breaks its fields and two mapping alike stay apart
 export GIT_EDIT_ACTOR=$'ua\tunsafe'
 _ST_RUN -M --text="UA unsafe" "$UA_BASE"
-_ST_EQ "an unsafe label journals mapped" "$(tail -1 "$(git rev-parse --git-common-dir)/git-edit-journal" | cut -d' ' -f5-)" "reword ${UA_BASE:0:7}"$'\t'"ua_unsafe"
+_ST_EQ "an unsafe label journals as given, quoted" "$(tail -1 "$(git rev-parse --git-common-dir)/git-edit-journal" | cut -d' ' -f5-)" "reword ${UA_BASE:0:7}"$'\t'"\$'ua\\tunsafe'"
 _ST_OUT_HAS "saying it was mapped" 'Labeled ua_unsafe – GIT_EDIT_ACTOR keeps letters, digits'
 export GIT_EDIT_ACTOR=

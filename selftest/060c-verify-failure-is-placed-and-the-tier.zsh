@@ -116,7 +116,13 @@ while [ "$RC" = "2" ] && [ $NV_ROUNDS -lt 4 ]; do
 	NV_ROUNDS=$((NV_ROUNDS+1))
 	local NV_WT=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ (;]*\).*/\1/p' | head -1)
 	[ -z "$NV_WT" ] && break
-	printf 'boot\nNEEDED\n' > "${NV_WT:-$ST_NO_WT}/nv_boot.txt"
+	# Each stop resolved to what the commit it builds holds – the fold's line at the target, the
+	# bootstrap line added beside it – as one taking that commit's line in early is refused
+	if [ "$(git -C "$NV_WT" log -1 --format=%s REBASE_HEAD 2>/dev/null)" = "NV bootstrap line" ]; then
+		printf 'boot\nNEEDED\nrewritten\n' > "${NV_WT:-$ST_NO_WT}/nv_boot.txt"
+	else
+		printf 'boot\nrewritten\n' > "${NV_WT:-$ST_NO_WT}/nv_boot.txt"
+	fi
 	git -C "$NV_WT" add nv_boot.txt
 	_ST_RUN --continue
 done

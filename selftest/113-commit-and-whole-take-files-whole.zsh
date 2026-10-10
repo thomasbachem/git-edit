@@ -61,7 +61,7 @@ local WC_ICASE=$(git config core.ignorecase) WC_BR=$(git symbolic-ref --short HE
 git config core.ignorecase true
 mkdir -p WC-SUB && echo n > WC-SUB/new.txt
 _ST_RUN --commit --text "x" -- WC-SUB/new.txt
-_ST_OUT_HAS "a name the tip spells otherwise refuses where case tells none apart" "WC-SUB differs from the tip's wc-sub only in case"
+_ST_OUT_HAS "a name the tip spells otherwise refuses where case tells none apart" "WC-SUB differs from the tip's directory wc-sub only in case"
 echo n > wc-new.txt && echo n > WC-NEW.txt
 _ST_RUN --commit --text "x" -- wc-new.txt WC-NEW.txt
 _ST_OUT_HAS "as do two names here differing only in case" 'WC-NEW.txt and wc-new.txt differ only in case'

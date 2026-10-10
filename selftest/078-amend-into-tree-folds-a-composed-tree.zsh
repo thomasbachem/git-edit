@@ -97,11 +97,13 @@ _ST_EQ "the tip the composed content" "$(git show HEAD:tc.txt)" "c3"
 _ST_OUT_HAS "and the continue re-syncs the stranded entry" 'Index entries re-synced to the new tip: tc\.txt'
 # An --abort names the tree as intact – nothing was staged to be "still staged"
 git reset -q --hard
+# What an earlier scenario left untracked stays as it was, measured against what is there now
+local TC_STATUS=$(git status --porcelain)
 TF_COMPOSED=$(_ST_COMPOSE tc.txt "c4")
 _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --tree="$TF_COMPOSED" -- tc.txt
 _ST_EQ "a second conflicting composed fold pauses" "$RC" "2"
 _ST_RUN --abort
 _ST_EQ "and aborts" "$RC" "0"
 _ST_OUT_HAS "naming the tree as intact" 'the tree is intact, ready to retry'
-_ST_EQ "the branch and checkout untouched" "$(git show HEAD:tc.txt)|$(git status --porcelain)" "c3|"
+_ST_EQ "the branch and checkout untouched" "$(git show HEAD:tc.txt)|$(git status --porcelain)" "c3|$TC_STATUS"
 git reset -q --hard

@@ -5,7 +5,8 @@ for EL in base one two; do
 	echo "$EL" > "el_$EL.txt" && git add "el_$EL.txt" && git commit -qm "EL $EL"
 done
 local EL_ONE=$(git rev-parse ':/EL one') EL_REF=$(git symbolic-ref HEAD)
-_ST_RUN --exec -- sh -c 'git reset -q --soft HEAD~2 && git commit -qm "EL one and two"'
+# A squash by hand goes below the tip it started on, so `--base` names the tip it saw
+_ST_RUN --exec --base="$(git rev-parse HEAD)" -- sh -c 'git reset -q --soft HEAD~2 && git commit -qm "EL one and two"'
 _ST_EQ "a rewrite exits 0" "$RC" "0"
 _ST_EQ "and names the oldest commit it replaced" "$(git reflog show -1 --format=%gs "$EL_REF")" "git edit: exec ${EL_ONE:0:7}"
 _ST_RUN --undo

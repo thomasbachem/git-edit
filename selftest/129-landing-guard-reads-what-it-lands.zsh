@@ -1,5 +1,5 @@
 _ST_SCENARIO "\e[1;96m[129] a landing guard reads what it lands, and a held lock waits\e[0m"
-local LG_T LG_B LG_REAL LG_GD LG_WT
+local LG_T LG_B LG_REAL LG_GD LG_WT LG_HOLD
 # Edits on top of a file another caller added, then rewrote, hold most of what the tip has
 _ST_PZ_NEW lg1
 _ST_PZ_C base.txt b "LG base"
@@ -66,20 +66,30 @@ _ST_RUN --undo
 _ST_OUT_HAS "an undo hands its run back as the checkout's" 'what the undone run landed stays in your checkout'
 _ST_OUT_HAS "to keep or discard" 'Keep it, or discard it with'
 rm -f w.txt
-# A journal lock held past its wait – an append goes in all the same, an undo moves nothing
+# A journal lock whose holder is gone is broken at once, the landing journaling under it, while one a
+# live run holds is waited on and then refused, moving nothing – that wait cut short here by a
+# `sleep` returning at once
 _ST_PZ_NEW lg6
 _ST_PZ_C base.txt b "LG6 base"
-: > .git/git-edit-journal.lock
+sh -c 'exit 0' & LG_HOLD=$!
+wait $LG_HOLD
+print -r -- "$LG_HOLD Thu Jan 1 00:00:00 1970" > .git/git-edit-journal.lock
 print -r -- j > j.txt
 _ST_RUN --commit --text "LG6 journaled" -- j.txt
-_ST_EQ "an append goes in past a held journal lock" "$RC:$(tail -1 .git/git-edit-journal | cut -d' ' -f5-)" "0:commit"
-_ST_OUT_HAS "saying so" 'Journaled without its lock'
+_ST_EQ "a gone run's journal lock is broken at once" "$RC:$(tail -1 .git/git-edit-journal | cut -d' ' -f5-)" "0:commit"
+_ST_OUT_LACKS "the landing journaling under it" 'Journaled without its lock'
 LG_T=$(git rev-parse HEAD)
-touch .git/git-edit-journal.lock
-_ST_RUN --undo
+# A live process the run does not run under – the suite's own would read as the one it runs under
+sleep 30 & LG_HOLD=$!
+_PID_START $LG_HOLD
+print -r -- "$LG_HOLD $REPLY" > .git/git-edit-journal.lock
+mkdir -p "$TMP/lg-nap" && print -l '#!/bin/sh' 'exit 0' > "$TMP/lg-nap/sleep" && chmod +x "$TMP/lg-nap/sleep"
+PATH="$TMP/lg-nap:$PATH" _ST_RUN --undo
 _ST_EQ "an undo under a held journal lock moves nothing" "$RC:$(git rev-parse HEAD)" "1:$LG_T"
-_ST_OUT_HAS "naming the lock" 'journal is locked by another run'
-# One a killed run left behind, past 10 s, is broken
+_ST_OUT_HAS "naming the lock" "journal is locked by another run (pid $LG_HOLD)"
+kill $LG_HOLD; wait $LG_HOLD 2>/dev/null
+# One naming no holder, as a run killed while writing it leaves, is broken once 10 s old
+: >| .git/git-edit-journal.lock
 touch -t 200001010000 .git/git-edit-journal.lock
 _ST_RUN --undo
 _ST_EQ "a stale journal lock is broken" "$RC:$(tail -1 .git/git-edit-journal | awk '{print $5}')" "0:undo"

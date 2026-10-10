@@ -117,7 +117,7 @@ fi
 mkdir -p dir && print -r -- a > dir/x && git add dir && git commit -qm "IN dir"
 IN_T=$(git rev-parse HEAD)
 _ST_RUN --commit --text "IN dir rm" --rm dir --base="$IN_T"
-_ST_OUT_HAS "a removal of a directory refuses" 'rm dir: not at the tip'
+_ST_OUT_HAS "a removal of a directory refuses" 'rm dir: a directory at the tip – name its files'
 _ST_RUN --commit --text "IN dir chmod" --chmod dir=+x
 _ST_OUT_HAS "as does a chmod of it" 'chmod dir: not a file in the commit'
 _ST_RUN --commit --text "IN dir edit" --edits '{"dir": [["a", "b"]]}'
@@ -157,4 +157,15 @@ print -r -- placed > "$TMP/in-placed.txt"
 _ST_RUN --commit --text "IN placed" --put placed.txt="$TMP/in-placed.txt" --after="$IN_P"
 _ST_EQ "and place beside an anchor" "${RC}:$(git log -3 --format=%s | tail -1)" "0:IN placed"
 git checkout -q -- . 2>/dev/null
+# A peer's staging on a path the inputs change stays staged, as they never read the checkout
+_ST_PZ_NEW in2
+_ST_PZ_C f.txt $'1\n2\n3' "IN2 base"
+print -r -- $'1\n2\nPEER' > f.txt && git add f.txt
+print -r -- $'1\n2\nPEER 2' > f.txt
+_ST_RUN --commit --text "IN2 mine" --edits '{"f.txt": [["1\n", "MINE\n"]]}'
+_ST_EQ "a peer's staging on a path an edit changes stays staged" "${RC}:$(git show HEAD:f.txt | tr '\n' ' '):$(git show :f.txt | tr '\n' ' ')" "0:MINE 2 3 :1 2 PEER "
+_ST_OUT_HAS "named as left alone" 'Index entries left alone.*: f.txt'
+IN_O=$(_ST_COMPOSE f.txt $'MINE\n2\n3\n4')
+_ST_RUN --commit --text "IN2 tree" --tree="$IN_O"
+_ST_EQ "as on a path a composed tree changes" "${RC}:$(git show :f.txt | tr '\n' ' ')" "0:1 2 PEER "
 cd "$TMP/repo"

@@ -201,6 +201,16 @@ GIT_SELFTEST () {
 	_ST_MERGE_BASE_OK () {
 		[[ "$(LC_ALL=C command git merge-tree -h 2>&1)" == *merge-base* ]]
 	}
+	# Answers whether this git's sparse-checkout takes `check-rules` (2.42), so the tool reads a
+	# sparse checkout's patterns rather than taking every path it adds as outside them
+	_ST_SPARSE_RULES_OK () {
+		[[ "$(LC_ALL=C command git sparse-checkout -h 2>&1)" == *check-rules* ]]
+	}
+	# Answers whether this git takes `--attr-source` (2.40), so a merge reads the attributes the
+	# edits were made under
+	_ST_ATTR_SOURCE_OK () {
+		LC_ALL=C command git --attr-source=HEAD version >/dev/null 2>&1
+	}
 	# Runs git edit on a pseudo-terminal as a person at one would – stdin and stdout a TTY, no agent
 	# or CI marker – leaving `OUT` and `RC` as `_ST_RUN` does
 	_ST_TTY () {
@@ -300,14 +310,17 @@ GIT_SELFTEST () {
 	# its locals too, is there for the ones after it
 	local ST_FILE ST_ERR
 	for ST_FILE in "${SELFTEST_FILES[@]}"; do
-		# One failing to parse would run up to its error and pass, so it parses first as a function
-		# body, which runs none of it – `zsh -n` still reads a `$(<file)`
-		if ! ST_ERR=$(eval "_ST_PARSE () { $(<"$ST_FILE")"$'\n}' 2>&1); then
+		# One failing to parse would run up to its error and pass, so it parses first, running none of
+		# it – as a function body, where a stray `else` or `fi` shows, and in an `if false`, where no
+		# later `{` balances a stray `}` – `zsh -n` reads a `$(<file)`
+		if ! ST_ERR=$( { eval "_ST_PARSE () { $(<"$ST_FILE")"$'\n}' && eval "if false; then $(<"$ST_FILE")"$'\nfi'; } 2>&1); then
 			FAIL=$((FAIL+1))
 			ECHO_E "  \e[1;31mFAIL\e[0m ${ST_FILE:t} does not parse"
 			print -r -- "$ST_ERR" | head -3 | sed 's/^/       | /'
 			continue
 		fi
+		# A label one scenario set would close every reflog message the next compares
+		export GIT_EDIT_ACTOR=
 		source "$ST_FILE"
 	done
 

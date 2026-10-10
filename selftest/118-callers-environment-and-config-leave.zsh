@@ -23,7 +23,7 @@ local GV_MISS=$(LC_ALL=C comm -23 \
 	<(awk '/^_UNSET_OWN ACTION /{ f = 1 } f { l = $0; sub(/\\$/, "", l); print l; if ($0 !~ /\\$/) exit }' "$SELF" | tr -s ' \t' '\n' | grep -vx _UNSET_OWN | LC_ALL=C sort -u))
 _ST_EQ "every global the script assigns starts unset" "$GV_MISS" ""
 printf '%s\n' 'f () {' '	local A' '	A=1' '	B=2' '}' 'C=3' > "$TMP/gv-fixture"
-_ST_EQ "the check finds a global, never a local" "$(awk "$GV_AWK" "$TMP/gv-fixture" | sort -u | tr '\n' ' ')" "B C "
+_ST_EQ "the check finds a global, never a local" "$(awk "$GV_AWK" "$TMP/gv-fixture" | LC_ALL=C sort -u | tr '\n' ' ')" "B C "
 local GV_DIR="$TMP/gv" GV_I
 git init -q -b main "$GV_DIR" && cd "$GV_DIR" && git config user.email g@x.invalid && git config user.name G
 for GV_I in 1 2 3 4; do echo "$GV_I" > "gv$GV_I.txt" && git add "gv$GV_I.txt" && git commit -qm "GV c$GV_I"; done

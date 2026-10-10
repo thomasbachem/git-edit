@@ -42,8 +42,9 @@ _ST_EQ "the real hunk landed in base" "$(git show HEAD~1:fa.txt)" "a2"
 _ST_EQ "the later commit's content survives" "$(git show HEAD:fb.txt)" "x2"
 git reset -q --hard
 
-# A resolution that reproduces the next commit's content leaves that pick empty – blind
-# continues then drop it, and the summary must count the loss
+# A resolution keeping the fold's content over the next commit's change leaves that pick empty –
+# blind continues then drop it, and the summary must count the loss (resolving to the next commit's
+# content instead takes its change in early, which the absorption guard refuses)
 printf 'v1\n' > fc.txt && git add fc.txt && git commit -qm "F pick a"
 printf 'v2\n' > fc.txt && git commit -qam "F pick b"
 local F_COUNT=$(git rev-list --count HEAD)
@@ -62,7 +63,7 @@ while [ "$RC" = "2" ] && [ $ROUNDS54 -lt 4 ]; do
 	if [ -z "$WT54" ] || [ ! -d "$WT54" ]; then
 		break
 	fi
-	printf 'v2\n' > "$WT54/fc.txt"
+	printf 'v9\n' > "$WT54/fc.txt"
 	git -C "$WT54" add fc.txt
 	_ST_RUN --continue
 done

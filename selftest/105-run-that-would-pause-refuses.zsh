@@ -44,11 +44,17 @@ _ST_EQ "a conflict pause refuses the same way" "$RC" "1"
 _ST_OUT_HAS "as an operation in flight, mid-rebase" 'Another git-edit operation is in flight'
 _ST_EQ "its worktree gone, rebase and all" "$(git worktree list | wc -l | tr -d ' ')" "$PS_WORKTREES"
 rm -f "$PS_SF"
-# A worktree named with -C is the caller's, which git-edit reuses from run to run
+# A worktree named with -C is the caller's, which git-edit reuses from run to run – one the run just
+# made, refused before anything was authored there, goes again
+git -c core.hooksPath=/dev/null worktree add -q --detach "$TMP/ps-own" HEAD
 _ST_RUN -d "$(git rev-parse HEAD~1)" -C="$TMP/ps-own"
-git config --unset core.hooksPath
 _ST_EQ "a drop's conflict pause in a -C worktree refuses too" "$RC" "1"
 _ST_CHECK "and leaves that worktree in place" test -e "$TMP/ps-own/.git"
+rm -f "$PS_SF"
+_ST_RUN -d "$(git rev-parse HEAD~1)" -C="$TMP/ps-new"
+git config --unset core.hooksPath
+_ST_EQ "as does a drop in a new -C worktree" "$RC" "1"
+_ST_CHECK "which goes again, the run having made it" test ! -e "$TMP/ps-new"
 rm -f "$PS_SF"
 git worktree remove --force "$TMP/ps-own"
 # Where the filesystem has no hard links, an exclusive create claims the slot instead

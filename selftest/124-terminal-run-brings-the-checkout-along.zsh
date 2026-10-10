@@ -34,7 +34,7 @@ print -r -- $'1\n2xy\n3' > a.txt
 _ST_TTY -- -d -y HEAD
 _ST_EQ "edits conflicting with what landed stay as they were, unstaged" "$RC:$(git status --porcelain):$(tr '\n' ' ' < a.txt)" "0: M a.txt:1 2xy 3 "
 _ST_OUT_HAS "named as left" 'conflict with what landed – left as they were, as changes to it: a.txt'
-_ST_OUT_HAS "with the merge for when it is meant" 'git merge-file -- a.txt a.txt.git-edit-base a.txt.git-edit-landed'
+_ST_OUT_HAS "with the merge for when it is meant" "git merge-file -- a\.txt [^ ]*/\.git/git-edit-base [^ ]*/\.git/git-edit-landed"
 eval "$(print -r -- "$OUT" | sed -n 's/^  \(git cat-file --filters .*git-edit-landed\)$/\1/p')"
 _ST_EQ "which merges them, markers and all" "$(grep -c '^<<<<<<< a.txt$' a.txt):$(ls a.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "1:0"
 git checkout -q -- a.txt

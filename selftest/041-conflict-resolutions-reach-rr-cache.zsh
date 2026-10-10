@@ -52,20 +52,20 @@ git reset -q --hard
 # mode into a conflict – anchored to the start of a line, or the patterns would count the
 # assertion lines that carry them
 _ST_CHECK "every conflict-capable rebase start carries rerere" \
-	sh -c "[ \$(grep -cE '^[[:space:]]*reply=\\(-c rerere.enabled=true (-c [^ ]+ |[^ ]*_CAPTURE_PIN[^ ]* )*rebase' '$SELF') -eq 1 ]"
+	sh -c "[ \$(grep -cE '^[[:space:]]*reply=\\(-c rerere.enabled=true (-c [^ ]+ |[^ ]*_CAPTURE_PIN[^ ]* )*rebase' \"\$1\") -eq 1 ]" _ "$SELF"
 _ST_CHECK "and none was left without it" \
-	sh -c "! grep -qE '^[[:space:]]*(local CMD|reply)=\\(rebase' '$SELF'"
+	sh -c "! grep -qE '^[[:space:]]*(local CMD|reply)=\\(rebase' \"\$1\"" _ "$SELF"
 # Every rebase the script runs carries rerere, so a line with that flag but not the
 # `rebase.updateRefs` pin is a rebase that would move other branches ahead of the CAS – a
 # snapshot fold's direct `git rerere` aside, which moves nothing
 _ST_CHECK "and every one pins rebase.updateRefs off" \
-	sh -c "! grep -E -- '-c rerere\\.enabled=true' '$SELF' | grep -vE -- '-c rerere\\.enabled=true (-c [^ ]+ )*rerere ' | grep -vq -- '-c rebase\\.updateRefs=false'"
+	sh -c "! grep -E -- '-c rerere\\.enabled=true' \"\$1\" | grep -vE -- '-c rerere\\.enabled=true (-c [^ ]+ )*rerere ' | grep -vq -- '-c rebase\\.updateRefs=false'" _ "$SELF"
 _ST_CHECK "and carries the pins that hold a rewrite's delivery back" \
-	sh -c "! grep -E -- '-c rebase\\.updateRefs=false' '$SELF' | grep -vq -- '_CAPTURE_PIN'"
+	sh -c "! grep -E -- '-c rebase\\.updateRefs=false' \"\$1\" | grep -vq -- '_CAPTURE_PIN'" _ "$SELF"
 # A start holding git's delivery back without the `--exec` step saving the list has nothing to
 # deliver in its place – the one way the hold-back could lose a rewrite that landed
 _ST_CHECK "and every start saves the list it holds back" \
-	sh -c "! grep -E -- '_CAPTURE_PIN[^ ]* rebase' '$SELF' | grep -vE 'rebase (--continue|--skip|[^ ]*SUBCMD)' | grep -vq -- '_CAPTURE_EXEC'"
+	sh -c "! grep -E -- '_CAPTURE_PIN[^ ]* rebase' \"\$1\" | grep -vE 'rebase (--continue|--skip|[^ ]*SUBCMD)' | grep -vq -- '_CAPTURE_EXEC'" _ "$SELF"
 # A command array run as is hands git one argument per element, so the quoted capture strings
 # in one arrive whole and git refuses them – only an array joined and `eval`d takes those
 print -r -- '/^[A-Z_]+ \(\) \{/ { n = 0; direct = 0 }

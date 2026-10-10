@@ -50,3 +50,16 @@ _ST_EQ "an old tip named outright carries onto HEAD" "$(cat cy-h.txt)" "$(printf
 _ST_RUN --carry=no-such-tip
 _ST_OUT_HAS "and one naming nothing is refused" 'names no commit here'
 git reset -q --hard && rm -f cy-g.txt
+# A file checked out through `eol` merges as checked out – its raw blob differs on every line
+echo 'cy-crlf.txt text eol=crlf' >> .git/info/attributes
+printf 'u\r\nv\r\nw\r\n' > cy-crlf.txt && git add cy-crlf.txt && git commit -qm "CY crlf"
+local CY_CR_OLD=$(git rev-parse HEAD)
+GIT_INDEX_FILE=$CY_IDX git read-tree HEAD
+GIT_INDEX_FILE=$CY_IDX git update-index --cacheinfo "100644,$(printf 'U\nv\nw\n' | git hash-object -w --stdin),cy-crlf.txt"
+git update-ref HEAD "$(git commit-tree "$(GIT_INDEX_FILE=$CY_IDX git write-tree)" -p HEAD -m "CY crlf rewrite")"
+rm -f "$CY_IDX"
+printf 'u\r\nv\r\nW\r\n' > cy-crlf.txt
+_ST_RUN --carry="$CY_CR_OLD"
+_ST_EQ "a file checked out through eol carries" "$RC" "0"
+_ST_EQ "in its checked-out form" "$(cat cy-crlf.txt)" "$(printf 'U\r\nv\r\nW\r\n')"
+git reset -q --hard

@@ -1,6 +1,7 @@
 # A GUI quitting mid-run closes the pipe it read from, and the run's next line raised a SIGPIPE
-# nothing trapped – zsh died without its exit trap, the worktree still registered
-_ST_SCENARIO "\e[1;96m[99] a reader gone mid-run stops it before the branch moves, never after\e[0m"
+# nothing trapped – zsh died without its exit trap, the worktree still registered – and, trapped, a
+# `| head` cut short a run that would have landed: a lost reader now costs the output alone
+_ST_SCENARIO "\e[1;96m[99] a reader gone mid-run never stops it, before the branch moves or after\e[0m"
 local RG
 for RG in base one two; do
 	echo "$RG" > "rg_$RG.txt" && git add "rg_$RG.txt" && git commit -qm "RG $RG"
@@ -24,11 +25,12 @@ exec {RG_FD}<&-
 wait $RG_PID
 RC=$?
 git config --unset edit.verifyCmd
-_ST_EQ "a reader gone mid-check stops the run" "$RC" "141"
-_ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$RG_TIP"
+_ST_EQ "a reader gone mid-check lets the run finish" "$RC" "0"
+_ST_EQ "landing the move" "$(git log -2 --format=%s | tr '\n' '|')" "RG one|RG two|"
 _ST_EQ "and removing its worktree" "$(git worktree list | wc -l | tr -d ' ')" "$RG_WORKTREES"
 _ST_RUN --status
 _ST_OUT_HAS "with nothing left in flight" 'no operation in flight'
+RG_TIP=$(git rev-parse HEAD)
 # Once the branch moves the run finishes unheard – the hook holds the move open until the
 # reader, leaving at the `update-ref` line, is gone
 print -r -- "#!/bin/sh

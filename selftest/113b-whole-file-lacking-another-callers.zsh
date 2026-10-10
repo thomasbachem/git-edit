@@ -76,7 +76,7 @@ printf 'g\n' > 'wc-[g].txt' && printf 'g\n' > wc-g.txt && printf 'c\nx\ny\nz\n' 
 _ST_RUN --commit --text "WC odd names" -- 'wc-[g].txt' wc-g.txt ':wc-colon.txt'
 printf 'g\nmine\n' > 'wc-[g].txt' && printf 'g\nwip\n' > wc-g.txt && printf 'c\nx\ny\nz\nmine\n' > ':wc-colon.txt'
 _ST_RUN --commit --text "WC odd names again" -- 'wc-[g].txt' ':wc-colon.txt'
-_ST_EQ "a name like a pattern commits as itself" "$RC:$(git show --name-only --format= HEAD | sort | tr '\n' ' ')" "0::wc-colon.txt wc-[g].txt "
+_ST_EQ "a name like a pattern commits as itself" "$RC:$(git show --name-only --format= HEAD | LC_ALL=C sort | tr '\n' ' ')" "0::wc-colon.txt wc-[g].txt "
 _ST_EQ "and re-syncs as itself, the file it would match keeping its WIP" "$(git status --porcelain -- ':(literal)wc-[g].txt' ':(literal):wc-colon.txt' wc-g.txt)" " M wc-g.txt"
 export GIT_EDIT_ACTOR=wc-peer
 _ST_RUN --exec -- sh -c "printf 'C\nx\ny\nz\nmine\n' > ./:wc-colon.txt && git commit -qam 'WC peer on an odd name'"
@@ -86,7 +86,10 @@ _ST_RUN --commit --text "x" -- ':wc-colon.txt'
 _ST_OUT_HAS "the guard reads such a name too" ':wc-colon.txt – wc-peer'
 rm -f ':wc-colon.txt'
 _ST_RUN --commit --text "WC remove an odd name" -- ':wc-colon.txt'
-_ST_EQ "and a removal finds it at the tip" "$RC:$(git cat-file -e 'HEAD::wc-colon.txt' 2>/dev/null && echo kept || echo gone)" "0:gone"
+_ST_OUT_HAS "removing such a name the peer just edited refuses, as for any file" ':wc-colon.txt – wc-peer.*which edited it'
+WC_T=$(git rev-parse HEAD)
+_ST_RUN --commit --text "WC remove an odd name" --base="$WC_T" -- ':wc-colon.txt'
+_ST_EQ "and with --base a removal finds it at the tip" "$RC:$(git cat-file -e 'HEAD::wc-colon.txt' 2>/dev/null && echo kept || echo gone)" "0:gone"
 _ST_RUN --exec -- sh -c "printf 'g\nmine\nlanded\n' > 'wc-[g].txt' && git commit -qam 'WC land beside the checkout'"
 _ST_OUT_HAS "a restore hint marks such a name literal" "restore --source=HEAD --worktree -- ':(literal)wc-\[g\]\.txt'"
 git checkout -q -- ':(literal)wc-[g].txt' && printf 'g\nmine\nlanded\nfolded\n' > 'wc-[g].txt' && echo f > ':wc-fold.txt'

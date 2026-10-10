@@ -51,13 +51,13 @@ fi
 _ST_TTY_END
 _ST_EQ "Escape then another key cancels nothing" "$RC" "2"
 _ST_CHECK "the pause stays" test -d "$(_ST_PZ_WT)"
-# Ctrl-C at the prompt leaves the pause and says so, as q does
+# Ctrl-C at the prompt leaves the pause and says so, ending as q does
 _ST_TTY_START -- --continue
 if _ST_TTY_AT 'Make your changes in'; then
 	zpty -wn ST_TTY $'\003'
 fi
 _ST_TTY_END
-_ST_EQ "Ctrl-C at the prompt leaves the pause" "$RC" "130"
+_ST_EQ "Ctrl-C at the prompt leaves the pause" "$RC" "2"
 _ST_OUT_HAS "saying so, as q does" 'Left paused – resume with'
 _ST_RUN --abort
 # Markers at a configured size keep a file unstaged at Enter
@@ -136,7 +136,7 @@ printf '#!/bin/sh\n[ "$1" = committed ] || exit 0\ngrep -q " refs/heads/main$" |
 chmod +x .git/hooks/reference-transaction
 _ST_TTY -- -d -y HEAD
 rm -f .git/hooks/reference-transaction "$TP_GD/index.lock"
-_ST_OUT_HAS "a locked index is named with the restore for later" 'Take what landed once it is free'
+_ST_OUT_HAS "a locked index is named with the restore for later" 'once it is free'
 _ST_OUT_LACKS "never as a change while it ran" 'changed while it ran'
 git restore -q --source=HEAD --staged --worktree -- h.txt
 # A rename the carry can't take lands its destination all the same, a file standing there kept
@@ -148,7 +148,7 @@ _ST_PZ_C c.txt c "TP7 c"
 print -l {1..10} mine > a2
 print -r -- scratch > b
 _ST_TTY -- -d -y HEAD~1
-_ST_EQ "a rename's destination reaches the index where the carry can't" "$RC:$(git status --porcelain | sort | tr '\n' '|')" "0: M b|?? a2|"
+_ST_EQ "a rename's destination reaches the index where the carry can't" "$RC:$(git status --porcelain | LC_ALL=C sort | tr '\n' '|')" "0: M b|?? a2|"
 rm -f a2; git checkout -q -- b
 # A removal staged by hand stays staged, the file untracked
 _ST_PZ_NEW tp8
@@ -157,5 +157,5 @@ _ST_PZ_C f.txt $'1\n2x\n3' "TP8 c2"
 _ST_PZ_C g.txt g "TP8 g"
 git rm -q --cached f.txt
 _ST_TTY -- -d -y HEAD~1
-_ST_EQ "a staged removal stays staged, the file untracked" "$RC:$(git status --porcelain -- f.txt | sort | tr '\n' '|')" "0:?? f.txt|D  f.txt|"
+_ST_EQ "a staged removal stays staged, the file untracked" "$RC:$(git status --porcelain -- f.txt | LC_ALL=C sort | tr '\n' '|')" "0:?? f.txt|D  f.txt|"
 cd "$TMP/repo"

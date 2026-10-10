@@ -36,4 +36,4 @@ _ST_OUT_HAS "and says why" 'empty message'
 git reset -q --hard
 
 _ST_CHECK "the color gate covers NO_COLOR and TERM=dumb" \
-	sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' '$SELF'"
+	sh -c "command grep -q '^if \\[ ! -t 1 \\] || \\[ -n \"\\\$NO_COLOR\" \\] || \\[ \"\\\$TERM\" = \"dumb\" \\]; then' \"\$1\"" _ "$SELF"

@@ -25,7 +25,7 @@ git config --unset rerere.enabled
 # A ref name reaches a printed command quoted, as data
 git checkout -q -b 'op$(>pwned)x'
 _ST_RUN -M --text "OP C reworded" HEAD
-_ST_OUT_HAS "the Undo line quotes a branch name holding shell syntax" "update-ref 'refs/heads/op"
+_ST_OUT_HAS "the Undo line quotes a branch name holding shell syntax" "update-ref -m 'git edit: undo reword [0-9a-f]*' 'refs/heads/op"
 git checkout -q main
 # A parse error names the argument it refused, which has left `$1` by then
 _ST_RUN -M --txt=hello HEAD
@@ -54,7 +54,9 @@ _ST_EQ "an --exec command's own --verify leaves the gate's value alone" "$RC:$(g
 git reset -q --hard HEAD~1
 echo v > op-v.txt
 _ST_RUN --verify='OP_GATE=1 true' --commit --text --verify -- op-v.txt
-_ST_EQ "nor does a value given apart that reads like the flag" "$RC:$(git log -1 --format=%s)" "0:--verify"
+_ST_OUT_HAS "a value given apart that reads like a flag is named as the flag it is" '--text takes a value, and got the flag --verify'
+_ST_RUN --verify='OP_GATE=1 true' --commit --text=--verify -- op-v.txt
+_ST_EQ "while glued on, it is the value, kept whole" "$RC:$(git log -1 --format=%s)" "0:--verify"
 git reset -q --hard HEAD~1
 # A repeated `--carry` refuses as every single-value option does, and a
 # `--` ahead of the commits only ends the flags
@@ -93,6 +95,8 @@ _ST_OUT_HAS "a remaining step with a non-UTF-8 subject is listed in a UTF-8 loca
 _ST_OUT_LACKS "with no sed dying on it" 'illegal byte'
 _ST_RUN --abort
 _ST_EQ "every ls-tree naming a path reads it from the top" "$(grep -n 'git ls-tree [^|]* -- ' "$SELF" | grep -v -e '--full-tree' -e 'ECHO_E')" ""
+# A function defined twice runs as the later one everywhere, the earlier one's callers included
+_ST_EQ "no function is defined twice" "$(grep -oE '^[A-Za-z_][A-Za-z0-9_]* \(\) \{' "$SELF" | LC_ALL=C sort | uniq -d)" ""
 _ST_CHECK "the scratch dir's cleanup quotes its path" grep -qF '_CLEANUP_HOOK="rm -rf ${(q-)TMP}"' "$SELFTEST_DIR/lib.zsh"
 # A run sent to a file keeps every line – Linux reopens that file for `tee /dev/stderr`
 _ST_PZ_NEW o9

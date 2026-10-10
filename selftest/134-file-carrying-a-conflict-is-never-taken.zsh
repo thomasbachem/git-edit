@@ -30,5 +30,5 @@ _ST_PZ_C c.txt c "MK2 c"
 print -l 1 2y 3 4 5 6 7 8 > s
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a rename conflicting with edits lands its new path, the edits untracked at the old" \
-	"$RC:$(git status --porcelain | sort | tr '\n' '|'):$(sed -n 2p r):$(sed -n 2p s)" "0:?? s|:2:2y"
+	"$RC:$(git status --porcelain | LC_ALL=C sort | tr '\n' '|'):$(sed -n 2p r):$(sed -n 2p s)" "0:?? s|:2:2y"
 cd "$TMP/repo"

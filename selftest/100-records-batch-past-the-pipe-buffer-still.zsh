@@ -11,7 +11,7 @@ local LB_ONE=$(git rev-parse --short ':/LB one') LB_TWO=$(git rev-parse --short 
 local LB_BODY=$(printf 'Body line %s of a long batch reword\n' {1..1800})
 _ST_RUN_IN "$(printf -- '--- %s\nLB one reworded\n\n%s\n--- %s\nLB two reworded\n\n%s\n' "$LB_ONE" "$LB_BODY" "$LB_TWO" "$LB_BODY")" -M --text -
 _ST_EQ "a batch past the pipe buffer rewords" "$RC" "0"
-_ST_EQ "both its commits" "$(git log -2 --format=%s | sort | tr '\n' ' ')" "LB one reworded LB two reworded "
+_ST_EQ "both its commits" "$(git log -2 --format=%s | LC_ALL=C sort | tr '\n' ' ')" "LB one reworded LB two reworded "
 # The two-dash check reads as long a text
 _ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n\n%s\n%s\n' "$LB_ONE" "$LB_BODY" "$LB_BODY")" -M --text -
 _ST_OUT_HAS "and one with two-dash headers is named as such" "Records start with '--- <commit>'"

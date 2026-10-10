@@ -1,4 +1,5 @@
-# A reorder step resolved to empty must not vanish under an `ok`
+# A reorder step resolved to empty must not vanish under an `ok` – refused where a stop's commit
+# took its change in, named as dropped where the new order cancels it
 _ST_SCENARIO "\e[1;96m[33] dropped-commit reporting\e[0m"
 git reset -q --hard
 printf 'd1\nd2\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR base"
@@ -9,13 +10,26 @@ _ST_RUN --reorder "$DR_TIP" "$(git rev-parse HEAD~1)"
 _ST_EQ "reordering abutting edits conflicts" "$RC" "2"
 local DR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 printf 'd1\nDY\nd3\n' > "${DR_WT:-$ST_NO_WT}/dr.txt" && git -C "$DR_WT" add dr.txt
-# The final step restores the pre-op blobs by itself, which leaves the
-# replayed commit empty and the rebase drops it
+# The final step restores the pre-op blobs by itself, which leaves the replayed commit empty and
+# the rebase drops it – its change taken into the stop's commit, which the landing refuses
+_ST_RUN --continue
+_ST_EQ "a resolution emptying the later commit into the stop's refuses" "$RC:$(git rev-parse HEAD)" "1:$DR_TIP"
+_ST_OUT_HAS "naming the commit it emptied" 'DR one – dr\.txt (left out as emptied)'
+_ST_RUN --abort
+_ST_CHECK "state cleared by the abort" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
+git reset -q --hard
+# One the new order cancels – a line it adds that the stop's own commit removes – drops it
+printf 'c1\nc2\nc3\n' > dc.txt && git add dc.txt && git commit -qm "DC base"
+printf 'c1\nCX\nc2\nc3\n' > dc.txt && git add dc.txt && git commit -qm "DC one"
+printf 'c1\nC2\nc3\n' > dc.txt && git add dc.txt && git commit -qm "DC two"
+_ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
+_ST_EQ "a reorder the new order cancels a commit in conflicts" "$RC" "2"
+_ST_RESOLVE "$(_ST_PZ_WT)" dc.txt $'c1\nC2\nc3'
 _ST_RUN --continue
 _ST_EQ "resolution completes in one continue" "$RC" "0"
 _ST_OUT_HAS "continue path prints the new order too" 'new order (oldest-first)'
 _ST_OUT_HAS "reports the dropped commit" 'resolved to empty and were dropped'
-_ST_OUT_HAS "and names it" 'dropped: .*DR one'
+_ST_OUT_HAS "and names it" 'dropped: .*DC one'
 _ST_CHECK "state cleared" sh -c "! git edit --status 2>&1 | grep -q 'In-flight'"
 git reset -q --hard
 

@@ -32,7 +32,7 @@ if _ST_TTY_AT 'Make your changes in'; then
 	[ -n "$PP_PID" ] && kill -HUP "$PP_PID"
 fi
 _ST_TTY_END
-_ST_EQ "a hangup at the prompt leaves the edit paused" "$RC:$(git rev-parse HEAD)" "129:$PP_TIP"
+_ST_EQ "a hangup at the prompt leaves the edit paused, ending as q does" "$RC:$(git rev-parse HEAD)" "2:$PP_TIP"
 _ST_CHECK "what was authored there kept" grep -qx b3 "${PP_WT:-$ST_NO_WT}/b.txt"
 _ST_RUN --continue
 _ST_EQ "for a later --continue to land" "$RC:$(git show HEAD~1:b.txt)" "0:b3"
@@ -48,7 +48,7 @@ if _ST_TTY_AT 'Make your changes in'; then
 fi
 _ST_TTY_END
 _ST_OUT_HAS "a refused amend names its reason" 'Amend failed – nothing was applied: PP hook says no'
-_ST_EQ "asking again rather than discarding the edit" "$RC:$(<"${PP_WT:-$ST_NO_WT}/b.txt")" "1:b4"
+_ST_EQ "asking again rather than discarding the edit, q leaving it paused" "$RC:$(<"${PP_WT:-$ST_NO_WT}/b.txt")" "2:b4"
 rm -f .git/hooks/pre-commit
 _ST_RUN --continue
 _ST_EQ "which lands once the hook lets it" "$RC:$(git show HEAD~1:b.txt)" "0:b4"

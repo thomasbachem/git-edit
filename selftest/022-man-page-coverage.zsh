@@ -56,4 +56,8 @@ if [ -f "$MANPAGE" ]; then
 	else
 		FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m -h missing:$hmissing"
 	fi
+	# A flag taken by a mode it was not first written for is documented beside that mode too
+	_ST_CHECK "the man synopsis gives --land its --base" grep -qE -- '--land=branch \[--base=sha\]' <<<"$MANTEXT"
+	_ST_CHECK "-h gives --land its --base" grep -qE -- '--land=<branch> \[--base=<sha>\]' <<<"$HELPTEXT"
+	[ -f "$READMEFILE" ] && _ST_CHECK "README says what --base means with --land" grep -qE -- 'With `--land`, the commit `<branch>` forked from' "$READMEFILE"
 fi

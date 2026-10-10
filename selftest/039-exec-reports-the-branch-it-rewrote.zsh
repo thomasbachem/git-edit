@@ -134,7 +134,7 @@ git reset -q -- xp.txt
 # would name the subdirectory's own file
 mkdir -p xsub && echo xs > xs.txt && echo own > xsub/xs.txt && git add xs.txt xsub/xs.txt && git commit -qm "XS base"
 cd xsub
-_ST_RUN --exec -- sh -c 'echo landed > xs.txt && git commit -qam "XS lands"'
+_ST_RUN --exec -- sh -c 'echo landed > ../xs.txt && git commit -qam "XS lands"'
 cd "$TMP/repo"
 _ST_OUT_HAS "a hint printed in a subdirectory goes to the top first" 'Reconcile those paths.*cd .* && git restore --source=HEAD --worktree -- xs\.txt'
 git restore --source=HEAD --worktree -- xs.txt

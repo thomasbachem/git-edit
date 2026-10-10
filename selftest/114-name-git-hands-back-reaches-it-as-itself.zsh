@@ -9,7 +9,7 @@ local PN_AWK='
 	/^[[:space:]]*#/ { next }
 	/git[^;|&]* -- "?\$/ {
 		seen++
-		if (lit || /--literal-pathspecs|:\(literal\)|_QUOTE_PATHS|"\$\{(AMEND_)?PATHSPECS\[@\]\}"/ || / (update-index|hash-object|blame|merge-file|check-attr|apply) |--no-index/) next
+		if (lit || /--literal-pathspecs|:\(literal\)|_QUOTE_PATHS|"\$\{(AMEND_)?PATHSPECS\[@\]\}"/ || / (update-index|hash-object|blame|merge-file|check-attr|check-ignore|apply) |--no-index/) next
 		print NR ": " $0
 	}
 	END { print "seen " seen + 0 }'
