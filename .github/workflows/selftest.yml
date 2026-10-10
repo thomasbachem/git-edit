@@ -1,5 +1,8 @@
-# Runs git-edit's end-to-end suite on Linux – for each push to main or a `ci/…` branch, each pull request,
-# or by hand
+# Runs git-edit's end-to-end suite as its release test, every leg side by side – for each push to
+# main or a `ci/…` branch, each pull request, or by hand
+# • Linux: the default git, SHA-256 with reftable, Debian 12's git, the oldest supported (2.31.8)
+# • macOS: the default git run serially, as a plain `--selftest` is, in 3 slices, and the C locale
+#   in 2 – each cut by `selftest-slice.zsh` to about equal time
 name: selftest
 on:
   push:
@@ -8,21 +11,97 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    # `-o pipefail`, so a suite piped into `tee` still fails its step
+    shell: bash
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    name: linux – ${{ matrix.leg }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [default git, sha256 + reftable, git 2.31.8]
     steps:
       - uses: actions/checkout@v5
       - name: Install zsh
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh zlib1g-dev
+      - name: Cache git 2.31.8
+        id: git231
+        if: matrix.leg == 'git 2.31.8'
+        uses: actions/cache@v4
+        with:
+          path: ~/git-2.31.8
+          key: git-2.31.8-ubuntu-24.04-v1
+      # Only what the suite runs – no transport, no translations, no Perl or Python
+      - name: Build git 2.31.8
+        if: matrix.leg == 'git 2.31.8' && steps.git231.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.31.8.tar.xz | tar -xJ -C "$RUNNER_TEMP"
+          make -s -C "$RUNNER_TEMP/git-2.31.8" -j"$(nproc)" prefix="$HOME/git-2.31.8" \
+            NO_CURL=1 NO_EXPAT=1 NO_OPENSSL=1 NO_PERL=1 NO_PYTHON=1 NO_GETTEXT=1 NO_TCLTK=1 install
+      - name: Use git 2.31.8
+        if: matrix.leg == 'git 2.31.8'
+        run: echo "$HOME/git-2.31.8/bin" >> "$GITHUB_PATH"
+      - name: Use SHA-256 and reftable
+        if: matrix.leg == 'sha256 + reftable'
+        run: printf 'GIT_DEFAULT_HASH=sha256\nGIT_DEFAULT_REF_FORMAT=reftable\n' >> "$GITHUB_ENV"
       - name: Versions
-        run: git --version && zsh --version && nproc
+        run: git --version && zsh --version && nproc && locale | grep -E '^(LANG|LC_CTYPE)='
       - name: Suite
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: ./git-edit --selftest --jobs
-      # Each failing check with the lines after it, from the scenarios' kept output
+        run: TMPDIR="$RUNNER_TEMP" ./git-edit --selftest --jobs 2>&1 | tee "$RUNNER_TEMP/suite.log"
+      # Each failing check with the lines after it, as a long log buries them
       - name: Failed checks
         if: failure()
-        run: grep -h -A6 '  FAIL' "$RUNNER_TEMP"/git-edit-jobs.*/*.out | cut -c1-300 | head -300
+        run: grep -h -A6 '  FAIL' "$RUNNER_TEMP/suite.log" | cut -c1-300 | head -300
+  debian:
+    name: linux – Debian 12 git
+    runs-on: ubuntu-24.04
+    container: debian:12
+    timeout-minutes: 60
+    env:
+      LANG: C.UTF-8
+    steps:
+      # `procps`, as every Debian install bar a bare image has – the suite finds runs by `ps`
+      - name: Install git, zsh and procps
+        run: apt-get update -q && apt-get install -y -q --no-install-recommends git zsh procps ca-certificates
+      - uses: actions/checkout@v5
+      - name: Versions
+        run: git --version && zsh --version && nproc && locale | grep -E '^(LANG|LC_CTYPE)='
+      - name: Suite
+        run: TMPDIR="$RUNNER_TEMP" ./git-edit --selftest --jobs 2>&1 | tee "$RUNNER_TEMP/suite.log"
+      - name: Failed checks
+        if: failure()
+        run: grep -h -A6 '  FAIL' "$RUNNER_TEMP/suite.log" | cut -c1-300 | head -300
+  macos:
+    name: macos – ${{ matrix.leg }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { leg: serial 1/3, slice: 1, of: 3 }
+          - { leg: serial 2/3, slice: 2, of: 3 }
+          - { leg: serial 3/3, slice: 3, of: 3 }
+          - { leg: C locale 1/2, slice: 1, of: 2, locale: C }
+          - { leg: C locale 2/2, slice: 2, of: 2, locale: C }
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versions
+        run: git --version && zsh --version && sysctl -n hw.ncpu && locale | grep -E '^(LANG|LC_CTYPE)='
+      # Default git slices run serially like a plain `--selftest`, the C locale's with `--jobs`
+      - name: Suite
+        run: |
+          PICK=$(zsh .github/selftest-slice.zsh ${{ matrix.slice }} ${{ matrix.of }})
+          echo "slice ${{ matrix.slice }} of ${{ matrix.of }}: scenarios $PICK"
+          if [ -n "${{ matrix.locale }}" ]; then
+            TMPDIR="$RUNNER_TEMP" LC_ALL=${{ matrix.locale }} ./git-edit --selftest="$PICK" --jobs 2>&1 | tee "$RUNNER_TEMP/suite.log"
+          else
+            TMPDIR="$RUNNER_TEMP" ./git-edit --selftest="$PICK" 2>&1 | tee "$RUNNER_TEMP/suite.log"
+          fi
+      - name: Failed checks
+        if: failure()
+        run: grep -h -A6 '  FAIL' "$RUNNER_TEMP/suite.log" | cut -c1-300 | head -300
