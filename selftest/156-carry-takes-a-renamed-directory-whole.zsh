@@ -22,7 +22,7 @@ DR_WT=$(_ST_PZ_WT)
 git -C "${DR_WT:-$ST_NO_WT}" mv 'old [a]' 'new *x'
 _ST_RUN_UNSYNCED --continue
 _ST_OUT_HAS "the landing names an untracked file left in the directory it renamed whole" 'renamed whole: .*old \[a\]/cases/b \[1\]\.json → new \*x/cases/b \[1\]\.json'
-_ST_OUT_HAS "with the carry that takes it along" "edits merged onto it: git edit --carry=${DR_OLD:0:12}"
+_ST_OUT_HAS "with the carry that takes it along" "edits merged onto it: git edit --carry$"
 _ST_OUT_HAS "and one whose place is taken as left" 'to move by hand: old \[a\]/cases/c\.json – untracked, new \*x/cases/c\.json exists already'
 _ST_OUT_LACKS "never an ignored one" 'x\.log'
 _ST_RUN --carry="$DR_OLD"

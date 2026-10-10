@@ -128,11 +128,12 @@ RC=$?
 _ST_EQ "while it lands with the bit, beside flips of its own" "${RC}:$(git ls-tree HEAD other.sh plain.txt run.sh | cut -c1-6 | tr '\n' ' ')" "0:100644 100755 100755 "
 # A staged fold taking back a landed bit names setting it on the staging – staging again wouldn't
 _ST_PZ_NEW we6
-print -l l{01..06} > run.sh && git add -A && git commit -qm "WE6 init" && git commit -q --allow-empty -m "WE6 two"
+print -l l{01..06} > run.sh && git add -A && git commit -qm "WE6 init"
 OUT=$(GIT_EDIT_ACTOR=we-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "WE6 peer chmod" --chmod run.sh=+x </dev/null 2>&1)
-WE_T=$(git rev-parse HEAD)
+# The target past the landing, which a fold below it would apply again
+git commit -q --allow-empty -m "WE6 two" && WE_T=$(git rev-parse HEAD)
 print -l l01 l02 THREE l04 l05 l06 > run.sh && chmod -x run.sh && git add run.sh
-OUT=$(GIT_EDIT_ACTOR=we-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into=HEAD~1 --allow-mode-change -- run.sh </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=we-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$WE_T" --allow-mode-change -- run.sh </dev/null 2>&1)
 RC=$?
 _ST_EQ "a staged fold without a landed bit refuses" "${RC}:$(git rev-parse HEAD)" "1:$WE_T"
 WE_H=${(M)${(f)OUT}:#*keeping what you staged, with: *}
@@ -141,7 +142,7 @@ _ST_EQ "naming the bit set on the staging" "$WE_H" "git update-index --chmod=+x 
 _ST_OUT_LACKS "never an unstaging the next git add undoes" 'git restore --staged'
 _ST_CHECK "which runs" sh -c "${WE_H:-false}"
 _ST_EQ "keeping what was staged" "$(git ls-files -s run.sh | cut -c1-6):$(git show :run.sh | sed -n 3p)" "100755:THREE"
-OUT=$(GIT_EDIT_ACTOR=we-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into=HEAD~1 --allow-mode-change -- run.sh </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=we-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$WE_T" --allow-mode-change -- run.sh </dev/null 2>&1)
 RC=$?
 _ST_OUT_LACKS "so the fold no longer takes the bit back" 'would take back'
 _ST_RUN --abort

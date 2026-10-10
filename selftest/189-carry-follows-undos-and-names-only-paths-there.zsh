@@ -25,7 +25,8 @@ _CU_OLD_GIT () {
 }
 
 # Two landings on a file with edits made before both, the second undone and a third made: the
-# carry the third names starts from the first's old tip, and the file then committed keeps all
+# bare carry the third names takes the file from the first's old tip, and the file then committed
+# keeps all
 _ST_PZ_NEW cu1
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CU1 base"
 CU_T0=$(git rev-parse HEAD)
@@ -36,9 +37,8 @@ _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7-L2 8 9 10 > f.t
 _ST_RUN --undo
 _ST_EQ "the second landing undone" "$RC:$(git rev-parse HEAD)" "0:$CU_T1"
 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9-L3 10 > f.txt && git commit -qam 'CU1 L3'"
-_ST_OUT_HAS "a landing after an undo names the carry from the landing before it" "edits merged onto it: git edit --carry=${CU_T0:0:12}$"
-CU_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
-_ST_RUN "$CU_C"
+_ST_OUT_HAS "a landing after an undo names the bare carry" "edits merged onto it: git edit --carry$"
+_ST_RUN --carry
 _ST_EQ "followed as printed, the file keeps the first and third landings and its edits" "$RC:$(sed -n '2p;5p;7p;9p' f.txt | tr '\n' ' ')" "0:2-A 5-L1 7 9-L3 "
 _ST_RUN --commit --text "CU1 mine" -- f.txt
 _ST_EQ "and committed whole, as nothing guards an unlabeled caller's own landings, it keeps them" \
@@ -54,7 +54,9 @@ _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7-L2 8 9 10 > f.t
 _ST_RUN --undo
 print -l 1 2-A 3 4 5-L1 {6..10} > f.txt
 _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9-L3 10 > f.txt && git commit -qam 'CU2 L3'"
-_ST_OUT_HAS "while one made on the first names the third's own old tip" "edits merged onto it: git edit --carry=${CU_T1:0:12}$"
+_ST_OUT_HAS "while one made on the first names it too" "edits merged onto it: git edit --carry$"
+_ST_RUN --carry
+_ST_EQ "which merges it from the third's own old tip" "$RC:$(sed -n '2p;5p;7p;9p' f.txt | tr '\n' ' ')" "0:2-A 5-L1 7 9-L3 "
 
 # A landing renaming a file by case, its content changed too,
 # reads an earlier landing the file lacks under the old spelling
@@ -65,9 +67,8 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	print -l 1 2-A {3..10} > README.md
 	_ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > README.md && git commit -qam 'CU3 L1'"
 	_ST_RUN_UNSYNCED --exec -- sh -c "git mv README.md cu3.tmp && git mv cu3.tmp readme.md && printf '%s\n' 1 2 3 4 5-L1 6 7 8-L2 9 10 > readme.md && git commit -qam 'CU3 L2'"
-	_ST_OUT_HAS "a case-only rename names the carry from the earlier landing" "edits merged onto it: git edit --carry=${CU_T0:0:12}$"
-	CU_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
-	_ST_RUN "$CU_C"
+	_ST_OUT_HAS "a case-only rename names the bare carry" "edits merged onto it: git edit --carry$"
+	_ST_RUN --carry
 	_ST_EQ "followed as printed, the file keeps both landings and its edits" "$RC:$(git ls-files | tr '\n' ' '):$(sed -n '2p;5p;8p' readme.md | tr '\n' ' ')" "0:readme.md t.txt :2-A 5-L1 8-L2 "
 fi
 
@@ -102,10 +103,10 @@ _ST_EQ "followed as printed, it keeps the landing and the edits" "$RC:$(git show
 # where it names paths – and where nothing is staged under them, never says to drop them
 _ST_PZ_NEW cu6
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CU6 base"
-_ST_PZ_C t.txt y "CU6 target" && CU_TIP=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt
 GIT_EDIT_ACTOR=cu-peer _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CU6 L1'"
 GIT_EDIT_ACTOR=cu-peer _ST_RUN_UNSYNCED --exec -- sh -c "git mv f.txt h.txt && git commit -qm 'CU6 L2'"
+print -r -- y > t.txt && git commit -qm "CU6 target" -- t.txt && CU_TIP=$(git rev-parse HEAD)
 git add f.txt
 GIT_EDIT_ACTOR=cu-self _ST_RUN --amend-into="$CU_TIP" -- f.txt
 _ST_OUT_HAS "a staged fold of a file renamed since names the new name for the run again" \
@@ -122,10 +123,10 @@ _ST_EQ "and the new name folds, both edits kept" "$RC:$(git show HEAD:h.txt | se
 # A fold naming no paths needs no new name
 _ST_PZ_NEW cu7
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CU7 base"
-_ST_PZ_C t.txt y "CU7 target" && CU_TIP=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt
 GIT_EDIT_ACTOR=cu-peer _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5-L1 6 7 8 9 10 > f.txt && git commit -qam 'CU7 L1'"
 GIT_EDIT_ACTOR=cu-peer _ST_RUN_UNSYNCED --exec -- sh -c "git mv f.txt h.txt && git commit -qm 'CU7 L2'"
+print -r -- y > t.txt && git commit -qm "CU7 target" -- t.txt && CU_TIP=$(git rev-parse HEAD)
 git add f.txt
 GIT_EDIT_ACTOR=cu-self _ST_RUN --amend-into="$CU_TIP"
 _ST_OUT_HAS "a staged fold naming no paths is told to run again" "Then stage them again with: git add -- h\.txt .* – and run this again\.$"

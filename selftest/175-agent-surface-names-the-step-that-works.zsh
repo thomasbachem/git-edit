@@ -6,8 +6,9 @@ _ST_SCENARIO "\e[1;96m[175] the agent surface names a step that works, owners by
 local AS_TOP AS_WT AS_CMD AS_SF AS_D AS_REAL AS_ARG
 local -i AS_RC
 
-# An `--onto` refusal over uncommitted work names the commit from the top – `--commit` reads its
-# paths from where it runs, so from a subdirectory it once committed another session's file
+# An `--onto` refusal over uncommitted work, halfway through a sequence, names the commit from the
+# top – `--commit` reads its paths from where it runs, so from a subdirectory it once committed
+# another session's file
 _ST_PZ_NEW as2
 mkdir -p sub/sub
 _ST_PZ_C sub/x.txt x0 "AS2 base"
@@ -20,8 +21,8 @@ print -r -- xLOCAL > sub/x.txt
 print -r -- peer > sub/sub/x.txt
 AS_TOP=$PWD
 cd sub
-_ST_RUN --onto=up
-_ST_EQ "an --onto over uncommitted work from a subdirectory refuses" "$RC" "1"
+_ST_RUN_UNSYNCED --onto=up
+_ST_EQ "an --onto over uncommitted work halfway through a sequence, from a subdirectory, refuses" "$RC" "1"
 _ST_OUT_HAS "its commit command going to the top first" "yours: cd .* && git edit --commit --text '<subject>' -- sub/x.txt"
 AS_CMD=$(print -r -- "$OUT" | sed -n 's/.*– yours: \(.*\); another session.*/\1/p' | head -1)
 AS_CMD=${AS_CMD//<subject>/AS2 local}

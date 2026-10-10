@@ -1,5 +1,5 @@
 # A waiting `--onto` never replants onto a commit a landing rewrote, the raw undo's re-sync step is
-# printed only where it works, and a carry and the landings guard follow a path back through
+# named only where it works, and a carry and the landings guard follow a path back through
 # renames into it:
 # • `--onto=HEAD~1`, or the SHA of a commit on the branch, that a peer's landing rewrote meanwhile
 #   resolves to its counterpart with the same diff, else refuses naming it
@@ -116,7 +116,8 @@ OV_PRE="$(git ls-files -t | LC_ALL=C sort | tr '\n' '|'):$(git status --short | 
 _ST_EQ "an out-of-cone file is flagged" "$(git ls-files -t -- out/b)" "S out/b"
 _ST_RUN_UNSYNCED --exec -- sh -c 'mkdir -p out && echo b2 > out/b && echo a2 > in/a && echo n > out/new && { git add --sparse out/b in/a out/new 2>/dev/null || git add out/b in/a out/new; } && git commit -qm "OV2 land"'
 _ST_OUT_HAS "a landing re-syncs entries out of the cone" "^Index entries re-synced to the new tip: .*out/b"
-_ST_OUT_HAS "naming --undo for them, the raw undo moving the ref alone" "^The raw undo moves the ref alone, leaving these staged as the run's content – .* so undo with git edit --undo, which re-syncs them all$"
+_ST_RUN --status
+_ST_OUT_HAS "--status names --undo for them, the raw undo moving the ref alone" "^The raw undo moves the ref alone, leaving what this run staged as its content – .* so undo with git edit --undo, which re-syncs them all$"
 _ST_OUT_LACKS "never the raw re-sync step" "After the raw undo"
 _ST_RUN --undo
 _ST_EQ "the undo named puts every entry back, flags and all" \
@@ -124,10 +125,11 @@ _ST_EQ "the undo named puts every entry back, flags and all" \
 # Re-syncing paths inside the cone alone, a git that asks the patterns prints the raw step, which
 # works as printed – one that can't ask names `--undo` there too
 _ST_RUN_UNSYNCED --exec -- sh -c 'echo a3 > in/a && git add in/a && git commit -qm "OV2 in-cone"'
+_ST_RUN --status
 if _ST_SPARSE_RULES_OK; then
-	_ST_OUT_HAS "inside the cone the raw re-sync step is printed" "^After the raw undo, re-sync them back"
+	_ST_OUT_HAS "inside the cone the raw re-sync step is printed" "^After the raw undo, re-sync the entries"
 	OV_RAW=$(sed -n 's/^Undo: git edit --undo  (or, the ref alone: \(.*\))$/\1/p' <<<"$OUT")
-	OV_HINT=$(sed -n 's/^After the raw undo, re-sync them back – [^:]*: //p' <<<"$OUT")
+	OV_HINT=$(sed -n 's/^After the raw undo, re-sync the entries [^:]*: //p' <<<"$OUT")
 	eval "$OV_RAW" && eval "$OV_HINT"
 	_ST_EQ "and followed as printed, it puts the entries back" \
 		"$?:$(git ls-files -t | LC_ALL=C sort | tr '\n' '|'):$(git status --short | LC_ALL=C sort | tr '\n' '|')" "0:$OV_PRE"
@@ -146,8 +148,8 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV3 B" --edits '{"f": [["f line 8\n", "f line 8 B\n"]]}'
 	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "git mv f ov3.tmp && git mv ov3.tmp F && git commit -qm 'OV3 C'"
 	GIT_EDIT_ACTOR=ov-d _ST_RUN_UNSYNCED --commit --text "OV3 D" --edits '{"F": [["f line 18\n", "f line 18 D\n"]]}'
-	_ST_OUT_HAS "a landing after a case-only rename names the carry from before the landing on the old spelling" \
-		"edits merged onto it: git edit --carry=${OV_T0:0:12}$"
+	_ST_OUT_HAS "a landing after a case-only rename names the bare carry" \
+		"edits merged onto it: git edit --carry$"
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV3 A" -- F
 	_ST_EQ "the file committed whole without it refuses" "$RC" "1"
 	_ST_OUT_HAS "naming the landing on the old spelling" "^ *F – ov-b's commit run .* (${OV_T0:0:7}\.\.[0-9a-f]*), on its old name f$"
@@ -247,9 +249,9 @@ for OV_I in 1 2 3; do
 		GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "$OV_CMD"
 		_ST_EQ "a file put at the old name since stops the move back as printed, kept" "$?:$(<f):$(_OV_KEPT "$(<h)")" "1:precious:1"
 	else
-		_ST_OUT_HAS "with the old name taken, a landing names the carry from its own old tip ($OV_I)" \
-			"edits merged onto it: git edit --carry=${OV_T2:0:12}$"
-		GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "git edit --carry=${OV_T2:0:12}"
+		_ST_OUT_HAS "with the old name taken, a landing names the bare carry ($OV_I)" \
+			"edits merged onto it: git edit --carry$"
+		GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "git edit --carry"
 	fi
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --commit --text "OV7 A" -- h
 	_ST_EQ "the file committed whole then refuses ($OV_I)" "$RC" "1"
@@ -269,11 +271,11 @@ done
 if [[ "$(git add -h 2>&1)" == *(--|\])sparse\ * ]]; then
 	_ST_PZ_NEW ov8
 	mkdir x && print -l "f line "{1..20} > x/f && print -r -- x > t && git add -A && git commit -qm "OV8 base"
-	_ST_PZ_C t y "OV8 target" && OV_TIP=$(git rev-parse HEAD)
 	{ git sparse-checkout set --cone x || { git sparse-checkout init --cone && git sparse-checkout set x; }; } >/dev/null 2>&1
 	print -l "f line 1 A-EDIT" "f line "{2..20} > x/f
 	GIT_EDIT_ACTOR=ov-b _ST_RUN_UNSYNCED --commit --text "OV8 B" --edits '{"x/f": [["f line 8\n", "f line 8 B\n"]]}'
 	GIT_EDIT_ACTOR=ov-c _ST_RUN_UNSYNCED --exec -- sh -c "mkdir -p y && git mv --sparse x/f y/h && git commit -qm 'OV8 C'"
+	print -r -- y > t && git commit -qm "OV8 target" -- t && OV_TIP=$(git rev-parse HEAD)
 	mkdir -p y && mv x/f y/h && git add --sparse y/h
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --amend-into="$OV_TIP" -- y/h
 	_ST_OUT_LACKS "a staged fold outside the cone offers no unstaging" "git restore --staged"

@@ -91,6 +91,7 @@ WC_T=$(git rev-parse HEAD)
 _ST_RUN --commit --text "WC remove an odd name" --base="$WC_T" -- ':wc-colon.txt'
 _ST_EQ "and with --base a removal finds it at the tip" "$RC:$(git cat-file -e 'HEAD::wc-colon.txt' 2>/dev/null && echo kept || echo gone)" "0:gone"
 _ST_RUN_UNSYNCED --exec -- sh -c "printf 'g\nmine\nlanded\n' > 'wc-[g].txt' && git commit -qam 'WC land beside the checkout'"
+_ST_RUN --status
 _ST_OUT_HAS "a restore hint marks such a name literal" "restore --staged -- ':(literal)wc-\[g\]\.txt'"
 git checkout -q -- ':(literal)wc-[g].txt' && printf 'g\nmine\nlanded\nfolded\n' > 'wc-[g].txt' && echo f > ':wc-fold.txt'
 _ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- 'wc-[g].txt' ':wc-fold.txt'

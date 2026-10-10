@@ -203,7 +203,7 @@ _ST_EQ "while an empty commit paused for its message is reworded" "$RC:$(git log
 # An abort leaves another repository's checkout standing at a pause worktree's path alone
 _EP_PAUSE_B ep7
 mv "${EP_WT:-$ST_NO_WT}" "${EP_WT:-$ST_NO_WT}.moved"
-git init -q "${EP_WT:-$ST_NO_WT}" && ( cd "${EP_WT:-$ST_NO_WT}" && _ST_PZ_C o.txt o "EP7 other" )
+git init -q "${EP_WT:-$ST_NO_WT}" && ( cd "${EP_WT:-$ST_NO_WT}" && git config user.email o@x.invalid && git config user.name O && _ST_PZ_C o.txt o "EP7 other" )
 _ST_RUN --abort
 _ST_EQ "an abort with another repository's checkout at the pause's path clears the pause" "$RC:$([ -f .git/git-edit-state ] && echo kept)" "0:"
 _ST_EQ "leaving that checkout as it was" "$(git -C "${EP_WT:-$ST_NO_WT}" log -1 --format=%s 2>/dev/null)" "EP7 other"

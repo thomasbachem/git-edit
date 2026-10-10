@@ -137,7 +137,7 @@ chmod +x .git/hooks/reference-transaction
 _ST_TTY -- -d -y HEAD
 rm -f .git/hooks/reference-transaction "$TP_GD/index.lock"
 _ST_OUT_HAS "a locked index is named with the carry for later" 'its index was locked by another run past the wait'
-_ST_OUT_HAS "the carry right above the trailer" 'Once that is done, bring your checkout along.*git edit --carry='
+_ST_OUT_HAS "the carry right above the trailer" 'Once that is done, bring your checkout along.*git edit --carry$'
 _ST_OUT_LACKS "never as a change while it ran" 'changed while it ran'
 git restore -q --source=HEAD --staged --worktree -- h.txt
 # A rename the carry can't take lands its destination all the same, a file standing there kept

@@ -78,23 +78,23 @@ _ST_RUN --commit --text "IX2 ws3" --patch "$TMP/ix2-ws3.patch"
 _ST_EQ "while the patch as cut applies" "$RC:$(git show HEAD:f.txt | sed -n 3p)" "0:line 3 y"
 git config --unset apply.ignoreWhitespace
 
-# A staged fold taking back a landing names the carry into the checkout and the re-stage, which
-# then land – once, only "stage those files again from content that holds it"
+# A staged fold taking back a landing below its target names the carry into the checkout, which
+# stages again the file staged whole, then lands – once, only "stage those files again from
+# content that holds it"
 _ST_PZ_NEW ix3
 print -l "line "{1..20} > f.txt && git add f.txt && git commit -qm "IX3 base"
-_ST_PZ_C h.txt h "IX3 h" && IX_T=$(git rev-parse HEAD)
 _IX_PEER_LANDS ix3-feat "IX3 B" f.txt "line "{1..14} "line 15 B" "line "{16..20}
+print -r -- h > h.txt && git add h.txt && git commit -qm "IX3 h" -- h.txt && IX_T=$(git rev-parse HEAD)
 print -l "line 1" "line 2 A" "line "{3..20} > f.txt && git add f.txt
 GIT_EDIT_ACTOR=ix-self _ST_RUN --amend-into="$IX_T" -- f.txt
 _ST_EQ "a staged fold taking back a landing refuses" "$RC" "1"
-_ST_OUT_HAS "naming the carry into the checkout" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}'"
-_ST_OUT_HAS "and the re-stage" 'Then stage them again with: git add -- f\.txt'
+_ST_OUT_HAS "naming the carry into the checkout, which stages it again" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which stages each file again as merged"
+_ST_OUT_LACKS "so no re-stage" 'git add -- f\.txt'
 IX_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
 GIT_EDIT_ACTOR=ix-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$IX_C" </dev/null >/dev/null 2>&1
-git add f.txt
 GIT_EDIT_ACTOR=ix-self _ST_RUN --amend-into="$IX_T" -- f.txt
 _ST_EQ "followed as printed, the fold lands keeping what landed" \
-	"$RC:$(git show HEAD~1:f.txt | sed -n 2p):$(git show HEAD:f.txt | sed -n 15p)" "0:line 2 A:line 15 B"
+	"$RC:$(git show HEAD:f.txt | sed -n 2p):$(git show HEAD:f.txt | sed -n 15p)" "0:line 2 A:line 15 B"
 # Each of two bits taken back names its own command –
 # once, the second took the first line as its `cd`
 _ST_PZ_NEW ix3b

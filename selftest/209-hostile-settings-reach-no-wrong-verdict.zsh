@@ -16,7 +16,7 @@ _P209_REPO () {
 	_ST_PZ_NEW "$1" && git config diff.doc.textconv "$TMP/h209-tc" && print -r -- '*.doc diff=doc' > .gitattributes
 }
 # Lands branch `feat`, rewording `r.doc`, onto a moved `main` – `H9_U` the raw undo, `H9_S` the
-# re-sync step beside it
+# re-sync step `--status` names beside it
 _P209_LANDED () {
 	# Args: <repo name>
 	_P209_REPO "$1"
@@ -24,8 +24,9 @@ _P209_LANDED () {
 	git checkout -q -b feat && printf '#style plain\nHello world\n' > r.doc && git commit -qam "H9 reword"
 	git checkout -q main && _ST_PZ_C o.txt o "H9 other"
 	_ST_RUN --land=feat
+	_ST_RUN --status
 	H9_U=$(print -r -- "$OUT" | sed -n 's/^Undo: git edit --undo  (or, the ref alone: \(.*\))$/\1/p')
-	H9_S=$(print -r -- "$OUT" | sed -n 's/^After the raw undo, re-sync them back.*listing those: //p')
+	H9_S=$(print -r -- "$OUT" | sed -n 's/^After the raw undo, re-sync the entries.*listing those: //p')
 	H9_S=${H9_S%%$'\e'*}
 }
 

@@ -9,7 +9,8 @@
 #   first's – read old, it would merge the first's change back out as an uncommitted edit
 # • An undo of a land, a drop or an `--exec` rewrite brings the checkout back the same way, one of a
 #   fold, a commit or an `--exec` only adding commits leaving what it landed as uncommitted changes
-# • The raw undo's index-only step is named, with the carry where `--undo` would bring files back
+# • `--status` names the raw undo's index-only step, with the carry where `--undo` would bring files
+#   back
 # • A branch checked out twice: the sync holds the checkout it writes, the carry named for the other
 # • Where the sync can't run – its index locked past the wait – one `--carry` is named, which keeps
 #   a peer's staging made after the run
@@ -180,7 +181,7 @@ _ST_RUN --land=feat
 rm -f .git/index.lock
 _ST_EQ "a land with the index locked lands" "$RC:$(git log -1 --format=%s):$(tr '\n' ' ' < f.txt)" "0:SY7 feat:1 2 3 "
 _ST_OUT_HAS "naming why the checkout was not brought along" 'Your checkout was not brought along – its index was locked by another run past the wait\.'
-_ST_OUT_HAS "and the carry, right above the trailer" "^Once that is done, bring your checkout along – files to what landed, edits merged onto it: git edit --carry=${$(git rev-parse HEAD~1):0:12}$"
+_ST_OUT_HAS "and the carry, right above the trailer" "^Once that is done, bring your checkout along – files to what landed, edits merged onto it: git edit --carry$"
 _ST_OUT_LACKS "no restore of a file or clean is printed" 'git restore \(--source\|--worktree\|-- \)\|git clean'
 print -l 1 2 peer > g.txt && git add g.txt
 PATH="$TMP/sy-bin:$PATH" eval "$(print -r -- "$OUT" | sed -n 's/^Once that is done, bring your checkout along[^:]*: //p')"
@@ -236,30 +237,33 @@ OUT=$(PATH="$TMP/sy10-git:$PATH" GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </
 RC=$?
 _ST_EQ "a run from the second checkout brings that one along" "$RC:$(tr '\n' ' ' < f.txt):$(git status --porcelain)" "0:1 2 3 :"
 _ST_EQ "holding the sync of the checkout it writes" "$(sed 's|.*/\.git/||' "$TMP/sy10-held" 2>/dev/null)" "worktrees/sy10-wt/git-edit-sync.lock"
-_ST_OUT_HAS "naming the carry for the other" "^The branch's other checkout, .*/pz-sy10, stays as it was – bring it along with git -C .*/pz-sy10 edit --carry="
+_ST_OUT_HAS "naming the carry for the other" "^The branch's other checkout, .*/pz-sy10, stays as it was – bring it along with git -C .*/pz-sy10 edit --carry$"
 PATH="$TMP/sy-bin:$PATH" eval "$(print -r -- "$OUT" | sed -n "s/^The branch's other checkout, [^–]*– bring it along with //p")"
 cd "$TMP/pz-sy10"
 _ST_EQ "which brings the first along as printed" "$(tr '\n' ' ' < f.txt):$(git status --porcelain)" "1 2 3 :"
 git worktree remove --force "$TMP/sy10-wt"
 
-# Where the sync ran, the raw undo's index-only step is named still, with the carry that brings the
-# files back as `--undo` would – after a commit, which `--undo` keeps, the step alone
+# Where the sync ran, `--status` names the raw undo's index-only step, with the carry that brings
+# the files back as `--undo` would – after a commit, which `--undo` keeps, the step alone
 _ST_PZ_NEW sy11
 print -l 1 2 3 > f.txt && print o > o.txt && git add -A && git commit -qm "SY11 base"
 print -l 1 2 3 4 > f.txt && git commit -qam "SY11 C1" && print o2 > o.txt && git commit -qam "SY11 C2"
 print peer > p.txt && git add p.txt
 _ST_RUN -d -y HEAD~1
+_ST_OUT_LACKS "a drop's own output names no raw undo step" 'After the raw undo'
+_ST_RUN --status
 SY_OUT=$OUT
-_ST_OUT_HAS "a drop names the raw undo's index-only step" '^After the raw undo, re-sync them back – [^:]*: git diff-index --cached --exit-code --name-only [0-9a-f]* -- f.txt && git restore --staged -- f.txt$'
+_ST_OUT_HAS "--status after a drop names the raw undo's index-only step" '^After the raw undo, re-sync the entries [^:]*: git diff-index --cached --exit-code --name-only [0-9a-f]* -- f.txt && git restore --staged -- f.txt$'
 _ST_OUT_HAS "and the carry that brings the files back" "^Then bring the checkout back with it, as git edit --undo would: git edit --carry=${$(git rev-parse HEAD):0:12}$"
 eval "$(print -r -- "$SY_OUT" | sed -n 's/^Undo: git edit --undo  (or, the ref alone: \(.*\))$/\1/p')"
-eval "$(print -r -- "$SY_OUT" | sed -n 's/^After the raw undo, re-sync them back – [^:]*: //p')"
+eval "$(print -r -- "$SY_OUT" | sed -n 's/^After the raw undo, re-sync the entries [^:]*: //p')"
 PATH="$TMP/sy-bin:$PATH" eval "$(print -r -- "$SY_OUT" | sed -n 's/^Then bring the checkout back with it, as git edit --undo would: //p')" >/dev/null 2>&1
 _ST_EQ "followed as printed, the checkout is back, the peer's staging kept" \
 	"$(git log -1 --format=%s HEAD~1):$(tr '\n' ' ' < f.txt):$(git status --porcelain | tr '\n' '|')" "SY11 C1:1 2 3 4 :A  p.txt|"
 print x > n.txt
 _ST_RUN --commit --text "SY11 n" -- n.txt
-_ST_OUT_HAS "a commit names the step" '^After the raw undo, re-sync them back – [^:]*: git diff-index --cached --exit-code --name-only [0-9a-f]* -- n.txt && git restore --staged -- n.txt$'
+_ST_RUN --status
+_ST_OUT_HAS "after a commit too" '^After the raw undo, re-sync the entries [^:]*: git diff-index --cached --exit-code --name-only [0-9a-f]* -- n.txt && git restore --staged -- n.txt$'
 _ST_OUT_LACKS "with no carry, its undo keeping what it landed" '^Then bring the checkout back'
 
 # Every file that can vanish between a check and its read is read with the shell's own errors

@@ -41,9 +41,11 @@ _ST_OUT_LACKS "naming no entry left locked" 'Index locked'
 rm -f .git/hooks/reference-transaction "$LG_GD/index.lock"
 # A staged fold refused for a landing hands back the staging, never the checkout's file
 _ST_PZ_NEW lg4
-_ST_PZ_C base.txt b "LG4 base" && LG_T=$(git rev-parse HEAD)
+_ST_PZ_C root.txt r "LG4 root"
 print -l {1..10} > n.txt
 GIT_EDIT_ACTOR=lg-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LG4 peer adds" -- n.txt </dev/null >/dev/null 2>&1
+# The target past the landing, which a fold below it would apply again
+_ST_PZ_C base.txt b "LG4 base" && LG_T=$(git rev-parse HEAD)
 print -l q r s > n.txt && git add n.txt
 GIT_EDIT_ACTOR=lg-self _ST_RUN --amend-into="$LG_T" -- n.txt
 _ST_EQ "a staged fold taking back an addition refuses" "$RC" "1"
@@ -55,7 +57,7 @@ print -l q r s > n.txt
 LG_B=$(GIT_INDEX_FILE="$TMP/lg-idx" sh -c "git read-tree '$LG_T' && git update-index --add n.txt && git write-tree")
 git checkout -q -- n.txt
 GIT_EDIT_ACTOR=lg-self _ST_RUN --amend-into="$LG_T" --tree="$LG_B" -- n.txt
-_ST_EQ "a bare --tree taking back a landing refuses" "$RC:$(git log -1 --format=%s)" "1:LG4 peer adds"
+_ST_EQ "a bare --tree taking back a landing refuses" "$RC:$(git log -1 --format=%s)" "1:LG4 base"
 _ST_OUT_HAS "naming the tree" 'Folded from --tree'
 # An undo hands the run it took back to the checkout as work, never as staleness to discard
 _ST_PZ_NEW lg5

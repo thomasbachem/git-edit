@@ -36,14 +36,15 @@ _ST_EQ "a -S -m left as opened keeps no line of its template" "$RC:$(git log -1 
 GREP_OPTIONS=--color=always _ST_RUN -M --text "CE2 under GREP_OPTIONS" HEAD
 _ST_EQ "GREP_OPTIONS changes nothing" "$RC:$(git log -1 --format=%s)" "0:CE2 under GREP_OPTIONS"
 # A path the upstream renamed takes a replant past edits on it, which its guard reads by both names
+# where no sync can bring them along – the checkout halfway through a sequence
 _ST_PZ_NEW ce3
 print -l {1..8} > r.txt && git add r.txt && git commit -qm "CE3 base"
 git checkout -q -b ce3-up && git mv r.txt s.txt && git commit -qm "CE3 up renames" && git checkout -q main
 _ST_PZ_C t.txt t "CE3 own"
 print -l {1..9} > r.txt
 CE_TIP=$(git rev-parse HEAD)
-_ST_RUN --onto=ce3-up
-_ST_EQ "a replant past edits on a path the upstream renamed refuses" "$RC:$(git rev-parse HEAD)" "1:$CE_TIP"
+_ST_RUN_UNSYNCED --onto=ce3-up
+_ST_EQ "a replant past edits on a path the upstream renamed refuses there" "$RC:$(git rev-parse HEAD)" "1:$CE_TIP"
 _ST_OUT_HAS "naming it" 'r.txt'
 git checkout -q -- r.txt
 # A staged submodule bump is a staged change whatever diff.ignoreSubmodules hides

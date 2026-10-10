@@ -79,8 +79,8 @@ _ST_RUN --onto=onto-main
 _ST_EQ "a merge in the span is refused" "$RC" "1"
 _ST_OUT_HAS "rather than flattened silently" 'contains a merge commit'
 
-# A replant that would strand the checkout must refuse before the CAS, not
-# move the branch and then decline to follow
+# A replant whose checkout no sync can bring along – halfway through a sequence – must refuse
+# before the CAS, not move the branch and then decline to follow
 git checkout -q -B onto-dirty onto-main
 printf 'od branch\n' > od.txt && git add od.txt && git commit -qm "OD on branch"
 git checkout -q onto-main
@@ -88,8 +88,8 @@ printf 'od upstream\n' > od.txt && git add od.txt && git commit -qm "OD upstream
 git checkout -q onto-dirty
 local OD_BEFORE=$(git rev-parse onto-dirty)
 printf 'od uncommitted\n' > od.txt
-_ST_RUN --onto=onto-main
-_ST_EQ "a replant onto dirty paths is refused" "$RC" "1"
+_ST_RUN_UNSYNCED --onto=onto-main
+_ST_EQ "a replant onto dirty paths halfway through a sequence is refused" "$RC" "1"
 _ST_OUT_HAS "naming the blocked path" 'od.txt'
 _ST_EQ "and the branch never moved" "$(git rev-parse onto-dirty)" "$OD_BEFORE"
 _ST_CHECK "with the uncommitted work intact" sh -c "grep -qx 'od uncommitted' od.txt"

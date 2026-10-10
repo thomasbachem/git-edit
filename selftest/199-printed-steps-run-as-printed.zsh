@@ -58,9 +58,10 @@ cd ..
 # Folded as staged, its steps begin by going to the top, where the names it gives are read from
 _ST_PZ_NEW ps3
 mkdir sub && print -l {1..20} > sub/f && print o > other && git add -A && git commit -qm "PS3 base"
-print x >> other && git commit -qam "PS3 other" && PS_T=$(git rev-parse HEAD)
 cd sub
 _ST_UNSYNCED _P199_AS ps-a --exec -- sh -c 'git mv f g && { echo ONE; sed 1d g; } > g.new && mv g.new g && git commit -qam "PS3 rename f to g"'
+# The target past the landing, which a fold below it would apply again
+print x >> ../other && git commit -qm "PS3 other" -- ../other && PS_T=$(git rev-parse HEAD)
 { print -l {1..19}; print TWENTY; } > f && git add f
 _P199_AS ps-b --amend-into="$PS_T" -- f
 _ST_OUT_HAS "a staged fold's renamed path is named from the top, its steps going there first" \

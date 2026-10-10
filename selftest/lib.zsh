@@ -303,7 +303,8 @@ GIT_SELFTEST () {
 	export GIT_CONFIG_GLOBAL=$TMP/gitconfig
 	# Nor a machine's own system config – scenario 123 is where a caller's settings are tried
 	export GIT_CONFIG_NOSYSTEM=1
-	printf '[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n' > "$GIT_CONFIG_GLOBAL"
+	# Nor an identity git guesses from the host – a CI runner has none, so a repo without its own fails
+	printf '[user]\n\tuseConfigOnly = true\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n' > "$GIT_CONFIG_GLOBAL"
 	# No editor from the caller – one an agent's environment exports hid a run reaching for
 	# `$EDITOR`, which a plain terminal or a server then opened
 	unset GIT_EDITOR GIT_SEQUENCE_EDITOR VISUAL

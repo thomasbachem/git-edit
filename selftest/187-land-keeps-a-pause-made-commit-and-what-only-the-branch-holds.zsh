@@ -4,9 +4,9 @@
 # • Commits a --base leaves out below it, held by the target in no form, keep the branch as it
 #   is wherever it is checked out – no move or deletion offered – while one the target held and
 #   dropped leaves the move onto the copies offered
-# • The raw undo moves the ref alone, and the step named beside the re-synced entries puts those
-#   back as printed, a no-op before the undo, stopping whole on a peer's staging – where the land
-#   could not bring the checkout along
+# • The raw undo moves the ref alone, and the step `--status` names for the re-synced entries puts
+#   those back as printed, a no-op before the undo, stopping whole on a peer's staging – where the
+#   land could not bring the checkout along
 _ST_SCENARIO "\e[1;96m[187] --land keeps a pause-made commit, and names what only the branch holds\e[0m"
 local KP_WT KP_P KP_S KP_U
 # Prints the step after <lead> in `OUT`, its color codes cut
@@ -134,18 +134,20 @@ _ST_OUT_HAS "the move onto the copies offered still" 'point it at those (git bra
 _ST_OUT_LACKS "no commit named as the branch's alone" 'is the only branch holding them'
 
 # The raw undo moves the ref alone, and where the land could not bring the checkout along, the step
-# beside the re-synced entries puts them back as printed – a peer's staged file kept throughout
+# `--status` names for the re-synced entries puts them back as printed – a peer's staged file kept
+# throughout
 _ST_PZ_NEW kp6
 _ST_PZ_C f.txt base "KP6 base"
 git worktree add -q -b feat "$TMP/kp6-wt" main 2>/dev/null
 ( cd "$TMP/kp6-wt" && _ST_PZ_C a.txt a1 "KP6 A" && print -r -- f2 >> f.txt && git commit -qam "KP6 F2" )
 print -r -- peer > peer.txt && git add peer.txt
 _ST_RUN_UNSYNCED --land=feat
+_ST_RUN --status
 KP_U=$(_KP_STEP 'Undo: git edit --undo  (or, the ref alone: ')
 KP_U=${KP_U%)}
-KP_S=$(_KP_STEP 'After the raw undo, re-sync them back – [^:]*: ')
+KP_S=$(_KP_STEP 'After the raw undo, re-sync the entries [^:]*: ')
 _ST_EQ "the raw undo said to move the ref alone" "${KP_U%% -m *}" "git update-ref"
-_ST_EQ "the step beside the re-synced entries" "$KP_S" "git diff-index --cached --exit-code --name-only $(git rev-parse --short=12 HEAD) -- a.txt f.txt && git restore --staged -- a.txt f.txt"
+_ST_EQ "the step --status names for the re-synced entries" "$KP_S" "git diff-index --cached --exit-code --name-only $(git rev-parse --short=12 HEAD) -- a.txt f.txt && git restore --staged -- a.txt f.txt"
 eval "${KP_S:-false}" >/dev/null
 _ST_EQ "run before the undo, the step changes nothing" "$?:$(git status --short | LC_ALL=C sort | tr '\n' '|')" "0: D a.txt| M f.txt|A  peer.txt|"
 eval "${KP_U:-false}" && eval "${KP_S:-false}" >/dev/null
@@ -158,9 +160,10 @@ _ST_PZ_C f.txt base "KP7 base"
 git worktree add -q -b feat "$TMP/kp7-wt" main 2>/dev/null
 ( cd "$TMP/kp7-wt" && _ST_PZ_C a.txt a1 "KP7 A" && print -r -- f2 >> f.txt && git commit -qam "KP7 F2" )
 _ST_RUN_UNSYNCED --land=feat
+_ST_RUN --status
 KP_U=$(_KP_STEP 'Undo: git edit --undo  (or, the ref alone: ')
 KP_U=${KP_U%)}
-KP_S=$(_KP_STEP 'After the raw undo, re-sync them back – [^:]*: ')
+KP_S=$(_KP_STEP 'After the raw undo, re-sync the entries [^:]*: ')
 print -r -- peer-f > f.txt && git add f.txt
 eval "${KP_U:-false}"
 KP_P=$(eval "${KP_S:-true}" 2>&1)

@@ -25,7 +25,7 @@ _EG215_SETUP () {
 # The reproduced case: the file as it was, taken whole, as edits and a patch built from it, and put
 _EG215_SETUP eg1 3B
 _ST_EQ "the landing leaves the conflicting file as it was" "$RC:$(sed -n 3p f.txt)" "0:3B"
-_ST_OUT_HAS "its sync says the next commit of the file is refused, by any route" 'its next commit of the file is refused, naming this merge'
+_ST_OUT_HAS "its sync says the next commit of the file taking it back is refused" 'its next commit of the file that would take it back is refused, naming this merge'
 GIT_EDIT_ACTOR=eg-b _ST_RUN --commit --text "EG B whole" -- f.txt
 _ST_EQ "the file taken whole refuses" "$RC:$(git rev-parse HEAD)" "1:$EG_T"
 _ST_OUT_HAS "naming the merge its sync named" "git cat-file --filters ${EG_B:0:12}:f.txt > \"\$T/base\" && git cat-file --filters ${EG_T:0:12}:f.txt > \"\$T/landed\" && git merge-file -- f.txt"

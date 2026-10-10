@@ -126,10 +126,11 @@ for P201_WHERE in top sub; do
 	_ST_PZ_NEW "p201 s'$P201_WHERE\""
 	P201_TOP=$PWD
 	mkdir 's d' && print -l "doc line "{1..40} > "$P201_D" && chmod +x "$P201_D" && print -r -- x > t && git add -A && git commit -qm "P201S base"
-	_ST_PZ_C t y "P201S target" && P201_T=$(git rev-parse HEAD)
 	print -l "doc line "{1..29} "doc line 30 bob" "doc line "{31..40} > "$P201_D" && git add -- "$P201_D"
 	print -l "doc line "{1..9} "doc line 10 alice" "doc line "{11..29} "doc line 30 bob" "doc line "{31..40} > "$P201_D"
 	GIT_EDIT_ACTOR=p201-cy _ST_RUN --commit --text "P201S cy" --edits "$P201_EDITS"
+	# The target past the landing, which a fold below it would apply again
+	print -r -- y > t && git commit -qm "P201S target" -- t && P201_T=$(git rev-parse HEAD)
 	P201_S=$(git rev-parse ":$P201_D")
 	if [ $P201_WHERE = sub ]; then
 		cd 's d'

@@ -129,10 +129,11 @@ _ST_EQ "one carried as the landing said lands" "$RC:$(_GA_KEPT "$(git show HEAD:
 for GA_I in alice alone; do
 	_ST_PZ_NEW gb1-$GA_I
 	print -l "doc line "{1..40} > doc && chmod +x doc && print -r -- x > t && git add -A && git commit -qm "GB base"
-	_ST_PZ_C t y "GB target" && GA_T=$(git rev-parse HEAD)
 	print -l "doc line "{1..29} "doc line 30 bob" "doc line "{31..40} > doc && git add doc
 	[ $GA_I = alice ] && print -l "doc line "{1..9} "doc line 10 alice" "doc line "{11..29} "doc line 30 bob" "doc line "{31..40} > doc
 	GIT_EDIT_ACTOR=gb-cy _ST_RUN_UNSYNCED --commit --text "GB cy" --edits '{"doc": [["doc line 4\n", "doc line 4 cy\n"]]}'
+	# Past the landing, which a fold below it would apply again
+	print -r -- y > t && git commit -qm "GB target" -- t && GA_T=$(git rev-parse HEAD)
 	GIT_EDIT_ACTOR=gb-bob _ST_RUN --amend-into="$GA_T" -- doc
 	_ST_EQ "a staged fold without the landing refuses ($GA_I)" "$RC" "1"
 	GA_C1=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
@@ -144,10 +145,11 @@ for GA_I in alice alone; do
 		# Else whatever stages it again – once, a `git add` of the checkout file took in alice's line
 		[ -n "$GA_REB" ] || GA_REB=$(sed -n 's/^  Then stage them again with: \(.*\) (.*$/\1/p' <<<"$OUT")
 	else
-		_ST_OUT_HAS "the checkout holding just the staging, the staging again ($GA_I)" \
-			"^  Then stage them again with: git add -- doc (each holding just what you staged) – and run this again\.$"
+		_ST_OUT_HAS "the checkout holding just the staging, the carry stages it again ($GA_I)" \
+			"'git edit --carry=[0-9a-f]*', which stages each file again as merged, as you staged it whole\.$"
+		_ST_OUT_LACKS "so no 'git add' ($GA_I)" "git add --"
 		_ST_OUT_LACKS "and no rebuild ($GA_I)" "rebuild the staging"
-		GA_REB=$(sed -n 's/^  Then stage them again with: \(.*\) (each holding just what you staged) – and run this again\.$/\1/p' <<<"$OUT")
+		GA_REB=""
 	fi
 	GIT_EDIT_ACTOR=gb-bob _ST_RUN "$GA_C1"
 	_ST_EQ "the carry named merges the landing into the checkout ($GA_I)" "$RC:$(LC_ALL=C grep -c 'cy$' doc)" "0:1"

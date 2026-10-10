@@ -95,7 +95,7 @@ git merge -q bc6-side >/dev/null 2>&1
 _ST_TTY -- -d -y HEAD
 _ST_EQ "a run beside a merge in progress lands, the merge kept" "$RC:$(test -e .git/MERGE_HEAD && echo merging)" "0:merging"
 _ST_OUT_HAS "the checkout left as it was" 'not brought along – it is halfway through a merge – finish or abort that first'
-_ST_OUT_HAS "naming the carry for once it is done" 'Once that is done, bring your checkout along.*git edit --carry='
+_ST_OUT_HAS "naming the carry for once it is done" 'Once that is done, bring your checkout along.*git edit --carry$'
 _ST_CHECK "k.txt still there" test -e k.txt
 git merge --abort
 cd "$TMP/repo"

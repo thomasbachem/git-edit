@@ -167,13 +167,15 @@ rm -f wc-pz2.txt
 _ST_RUN --abort
 git checkout -q "$WC_BR"
 git branch -q -D wc-paused
-# Bare --carry takes the last rewrite past a --commit since, which took the checkout's own files
+# Bare --carry with no mark, as an older build leaves the checkout, takes the last rewrite past a
+# --commit since, which took the checkout's own files
 printf 'c1\nc2\nc3\n' > wc-bc.txt
 _ST_RUN --commit --text "WC carry base" -- wc-bc.txt
 _ST_RUN --exec -- sh -c "printf 'C1\nc2\nc3\n' > wc-bc.txt && git commit -qam 'WC carry rewrite'"
 printf 'c1\nc2\nc3\nmine\n' > wc-bc.txt
 echo x > wc-bc-other.txt
 _ST_RUN --commit --text "WC commit after the rewrite" -- wc-bc-other.txt
+rm -f "$(git rev-parse --path-format=absolute --git-path git-edit-brought)"
 _ST_RUN --carry
 _ST_EQ "bare --carry carries across the last rewrite, past a --commit" "$RC:$(tr '\n' ' ' < wc-bc.txt)" "0:C1 c2 c3 mine "
 git checkout -q -- wc-bc.txt

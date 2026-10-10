@@ -98,7 +98,7 @@ _ST_RUN --exec -- sh -c 'echo changed > xj.txt && git add xj.txt && git commit -
 rm -f .git/index.lock
 _ST_EQ "exec under a locked index still lands" "$RC" "0"
 _ST_OUT_HAS "names the lock" 'Index locked'
-_ST_OUT_HAS "and the carry for once it is free" '^Once that is done, bring your checkout along.*git edit --carry='
+_ST_OUT_HAS "and the carry for once it is free" '^Once that is done, bring your checkout along.*git edit --carry$'
 _ST_OUT_LACKS "and does not call the entry a differing one" 'Index entries left alone'
 _ST_CHECK "the entry is still stranded" sh -c "! git diff --cached --quiet -- xj.txt"
 git reset -q --hard

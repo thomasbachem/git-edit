@@ -20,7 +20,8 @@ print -l 1y {2..10} > f.txt && git add f.txt
 OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c "sed 's/^8\$/8x/' f.txt > f.tmp && mv f.tmp f.txt && git commit -qam 'LA peer 2'" </dev/null 2>&1)
 LA_TIP=$(git rev-parse HEAD)
 if _ST_MERGE_BASE_OK; then
-	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$(git rev-parse HEAD~1)" --snapshot -- f.txt </dev/null 2>&1)
+	# Into the landing itself – one above the target the fold's replay applies again
+	OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --amend-into="$LA_TIP" --snapshot -- f.txt </dev/null 2>&1)
 	RC=$?
 	_ST_EQ "as does a snapshot fold" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
 fi

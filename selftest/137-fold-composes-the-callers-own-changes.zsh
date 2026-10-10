@@ -90,7 +90,8 @@ _ST_EQ "a put lacking another caller's landing on its path refuses" "$RC:$(git r
 _ST_OUT_HAS "naming the remedy" 'rebuild it from the tip, or replay your change with --edits'
 _ST_RUN --commit --text "FI4 rm" --rm added.txt
 _ST_EQ "as does the removal of a file another caller added" "$RC:$(git rev-parse HEAD)" "1:$FI_T"
-_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --put notes.txt="$TMP/fi4-put2.txt"
+# Into the landing itself – one above the target the fold's replay applies again
+_ST_RUN --amend-into="$FI_T" --put notes.txt="$TMP/fi4-put2.txt"
 _ST_EQ "and a fold putting it" "$RC:$(git rev-parse HEAD)" "1:$FI_T"
 _ST_RUN --commit --text "FI4 edit" --edits '{"notes.txt": [["peer", "peer, then mine"]]}'
 _ST_EQ "while edits replay onto the tip, the landing kept" "$RC:$(git show HEAD:notes.txt | tr '\n' ' ')" "0:notes mine peer, then mine "

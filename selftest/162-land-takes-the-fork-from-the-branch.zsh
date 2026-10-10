@@ -208,8 +208,8 @@ _ST_OUT_LACKS "no replant offered, which refuses a merge too" 'replant'
 _ST_OUT_HAS "the merge named with a message" "git merge --no-ff -m \"Merge branch 'mrg' into main\" mrg"
 _ST_RUN --exec -- git merge -q --no-ff -m "Merge branch 'mrg' into main" mrg
 _ST_EQ "which records the target's name" "$RC:$(git log -1 --format=%s)" "0:Merge branch 'mrg' into main"
-# --onto refuses uncommitted work only on the paths the upstream changed since the fork – the
-# branch's own files land as they are – naming a step per file and never a stash
+# --onto halfway through a sequence refuses uncommitted work only on the paths the upstream changed
+# since the fork – the branch's own files land as they are – naming a step per file, never a stash
 _ST_PZ_NEW lf9
 _ST_PZ_C a.txt a "LF9 base"
 _ST_PZ_C m.txt m1 "LF9 main one"
@@ -226,8 +226,8 @@ GIT_INDEX_FILE="$TMP/lf9-index" git update-index --cacheinfo "100644,$LF_B,m.txt
 git update-ref refs/heads/main "$(git commit-tree "$(GIT_INDEX_FILE="$TMP/lf9-index" git write-tree)" -p main -m "LF9 main two")"
 print -r -- mwip > m.txt
 LF_T=$(git rev-parse HEAD)
-_ST_RUN --onto=main
-_ST_EQ "WIP on a path the upstream changed refuses" "$RC:$(git rev-parse HEAD)" "1:$LF_T"
+_ST_RUN_UNSYNCED --onto=main
+_ST_EQ "WIP on a path the upstream changed refuses there" "$RC:$(git rev-parse HEAD)" "1:$LF_T"
 _ST_OUT_HAS "naming the file and its step" "m.txt (modified) – yours: git edit --commit --text '<subject>' -- m.txt"
 _ST_OUT_LACKS "never a stash" 'stash'
 cd "$TMP/repo"

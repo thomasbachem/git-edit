@@ -11,15 +11,16 @@ local AX_T AX_OLD AX_RS AX_C AX_ADD AX_MV AX_WHY
 # and the fold refused again as before
 _ST_PZ_NEW ax1
 print -l {1..10} > f.txt && print -l {1..10} > h.txt && print -r -- x > t.txt && git add -A && git commit -qm "AX1 base"
-_ST_PZ_C t.txt y "AX1 target" && AX_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > f.txt && print -l 1 2-A {3..10} > h.txt && git add f.txt h.txt
 GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"git mv f.txt g.txt && printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > g.txt && printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > h.txt && git commit -qam 'AX1 B'" </dev/null >/dev/null 2>&1
+# The target above the landing, which a fold below it would apply again
+print -r -- y > t.txt && git commit -qm "AX1 target" -- t.txt && AX_T=$(git rev-parse HEAD)
 GIT_EDIT_ACTOR=ax-self _ST_RUN --amend-into="$AX_T"
 _ST_EQ "a staged fold over a file a landing renamed refuses" "$RC" "1"
 _ST_OUT_HAS "naming the unstage the carry needs first" 'unstage those first, the files kept as they are: git restore --staged -- f\.txt$'
-_ST_OUT_HAS "then the carry" "Then merge what landed into the checkout with 'git edit --carry=[0-9a-f]\{12\}'"
-_ST_OUT_HAS "and the re-stage under the new name, beside the file kept" 'Then stage them again with: git add -- g\.txt h\.txt '
+_ST_OUT_HAS "then the carry, which stages the file kept again" "Then merge what landed into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which stages h\.txt again as merged"
+_ST_OUT_HAS "and the re-stage under the new name alone" 'Then stage them again with: git add -- g\.txt ('
 AX_RS=$(grep -o -e 'git restore --staged -- [^ ]*$' <<<"$OUT" | head -1)
 AX_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
 AX_ADD=$(grep -o -e 'git add -- [^(]*' <<<"$OUT" | head -1)
@@ -33,12 +34,12 @@ _ST_EQ "followed as printed, the fold lands keeping what landed" \
 # A landing renaming nothing keeps the one-step carry
 _ST_PZ_NEW ax1b
 print -l {1..10} > h.txt && print -r -- x > t.txt && git add -A && git commit -qm "AX1B base"
-_ST_PZ_C t.txt y "AX1B target" && AX_T=$(git rev-parse HEAD)
 print -l 1 2-A {3..10} > h.txt && git add h.txt
 GIT_EDIT_ACTOR=ax-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --exec -- sh -c \
 	"printf '%s\n' 1 2 3 4 5 6 7 8-B 9 10 > h.txt && git commit -qam 'AX1B B'" </dev/null >/dev/null 2>&1
+print -r -- y > t.txt && git commit -qm "AX1B target" -- t.txt && AX_T=$(git rev-parse HEAD)
 GIT_EDIT_ACTOR=ax-self _ST_RUN --amend-into="$AX_T"
-_ST_OUT_HAS "a fold over a file a landing only edited names the carry alone" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which leaves the staging as it is\."
+_ST_OUT_HAS "a fold over a file a landing only edited names the carry alone" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which stages each file again as merged, as you staged it whole\."
 _ST_OUT_LACKS "no unstage" 'git restore --staged'
 
 # `core.sparseCheckout` with no patterns file is a full checkout, as git's own checkout writes it –

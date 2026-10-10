@@ -142,14 +142,15 @@ _ST_OUT_HAS "a conflict on a name ending in a CR pauses" 'Conflicted files:'
 _ST_OUT_LACKS "its markers read in that file" 'No conflict markers in'
 _ST_RUN --abort
 git reset -q --hard
-# Names reach a replant's refusal and an edit's absorbed files as themselves, never C-quoted
+# Names reach a replant's refusal – its checkout halfway through a sequence – and an edit's
+# absorbed files as themselves, never C-quoted
 _ST_PZ_NEW gr8
 print o > $'\xc3\xa9.txt' && print o > $'c\r' && git add -A && git commit -qm "GR8 base"
 git checkout -q -b gr8-up && print u > $'\xc3\xa9.txt' && print u > $'c\r' && git commit -qam "GR8 up"
 git checkout -q -b gr8-feature main && _ST_PZ_C f.txt f "GR8 feature"
 print mine > $'\xc3\xa9.txt' && print mine > $'c\r'
-_ST_RUN --onto=gr8-up
-_ST_EQ "a replant over uncommitted work refuses" "$RC" "1"
+_ST_RUN_UNSYNCED --onto=gr8-up
+_ST_EQ "a replant over uncommitted work halfway through a sequence refuses" "$RC" "1"
 _ST_OUT_HAS "naming a non-ASCII path as itself" $'^ *\xc3\xa9.txt'
 _ST_OUT_HAS "and one ending in a CR in caret notation" '^ *c^M'
 git checkout -q -- . && _ST_PZ_C g.txt g "GR8 target" && _ST_PZ_C h.txt h "GR8 later"

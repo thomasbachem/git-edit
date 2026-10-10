@@ -100,7 +100,8 @@ git rm -rq d && print file > d && git add d && git commit -qm "SW8b d a file"
 _ST_PZ_C t.txt t "SW8b tip"
 _ST_RUN -d -y HEAD~1
 _ST_EQ "while its re-sync of a swap takes both entries" "$RC:$(git ls-files | tr '\n' ' ')" "0:a.txt d/x.txt t.txt "
-# A replant refused over 12 dirty paths the upstream changed names each, as each takes its own step
+# A replant refused over 12 dirty paths the upstream changed – halfway through a sequence – names
+# each, as each takes its own step
 _ST_PZ_NEW sw9
 print base > base.txt && git add -A && git commit -qm "SW9 base" && git branch sw9-up
 git checkout -q sw9-up
@@ -109,7 +110,7 @@ print u > u.txt && git add -A && git commit -qm "SW9 up" && git checkout -q main
 for SW_I in {01..12}; do print a$SW_I > f$SW_I.txt; done
 git add -A && git commit -qm "SW9 twelve"
 for SW_I in {01..12}; do print b$SW_I >> f$SW_I.txt; done
-_ST_RUN --onto=sw9-up
+_ST_RUN_UNSYNCED --onto=sw9-up
 _ST_EQ "a replant refused over 12 dirty paths names every one" "$RC:$(print -r -- "$OUT" | grep -cE '^  f[0-9]+\.txt \(modified\) – ')" "1:12"
 # While a report no action follows still names ten
 git checkout -q -- .

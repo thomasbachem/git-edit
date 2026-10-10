@@ -1,7 +1,8 @@
 # A run's sync and `--carry` are one implementation, bringing each file from the tip it was last
 # brought to:
 # • A file a landing brought along, then a later one took back, loses that landing's line under the
-#   carry a landing names from before both – a peer's staging on it keeping the carry's one base
+#   bare carry a landing names, from the checkout's mark – a peer's staging on it keeping the carry's
+#   one base
 # • A file a landing's sync left as it was keeps that landing's old tip on record: the next landing
 #   merges from there, taking neither back, and the record clears once the file holds the landing
 # • A file moved to its new name by hand takes the landings' edits from its old name
@@ -43,20 +44,22 @@ _PB214_WAIT () {
 	until [ -e "$1" ] || ! kill -0 "$2" 2>/dev/null || (( ++PB_K > 1200 )); do sleep 0.1; done
 }
 
-# A file the first landing brought along loses its line the second took back, under the carry named
-# from before both as another file predates the first – the net change from there none
+# A file the first landing brought along loses its line the second took back, under the bare carry
+# named – another file, left by the first, merging from its record's base – the net change none
 _PB214_SETUP pb1
 _ST_EQ "the first landing brings one file along and leaves the conflicting one" "$(tail -1 f.txt):$(sed -n 5p h.txt)" "a:5-mine"
-_ST_OUT_HAS "the second names the carry from before both" "edits merged onto it: git edit --carry=${PB_X:0:12}$"
-_ST_RUN --carry="$PB_X"
+_ST_OUT_HAS "the second names the bare carry, from the checkout's mark" "edits merged onto it: git edit --carry$"
+_ST_RUN --carry
 _ST_EQ "followed, the file brought along in between loses the line taken back, its edit kept" \
 	"$RC:$(tr '\n' ' ' < f.txt)" "0:1 2-mine 3 4 5 6 7 8 9 10 "
 _ST_EQ "while the conflicting one keeps its edit, the landing gone from it too" "$(tr '\n' ' ' < h.txt)" "1 2 3 4 5-mine 6 7 8 9 10 "
 _ST_OUT_HAS "named as carried" 'Carried onto the new content: f\.txt$'
-# A peer's staging on the file keeps the one base, from before both
+# A peer's staging on the file keeps the one base, from before both – with no record or mark, as
+# an older build leaves the checkout
 _PB214_SETUP pb1s
 git update-index --cacheinfo "100644,$(print -r -- PEER | git hash-object -w --stdin),f.txt"
 : > .git/git-edit-unbrought
+: > .git/git-edit-brought
 _ST_RUN --carry="$PB_X"
 _ST_EQ "a peer's staging on it keeps the carry's one base, the file as it was" "$RC:$(tail -1 f.txt):$(git show :f.txt)" "0:a:PEER"
 
@@ -179,8 +182,8 @@ wait $PB_P
 _PB214_WAIT "$TMP/pb8-out" 0
 rm -f .git/hooks/reference-transaction
 GIT_EDIT_ACTOR=A _ST_RUN --status
-_ST_OUT_HAS "the adopted move names the carry its checkout needs" "^Its checkout was not brought along – bring it along with: git edit --carry=${PB_X:0:12}$"
-_ST_RUN --carry="$PB_X"
+_ST_OUT_HAS "the adopted move names the carry its checkout needs" "^Its checkout was not brought along – bring it along with: git edit --carry$"
+_ST_RUN --carry
 _ST_EQ "which brings it along" "$RC:$(tail -1 F):$(git status --porcelain)" "0:f3:"
 # As does a run stopped twice past its move, right above its trailer
 _ST_PZ_NEW pb9
@@ -200,5 +203,5 @@ OUT=$(<"$TMP/pb9.out")
 rm -f .git/hooks/reference-transaction
 _ST_EQ "a second signal past the move stops the run" "$RC:$(tail -1 F)" "143:f2"
 _ST_EQ "naming the carry right above its trailer" "$(print -r -- "$OUT" | tail -2 | head -1)" \
-	"The checkout was not brought along before the stop – bring it along with: git edit --carry=${PB_X:0:12}"
+	"The checkout was not brought along before the stop – bring it along with: git edit --carry"
 cd "$TMP/repo"
