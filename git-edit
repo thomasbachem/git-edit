@@ -109,7 +109,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _TYPED_KEEP _UNWIND_PATH \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
@@ -486,6 +486,8 @@ _PAUSE_AT_START=""
 # The ref and journal of a race this run lost, for the busy-branch hint above its trailer
 typeset -ga _RACE_LOST
 _RACE_LOST=()
+# Set where a refusal is over the flags given, for the pointer at `-h` above its trailer
+_USAGE_POINT=""
 # A message typed in an editor and the command rerunning with it, kept where a landing refuses
 typeset -ga _TYPED_KEEP
 _TYPED_KEEP=()
@@ -548,6 +550,8 @@ _GLOBAL_EXIT_TRAP () {
 		_CAPTURE_REMOVE "$_CAPTURE_DIR"
 	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
+		# A line pointing at the flags rather than the whole usage, which buried the refusal
+		[ -n "$_USAGE_POINT" ] && ECHO_E "\e[0;31m  'git edit -h' lists every flag – 'git edit -h <flag>...' gives each in full.\e[0m" >&2
 		(( ${#_RACE_LOST} )) && _PRINT_BUSY_HINT "${_RACE_LOST[@]}"
 		_PRINT_TODO
 		if [ -n "$_LAST_ERROR" ]; then
@@ -779,130 +783,71 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --continue | --skip | --abort               # resume / step past the commit / cancel after a pause\e[0m"
 	ECHO_E "\e[0;94m       git edit --undo | --status | --carry[=<sha>] | --selftest[=<ids>] [--jobs[=<n>]] | --version\e[0m"
 	ECHO_E ""
-	ECHO_E "\e[0;94m       -e, --edit                      Explicit edit: the default mode, but a second <commit> errors instead of squashing\e[0m"
-	ECHO_E "\e[0;94m       -m, --message                   Alter <commit>'s message after editing (at a terminal – an edit without\e[0m"
-	ECHO_E "\e[0;94m                                       one refuses it, its pause taking --continue --text instead)\e[0m"
-	ECHO_E "\e[0;94m       -M, --reword                    Alter only <commit>'s message (plumbing, no working-tree touch)\e[0m"
-	ECHO_E "\e[0;94m       -d, --drop                      Just delete (drop) one or more <commit>s or ranges (both ends included)\e[0m"
-	ECHO_E "\e[0;94m       -s, --squash                    Merge <commit>s into the oldest, a single one into its parent\e[0m"
-	ECHO_E "\e[0;94m                                       (auto-routes to plumbing when eligible)\e[0m"
-	ECHO_E "\e[0;94m       -s=<target>, --squash=<target>  Merge <commit>s into <target> (explicit target)\e[0m"
-	ECHO_E "\e[0;94m       -S, --resquash                  Strict squash: plumbing only; errors instead of falling back to rebase\e[0m"
-	ECHO_E "\e[0;94m       -C, --dir                       Run an edit, drop, squash or a land's replay in <repo>.git-edit, kept for the next,\e[0m"
-	ECHO_E "\e[0;94m                                       not a temp worktree\e[0m"
-	ECHO_E "\e[0;94m       -C=<path>, --dir=<path>         Run it in the specified worktree path\e[0m"
-	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated temp worktree\e[0m"
-	ECHO_E "\e[0;94m                                       (parallel-safe; branch ref updated iff HEAD changed)\e[0m"
-	ECHO_E "\e[0;94m       --base=<sha>                    With --exec: the tip its result was built on – refused where the branch\e[0m"
-	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run,\e[0m"
-	ECHO_E "\e[0;94m                                       or was built below that tip other than by a rebase.\e[0m"
-	ECHO_E "\e[0;94m                                       With --commit, --whole, a staged fold or any input: the commit the files rest on, or were\e[0m"
-	ECHO_E "\e[0;94m                                       built from – a path changed since refuses, in place of the 7-day check (the tip's SHA,\e[0m"
-	ECHO_E "\e[0;94m                                       looked up in the same call as \$(git rev-parse HEAD), takes a landing back on purpose).\e[0m"
-	ECHO_E "\e[0;94m                                       Beside a --tree commit it refuses – that applies to the tip.\e[0m"
-	ECHO_E "\e[0;94m                                       With --land: the commit <branch> forked from, over the fork the reflogs name\e[0m"
-	ECHO_E "\e[0;94m       --commit --text <msg> -- <path>...\e[0m"
-	ECHO_E "\e[0;94m                                       Commit <path>s as they stand in the checkout, as git commit -- <paths>\e[0m"
-	ECHO_E "\e[0;94m                                       does – a new file needs no git add, a deleted one goes – composed apart\e[0m"
-	ECHO_E "\e[0;94m                                       from the shared index and landed through --exec (hooks, gate, CAS);\e[0m"
-	ECHO_E "\e[0;94m                                       refuses a file lacking what another caller landed on it in the last\e[0m"
-	ECHO_E "\e[0;94m                                       7 days, and a mode change unless --allow-mode-change\e[0m"
-	ECHO_E "\e[0;94m       --whole                         With --amend-into: fold <path>s whole from the checkout, as --commit\e[0m"
-	ECHO_E "\e[0;94m                                       takes them, rather than what is staged – alone or beside the inputs\e[0m"
-	ECHO_E "\e[0;94m       --dry-run                       With --exec: build, then report the result and its pinned landing –\e[0m"
-	ECHO_E "\e[0;94m                                       neither verified nor applied. With --land: say whether it would\e[0m"
-	ECHO_E "\e[0;94m                                       fast-forward or replay, and list the commits\e[0m"
-	ECHO_E "\e[0;94m       --amend-into=<sha>|auto [--text <msg>] [-- <pathspec>...]\e[0m"
-	ECHO_E "\e[0;94m                                       Fold currently-staged changes (in main) into <sha>\e[0m"
-	ECHO_E "\e[0;94m                                       (a pathspec narrows which staged paths fold; rest stay staged)\e[0m"
-	ECHO_E "\e[0;94m                                       as a fixup beside it, in an isolated worktree (atomic CAS);\e[0m"
-	ECHO_E "\e[0;94m                                       auto = the unpushed commit that last touched the lines folded\e[0m"
-	ECHO_E "\e[0;94m                                       (per git blame; a purely additive change falls back to the paths)\e[0m"
-	ECHO_E "\e[0;94m       --tree=<tree-ish>               With --amend-into: fold <tree-ish>'s diff from HEAD instead of the index's –\e[0m"
-	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on.\e[0m"
-	ECHO_E "\e[0;94m                                       With --commit: commit the tree of a commit composed on the tip, --after|--before placing it\e[0m"
-	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – composed on the tip in a private index, in this order,\e[0m"
-	ECHO_E "\e[0;94m       each path guarded as a file taken whole against what another caller landed:\e[0m"
-	ECHO_E "\e[0;94m       --patch=<file>                  Apply a patch you split by hand (keep its context – no -U0)\e[0m"
-	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with <file>'s content, its mode the tip's – a new path's\e[0m"
-	ECHO_E "\e[0;94m                                       what git add would give the checkout's file. A link put onto a link stays one, a file\e[0m"
-	ECHO_E "\e[0;94m                                       put onto a link is a type change (--allow-mode-change)\e[0m"
-	ECHO_E "\e[0;94m       --edits=<file|json>             Replay {\"<path>\": [[\"<old>\", \"<new>\"], ...]} onto the tip's text, each <old>\e[0m"
-	ECHO_E "\e[0;94m                                       matching exactly once – a peer's line in the same file stays out.\e[0m"
-	ECHO_E "\e[0;94m                                       For replacements made by hand – pairs generated from a diff of the\e[0m"
-	ECHO_E "\e[0;94m                                       checkout file take its other lines too; a file rebuilt from a\e[0m"
-	ECHO_E "\e[0;94m                                       commit (git show <sha>:<path> plus your changes) goes in as --put\e[0m"
-	ECHO_E "\e[0;94m       --chmod=<path>=+x|-x            Give <path> that executable bit, whether or not it has it\e[0m"
+	ECHO_E "\e[0;94m       Recipes – for an agent sharing a checkout, GIT_EDIT_ACTOR set to its session's id:\e[0m"
+	ECHO_E "\e[0;94m         commit files wholly yours      git edit --commit --text \"<subject>\" -- <path>...\e[0m"
+	ECHO_E "\e[0;94m         commit amid another's edits    git edit --commit --text \"<subject>\" --edits=<json> [-- <path>...]\e[0m"
+	ECHO_E "\e[0;94m                                        (the replacements you made, each old text matching once – never\e[0m"
+	ECHO_E "\e[0;94m                                        pairs generated from a diff of the checkout file)\e[0m"
+	ECHO_E "\e[0;94m         fold into a past commit        git edit --amend-into=<sha> --whole -- <path>...  (or --edits, --put)\e[0m"
+	ECHO_E "\e[0;94m         reword one                     git edit -M --subject=\"<line>\" <sha>\e[0m"
+	ECHO_E "\e[0;94m         on a pause                     resolve in the worktree the trailer names, git -C <worktree> add <file>,\e[0m"
+	ECHO_E "\e[0;94m                                        then git edit --continue – or --abort; --status reprints the pause\e[0m"
+	ECHO_E "\e[0;94m         look flags up                  git edit -h <flag>...\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94m       Modes:\e[0m"
+	ECHO_E "\e[0;94m       -e, --edit                      Name the default mode – a second <commit> refuses rather than squash\e[0m"
+	ECHO_E "\e[0;94m       -m, --message                   Also edit <commit>'s message, at a terminal\e[0m"
+	ECHO_E "\e[0;94m       -M, --reword                    Alter only the message – plumbing, the working tree untouched\e[0m"
+	ECHO_E "\e[0;94m       -d, --drop                      Drop <commit>s or ranges, both ends included\e[0m"
+	ECHO_E "\e[0;94m       -s, --squash[=<target>]         Squash into the oldest, a single commit into its parent – or into <target>\e[0m"
+	ECHO_E "\e[0;94m       -S, --resquash                  Squash by plumbing only, never falling back to a rebase\e[0m"
+	ECHO_E "\e[0;94m       --amend-into=<sha>|auto         Fold staged changes into <sha> – auto: the unpushed commit owning the lines\e[0m"
+	ECHO_E "\e[0;94m       --commit --text <msg>           Commit files from the checkout, composed apart from the shared index\e[0m"
+	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> – by pathspec, or at an authored split point\e[0m"
+	ECHO_E "\e[0;94m       --reorder <commit>...           Reorder a contiguous span, the arguments oldest-first\e[0m"
+	ECHO_E "\e[0;94m       --move=<sha>                    Move it to an anchor – repeated, or <oldest>..<newest>, several as one block\e[0m"
+	ECHO_E "\e[0;94m       --after|--before=<sha>          Where --move, --commit or --exec puts its commits: right after or before <sha>\e[0m"
+	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, the fork point derived\e[0m"
+	ECHO_E "\e[0;94m       --land=<branch>                 Land <branch>'s commits on this branch – a fast-forward or a replay\e[0m"
+	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated worktree, landing what it commits\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – your own changes, on the tip in a private index:\e[0m"
+	ECHO_E "\e[0;94m       --edits=<file|json>             Replay the replacements you made, each old text matching once – never diffed from the checkout\e[0m"
+	ECHO_E "\e[0;94m       --patch=<file>                  Apply hunks you split, their context kept\e[0m"
+	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with a file rebuilt from git show <sha>:<path>\e[0m"
 	ECHO_E "\e[0;94m       --rm=<path>                     Remove <path>\e[0m"
-	ECHO_E "\e[0;94m       -- <path>...                    Then take these files whole, as --commit -- <path>... takes them, guards included\e[0m"
-	ECHO_E "\e[0;94m                                       (--whole with --amend-into) – a path named by an input too refuses\e[0m"
-	ECHO_E "\e[0;94m       --snapshot                      With --amend-into: merge the fold into each commit from its target up instead of\e[0m"
-	ECHO_E "\e[0;94m                                       replaying those above it – a conflict stops once per distinct content (git 2.40+)\e[0m"
-	ECHO_E "\e[0;94m       --split=<sha> -- <pathspec>...  Split <sha>: extract the pathspec-matched changes into their\e[0m"
-	ECHO_E "\e[0;94m                                       own commit (message from --text), keep the rest (plumbing-only)\e[0m"
-	ECHO_E "\e[0;94m       --split=<sha>                   Split <sha> by content when one file holds both halves – an authored split\e[0m"
-	ECHO_E "\e[0;94m                                       point: pauses with a worktree at the commit – edit it back to what the\e[0m"
-	ECHO_E "\e[0;94m                                       first commit should leave, then --continue --text \"…\" (that first\e[0m"
-	ECHO_E "\e[0;94m                                       commit's message – the second keeps the original, body included)\e[0m"
-	ECHO_E "\e[0;94m       --continue                      Resume the previous operation after resolving conflicts\e[0m"
-	ECHO_E "\e[0;94m                                       (worktree path is in the conflict trailer / error message)\e[0m"
-	ECHO_E "\e[0;94m       --abort                         Cancel the previous operation and roll back\e[0m"
-	ECHO_E "\e[0;94m       --reorder                       Reorder a contiguous span (positional args give the new order, oldest-first)\e[0m"
-	ECHO_E "\e[0;94m       --move=<sha>                    Reposition <sha> directly --after/--before an anchor commit\e[0m"
-	ECHO_E "\e[0;94m                                       (span + ordering derived automatically; delegates to --reorder)\e[0m"
-	ECHO_E "\e[0;94m       --move=<a> --move=<b>...        Move each named commit together, one block in history order, those\e[0m"
-	ECHO_E "\e[0;94m                                       between them staying put – one replay, not one per commit\e[0m"
-	ECHO_E "\e[0;94m       --after|--before=<sha>          With --commit or --exec, land the commits they add right after/before <sha>\e[0m"
-	ECHO_E "\e[0;94m                                       in the same run, rather than at the tip – a conflict pauses as --move does\e[0m"
-	ECHO_E "\e[0;94m       --move=<oldest>..<newest>       Name a run of adjacent commits, both ends included, whoever made them\e[0m"
-	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, deriving the fork point\e[0m"
-	ECHO_E "\e[0;94m                                       (recovers it from the reflog when a rewrite orphaned the old base);\e[0m"
-	ECHO_E "\e[0;94m                                       uncommitted edits come along, merged onto what landed\e[0m"
-	ECHO_E "\e[0;94m       --land=<branch>                 Land <branch>'s commits on the checked-out branch, its uncommitted work\e[0m"
-	ECHO_E "\e[0;94m                                       left as any landing leaves it – a fast-forward by CAS where the branch\e[0m"
-	ECHO_E "\e[0;94m                                       still sits below them, else a replay onto the tip in an isolated\e[0m"
-	ECHO_E "\e[0;94m                                       worktree, pausing on a conflict as --onto does; <branch> never moves.\e[0m"
-	ECHO_E "\e[0;94m                                       It lands the commits this branch never held, by its reflog, what a land\e[0m"
-	ECHO_E "\e[0;94m                                       brought set aside where --undo took it back, whatever it named. A commit\e[0m"
-	ECHO_E "\e[0;94m                                       this branch dropped since stays out by name – refusing inside a merge –\e[0m"
-	ECHO_E "\e[0;94m                                       as does one a land between the two copied, by its record. Any other\e[0m"
-	ECHO_E "\e[0;94m                                       commit of <branch>'s that looks like a copy of one this branch holds or\e[0m"
-	ECHO_E "\e[0;94m                                       held (same author and date, and subject or patch) refuses the land,\e[0m"
-	ECHO_E "\e[0;94m                                       naming both and steps that work as printed: <branch> moved onto the\e[0m"
-	ECHO_E "\e[0;94m                                       copies, --base past them, the fold or reword bringing its change. One\e[0m"
-	ECHO_E "\e[0;94m                                       whose every commit is on the tip, change and message, ends ok.\e[0m"
-	ECHO_E "\e[0;94m                                       The default branch (init.defaultBranch, the remote's HEAD, main or\e[0m"
-	ECHO_E "\e[0;94m                                       master) landed into another is never offered a move or a delete\e[0m"
-	ECHO_E "\e[0;94m       --skip                          Resume past the paused commit instead of through it (--onto and --land)\e[0m"
-	ECHO_E "\e[0;94m       --undo                          Revert the last completed git-edit ref move (refuses if the branch moved since,\e[0m"
-	ECHO_E "\e[0;94m                                       or where GIT_EDIT_ACTOR is set and another caller made it)\e[0m"
-	ECHO_E "\e[0;94m       --status                        Report the in-flight operation and whose it is (or the last completed one,\e[0m"
-	ECHO_E "\e[0;94m                                       its undo and a raw undo's steps), and a checkout left behind\e[0m"
-	ECHO_E "\e[0;94m       --carry[=<old tip>]             Merge the checkout's uncommitted edits onto what landed since the tip it was last\e[0m"
-	ECHO_E "\e[0;94m                                       brought to (or <old tip>), where committed whole they'd take it back\e[0m"
-	ECHO_E "\e[0;94m                                       – every other path it changed brought to what landed, content a drop\e[0m"
-	ECHO_E "\e[0;94m                                       handed back removed too, a renamed directory's untracked files moved along\e[0m"
-	ECHO_E "\e[0;94m       --allow-pushed                  Override the refusal to rewrite commits that exist on a remote\e[0m"
-	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a staged path into a commit that predates it\e[0m"
-	ECHO_E "\e[0;94m       --allow-mode-change             Let --commit take, or --amend-into fold, a file-mode change (a flipped\e[0m"
-	ECHO_E "\e[0;94m                                       executable bit, or a link turned file), or a --continue keep one a resolution staged or the\e[0m"
-	ECHO_E "\e[0;94m                                       landing found unasked\e[0m"
-	ECHO_E "\e[0;94m       --allow-other-actor             Let --undo, --continue, --skip or --abort take on another GIT_EDIT_ACTOR caller's run\e[0m"
-	ECHO_E "\e[0;94m       --verify=<cmd>                  Run <cmd> against the rebuilt commits before applying (also: edit.verifyCmd)\e[0m"
-	ECHO_E "\e[0;94m       --verify-span                   Verify every rebuilt commit, not just the primary, resolved and tip ones (also: edit.verifySpan)\e[0m"
-	ECHO_E "\e[0;94m       --no-verify-span                Verify the primary, resolved and tip commits alone this run, under a standing edit.verifySpan\e[0m"
-	ECHO_E "\e[0;94m       --no-verify                     Skip a configured verification for this run\e[0m"
-	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the built-in end-to-end test suite in a scratch repo – =83-87,90 runs those\e[0m"
-	ECHO_E "\e[0;94m                                       scenarios alone, with the ones they need, for development (commits and releases take all)\e[0m"
-	ECHO_E "\e[0;94m       --jobs[=<n>]                    With --selftest, run its scenarios <n> at a time (default: one a core)\e[0m"
-	ECHO_E "\e[0;94m       --text <msg>                    Inline message for -M/-s/-S/--split/--amend-into/--commit; '-' reads stdin\e[0m"
-	ECHO_E "\e[0;94m                                       (--split: the extracted commit's – the remainder keeps the original)\e[0m"
-	ECHO_E "\e[0;94m       --subject <line>                With -M or an edit's --continue: replace the subject alone – the whole first\e[0m"
-	ECHO_E "\e[0;94m                                       paragraph – keeping the rest of the message byte for byte (not beside --text)\e[0m"
-	ECHO_E "\e[0;94m       --wait=<secs>                   Wait up to <secs> for another caller's pause to clear before refusing\e[0m"
-	ECHO_E "\e[0;94m                                       (default 90, re-checked every 2s; 0 refuses at once; never on your own pause)\e[0m"
-	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm safe prompts (drop/squash confirmation)\e[0m"
-	ECHO_E "\e[0;94m       -h                              Print this usage ('--help' goes to git's man viewer instead)\e[0m"
+	ECHO_E "\e[0;94m       --chmod=<path>=+x|-x            Set <path>'s executable bit\e[0m"
+	ECHO_E "\e[0;94m       -- <path>...                    And take these files whole beside them (--whole with --amend-into)\e[0m"
+	ECHO_E "\e[0;94m       --whole                         With --amend-into: fold the named files whole from the checkout\e[0m"
+	ECHO_E "\e[0;94m       --tree=<tree-ish>               Fold or commit a tree composed apart from the shared index\e[0m"
+	ECHO_E "\e[0;94m       --base=<sha>                    The commit your files rest on, in place of the landings check (-h base: --exec, --land)\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94m       Runs:\e[0m"
+	ECHO_E "\e[0;94m       -C, --dir[=<path>]              Run an edit, drop, squash or a land's replay in a kept worktree, <repo>.git-edit\e[0m"
+	ECHO_E "\e[0;94m       --snapshot                      With --amend-into: merge the fold into each commit from its target up (git 2.40+)\e[0m"
+	ECHO_E "\e[0;94m       --dry-run                       With --exec or --land: say what would land, applying nothing\e[0m"
+	ECHO_E "\e[0;94m       --verify=<cmd>                  Gate the rewrite on <cmd> before it lands (also: edit.verifyCmd)\e[0m"
+	ECHO_E "\e[0;94m       --verify-span                   Check every rebuilt commit, not just the primary, resolved and tip ones\e[0m"
+	ECHO_E "\e[0;94m       --no-verify-span                Step a standing edit.verifySpan back down for this run\e[0m"
+	ECHO_E "\e[0;94m       --no-verify                     Skip a configured gate for this run\e[0m"
+	ECHO_E "\e[0;94m       --wait=<secs>                   Wait for another caller's pause – 90 by default, 0 refusing at once\e[0m"
+	ECHO_E "\e[0;94m       --text <msg>                    The message for -M, -s, -S, --split, --amend-into or --commit – '-' reads stdin\e[0m"
+	ECHO_E "\e[0;94m       --subject <line>                With -M or an edit's --continue: replace the subject alone, the body kept\e[0m"
+	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm the drop/squash prompt\e[0m"
+	ECHO_E "\e[0;94m       --allow-pushed                  Rewrite commits already on a remote\e[0m"
+	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a path into a commit that predates it\e[0m"
+	ECHO_E "\e[0;94m       --allow-mode-change             Let a commit, fold or --continue take a file-mode change\e[0m"
+	ECHO_E "\e[0;94m       --allow-other-actor             Take on another GIT_EDIT_ACTOR caller's run or pause\e[0m"
+	ECHO_E ""
+	ECHO_E "\e[0;94m       Standalone:\e[0m"
+	ECHO_E "\e[0;94m       --continue | --abort            Resume or cancel the paused operation\e[0m"
+	ECHO_E "\e[0;94m       --skip                          With --onto or --land: resume past the paused commit\e[0m"
+	ECHO_E "\e[0;94m       --undo                          Take back the last run, the checkout following\e[0m"
+	ECHO_E "\e[0;94m       --status                        The pause in flight and whose it is, else the last run – and a checkout left behind\e[0m"
+	ECHO_E "\e[0;94m       --carry[=<old tip>]             Bring the checkout along to what landed, your edits merged onto it\e[0m"
+	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the end-to-end suite, or just those scenarios\e[0m"
+	ECHO_E "\e[0;94m       --jobs[=<n>]                    With --selftest: run <n> scenarios at a time, one a core by default\e[0m"
+	ECHO_E "\e[0;94m       -h [<topic>...]                 This usage – or each flag's or section's entry of the manual (--help goes to man)\e[0m"
 	ECHO_E "\e[0;94m       --version                       Print the version this copy ships as\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94mnotes: An edit, drop or squash runs in a temp worktree, and every run that lands brings the\e[0m"
@@ -932,6 +877,157 @@ USAGE () {
 	ECHO_E "\e[0;94m                           ('--allow-other-actor' takes it on)\e[0m"
 	ECHO_E "\e[0;94m         git-edit: paused – a pause with no operation on record is <label>'s, not yours: leave it to\e[0m"
 	ECHO_E "\e[0;94m                           that caller, or clear it with 'git edit --abort --allow-other-actor'\e[0m"
+}
+
+# Prints the man page's entry for each <topic> – a flag, with or without its dashes or a value, or a
+# section's title – as plain text, one paragraph a line, whatever viewer `git help` would use
+# • The page is the one source: `git edit -h` lists the flags, `git help edit` is the whole manual
+# • Read by awk, not `man`, so it reads the same wherever no man, groff or mandoc is installed
+_HELP_TOPICS () {
+	# Args: <topic>...
+	local PAGE=${_SELF:h}/man/man1/git-edit.1 T OUT
+	local -a GONE
+	local -i SHOWN=0
+	[ -f "$PAGE" ] || PAGE=${_SELF:h}/../share/man/man1/git-edit.1
+	if [ ! -f "$PAGE" ]; then
+		PRINT_ERR "No man page beside this git-edit to read '${(j:', ':)@}' from – 'git edit -h' lists every flag"
+		exit 1
+	fi
+	for T in "$@"; do
+		# An empty one names nothing – none at all is the usage
+		[ -n "$T" ] || continue
+		# A mode by its everyday name
+		case $T in
+			fold)   T=--amend-into ;;
+			place)  T=--after ;;
+			*help)  T=-h ;;
+		esac
+		# Through the environment, as `-v` would read a backslash in it as an escape
+		OUT=$(GIT_EDIT_HELP_TOPIC=$T LC_ALL=C awk '
+		# Turns roff into plain text – an italic placeholder bracketed, as `-h` spells one
+		function unesc(s,   pre) {
+			gsub(/\\\\/, "\001", s)
+			gsub(/\\-/, "-", s)
+			while (match(s, /\\fI[^\\]*\\f[RPB]/)) {
+				pre = substr(s, 1, RSTART - 1)
+				s = pre "<" substr(s, RSTART + 3, RLENGTH - 6) ">" substr(s, RSTART + RLENGTH)
+			}
+			gsub(/\\f[BIRP]/, "", s)
+			gsub(/\\\(em|\\\(en/, "–", s)
+			gsub(/\\\(bu/, "•", s)
+			gsub(/\\\(->/, "→", s)
+			gsub(/\\\(aq/, "\047", s)
+			gsub(/\\\((dq|lq|rq)/, "\"", s)
+			gsub(/\\&/, "", s)
+			gsub(/\\ /, " ", s)
+			gsub(/\\e/, "\001", s)
+			gsub(/\001/, "\\", s)
+			return s
+		}
+		# Splits a macro line into `ARG`, double quotes grouping, an escaped space kept in its word
+		function margs(line,   rest, n, i, c, cur, inq) {
+			rest = line
+			sub(/^\.[A-Za-z]+[ \t]*/, "", rest)
+			n = 0; cur = ""; inq = 0
+			for (i = 1; i <= length(rest); i++) {
+				c = substr(rest, i, 1)
+				if (c == "\\" && substr(rest, i + 1, 1) == " ") { cur = cur "\\ "; i++; continue }
+				if (c == "\"") { inq = !inq; continue }
+				if ((c == " " || c == "\t") && !inq) { if (cur != "") ARG[++n] = cur; cur = ""; continue }
+				cur = cur c
+			}
+			if (cur != "") ARG[++n] = cur
+			return n
+		}
+		# Joins the macro arguments with <sep>, bracketing the italic ones – <it> 1 odd, 2 even, 3 all
+		function joined(n, sep, it,   i, t, a) {
+			t = ""
+			for (i = 1; i <= n; i++) {
+				a = ARG[i]
+				if (it == 3 || (it == 1 && i % 2) || (it == 2 && !(i % 2))) a = "<" a ">"
+				t = t (i > 1 ? sep : "") a
+			}
+			return t
+		}
+		function emit(k, v) { K[++R] = k; V[R] = v }
+		function flush() { if (para != "") emit("P", para); para = "" }
+		function add(t) {
+			if (t == "") return
+			if (wanttag) { emit("T", t); wanttag = 0; return }
+			para = para (para == "" ? "" : " ") t
+		}
+		/^\.\\"/ { next }
+		/^\.(SH|SS)( |$)/ { flush(); wanttag = 0; emit(substr($0, 2, 2) == "SH" ? "S" : "s", unesc(joined(margs($0), " ", 0))); next }
+		/^\.TP( |$)/ { flush(); wanttag = 1; next }
+		/^\.(PP|LP|P|sp|br)( |$)/ { flush(); next }
+		/^\.IP( |$)/ { flush(); if (margs($0) >= 1) para = unesc(ARG[1]); next }
+		/^\.(nf|EX)( |$)/ { flush(); pre = 1; next }
+		/^\.(fi|EE)( |$)/ { pre = 0; next }
+		/^\.(B|SM|SB)( |$)/ { add(unesc(joined(margs($0), " ", 0))); next }
+		/^\.I( |$)/ { add(unesc(joined(margs($0), " ", 3))); next }
+		/^\.(BR|RB)( |$)/ { add(unesc(joined(margs($0), "", 0))); next }
+		/^\.(IR|IB)( |$)/ { add(unesc(joined(margs($0), "", 1))); next }
+		/^\.(RI|BI)( |$)/ { add(unesc(joined(margs($0), "", 2))); next }
+		/^\./ { next }
+		{ if (pre) { flush(); emit("X", unesc($0)) } else add(unesc($0)) }
+		# Tells whether tag <t> names flag <w> – first in a comma-led part, or with <any> anywhere
+		function names(t, w, any,   n, i, p, f) {
+			n = any ? split(t, p, /[ ,{}|\[\]()]+/) : split(t, p, /, /)
+			for (i = 1; i <= n; i++) {
+				f = p[i]
+				sub(/[ =].*/, "", f)
+				if (f !~ /^-/) continue
+				if (length(w) == 1 ? f == "-" w : tolower(f) == "--" tolower(w)) return 1
+			}
+			return 0
+		}
+		# Prints one record – a title or an entry tag flush left, its paragraphs under it
+		function show(i) {
+			if (K[i] == "S" || K[i] == "s" || K[i] == "T") {
+				print (shown++ ? "\n" : "") V[i]
+				under = K[i] == "T"
+			} else print (under ? "  " : "") (K[i] == "X" ? "  " : "") V[i]
+		}
+		# Prints every entry naming <w>, each through its paragraphs
+		function entries(w, any,   i, j) {
+			for (i = 1; i <= R; i++) {
+				if (K[i] != "T" || !names(V[i], w, any)) continue
+				show(i)
+				for (j = i + 1; j <= R && K[j] != "T" && K[j] != "S" && K[j] != "s"; j++) show(j)
+			}
+		}
+		END {
+			flush()
+			w = ENVIRON["GIT_EDIT_HELP_TOPIC"]
+			sub(/^-+/, "", w)
+			sub(/=.*/, "", w)
+			if (w == "") exit
+			entries(w, 0)
+			if (shown) exit
+			entries(w, 1)
+			if (shown) exit
+			# Else the first section or subsection whose title holds it, to the next of its rank – a
+			# word of three letters or more, as one letter would name any
+			if (length(w) < 3) exit
+			for (i = 1; i <= R; i++) {
+				if ((K[i] != "S" && K[i] != "s") || index(tolower(V[i]), tolower(w)) == 0) continue
+				show(i)
+				for (j = i + 1; j <= R && K[j] != "S" && !(K[i] == "s" && K[j] == "s"); j++) show(j)
+				exit
+			}
+		}' "$PAGE")
+		if [ -z "$OUT" ]; then
+			GONE+=("$T")
+			continue
+		fi
+		(( SHOWN++ )) && print
+		print -r -- "$OUT"
+	done
+	(( SHOWN + ${#GONE} )) || USAGE
+	if (( ${#GONE} )); then
+		PRINT_ERR "No help topic '${(j:', ':)GONE}' – name a flag 'git edit -h' lists, or a section of 'git help edit': $(LC_ALL=C sed -n 's/^\.S[HS] //p' "$PAGE" | tr -d '"' | tr '\n' ',' | LC_ALL=C sed 's/,$//; s/,/, /g')"
+		exit 1
+	fi
 }
 
 # Prints a printf-style <message> in <color>, each `%s` argument in the color's bright form
@@ -20460,7 +20556,7 @@ for ARG in "$@"; do
 		# A word opening with a value flag's name reads to zparseopts as that flag, the rest its value –
 		# a made-up `--text-file=…` would land as a message, `--verify-span=true` gate on `-span=true`
 		--(after|amend-into|base|before|carry|chmod|dir|edits|jobs|land|move|onto|patch|put|rm|selftest|split|squash|subject|text|tree|verify|wait)[^=]*)
-			USAGE
+			_USAGE_POINT=1
 			PRINT_ERR "Unknown option: $ARG"
 			exit 1
 			;;
@@ -20474,11 +20570,18 @@ zmodload zsh/zutil
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
 
+# `-h <topic>...`, the manual's entries for flags or sections, ahead of the parser, which would read
+# a topic spelled as a flag as that flag
+if [[ $1 == (-h|help) && $# -ge 2 ]]; then
+	_HELP_TOPICS "${@:2}"
+	exit 0
+fi
+
 # Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
 # where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer
 PARSE_ERR=$(MKTEMP_FILE git-edit-parse 2>/dev/null) && _TEMP_FILES+=("$PARSE_ERR")
 if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -land+:=OPT_LAND -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -patch+:=OPT_PATCH -put+:=OPT_PUT -edits+:=OPT_EDITS -rm+:=OPT_RM -chmod+:=OPT_CHMOD -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT -subject+:=OPT_SUBJECT -wait+:=OPT_WAIT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
-	USAGE
+	_USAGE_POINT=1
 	PARSE_MSG=""
 	[ -n "$PARSE_ERR" ] && PARSE_MSG=$(<"$PARSE_ERR")
 	PARSE_MSG=${PARSE_MSG#*zparseopts:*: }
@@ -20657,24 +20760,24 @@ if [ ${#OPT_TREE} -gt 0 ]; then
 		exit 1
 	fi
 	if [ ${#OPT_AMEND_INTO} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--tree only applies to --amend-into and --commit"
 		exit 1
 	fi
 fi
 if [ ${#OPT_SNAPSHOT} -gt 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "--snapshot only applies to --amend-into"
 	exit 1
 fi
 if [ ${#OPT_ALLOW_OTHER_ACTOR} -gt 0 ] && [ ${#OPT_CONTINUE} -eq 0 ] && [ ${#OPT_ABORT} -eq 0 ] && [ ${#OPT_SKIP} -eq 0 ] && [ ${#OPT_UNDO} -eq 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "--allow-other-actor only applies to --continue, --skip, --abort and --undo"
 	exit 1
 fi
 if [ ${#OPT_WHOLE} -gt 0 ]; then
 	if [ ${#OPT_AMEND_INTO} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--whole only applies to --amend-into – a new commit of whole files takes --commit"
 		exit 1
 	fi
@@ -20687,7 +20790,7 @@ fi
 # taken whole beside them, and instead of a tree, which composes it otherwise
 if _INPUTS_GIVEN; then
 	if [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--patch, --put, --edits, --rm and --chmod only apply to --commit and --amend-into"
 		exit 1
 	fi
@@ -20705,7 +20808,7 @@ EXEC_BASE=""
 EXEC_LABEL=""
 if [ ${#OPT_BASE} -gt 0 ]; then
 	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ] && [ ${#OPT_LAND} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--base only applies to --exec, --commit, --amend-into and --land"
 		exit 1
 	fi
@@ -20739,7 +20842,7 @@ fi
 # Which checks to skip is also best settled once the result has been inspected
 if [ ${#OPT_DRY_RUN} -gt 0 ]; then
 	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_LAND} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--dry-run only applies to --exec and --land"
 		exit 1
 	fi
@@ -21036,7 +21139,7 @@ if [ ${#OPT_JOBS} -gt 0 ] && [ ${#OPT_SELFTEST} -eq 0 ]; then
 fi
 if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_CARRY} -gt 0 ] || [ ${#OPT_SELFTEST} -gt 0 ]; then
 	if [ $# -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--undo/--status/--carry/--selftest take no arguments (got: $*)"
 		exit 1
 	fi
@@ -21050,7 +21153,7 @@ if [ ${#OPT_UNDO} -gt 0 ] || [ ${#OPT_STATUS} -gt 0 ] || [ ${#OPT_CARRY} -gt 0 ]
 		(( ${#${(P)STRAY_ARR}} )) && STANDALONE_GOT+=("$STRAY_OPT")
 	done
 	if [ ${#STANDALONE_GOT} -gt 1 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "${(j: and :)STANDALONE_GOT} cannot be combined – each is a run of its own, so nothing was done"
 		ECHO_E "\e[0;31m  Run them one at a time, each by itself.\e[0m" >&2
 		exit 1
@@ -21193,32 +21296,32 @@ fi
 
 # Conflict checks
 if [ ${#OPT_MESSAGE} -gt 0 -a ${#OPT_DROP} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Options -m/--message and -d/--drop cannot be combined"
 	exit 1
 fi
 if [ ${#OPT_DROP} -gt 0 -a ${#OPT_SQUASH} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Options -d/--drop and -s/--squash cannot be combined"
 	exit 1
 fi
 if [ ${#OPT_REWORD} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_RESQUASH} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option -M/--reword cannot be combined with -m/-d/-s/-S/-C (reword is message-only and works without touching the working tree)"
 	exit 1
 fi
 if [ ${#OPT_RESQUASH} -gt 0 ] && [ ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option -S/--resquash cannot be combined with -d/-s/-C (resquash uses plumbing only; for non-contiguous squashes use -s with -C)"
 	exit 1
 fi
 if [ ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --exec cannot be combined with other modes (--exec is its own mode and manages its own isolated worktree)"
 	exit 1
 fi
 if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --amend-into cannot be combined with -m, -M, -d, -s, -S, -C, --exec, --split or --move (it folds staged changes into <sha> on its own)"
 	if [ ${#OPT_REWORD} -gt 0 ]; then
 		ECHO_E "\e[0;31m  To fold and reword at once: git edit --amend-into=<sha> --text=\"…\"\e[0m" >&2
@@ -21227,30 +21330,30 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt
 	exit 1
 fi
 if [ ${#OPT_REORDER} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_MOVE} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --reorder cannot be combined with other modes (it manages its own isolated worktree)"
 	exit 1
 fi
 if [ ${#OPT_ONTO} -gt 0 ] && [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o -n "$TEXT_VALUE" ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --onto cannot be combined with other modes (it replays the whole branch, not a named commit)"
 	exit 1
 fi
 # Ahead of every dispatch, as `--exec` and `--commit` dispatch before it would run with it unheard
 if [ ${#OPT_LAND} -gt 0 ] && [ ${#OPT_EDIT} -gt 0 -o ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_COMMIT} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o ${#OPT_ONTO} -gt 0 -o ${#OPT_TEXT} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --land cannot be combined with other modes or --text (it lands the commits of the branch it names, as they are)"
 	exit 1
 fi
 if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "--after/--before only apply to --move, --commit and --exec"
 	exit 1
 fi
 # `-e` names the default mode rather than adding one, so it pairs with `-m` and `-C` as the
 # bare form does – every other mode contradicts it
 if [ ${#OPT_EDIT} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o ${#OPT_ONTO} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option -e/--edit cannot be combined with another mode (it names the default one: edit a single commit's content)"
 	exit 1
 fi
@@ -21258,12 +21361,12 @@ fi
 # action, implicit squash included, happens after action determination, so it also
 # catches `--text` with edit mode
 if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_DROP} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --text doesn't apply to -d/--drop"
 	exit 1
 fi
 if [ ${#OPT_TEXT} -gt 0 ] && [ ${#OPT_EXEC} -gt 0 ]; then
-	USAGE
+	_USAGE_POINT=1
 	PRINT_ERR "Option --text doesn't apply to --exec"
 	exit 1
 fi
@@ -21283,7 +21386,7 @@ if [ ${#OPT_COMMIT} -gt 0 ]; then
 		(( ${#${(P)STRAY_ARR}} )) && COMMIT_GOT+=("$STRAY_OPT")
 	done
 	if [ ${#COMMIT_GOT} -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 			PRINT_ERR "Option --commit cannot be combined with other modes (got: ${(j: :)COMMIT_GOT}) – folding whole files into a past commit takes --amend-into=<sha> --whole"
 		else
@@ -21303,7 +21406,7 @@ if [ ${#OPT_COMMIT} -gt 0 ]; then
 			exit 1
 		fi
 	elif ! _INPUTS_GIVEN && [ $# -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--commit needs the files to take: git edit --commit --text \"…\" -- <path>..."
 		exit 1
 	fi
@@ -21330,7 +21433,7 @@ if [ ${#OPT_EXEC} -gt 0 ]; then
 		shift
 	fi
 	if [ $# -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--exec requires a command (use -- to separate it from flags)"
 		exit 1
 	fi
@@ -21374,12 +21477,12 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 		[ -z "$MOVE_ARG" ] && MOVE_EMPTY=1
 	done
 	if [ $MOVE_EMPTY -eq 1 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--move requires a <sha> value (e.g., --move=abc123)"
 		exit 1
 	fi
 	if [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o -n "$TEXT_VALUE" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "Option --move cannot be combined with other modes"
 		exit 1
 	fi
@@ -21397,12 +21500,12 @@ if [ ${#OPT_MOVE} -gt 0 ]; then
 		MOVE_KIND="before"
 	fi
 	if [ -z "$MOVE_ANCHOR" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--move requires a destination: --after=<sha> or --before=<sha>"
 		exit 1
 	fi
 	if [ $# -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--move takes no positional arguments (commits and destination are flag values – several commits go as --move=<a> --move=<b>, a run of commits as --move=<oldest>..<newest>)"
 		exit 1
 	fi
@@ -21433,12 +21536,12 @@ fi
 if [ ${#OPT_LAND} -gt 0 ]; then
 	LAND_BRANCH="${OPT_LAND[2]#=}"
 	if [ -z "$LAND_BRANCH" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--land requires a branch (e.g., --land=feature)"
 		exit 1
 	fi
 	if [ $# -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--land takes no <commit> arguments – it lands the branch its value names (got: $*)"
 		exit 1
 	fi
@@ -21462,12 +21565,12 @@ if [ ${#OPT_ONTO} -gt 0 ]; then
 		ONTO_UPSTREAM="${OPT_ONTO[2]#=}"
 	fi
 	if [ -z "$ONTO_UPSTREAM" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--onto requires an upstream (e.g., --onto=main)"
 		exit 1
 	fi
 	if [ $# -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--onto takes no <commit> arguments – it replants the current branch"
 		exit 1
 	fi
@@ -21502,7 +21605,7 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 		AMEND_INTO_TARGET="${OPT_AMEND_INTO[2]#=}"
 	fi
 	if [ -z "$AMEND_INTO_TARGET" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--amend-into requires a <sha> value (e.g., --amend-into=abc123)"
 		exit 1
 	fi
@@ -21513,7 +21616,7 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 	fi
 	AMEND_PATHSPECS=("$@")
 	if [ ${#OPT_WHOLE} -gt 0 ] && [ ${#AMEND_PATHSPECS[@]} -eq 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--whole needs the files to take: git edit --amend-into=<sha> --whole -- <path>..."
 		exit 1
 	fi
@@ -21623,12 +21726,12 @@ if [ ${#OPT_SPLIT} -gt 0 ]; then
 		SPLIT_TARGET="${OPT_SPLIT[2]#=}"
 	fi
 	if [ -z "$SPLIT_TARGET" ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "--split requires a <sha> value (e.g., --split=abc123)"
 		exit 1
 	fi
 	if [ ${#OPT_MESSAGE} -gt 0 -o ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_DIR} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_REORDER} -gt 0 ]; then
-		USAGE
+		_USAGE_POINT=1
 		PRINT_ERR "Option --split cannot be combined with other modes"
 		exit 1
 	fi

@@ -183,7 +183,8 @@ print -r -- b > n.txt && git add n.txt && git commit -qm "IX7 add n"
 print -r -- c > f.txt
 _ST_RUN --commit -C --text "IX7" -- f.txt
 _ST_OUT_HAS "--commit beside -C names -C" 'Option --commit cannot be combined with -C – it commits on the checked-out branch.s tip'
-_ST_OUT_LACKS "never the fold of whole files" 'amend-into=<sha> --whole'
+# The refusal's own lines – the usage printed above them holds the recipe folding whole files
+_ST_EQ "never the fold of whole files" "$(print -r -- "$OUT" | grep -A2 'cannot be combined with -C' | grep -c 'amend-into=<sha> --whole')" "0"
 _ST_RUN --commit --amend-into="$IX_T" --text "IX7" -- f.txt
 _ST_OUT_HAS "while beside --amend-into it does" 'folding whole files into a past commit takes --amend-into=<sha> --whole'
 git checkout -q -- f.txt

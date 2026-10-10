@@ -27,3 +27,15 @@ _ST_EQ "neither dropping a thing" "$(git rev-parse HEAD)" "$AE_TIP"
 _ST_RUN
 _ST_EQ "bare invocation still exits 1" "$RC" "1"
 _ST_OUT_HAS "bare invocation still shows usage" 'usage: git edit'
+# A mistake over the flags refuses in its own lines, pointing at `-h` rather than burying them
+# under the whole usage – an unknown option, one beside the wrong mode, one combination refused
+_ST_RUN --no-such-flag
+_ST_EQ "an unknown option refuses" "$RC" "1"
+_ST_OUT_LACKS "without the usage" '^usage: git edit'
+_ST_OUT_HAS "pointing at -h for the flags" "'git edit -h <flag>\.\.\.' gives each in full"
+_ST_RUN --tree=HEAD
+_ST_EQ "a flag beside no mode it serves refuses in four lines – banner, refusal, pointer, trailer" \
+	"$RC:$(print -r -- "$OUT" | grep -c .)" "1:4"
+_ST_RUN -m -d HEAD
+_ST_OUT_LACKS "a combination refused carries no usage either" '^usage: git edit'
+_ST_OUT_HAS "and the pointer, above the trailer" "gives each in full\."$'\n'"git-edit: error"
