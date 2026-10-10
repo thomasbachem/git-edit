@@ -95,7 +95,11 @@ sh -c 'exit 0' & ZL_PID=$!
 wait $ZL_PID
 print -r -- "$ZL_PID Thu Jan 1 00:00:00 1970" > "$ZL_LOCK"
 ln "$ZL_LOCK" "$ZL_LOCK.break"
-PATH="$TMP/zl-nap:$PATH" _ST_RUN -C "$ZL_P" HEAD~1
+# Each poll's `sleep` touches the second name, keeping its ctime under the 10 s that age a break
+# stale, however slowly a loaded machine polls
+mkdir -p "$TMP/zl3-nap" && print -l '#!/bin/sh' "touch -c ${(q)ZL_LOCK}.break" 'exit 0' > "$TMP/zl3-nap/sleep"
+chmod +x "$TMP/zl3-nap/sleep"
+PATH="$TMP/zl3-nap:$PATH" _ST_RUN -C "$ZL_P" HEAD~1
 _ST_EQ "a -C lock a dead breaker left half broken refuses past the wait" "$RC" "1"
 _ST_OUT_HAS "naming its holder as gone" 'that is gone, but a break of it never finished'
 _ST_OUT_LACKS "never as a live run" 'in use by another run'
