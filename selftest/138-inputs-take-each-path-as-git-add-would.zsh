@@ -76,9 +76,9 @@ _ST_RUN --commit --text "IG missing" --edits '{x}.json'
 _ST_OUT_HAS "a missing file named like JSON is named as missing" 'no such file, nor inline JSON'
 _ST_RUN --commit --text "IG shape" --edits '{"brace.txt" "x"}'
 _ST_OUT_HAS "a shape error names a string as one" "':' expected where a string stands"
-# A --base beside nothing it checks refuses rather than read as a guard
+# A --base beside edits alone guards their paths as it does a put's
 _ST_RUN --commit --text "IG base" --base="$IG_B" --edits '{"brace.txt": [["{", "}"]]}'
-_ST_OUT_HAS "--base beside edits alone refuses" '--base checks puts, removals and files taken whole'
+_ST_OUT_HAS "--base beside edits alone refuses a path changed since" 'so changed by --edits they would take that back: brace.txt'
 # An intent-to-add entry on a path the landing adds stages nothing, so is re-synced rather than
 # left to read as a staged removal of what landed
 _ST_PZ_NEW ig2
@@ -99,7 +99,7 @@ _ST_RUN --amend-into="$(git rev-parse HEAD)" --tree="$IG_T" --base="$IG_B"
 _ST_OUT_HAS "--base beside a bare tree's fold still guards it" 'folded from --tree they would take that back'
 IG_T=$(_ST_COMPOSE b.txt b-composed)
 _ST_RUN --commit --text "IG2 tree base" --tree="$IG_T" --base="$IG_B"
-_ST_OUT_HAS "while beside a commit composed on the tip it refuses" '--base checks puts, removals and files taken whole'
+_ST_OUT_HAS "while beside a commit composed on the tip it refuses" 'a --tree commit composed on the tip applies to the tip itself'
 # A type change refuses whatever --chmod names, every unnamed flip beside it named too
 ln -s a.txt lnk && git add lnk && git commit -qm "IG2 link"
 _ST_RUN --commit --text "IG2 typed" --put lnk="$TMP/ig2-src" --chmod lnk=+x

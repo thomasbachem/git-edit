@@ -94,22 +94,23 @@ _ST_EQ "an entry outside the cone staging stands in the way of stays out" "$RC:$
 _ST_OUT_HAS "named alike" 'staging in their way: gen/x\.txt (gen staged where its directory goes) – carry them'
 git sparse-checkout disable 2>/dev/null
 
-# Staging put in the way while the carry writes keeps its entry out all the same –
+# Staging put in the way while the carry merges a renamed file keeps its entry out all the same –
 # the file named as written, its entry left
 _ST_PZ_NEW kc7
-print a > a.txt && git add -A && git commit -qm "KC7 base" && KC_OLD=$(git rev-parse HEAD)
-git checkout -q -b topic && mkdir d && print x > d/x.txt && git add -A && git commit -qm "KC7 topic" && git checkout -q main
+print -l 1 2 3 4 5 6 > a.txt && git add -A && git commit -qm "KC7 base" && KC_OLD=$(git rev-parse HEAD)
+git checkout -q -b topic && mkdir d && git mv a.txt d/x.txt && print -l 1 2 3 4 5 6 7 > d/x.txt && git add -A && git commit -qm "KC7 topic" && git checkout -q main
+print -l 0 1 2 3 4 5 6 > a.txt
 _KC_RAW
 KC_B=$(print PEER | git hash-object -w --stdin)
 mkdir -p "$TMP/kc7-bin"
 {
 	print -r -- '#!/bin/sh'
-	print -r -- "case \" \$* \" in *' --path=d/x.txt '*) if [ -e ${(q)TMP}/kc7-bin/arm ]; then mv ${(q)TMP}/kc7-bin/arm ${(q)TMP}/kc7-bin/fired; ${(q)KC_REAL} -C ${(q)PWD} update-index --add --cacheinfo 100644,$KC_B,d; fi ;; esac"
+	print -r -- "case \" \$* \" in *' merge-file '*) if [ -e ${(q)TMP}/kc7-bin/arm ]; then mv ${(q)TMP}/kc7-bin/arm ${(q)TMP}/kc7-bin/fired; ${(q)KC_REAL} -C ${(q)PWD} update-index --add --cacheinfo 100644,$KC_B,d; fi ;; esac"
 	print -r -- "exec ${(q)KC_REAL} \"\$@\""
 } > "$TMP/kc7-bin/git"
 chmod +x "$TMP/kc7-bin/git"
 : > "$TMP/kc7-bin/arm"
 PATH="$TMP/kc7-bin:$PATH" _ST_RUN --carry="$KC_OLD"
 _ST_EQ "staging put in the way meanwhile keeps its entry" "$RC:$([ -e "$TMP/kc7-bin/fired" ] && print fired):$(git ls-files -s -- d | cut -d' ' -f2)" "1:fired:$KC_B"
-_ST_OUT_HAS "the file named as written, its entry left" 'Index entries not written, staging in their way: d/x\.txt (written, brought to what landed – d staged where its directory goes)'
+_ST_OUT_HAS "the file named as written, its entry left" 'Index entries not written, staging in their way: a\.txt → d/x\.txt (written, edits carried – d staged where its directory goes)'
 cd "$TMP/repo"

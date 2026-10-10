@@ -908,15 +908,19 @@ applies hunks split by hand,
 .B \-\-put
 replaces a file with one rebuilt elsewhere,
 .B \-\-edits
-replays the replacements made \(em each old text matching exactly once, so a peer's
+replays replacements made by hand \(em each old text matching exactly once, so a peer's
 line inside it refuses rather than merging, and in order, so one whose match
 an earlier edit of the same file rewrote refuses, naming that edit to merge it
 with \(em and
 .B \-\-chmod
 and
 .B \-\-rm
-set a bit and remove a path. A put or removal is checked against other callers'
-landings as whole files are \(em or against the commit it was rebuilt from, named by
+set a bit and remove a path; a file rebuilt or derived from a diff goes in as
+.BR \-\-put .
+Every path an input changes is checked against other callers' landings as whole
+files are, as an edit or a patch built from a checkout file that predates one
+takes it back all the same \(em or against the commit its content was built
+on, named by
 .BR \-\-base ,
 refused where that path changed since, never the tip looked up in the same call; a
 new path takes the mode
@@ -987,7 +991,12 @@ for the bit, and leaving out one it removed, or renamed to a path a later run
 removed.
 Runs under the caller's own label never count
 \(em for an unlabeled caller, every unlabeled one \(em nor do edits made on
-the landed lines themselves afterwards. A rename of the caller's own made on
+the landed lines themselves afterwards, but in a file that run's sync left
+on a conflict: there the edits predate it, and take it back until the file
+holds what landed or its owner changed the conflicting lines since, the
+refusal naming the
+.B git merge\-file
+the sync named. A rename of the caller's own made on
 a file such a run changed refuses too, naming the
 .B git merge\-file
 that brings what landed into the new name.
@@ -995,7 +1004,8 @@ that brings what landed into the new name.
 names the commit the files rest on instead, refusing a path changed since
 \(em the tip's SHA where taking a landing back is the point.
 .B "\-\-amend\-into=<sha> \-\-whole"
-folds files taken the same way, under the same guard.
+folds files taken the same way, under the same guard, and every input and a
+fold of what is staged take it too, on the paths they change.
 .TP
 .B \-\-exec \fB\-\-\fR \fIcommand\fR...
 Run any \fIcommand\fR (e.g. a raw
@@ -1292,6 +1302,11 @@ refuses, naming that edit, as the two overlap and want merging into one, and a
 fold of edits alone makes them itself at each stop of its replay whose commit
 holds every old text once, pausing at the first that doesn't; see
 .BR MODES .
+It is for replacements made by hand \(em a file rebuilt, or edits derived
+from a diff of a checkout file, go in as
+.BR \-\-put ;
+either way the paths are checked against other callers' landings as whole
+files are.
 The text is the one the commit stores: under a clean/smudge filter, an old text
 read from the checkout holds the smudged form, refused as such, and
 .B \-\-put
@@ -1323,7 +1338,9 @@ where given, else against other callers' landings. A link put onto a link
 stays one; elsewhere its content is read through, and a file put onto a link
 is a type change
 .B \-\-allow\-mode\-change
-has to allow.
+has to allow. Run from a subdirectory, a \fIpath\fR new to the tip whose
+name read from the top is a tracked path refuses, naming both readings and the
+spelling that means each \(em an absolute \fIpath\fR adds the new file.
 .TP
 .B \-\-rm=\fIpath\fR
 With
@@ -1379,20 +1396,23 @@ that carries those onto the result inside the run; see
 With
 .BR \-\-commit ,
 .B \-\-whole
-or a fold of what is staged, and beside
+or a fold of what is staged, and beside any input \(em
 .BR \-\-put ,
-.B \-\-rm
-or files taken whole beside the inputs,
-the commit the files rest on: a path changed
+.BR \-\-rm ,
+.BR \-\-edits ,
+.BR \-\-patch ,
+.B \-\-chmod
+\(em or files taken whole beside them,
+the commit the files rest on, or were built from: a path changed
 between it and the tip refuses,
 in place of the check against other callers' landings, and the tip's own SHA
 takes a landing back on purpose, as for a fold of a bare
 .BR \-\-tree .
-Edits, patches, chmods and a
+A
 .B \-\-tree
-commit composed on the tip apply to the tip itself, so
+commit composed on the tip applies to the tip itself, so
 .B \-\-base
-beside them alone refuses. With
+beside it refuses. With
 .BR \-\-land ,
 the commit \fIbranch\fR forked from, as a SHA in its history, over the fork
 the reflogs name \(em the span is what \fIbranch\fR holds past it and the
@@ -1713,7 +1733,7 @@ directory renamed only in part takes no untracked file along, the ones right in
 it named as left where they are, and one renamed by case alone, on a filesystem
 that ignores case, takes the new spelling. Every other path the rewrite changed
 is
-brought along as a terminal run's sync brings it: a file whose content is
+brought along as a landing's sync brings it: a file whose content is
 exactly what the old tip had takes what is at the tip, keeping a mode the
 checkout changed, one the rewrite removed goes where its content is exactly
 the old blob \(em first, so a directory the rewrite turned into a file makes
@@ -1956,8 +1976,12 @@ would disrupt \(em and leaves them as changes to what landed, naming the
 .B git merge\-file
 that brings the markers in: at a terminal for the caller to run once it means
 to resolve them, and in an agent's run for whoever owns the edits \(em edits of
-another session's are left to it, as its next commit of the file whole is
-refused, naming that merge. An untracked or ignored file standing where
+another session's are left to it, as its next commit of the file, by any
+route, is refused, naming that merge. A file the run itself put or took
+whole, or folded as staged, holds the caller's own later edits instead \(em a
+stage of the file committed while the checkout holds the rest \(em so its
+index entry alone takes what landed, nothing offered.
+An untracked or ignored file standing where
 a file lands stays, the index taking what landed, so it shows as a change to
 that; a directory there, or a symlink or a file of the caller's where a
 directory goes, stays too, named, with no restore offered. A file the run
@@ -2024,7 +2048,32 @@ named that brings the rest along once it can, never a
 or
 .BR "git clean" ,
 which run later would take an edit another session made since; an index git
-can't write as the sync runs is named with that carry too.
+can't write as the sync runs is named with that carry too. A run stopped by a
+second signal past its move, or killed there and journaled by a later run,
+names that carry as well. A carry partway through a rebase refuses, naming the
+rebase, its branch and the step it stopped at, and the
+.B "git rebase \-\-continue"
+or
+.B \-\-abort
+that ends it.
+.PP
+The sync and
+.B \-\-carry
+are one implementation, and each file comes along from the tip it was last
+brought to, not from one base for every file: a file still as an earlier tip
+had it takes what landed; one holding a landing's change merges from that
+landing's new tip, so a line a later landing took back leaves it; one lacking a
+landing merges from that landing's old tip, never taking it back as an
+uncommitted edit; and a file moved to its new name by hand takes its edits from
+the old name. The landings journaled on the branch in the last 7 days tell
+this, and a path a sync left as it was \(em a conflict, staging, or no sync at
+all \(em is recorded with the tip it still sits on, in
+.I git\-edit\-unbrought
+in the checkout's git dir, until a later sync or carry brings it along. Where
+nothing tells \(em a peer's staging on the path, no journal, a binary \(em the
+file merges from the one base the carry was named with. A carry over thousands
+of files takes seconds: every file still as its base had it goes in one
+two\-tree merge, only edited ones merged one by one.
 .PP
 What a run leaves to do \(em a conflict's merge, or that carry \(em prints last,
 right above the trailer, after a land's landed commits. Where a commit line
@@ -2556,7 +2605,10 @@ journal line recorded before git\-edit kept it so holds the mapped label
 alone, and counts as the caller's whose label maps to it, for
 .B \-\-undo
 too. A set label marks the run as an agent's:
-no prompt at a pause, no checkout brought along, at a terminal too. An undo's
+no prompt at a pause, at a terminal too, and a merge onto the checkout that
+conflicts left to whoever owns the edits, as
+.B "THE CHECKOUT"
+says \(em the checkout itself is brought along as any run brings it. An undo's
 entry names only whoever undid; a pause records its label, which another
 label's
 .BR \-\-continue ,
@@ -2623,9 +2675,9 @@ set false where it was true. The file goes at the work tree's top, a path
 named only where it is known \(em from
 .B GIT_WORK_TREE
 or
-.BR core.worktree ,
-or the current directory where every tracked file is found from it \(em as
-git takes the current directory for the top otherwise, and a
+.B core.worktree
+\(em and left for the caller to fill in otherwise, as git then takes the current
+directory for the top, which no listing proves, and a
 .B .git
 file in a subdirectory would have every tracked file read as deleted.
 .SH FILES

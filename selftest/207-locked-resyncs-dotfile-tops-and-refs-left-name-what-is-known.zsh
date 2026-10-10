@@ -1,6 +1,6 @@
 # Printed steps hold where they're run, and a ref left in a rewrite is named by what is known of it
-# • A work tree only `GIT_DIR` reaches is told a concrete `.git` file only at a top it knows – the cwd
-#   bearing it out, or `core.worktree` – never one in a subdirectory, every tracked file deleted there
+# • A work tree only `GIT_DIR` reaches is told a concrete `.git` file only at a top it knows –
+#   `GIT_WORK_TREE` or `core.worktree` – never one in a subdirectory, every tracked file deleted there
 # • A locked index's re-sync step – a fold's, another checkout's, a carry's – resets only entries
 #   still as the run read them, a peer's staging since kept and listed, even one a textconv hides,
 #   and runs as printed in sh, bash and zsh, from the top and from a subdirectory
@@ -47,14 +47,14 @@ unset GIT_DIR
 _ST_EQ "a GIT_DIR work tree run from a subdirectory refuses" "$RC:$(git --git-dir="$RL_P/repo.git" log -1 --format=%s)" "1:RL1 base"
 _ST_OUT_HAS "naming the .git file at its top, no path given" "> '<top of the work tree>/.git'"
 _ST_OUT_LACKS "never one in this subdirectory" "$RL_P/wt/sub/\.git"
-# From the top, every tracked file there, the step names it and works as printed
+# From the top too, which nothing proves it is, the step leaves the top to fill in, and works so
 cd "$RL_P/wt"
 export GIT_DIR=$RL_P/repo.git
 _ST_RUN -M --text "RL1 x" HEAD
 unset GIT_DIR
-_ST_OUT_HAS "run from the top it names the top" "> '*$(pwd -P)/\.git'*\$"
+_ST_OUT_HAS "run from the top it still names no path" "> '<top of the work tree>/.git'"
 RL_CMD=$(print -r -- "$OUT" | sed -n 's/.*then run git edit without GIT_DIR: //p' | head -1)
-eval "$RL_CMD"
+eval "${RL_CMD//<top of the work tree>/$(pwd -P)}"
 cd sub
 _ST_EQ "which written, the checkout reads clean from anywhere in it" "$(git status --short):$(git rev-parse --show-toplevel)" ":$(cd "$RL_P/wt" && pwd -P)"
 # `core.worktree` names the top – relative to the git dir, taken absolute – from a subdirectory too

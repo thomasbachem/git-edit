@@ -19,7 +19,7 @@ local GV_AWK='
 		}
 	}'
 local GV_MISS=$(LC_ALL=C comm -23 \
-	<({ awk "$GV_AWK" "$SELF"; grep -oE '=OPT_[A-Z_]+' "$SELF" | sed 's/^=//'; } | grep -vE '^(GIT_.*|HOME|IFS|LC_ALL|REPLY|XDG_CONFIG_HOME)$' | LC_ALL=C sort -u) \
+	<({ awk "$GV_AWK" "$SELF"; grep -oE '=OPT_[A-Z_]+' "$SELF" | sed 's/^=//'; } | grep -vE '^(GIT_.*|HOME|IFS|LC_ALL|REPLY|TMPDIR|XDG_CONFIG_HOME)$' | LC_ALL=C sort -u) \
 	<(awk '/^_UNSET_OWN ACTION /{ f = 1 } f { l = $0; sub(/\\$/, "", l); print l; if ($0 !~ /\\$/) exit }' "$SELF" | tr -s ' \t' '\n' | grep -vx _UNSET_OWN | LC_ALL=C sort -u))
 _ST_EQ "every global the script assigns starts unset" "$GV_MISS" ""
 printf '%s\n' 'f () {' '	local A' '	A=1' '	B=2' '}' 'C=3' > "$TMP/gv-fixture"

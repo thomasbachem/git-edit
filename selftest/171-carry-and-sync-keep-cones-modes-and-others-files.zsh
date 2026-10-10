@@ -228,7 +228,7 @@ _ST_PZ_NEW cs9
 print u > u.txt && git add -A && git commit -qm "CS9 base"
 CS_OLD=$(git rev-parse HEAD)
 _ST_RUN_UNSYNCED --exec -- sh -c 'echo U > u.txt && git commit -qam "CS9 landed"'
-_CS_STAND_IN "$TMP/cs9-bin" '*" cat-file --filters --path="*' "[ -e ${(q)PWD}/.git/cs-fired ] || { : > ${(q)PWD}/.git/cs-fired; ${(q)CS_REAL} -C ${(q)PWD} add -A; }"
+_CS_STAND_IN "$TMP/cs9-bin" '*" read-tree -m -u "*' "[ -e ${(q)PWD}/.git/cs-fired ] || { : > ${(q)PWD}/.git/cs-fired; ${(q)CS_REAL} -C ${(q)PWD} add -A; }"
 PATH="$TMP/cs9-bin:$PATH" _ST_RUN --carry="$CS_OLD"
 _ST_EQ "the carry's temporary is never staged" "$RC:$([ -e .git/cs-fired ] && print fired):$(git ls-files | grep -c git-edit)" "0:fired:0"
 _ST_PZ_NEW cs9b

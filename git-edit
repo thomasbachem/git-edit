@@ -79,7 +79,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
 	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_NEW EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
-	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
+	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
 	MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
 	MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_STALE MOVE_STEP \
@@ -93,7 +93,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	PAIRED PARSE_MSG PEELED PINNED PREV_NEW PREV_OLD Q_BY Q_NEW Q_ON Q_OUT Q_PATH RAW_TEXT_VALUE REBASE_OUT REBUILT REC_SHAS \
 	REORDER_NEW_HEAD REORDER_REF RESET_DONE \
 	RESET_KEPT RESET_LOCKED RESET_SPARSE RESOLVE_SCAN_MAX RESUME_ABSORBS RESUME_FLAG RESUME_GD RESUME_GOT RESUME_HEAD RESUME_STRAY \
-	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR SELFTEST_JOBS SELFTEST_SCOPE SHA STANDALONE_GOT \
+	RESUME_WT_GD RESYNCED S SCRIPT_INITIAL_HEAD SELFTEST_DIR SELFTEST_JOBS SELFTEST_SCOPE SHA STANDALONE_GOT STEP_FROM STEP_TO \
 	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS ST STATE_ACTION STATE_ACTOR SUBJECT_APART SUBJECT_GOT SUBJECT_VALUE \
 	STATE_ALLOW_MODE_CHANGE STATE_ALLOW_PUSHED STATE_AMENDED STATE_BELOW STATE_BRANCH STATE_CAPTURE STATE_CAUGHT STATE_DEPTH STATE_DROPPED STATE_FILES \
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MESSAGE \
@@ -103,18 +103,18 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_TARGET STATE_TARGETS \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
-	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
+	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNBROUGHT UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD \
+	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_OWN \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PT_RAW _REAL_EDITOR \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PT_RAW _REAL_EDITOR \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED \
-	_SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
+	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT
 
 # A switch set to 0, false, no or off is off, as most tools read one
@@ -183,6 +183,12 @@ _CALLER_ENV_SH () {
 _SELF=${0:A}
 _EXPECT_PAUSE=$GIT_EDIT_EXPECT_PAUSE
 unset GIT_EDIT_EXPECT_PAUSE
+
+# A relative `TMPDIR` taken from where the run starts – a worktree's git would resolve it in there,
+# an editor stand-in's path naming nothing, and one opening with `-` reads to `mktemp` as an option
+if [[ -n "$TMPDIR" && "$TMPDIR" != /* ]]; then
+	TMPDIR=${TMPDIR:A}
+fi
 
 # Cap on the commits a stale SHA's resolution computes a patch id for – the author date
 # filter ahead of it normally leaves a handful, so this only bites on imported or scripted
@@ -387,6 +393,9 @@ _TEMP_WORKTREES=()
 _TEMP_REFS=()
 # Each file taken whole, with the index entry it had then – a re-sync resets only an entry still so
 typeset -A WHOLE_IDX
+# The checkout a commit or fold composed from, then each path it put, took whole or folded as staged
+# – the caller's own content, whose further edits there no sync of its landing offers to merge
+typeset -a _LANDED_OWN
 
 # Tracks whether a status trailer was emitted, so the global trap doesn't put an `error …`
 # line on top of an explicit `ok …` or `conflict …` one
@@ -451,6 +460,9 @@ _OTHERS_RESYNCED=""
 _SYNC_WHY=""
 # The hold on a checkout's sync this run took before its ref move, let go of once the sync is done
 _SYNC_HELD=""
+# Set once the checkout is brought along, or its carry named – a second signal stopping the run
+# before that names the carry instead
+_SYNC_DONE=""
 
 # What a run leaves to do – a carry, a conflict's merge – printed last, above the trailer, and the
 # pointer line that names it there where commit lines printed in between
@@ -591,6 +603,11 @@ _ON_TERMINATION () {
 		_RESYNC_STRANDED_NOTE "${_MOVING_REF[1]}" "${_MOVING_REF[2]}" "${_MOVING_REF[3]}"
 		RESYNC=$REPLY
 		_RESYNC_MARK_DONE "${_MOVING_REF[1]}" "${_MOVING_REF[2]}" "${_MOVING_REF[3]}"
+		# The checkout its sync had yet to bring along, named with the carry that does it
+		if [ -z "$_SYNC_DONE" ]; then
+			_STOPPED_CARRY "${_MOVING_REF[@]}"
+			[ -n "$REPLY" ] && _TODO_ADD "$REPLY" "The checkout was not brought along before the stop – bring it along with: %s" 33 "$REPLY"
+		fi
 	fi
 	# A pause this run wrote or took up and has not landed stays, its worktree kept by the exit trap
 	local KEPT=""
@@ -762,10 +779,10 @@ USAGE () {
 	ECHO_E "\e[0;94m       --base=<sha>                    With --exec: the tip its result was built on – refused where the branch\e[0m"
 	ECHO_E "\e[0;94m                                       moved past it; needed where the result carries commits made before the run,\e[0m"
 	ECHO_E "\e[0;94m                                       or was built below that tip other than by a rebase.\e[0m"
-	ECHO_E "\e[0;94m                                       With --commit, --whole, a staged fold, --put or --rm: the commit the files rest on, or were\e[0m"
-	ECHO_E "\e[0;94m                                       rebuilt from – one changed since refuses, in place of the 7-day check (the tip's SHA, looked\e[0m"
-	ECHO_E "\e[0;94m                                       up in the same call as \$(git rev-parse HEAD), checks the tip against itself).\e[0m"
-	ECHO_E "\e[0;94m                                       Beside only edits, patches or chmods, or a --tree commit, it refuses – they apply to the tip.\e[0m"
+	ECHO_E "\e[0;94m                                       With --commit, --whole, a staged fold or any input: the commit the files rest on, or were\e[0m"
+	ECHO_E "\e[0;94m                                       built from – a path changed since refuses, in place of the 7-day check (the tip's SHA,\e[0m"
+	ECHO_E "\e[0;94m                                       looked up in the same call as \$(git rev-parse HEAD), takes a landing back on purpose).\e[0m"
+	ECHO_E "\e[0;94m                                       Beside a --tree commit it refuses – that applies to the tip.\e[0m"
 	ECHO_E "\e[0;94m                                       With --land: the commit <branch> forked from, over the fork the reflogs name\e[0m"
 	ECHO_E "\e[0;94m       --commit --text <msg> -- <path>...\e[0m"
 	ECHO_E "\e[0;94m                                       Commit <path>s as they stand in the checkout, as git commit -- <paths>\e[0m"
@@ -787,13 +804,16 @@ USAGE () {
 	ECHO_E "\e[0;94m       --tree=<tree-ish>               With --amend-into: fold <tree-ish>'s diff from HEAD instead of the index's –\e[0m"
 	ECHO_E "\e[0;94m                                       composed apart from the shared index; a commit pins the tip it was composed on.\e[0m"
 	ECHO_E "\e[0;94m                                       With --commit: commit the tree of a commit composed on the tip, --after|--before placing it\e[0m"
-	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – composed on the tip in a private index, in this order:\e[0m"
+	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – composed on the tip in a private index, in this order,\e[0m"
+	ECHO_E "\e[0;94m       each path guarded as a file taken whole against what another caller landed:\e[0m"
 	ECHO_E "\e[0;94m       --patch=<file>                  Apply a patch you split by hand (keep its context – no -U0)\e[0m"
 	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with <file>'s content, its mode the tip's – a new path's\e[0m"
 	ECHO_E "\e[0;94m                                       what git add would give the checkout's file. A link put onto a link stays one, a file\e[0m"
 	ECHO_E "\e[0;94m                                       put onto a link is a type change (--allow-mode-change)\e[0m"
 	ECHO_E "\e[0;94m       --edits=<file|json>             Replay {\"<path>\": [[\"<old>\", \"<new>\"], ...]} onto the tip's text, each <old>\e[0m"
-	ECHO_E "\e[0;94m                                       matching exactly once – a peer's line in the same file stays out\e[0m"
+	ECHO_E "\e[0;94m                                       matching exactly once – a peer's line in the same file stays out.\e[0m"
+	ECHO_E "\e[0;94m                                       For replacements made by hand – a file rebuilt or derived from a diff\e[0m"
+	ECHO_E "\e[0;94m                                       goes in as --put\e[0m"
 	ECHO_E "\e[0;94m       --chmod=<path>=+x|-x            Give <path> that executable bit, whether or not it has it\e[0m"
 	ECHO_E "\e[0;94m       --rm=<path>                     Remove <path>\e[0m"
 	ECHO_E "\e[0;94m       -- <path>...                    Then take these files whole, as --commit -- <path>... takes them, guards included\e[0m"
@@ -2346,7 +2366,32 @@ _ADOPT_KILLED_MOVE () {
 	elif [ -n "$REPLY" ]; then
 		PRINT_TEXT "A run moved %s but was stopped before re-syncing the index: %s (%s → %s)%s" 33 \
 			"${REF#refs/heads/}" "$LABEL${ACTOR:+ by $ACTOR}" "${OLD:0:7}" "${NEW:0:7}" "$REPLY"
+	else
+		return 0
 	fi
+	# Stopped before its re-sync, it never reached its checkout's sync either
+	_STOPPED_CARRY "$REF" "$OLD" "$NEW" "$LABEL"
+	[ -n "$REPLY" ] && PRINT_TEXT "Its checkout was not brought along – bring it along with: %s" 33 "$REPLY"
+	return 0
+}
+
+# Puts into `REPLY` the carry that brings <ref>'s checkout along after its move from <old> to <new>
+# stopped short of its sync – nothing where the move changed no file, the branch is checked out
+# nowhere, a commit took the checkout's own files, as a bare carry passes one over, or an undo keeps
+# what a commit, fold or `--exec` only adding commits landed
+_STOPPED_CARRY () {
+	# Args: <ref> <old> <new> <label>
+	local CO KIND=${4%% *}
+	REPLY=""
+	[ "$KIND" = commit ] && return 0
+	if [ "$KIND" = undo ]; then
+		KIND=${${4#undo }%% *}
+		[[ "$KIND" == (commit|amend-into) ]] && return 0
+		[ "$KIND" = exec ] && _IS_ANCESTOR "$3" "$2" && return 0
+	fi
+	_SAME_TREE "$2" "$3" && return 0
+	CO=$(_BRANCH_CHECKOUT "$1") && [ -d "$CO" ] || return 0
+	_CARRY_CMD "$CO" "$2"
 }
 
 # Prints the raw `update-ref` taking a run's ref move back – <ref> from <new> to <old>, its reflog
@@ -2932,12 +2977,19 @@ _CHANGED_LINES () {
 
 # Lists the spans of <from file> a change touches, in half-lines – `2s 2e` for lines s to e it
 # rewrites or removes, the point `2s+1` for an insertion after line s – as where an edit sits
-# tells it from one beside it, which matching text (a blank line, a `}`) cannot
+# tells it from one beside it, which matching text (a blank line, a `}`) cannot – `-t` adds each
+# hunk's span of <to file> as two more columns
 _CHANGED_SPANS () {
-	# Args: <from file> <to file>
+	# Args: [-t] <from file> <to file>
+	local T=""
+	[ "$1" = -t ] && T=1 && shift
 	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$1" "$2" 2>/dev/null | \
-		LC_ALL=C sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p' | \
-		awk 'NF { c = (NF < 2) ? 1 : $2; if (c == 0) print 2 * $1 + 1, 2 * $1 + 1; else print 2 * $1, 2 * ($1 + c - 1) }'
+		LC_ALL=C awk -v t="$T" '
+			function span(s, c) { return c == 0 ? (2 * s + 1) " " (2 * s + 1) : (2 * s) " " (2 * (s + c - 1)) }
+			/^@@ -/ {
+				n = split(substr($2, 2), o, ","); m = split(substr($3, 2), w, ",")
+				print span(o[1] + 0, n < 2 ? 1 : o[2] + 0) (t ? " " span(w[1] + 0, m < 2 ? 1 : w[2] + 0) : "")
+			}'
 }
 
 # Answers whether a rename's destination can take the carry – absent from the checkout,
@@ -2955,15 +3007,16 @@ _CARRY_DEST_FREE () {
 	[ -f "$1/$3" ] && git -C "$1" cat-file --filters "${2}:$3" 2>/dev/null | cmp -s - "$1/$3"
 }
 
-# Prints the mode git stages <path> of <checkout> at – a regular file's as its <index mode> has it
-# where `core.fileMode` is off, as git then reads no executable bit off the file, else as <old mode>
+# Puts into `REPLY` the mode git stages <path> of <checkout> at – a regular file's as its
+# <index mode> has it where `core.fileMode` is off, as git then reads no executable bit off the
+# file, else as <old mode>
 _WORKTREE_MODE () {
 	# Args: <checkout> <path> [<old mode> <core.fileMode> [<index mode>]]
-	if [ -L "$1/$2" ]; then print 120000
-	elif [ "$4" = false ] && [[ "$5" == 100(644|755) ]]; then print -r -- "$5"
-	elif [ "$4" = false ] && [[ "$3" == 100(644|755) ]]; then print -r -- "$3"
-	elif [ -x "$1/$2" ]; then print 100755
-	else print 100644
+	if [ -L "$1/$2" ]; then REPLY=120000
+	elif [ "$4" = false ] && [[ "$5" == 100(644|755) ]]; then REPLY=$5
+	elif [ "$4" = false ] && [[ "$3" == 100(644|755) ]]; then REPLY=$3
+	elif [ -x "$1/$2" ]; then REPLY=100755
+	else REPLY=100644
 	fi
 }
 
@@ -3130,19 +3183,21 @@ _CARRY_TAKE () {
 	_MOVE_ONTO "$TMPF" "$CO/$P" || { rm -f "$TMPF"; return 2; }
 }
 
-# Queues the index entries a carry's write onto what landed leaves behind – a rename's source going
-# where still as before, its new path taking what landed where it has none, and a path merged in
-# place taking it where still as before, so the edits read as changes to it, never a staged revert,
-# each naming <item> for <list> – failing where none needs writing
+# Queues the index entries a write onto what landed leaves behind – a rename's source going where
+# still as before, its new path taking what landed where it has none, and a path merged in place
+# taking it where still as before, so the edits read as changes to it, never a staged revert, each
+# naming <item> for <list>, a sync's rename by its new path's entry alone – failing where none needs
+# writing
 _CARRY_QUEUE () {
-	# Args: <source> <path> <list> <item> – reads the caller's `IDX_ENT`, `DIFF_O` and `DIFF_N`,
-	# adding to its `READ_ENT` and `_SYNC_QUEUE`'s lists
+	# Args: <source> <path> [<list> <item>] – reads the caller's `HOW`, `IDX_ENT`, `DIFF_O` and
+	# `DIFF_N`, adding to `_SYNC_QUEUE`'s lists
 	local -i N=${#Q_PATH}
 	if [ "$1" != "$2" ]; then
-		[ -n "${IDX_ENT[$1]}" ] && [ "${IDX_ENT[$1]}" = "${DIFF_O[$1]}" ] && { READ_ENT[$1]=${IDX_ENT[$1]}; _SYNC_QUEUE "$1" "" "$3" "$4"; }
-		[ -z "${IDX_ENT[$2]}" ] && { READ_ENT[$2]=""; _SYNC_QUEUE "$2" "${DIFF_N[$2]}" "$3" "$4"; }
+		if [ -n "${IDX_ENT[$1]}" ] && [ "${IDX_ENT[$1]}" = "${DIFF_O[$1]}" ]; then
+			if [ "$HOW" = carry ]; then _SYNC_QUEUE "$1" "" "$3" "$4"; else _SYNC_QUEUE "$1" ""; fi
+		fi
+		[ -z "${IDX_ENT[$2]}" ] && _SYNC_QUEUE "$2" "${DIFF_N[$2]}" "$3" "$4"
 	elif [ "${IDX_ENT[$2]}" = "${DIFF_O[$2]}" ]; then
-		READ_ENT[$2]=${IDX_ENT[$2]}
 		_SYNC_QUEUE "$2" "${DIFF_N[$2]}" "$3" "$4"
 	fi
 	(( ${#Q_PATH} > N ))
@@ -3346,26 +3401,43 @@ _DIR_PRUNE () {
 	done
 }
 
-# Merges the checkout's uncommitted edits onto what a rewrite landed – each path it changed whose
-# file holds edits on the pre-rewrite content, a renamed file moved to its new path edits or none,
-# as are the untracked files of a directory renamed whole – writing only a clean merge that keeps
-# the edits' own lines whole, and only over the file as it was read, while a file still exactly as
-# before, or missing where the rewrite added one, takes what is at the tip, as a terminal sync does
+# Merges the checkout's uncommitted edits onto what a rewrite landed – `_SYNC_CHECKOUT`'s carry, the
+# sync a run makes run by hand: each path it changed whose file holds edits on the content before
+# merges onto what landed, a renamed file moved to its new path edits or none, as are the untracked
+# files of a directory renamed whole, writing only a clean merge that keeps the edits' own lines
+# whole, and only over the file as it was read, while a file still as before, or missing where the
+# rewrite added one, takes what is at the tip
 # Nothing goes through a symlink or outside a sparse checkout, and no staging of another's is
 # overwritten or orphaned – each such path is left as it is, named
 GIT_CARRY () {
 	# Args: [<old tip>] – by default, the last journaled rewrite of the checkout's branch
-	local CO REF OLD NEW P NP NS SRC LINE MERGE_RC OURS_HASH TMPF UNEDITED WTM MODE FILEMODE ITEM L WHY
-	local -i I
-	local -a J CARRIED LEFT RESYNCED MERGE_CMDS
-	# Every path here is a name, never a pattern
-	local -x GIT_LITERAL_PATHSPECS=1
+	local CO REF OLD NEW LINE GD WHAT OF AT
+	local -a J
 	CO=$(git rev-parse --show-toplevel 2>/dev/null)
 	if ! REF=$(git symbolic-ref -q HEAD); then
+		# Detached by an operation stopped partway – a rebase's branch and step named, with the way on
+		if _HALFWAY_THROUGH "$CO"; then
+			WHAT=$REPLY
+			if [ "$WHAT" = "a rebase" ]; then
+				GD=$(git rev-parse --absolute-git-dir 2>/dev/null)
+				for LINE in rebase-merge/head-name rebase-apply/head-name; do { OF=$(<"$GD/$LINE") } 2>/dev/null && break; done
+				if { AT=$(<"$GD/rebase-merge/msgnum") && J=("$AT" "$(<"$GD/rebase-merge/end")"); } 2>/dev/null || \
+				   { AT=$(<"$GD/rebase-apply/next") && J=("$AT" "$(<"$GD/rebase-apply/last")"); } 2>/dev/null; then
+					AT=", stopped at step ${J[1]} of ${J[2]}"
+				else
+					AT=""
+				fi
+				[[ "$OF" == refs/heads/* ]] && WHAT+=" of ${OF#refs/heads/}"
+				PRINT_ERR "Your checkout is halfway through $WHAT$AT, HEAD detached there – finish it with 'git rebase --continue' or abort it with 'git rebase --abort', then run --carry again"
+			else
+				PRINT_ERR "Your checkout is halfway through $WHAT, HEAD detached there – finish or abort it first, then run --carry again"
+			fi
+			exit 1
+		fi
 		PRINT_ERR "--carry needs a checked-out branch – HEAD is detached"
 		exit 1
 	fi
-	# Its files and index are that operation's to finish, as a terminal run's sync leaves them
+	# Its files and index are that operation's to finish, as a run's sync leaves them
 	if _HALFWAY_THROUGH "$CO"; then
 		PRINT_ERR "Your checkout is halfway through $REPLY – finish or abort it first, then run --carry again"
 		exit 1
@@ -3396,579 +3468,10 @@ GIT_CARRY () {
 		fi
 	fi
 	PRINT_ACTION "Carrying uncommitted edits from %s onto %s..." "$OLD" "$NEW"
-
-	local -A RENAMED_FROM RENAMED_TO
-	local -a RENAME_FIELDS
-	# NUL-separated, status, source and destination each – a quote, backslash or tab in a name
-	# comes back C-quoted in the line form
-	RENAME_FIELDS=(${(0)"$(git diff --ignore-submodules=dirty -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
-	for (( I = 1; I + 2 <= ${#RENAME_FIELDS[@]}; I += 3 )); do
-		RENAMED_FROM[${RENAME_FIELDS[I + 2]}]=${RENAME_FIELDS[I + 1]}
-		RENAMED_TO[${RENAME_FIELDS[I + 1]}]=${RENAME_FIELDS[I + 2]}
-	done
-	local -A DIR_RENAMED
-	local -a DIR_PARTLY DIR_FROM DIR_TO DIR_TAKEN DIR_STAYS DIR_MOVED DIR_RESPELT
-	# The untracked files a directory renamed whole takes along, read before its tracked files move –
-	# a `.gitignore` of its own among them still telling the ignored ones – and one renamed by case
-	# alone respelt first, so its files read as carried where they need nothing else
-	if (( ${#RENAMED_TO} )); then
-		_DIR_RENAMES "$OLD" "$NEW" HEAD
-		(( ${#DIR_RENAMED} + ${#DIR_PARTLY} )) && _DIR_UNTRACKED "$CO" "$OLD" "$NEW"
-		_DIR_RESPELL "$CO"
-	fi
-	# Each side's entries and the index's, read once – an entry still as before takes what lands
-	# with its file, in one step at the end, as a terminal run's sync writes them
-	local -a DIFF_PATHS Q_PATH Q_NEW Q_ON Q_OUT Q_BY BROUGHT FLAG_AU FLAG_SW ORDER ASK
-	local -A DIFF_O DIFF_N IDX_ENT READ_ENT SPARSE_OUT PAIRED
-	local TIP=$(git rev-parse HEAD) IE HE SPARSE_ASKED=1
-	_DIFF_ENTRIES "$OLD" "$NEW"
-	# The tip's entry of each path, as `HEAD` holds it – the rewrite's own where it is the tip still –
-	# and the object <old> names there, each kind read in one call
-	local -A TIP_ENT TREE_ENT OBJ_AT WT_HASH
-	if [ "$TIP" = "$NEW" ]; then
-		TIP_ENT=("${(@kv)DIFF_N}")
-	else
-		_TREE_ENTRIES "$TIP" "${DIFF_PATHS[@]}"
-		TIP_ENT=("${(@kv)TREE_ENT}")
-	fi
-	_OBJECTS_AT "$OLD" "${DIFF_PATHS[@]}"
-	_INDEX_ENTRIES "$CO" "" "${DIFF_PATHS[@]}"
-	# Flags a fresh entry would drop, set again once the entries are written
-	_INDEX_FLAGS "$CO" "" "${DIFF_PATHS[@]}"
-	# An intent-to-add entry where the rewrite adds the file stages nothing, an empty blob an empty
-	# file landed matches – left, it reads as a staged removal of what landed – so it takes what is
-	# at the tip, its file left as it is
-	local -A ITA ITA_TAKEN
-	_INDEX_ITA "$CO" "${DIFF_PATHS[@]}"
-	for P in "${DIFF_PATHS[@]}"; do
-		(( ${+ITA[$P]} )) && [ -n "${DIFF_N[$P]}" ] && [ "${IDX_ENT[$P]}" != conflict ] || continue
-		HE=${TIP_ENT[$P]}
-		[ -n "$HE" ] || continue
-		_ONE_LINE "$P"
-		READ_ENT[$P]=${IDX_ENT[$P]}
-		_SYNC_QUEUE "$P" "$HE" RESYNCED "$REPLY"
-		RESYNCED+=("$REPLY")
-		ITA_TAKEN[$P]=1
-	done
-	FILEMODE=$(git -C "$CO" config --bool core.fileMode 2>/dev/null)
-	local SYMLINKS=$(git -C "$CO" config --bool core.symlinks 2>/dev/null) GD=$(git -C "$CO" rev-parse --absolute-git-dir 2>/dev/null)
-	# Each file written in the git dir first, on the checkout's filesystem as a rename into place
-	# needs, where no `git add -A` of a peer's meanwhile picks it up, under a short name, as a name
-	# near the length limit leaves no room
-	local CARRY_TMP="$GD/git-edit-carry.$$"
-	_TEMP_FILES+=("$CARRY_TMP")
-	_ATTR_SOURCE "$OLD"
-	local ATTR_SRC=$REPLY
-	# Outside a sparse checkout git keeps no file – a skip-worktree entry's path, or one the rewrite
-	# adds where the index holds none yet, as the checkout's patterns tell, which a git before 2.42
-	# can't – each such path taken as outside it
-	for P in "${FLAG_SW[@]}"; do SPARSE_OUT[$P]=1; done
-	for P in "${DIFF_PATHS[@]}"; do [ -n "${DIFF_N[$P]}" ] && [ -z "${IDX_ENT[$P]}" ] && ASK+=("$P"); done
-	_SPARSE_OUT "$CO" "${ASK[@]}" || SPARSE_ASKED=""
-	ASK=("${reply[@]}")
-	for P in "${ASK[@]}"; do SPARSE_OUT[$P]=1; done
-	# A flagged path is only maybe outside where this git can't ask –
-	# one a git before 2.35 lands is flagged unasked
-	local SPARSE_WHY="outside your sparse checkout" SPARSE_MAYBE=""
-	local -a REAPPLY
-	(( ${#SPARSE_OUT} )) && ! _SPARSE_OUT "$CO" "${(@k)SPARSE_OUT}" && \
-		SPARSE_MAYBE=1 SPARSE_WHY="maybe outside your sparse checkout, which this git can't ask (2.42 can)"
-	# An entry added where the index holds none drops what it clashes with – staged under it, or at a
-	# directory it lies in, bar an entry going alongside – so such a path is left whole, file and
-	# entry, as a terminal run's sync leaves it, and an untracked file moving there stays put too
-	local -A GOES IN_WAY
-	local -a ADDS BLOCKED
-	for P in "${DIFF_PATHS[@]}"; do
-		if [ -z "${DIFF_N[$P]}" ]; then
-			[ -n "${IDX_ENT[$P]}" ] && [ "${IDX_ENT[$P]}" = "${DIFF_O[$P]}" ] && GOES[$P]=1
-		elif [ -z "${IDX_ENT[$P]}" ]; then
-			ADDS+=("$P")
-		fi
-	done
-	ADDS+=("${DIR_TO[@]}")
-	(( ${#ADDS} )) && _ENTRIES_IN_THE_WAY "$CO" "$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)" "${ADDS[@]}"
-	for (( I = ${#DIR_TO}; I >= 1; I-- )); do
-		(( ${+IN_WAY[${DIR_TO[I]}]} )) || continue
-		_IN_WAY_WHY "${DIR_TO[I]}" "${IN_WAY[${DIR_TO[I]}]}" rewrite
-		WHY=$REPLY
-		_ONE_LINE "${DIR_FROM[I]}"
-		DIR_TAKEN+=("$REPLY – untracked, $WHY")
-		DIR_FROM[I]=() DIR_TO[I]=()
-	done
-	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) MERGED=$(MKTEMP_FILE git-edit-merged)
-	local OURS=$(MKTEMP_FILE git-edit-ours)
-	_TEMP_FILES+=("$BASE" "$THEIRS" "$MERGED" "$OURS")
-	# What the rewrite took out goes first – a directory it turned
-	# into a file is gone by the time that file comes
-	for P in "${DIFF_PATHS[@]}"; do [ -z "${DIFF_N[$P]}" ] && ORDER+=("$P"); done
-	for P in "${DIFF_PATHS[@]}"; do [ -n "${DIFF_N[$P]}" ] && ORDER+=("$P"); done
-	# Each file the edits can sit in hashed in one call, before the loop writes any – but a rename's
-	# source, read at its new path's turn, as the moves before it can change what stands at its name
-	local -a READ_NOW=("${(@k)OBJ_AT}") RENAME_SRCS=("${(@k)RENAMED_TO}")
-	_WORKTREE_HASHES "$CO" "${(@)READ_NOW:|RENAME_SRCS}"
-	for P in "${ORDER[@]}"; do
-		(( ${+ITA_TAKEN[$P]} )) && continue
-		SRC=$P
-		# As the lists below show it, on their line
-		_ONE_LINE "$P"; NP=$REPLY
-		# Nothing goes through a symlink, wherever it points, or under a file of the caller's – named
-		# where the rewrite puts a file there, a rename with its source
-		if _LEADING_NON_DIR "$CO" "$P"; then
-			LINE=$REPLY NS=""
-			[ -n "${RENAMED_FROM[$P]}" ] && { [ -e "$CO/${RENAMED_FROM[$P]}" ] || [ -L "$CO/${RENAMED_FROM[$P]}" ]; } && \
-				{ _ONE_LINE "${RENAMED_FROM[$P]}"; NS="$REPLY → "; }
-			_ONE_LINE "$LINE"
-			if [ -L "$CO/$LINE" ]; then
-				LEFT+=("$NS$NP – under your symlink $REPLY, which git writes no file through")
-			elif [ -n "${DIFF_N[$P]}" ]; then
-				LEFT+=("$NS$NP – your file $REPLY stands where its directory goes")
-			fi
-			continue
-		fi
-		if [ -d "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-			# A submodule's worktree is a repository of its own, and a directory of the caller's where a
-			# file lands holds what no write may take
-			if [[ "${DIFF_O[$P]% *} ${DIFF_N[$P]% *}" != *160000* ]] && [ -n "${DIFF_N[$P]}" ]; then
-				if [ -n "${DIFF_O[$P]}" ]; then LEFT+=("$NP – a directory of yours where a file was")
-				else LEFT+=("$NP – your directory stands where the rewrite put a file"); fi
-			fi
-			continue
-		fi
-		# Outside a sparse checkout, only an entry still as before takes what is at the tip, its flag
-		# kept – there is no file to write
-		if (( ${+SPARSE_OUT[$P]} )) && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-			HE=${TIP_ENT[$P]}
-			IE=${IDX_ENT[$P]}
-			if [ "$IE" = "${DIFF_O[$P]}" ] && [ "$HE" != "$IE" ] && [ "${HE% *}" != 160000 ]; then
-				if [ -n "$HE" ] && (( ${+IN_WAY[$P]} )); then
-					_IN_WAY_WHY "$P" "${IN_WAY[$P]}" rewrite
-					BLOCKED+=("$NP ($REPLY)")
-					continue
-				fi
-				READ_ENT[$P]=$IE
-				[ -n "$HE" ] && FLAG_SW+=("$P")
-				if (( ${+PAIRED[$P]} )); then
-					_SYNC_QUEUE "$P" "$HE" "${PAIRED[$P]%%:*}" "${PAIRED[$P]#*:}"
-				else
-					_SYNC_QUEUE "$P" "$HE" RESYNCED "$NP"
-					RESYNCED+=("$NP")
-				fi
-			# A file the rewrite added, its entry in place and flagged unasked, is maybe inside it
-			elif [ -n "$SPARSE_MAYBE" ] && [ -z "${DIFF_O[$P]}" ] && [ -n "$IE" ] && [ "$IE" = "$HE" ]; then
-				REAPPLY+=("$P")
-			fi
-			continue
-		fi
-		if [ -z "${DIFF_N[$P]}" ]; then
-			# Deleted in the checkout, it stays deleted, its entry going where
-			# still as before – unless the tip has it back
-			if [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-				[ -n "${IDX_ENT[$P]}" ] && [ "${IDX_ENT[$P]}" = "${DIFF_O[$P]}" ] && { [ "$TIP" = "$NEW" ] || [ -z "${TIP_ENT[$P]}" ]; } && \
-					_CARRY_QUEUE "$P" "$P" RESYNCED "$NP" && RESYNCED+=("$NP")
-				continue
-			fi
-			# A rename out of a sparse checkout has no file at its new path to take the edits – a source
-			# still as before goes, its entry with it where as before too, an edited one stays, named
-			if [ -n "${RENAMED_TO[$P]}" ] && (( ${+SPARSE_OUT[${RENAMED_TO[$P]}]} )) && \
-			   [ ! -e "$CO/${RENAMED_TO[$P]}" ] && [ ! -L "$CO/${RENAMED_TO[$P]}" ]; then
-				_ONE_LINE "${RENAMED_TO[$P]}"
-				ITEM="$NP → $REPLY"
-				IE=${IDX_ENT[$P]}
-				if [ -n "$IE" ] && [ "$IE" != "${DIFF_O[$P]}" ]; then
-					LEFT+=("$ITEM – staged changes at its old path, which stays as it is till they are committed or unstaged")
-					continue
-				fi
-				_HASH_READ "$CO" "$P"
-				OURS_HASH=$REPLY
-				if [ "$OURS_HASH" = "${DIFF_O[$P]#* }" ] && \
-				   [ "$(_WORKTREE_MODE "$CO" "$P" "${DIFF_O[$P]% *}" "$FILEMODE" "${IE% *}")" = "${DIFF_O[$P]% *}" ]; then
-					_CARRY_TAKE "$CO" "$P" "" "$OURS_HASH"
-					case $? in
-						(1) LEFT+=("$ITEM – changed while carrying"); continue ;;
-						(2) LEFT+=("$ITEM – not writable"); continue ;;
-					esac
-					ITEM+=" (outside your sparse checkout, its entry alone)"
-					L=BROUGHT
-				else
-					_SPARSE_CARRY_CMD "$CO" "$OLD" "${RENAMED_TO[$P]}"
-					ITEM+=" – renamed $SPARSE_WHY, the edits left at $NP – carry them once it takes that path in: $REPLY"
-					L=LEFT
-				fi
-				[ -n "$IE" ] && { READ_ENT[$P]=$IE; _SYNC_QUEUE "$P" "" "$L" "$ITEM"; }
-				# Its new path's entry goes under the same line
-				PAIRED[${RENAMED_TO[$P]}]="$L:$ITEM"
-				set -A "$L" "${(@P)L}" "$ITEM"
-				continue
-			fi
-			# A rename's source goes with its new path, unless that path is in the checkout already –
-			# as anything but what the rewrite landed there, which a rename this checkout landed leaves
-			[ -n "${RENAMED_TO[$P]}" ] && _CARRY_DEST_FREE "$CO" "$NEW" "${RENAMED_TO[$P]}" "$P" && continue
-			# A removed file still exactly as before goes, its entry with it where
-			# that is as before too – unless the tip has it back – while a renamed
-			# one held up by its new path is named, edits or none
-			if [ -z "${RENAMED_TO[$P]}" ] && _HASH_READ "$CO" "$P" && OURS_HASH=$REPLY && [ "$OURS_HASH" = "${DIFF_O[$P]#* }" ]; then
-				[ "$TIP" != "$NEW" ] && [ -n "${TIP_ENT[$P]}" ] && continue
-				IE=${IDX_ENT[$P]}
-				if [ -n "$IE" ] && [ "$IE" != "${DIFF_O[$P]}" ]; then
-					LEFT+=("$NP – staged changes on a file the rewrite removed")
-					continue
-				fi
-				_CARRY_TAKE "$CO" "$P" "" "$OURS_HASH"
-				case $? in
-					(1) LEFT+=("$NP – changed while carrying"); continue ;;
-					(2) LEFT+=("$NP – not writable"); continue ;;
-				esac
-				[ -n "$IE" ] && { READ_ENT[$P]=$IE; _SYNC_QUEUE "$P" "" BROUGHT "$NP (removed)"; }
-				BROUGHT+=("$NP (removed)")
-				continue
-			fi
-			if [ -n "${RENAMED_TO[$P]}" ]; then
-				_ONE_LINE "${RENAMED_TO[$P]}"
-				LEFT+=("$NP – renamed to $REPLY, which the checkout holds already")
-			else
-				LEFT+=("$NP – removed by the rewrite")
-			fi
-			continue
-		fi
-		# A rename's source the checkout still holds, never under a symlink, moves to a free new path –
-		# unless either path holds staging the rewrite never read there, which the move would orphan
-		NS=""
-		if [ -n "${RENAMED_FROM[$P]}" ] && { [ -e "$CO/${RENAMED_FROM[$P]}" ] || [ -L "$CO/${RENAMED_FROM[$P]}" ]; } && \
-		   ! _LEADING_NON_DIR "$CO" "${RENAMED_FROM[$P]}" && _CARRY_DEST_FREE "$CO" "$NEW" "$P" "${RENAMED_FROM[$P]}"; then
-			SRC=${RENAMED_FROM[$P]}
-			_ONE_LINE "$SRC"; NS=$REPLY
-			IE=${IDX_ENT[$SRC]}
-			if [ -n "$IE" ] && [ "$IE" != "${DIFF_O[$SRC]}" ]; then
-				LEFT+=("$NS → $NP – staged changes at its old path, which stays as it is till they are committed or unstaged")
-				continue
-			fi
-			IE=${IDX_ENT[$P]}
-			if [ -n "$IE" ] && [ "$IE" != "${DIFF_N[$P]}" ]; then
-				LEFT+=("$NS → $NP – staged at its new path as the rewrite has it nowhere, so its old path stays as it is")
-				continue
-			fi
-			if (( ${+IN_WAY[$P]} )); then
-				_IN_WAY_WHY "$P" "${IN_WAY[$P]}" rewrite
-				BLOCKED+=("$NS → $NP ($REPLY)")
-				continue
-			fi
-		fi
-		# One the rewrite added, or a rename's destination whose source is gone, missing from the
-		# checkout takes what is at the tip – a file deleted there stays deleted
-		if [ "$SRC" = "$P" ] && [ -z "${DIFF_O[$P]}" ] && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-			HE=${TIP_ENT[$P]}
-			[ -z "$HE" ] || [ "${HE% *}" = 160000 ] && continue
-			IE=${IDX_ENT[$P]}
-			if [ -n "$IE" ] && [ "$IE" != "$HE" ]; then
-				LEFT+=("$NP – staged as the rewrite has it nowhere")
-				continue
-			fi
-			if (( ${+IN_WAY[$P]} )); then
-				_IN_WAY_WHY "$P" "${IN_WAY[$P]}" rewrite
-				BLOCKED+=("$NP ($REPLY)")
-				continue
-			fi
-			_CARRY_TAKE "$CO" "$P" "$HE" ""
-			case $? in
-				(1) LEFT+=("$NP – changed while carrying"); continue ;;
-				(2) LEFT+=("$NP – not writable"); continue ;;
-			esac
-			[ -z "$IE" ] && { READ_ENT[$P]=""; _SYNC_QUEUE "$P" "$HE" BROUGHT "$NP"; }
-			BROUGHT+=("$NP")
-			continue
-		fi
-		# Deleted in the checkout, it stays deleted, its entry taking what landed where still as before
-		if [ ! -e "$CO/$SRC" ] && [ ! -L "$CO/$SRC" ]; then
-			[ "$SRC" = "$P" ] && [ "${TIP_ENT[$P]#* }" = "${DIFF_N[$P]#* }" ] && \
-				_CARRY_QUEUE "$P" "$P" RESYNCED "$NP" && RESYNCED+=("$NP")
-			continue
-		fi
-		# Edits need a pre-rewrite blob to have been made on, and a stale or current file has none
-		(( ${+OBJ_AT[$SRC]} )) || continue
-		_HASH_READ "$CO" "$SRC"
-		OURS_HASH=$REPLY
-		# A file still as either side has it holds no edits – at a rename's old path it moves all the
-		# same, as the merge onto what landed then writes just that
-		UNEDITED=""
-		[ "$OURS_HASH" = "${OBJ_AT[$SRC]}" ] || [ "$OURS_HASH" = "${DIFF_N[$P]#* }" ] && UNEDITED=1
-		WTM=$(_WORKTREE_MODE "$CO" "$SRC" "${DIFF_O[$SRC]% *}" "$FILEMODE" "${IDX_ENT[$SRC]% *}")
-		# As the lists below show it, a rename's with its source
-		ITEM="${NS:+$NS → }$NP"
-		# Content exactly as before, a symlink where it was one, it takes what is at the tip, as a
-		# terminal run's sync brings it, with a mode the checkout changed – an entry staged as neither
-		# side has it is a peer's or the caller's
-		if [ "$SRC" = "$P" ] && [ "$OURS_HASH" = "${DIFF_O[$P]#* }" ] && [ "${WTM/100755/100644}" = "${${DIFF_O[$P]% *}/100755/100644}" ]; then
-			HE=${TIP_ENT[$P]}
-			[ "$HE" = "${DIFF_O[$P]}" ] && continue
-			if [ "${HE% *}" = 160000 ]; then
-				LEFT+=("$NP – a submodule now")
-				continue
-			fi
-			IE=${IDX_ENT[$P]}
-			if [ "$IE" != "${DIFF_O[$P]}" ] && [ "$IE" != "$HE" ]; then
-				LEFT+=("$NP – staged as neither side has it")
-				continue
-			fi
-			_CARRY_MODE "$WTM" "${DIFF_O[$P]% *}" "${HE% *}"
-			# A change of mode alone, the file's own already, leaves only an entry still as before to take
-			if [ "$OURS_HASH" = "${HE#* }" ] && [ "$WTM" = "$REPLY" ]; then
-				[ "$IE" = "${DIFF_O[$P]}" ] && { READ_ENT[$P]=$IE; _SYNC_QUEUE "$P" "$HE" RESYNCED "$NP"; RESYNCED+=("$NP"); }
-				continue
-			fi
-			_CARRY_TAKE "$CO" "$P" "${HE:+$REPLY ${HE#* }}" "$OURS_HASH"
-			case $? in
-				(1) LEFT+=("$NP – changed while carrying"); continue ;;
-				(2) LEFT+=("$NP – not writable"); continue ;;
-			esac
-			[ "$IE" = "${DIFF_O[$P]}" ] && { READ_ENT[$P]=$IE; _SYNC_QUEUE "$P" "$HE" BROUGHT "$NP"; }
-			BROUGHT+=("$NP")
-			continue
-		fi
-		# Already as it landed, its mode as it goes, only an entry still as before has anything to take –
-		# where `HEAD` changed it again since, the file is the checkout's own business
-		if [ "$SRC" = "$P" ] && [ "$OURS_HASH" = "${DIFF_N[$P]#* }" ]; then
-			_CARRY_MODE "$WTM" "${DIFF_O[$P]% *}" "${DIFF_N[$P]% *}"
-			if [ "$WTM" = "$REPLY" ]; then
-				[ "${TIP_ENT[$P]#* }" = "${DIFF_N[$P]#* }" ] && _CARRY_QUEUE "$P" "$P" RESYNCED "$NP" && RESYNCED+=("$NP")
-				continue
-			fi
-		fi
-		# A commit since the rewrite brought content of its own, which the merge would take back
-		if [ "${TIP_ENT[$P]#* }" != "${DIFF_N[$P]#* }" ]; then
-			LEFT+=("$ITEM – changed again since the rewrite")
-			continue
-		fi
-		# A retargeted symlink has no lines to merge, and writing through it would replace it – an
-		# unedited one at a rename's old path moves as the link that landed
-		if [ -L "$CO/$SRC" ]; then
-			if [ -z "$UNEDITED" ] || [ "$SRC" = "$P" ] || [ "$(_TREE_ENTRY "$NEW" "$P")" != "120000 $(git rev-parse "${NEW}:${P}")" ]; then
-				LEFT+=("$ITEM – a symlink")
-				continue
-			fi
-			# Carried before, a case-only rename's link spelled the new way already
-			if [ "$OURS_HASH" = "${DIFF_N[$P]#* }" ] && _SAME_ENTRY "$CO/$SRC" "$CO/$P" && _SPELLED_AS "$CO" "$P"; then
-				_CARRY_QUEUE "$SRC" "$P" RESYNCED "$ITEM" && RESYNCED+=("$ITEM")
-				continue
-			fi
-			TMPF=$CARRY_TMP
-			rm -f "$TMPF"
-			if ! mkdir -p "$CO/${P:h}" 2>/dev/null || ! ln -s -- "$(git cat-file blob "${NEW}:${P}")" "$TMPF" 2>/dev/null; then
-				LEFT+=("$ITEM – not writable")
-				continue
-			fi
-			if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS_HASH" ] || ! _CARRY_DEST_FREE "$CO" "$NEW" "$P" "$SRC"; then
-				rm -f "$TMPF"
-				LEFT+=("$ITEM – changed while carrying")
-				continue
-			fi
-			if ! _MOVE_ONTO "$TMPF" "$CO/$P"; then
-				rm -f "$TMPF"
-				LEFT+=("$ITEM – not writable")
-				continue
-			fi
-			# The old name goes, unless it is the new one by another case, which sheds its
-			# spelling – the links' own entries compared, as `-ef` compares where they point –
-			# or retargeted since the read, which stays
-			if _SAME_ENTRY "$CO/$SRC" "$CO/$P"; then _MOVE_ONTO "$CO/$SRC" "$CO/$P"
-			elif [ "$(_WORKTREE_HASH "$CO" "$SRC")" = "$OURS_HASH" ]; then rm -f "$CO/$SRC"
-			else LEFT+=("$NS – changed while carrying, kept untracked – $NP took the link that landed")
-			fi
-			_DIR_PRUNE "$CO" "$SRC"
-			_CARRY_QUEUE "$SRC" "$P" BROUGHT "$ITEM"
-			BROUGHT+=("$ITEM")
-			continue
-		fi
-		# All in checked-out form, as the edits are – a raw blob differs wherever a filter or `eol`
-		# rewrites lines – the file copied out, as `git diff --no-index` cleans one inside the checkout
-		# Both sides read under the attributes the edits were made under, where the rewrite changed them
-		if ! git -C "$CO" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "${OLD}:$SRC" > "$BASE" 2>/dev/null || \
-		   ! git -C "$CO" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "${NEW}:$P" > "$THEIRS" 2>/dev/null; then
-			LEFT+=("$ITEM – not readable through its filters")
-			continue
-		fi
-		cat "$CO/$SRC" > "$OURS" || { LEFT+=("$ITEM – not readable"); continue; }
-		if [ -n "$UNEDITED" ]; then
-			cat "$THEIRS" > "$MERGED" || { LEFT+=("$ITEM – not writable"); continue; }
-			MERGE_RC=0
-		else
-			git merge-file -p -q "$OURS" "$BASE" "$THEIRS" > "$MERGED" 2>/dev/null
-			MERGE_RC=$?
-		fi
-		if [ $MERGE_RC -gt 127 ]; then
-			LEFT+=("$ITEM – no text merge")
-			continue
-		elif [ $MERGE_RC -gt 0 ]; then
-			# A conflict writes nothing merged – no markers in a file a peer session may be editing – the
-			# edits staying as changes to what landed, as a terminal run's sync leaves them, with the
-			# command that merges them, markers and all
-			WHY=""
-			if [ "$SRC" = "$P" ]; then
-				_MERGE_CMD "$OLD" "$NEW" "$P" "$P" "$P"
-			elif [ "$CO/$SRC" -ef "$CO/$P" ]; then
-				# A case-only rename on a filesystem that ignores case is one file,
-				# holding the edits – it takes the new name
-				mv -f "$CO/$SRC" "$CO/$P" 2>/dev/null
-				_MERGE_CMD "$OLD" "$NEW" "$SRC" "$P" "$P"
-			else
-				# A rename's new path takes what landed, the edits staying untracked at the old one
-				if [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-					_CARRY_TAKE "$CO" "$P" "${DIFF_N[$P]}" ""
-					case $? in
-						(1) LEFT+=("$ITEM – changed while carrying"); continue ;;
-						(2) LEFT+=("$ITEM – not writable"); continue ;;
-					esac
-				fi
-				_MERGE_CMD "$OLD" "$NEW" "$SRC" "$P" "$SRC"
-				WHY=", the edits left at $NS"
-			fi
-			MERGE_CMDS+=("$REPLY")
-			ITEM+=" – $MERGE_RC conflict(s)$WHY"
-			_CARRY_QUEUE "$SRC" "$P" LEFT "$ITEM"
-			LEFT+=("$ITEM")
-			continue
-		fi
-		_CARRY_MODE "$WTM" "${DIFF_O[$SRC]% *}" "${DIFF_N[$P]% *}"
-		MODE=$REPLY
-		# Carried before – the edits sit on the new content already, its mode as it goes, a case-only
-		# rename's file spelled the new way – only an entry still as before has anything to take
-		if cmp -s "$MERGED" "$OURS" && [ "$WTM" = "$MODE" ] && \
-		   { [ "$SRC" = "$P" ] || { [ "$CO/$SRC" -ef "$CO/$P" ] && _SPELLED_AS "$CO" "$P"; }; }; then
-			_CARRY_QUEUE "$SRC" "$P" RESYNCED "$ITEM" && RESYNCED+=("$ITEM")
-			continue
-		fi
-		if [ -z "$UNEDITED" ] && [ "$(_CHANGED_LINES "$BASE" "$OURS")" != "$(_CHANGED_LINES "$THEIRS" "$MERGED")" ]; then
-			LEFT+=("$ITEM – the merge would alter the edits")
-			continue
-		fi
-		# Written apart and moved into place, its mode three-way as its content – what landed, unless
-		# the checkout's own differs from before – and only over the file as it was read, a parallel
-		# edit the merge never saw left as it is
-		TMPF=$CARRY_TMP
-		rm -f "$TMPF"
-		# A rename into a new directory finds none in the checkout yet
-		[ "$SRC" = "$P" ] || mkdir -p "$CO/${P:h}" 2>/dev/null
-		cp -p "$CO/$SRC" "$TMPF" && cat "$MERGED" > "$TMPF" || { rm -f "$TMPF"; LEFT+=("$ITEM – not writable"); continue; }
-		if [ "$MODE" = 100755 ]; then chmod +x "$TMPF"; else chmod -x "$TMPF"; fi
-		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS_HASH" ] || { [ "$SRC" != "$P" ] && ! _CARRY_DEST_FREE "$CO" "$NEW" "$P" "$SRC"; }; then
-			rm -f "$TMPF"
-			LEFT+=("$ITEM – changed while carrying")
-			continue
-		fi
-		if ! _MOVE_ONTO "$TMPF" "$CO/$P"; then
-			rm -f "$TMPF"
-			LEFT+=("$ITEM – not writable")
-			continue
-		fi
-		if [ -n "$UNEDITED" ]; then L=BROUGHT; else L=CARRIED; fi
-		_CARRY_QUEUE "$SRC" "$P" "$L" "$ITEM"
-		if [ "$SRC" != "$P" ]; then
-			# Where the old name is the new one by another case, a move onto it kept the old spelling,
-			# which the file sheds by a rename of its own – one edited again since the read stays
-			if [ "$CO/$SRC" -ef "$CO/$P" ]; then mv -f "$CO/$SRC" "$CO/$P" 2>/dev/null
-			elif [ "$(_WORKTREE_HASH "$CO" "$SRC")" = "$OURS_HASH" ]; then rm -f "$CO/$SRC"
-			else LEFT+=("$NS – edited again while carrying, kept untracked – the edits read before went to $NP")
-			fi
-			_DIR_PRUNE "$CO" "$SRC"
-		fi
-		set -A "$L" "${(@P)L}" "$ITEM"
-	done
-	rm -f "$BASE" "$THEIRS" "$MERGED"
-	# Untracked files go along with a directory renamed whole, the tracked ones having gone first
-	(( ${#DIR_FROM} )) && _DIR_MOVE "$CO"
-	LEFT+=("${DIR_TAKEN[@]}")
-	# Every entry decided on, in one step under the index lock, the flags a fresh one drops set again
-	_SYNC_WRITE_ENTRIES "$CO" "${(l:${#OLD}::0:)}"
-	(( ${#Q_PATH} )) && _INDEX_FLAGS_BACK "$CO" ""
-	# A path whose entry stayed is named once – a peer's staging meanwhile kept, its file named as
-	# written, and one left already saying so – by the worst of what its entries met
-	local -A ENT_WHY ENT_PATHS
-	local -a ENT_KEYS ENT_LOCKED ENT_LOCKED_PATHS ENT_IN_WAY ENT_IN_WAY_PATHS
-	_AT_TOP "$CO"
-	local AT=$REPLY
-	for (( I = 1; I <= ${#Q_PATH}; I++ )); do
-		[ "${Q_OUT[I]}" = done ] && continue
-		ITEM=${Q_ON[I]}
-		(( ${+ENT_WHY[$ITEM]} )) || ENT_KEYS+=("$ITEM")
-		case ${Q_OUT[I]} in
-			(kept) [ -n "${ENT_WHY[$ITEM]}" ] || ENT_WHY[$ITEM]=kept ;;
-			(in-way)
-				_IN_WAY_WHY "${Q_PATH[I]}" "${Q_BY[I]}" rewrite
-				[ "${ENT_WHY[$ITEM]}" = locked ] || ENT_WHY[$ITEM]=$REPLY ;;
-			(*) ENT_WHY[$ITEM]=locked ;;
-		esac
-		# The paths an item's command takes, NUL-joined
-		[ "${Q_OUT[I]}" = kept ] || ENT_PATHS[$ITEM]+=${Q_PATH[I]}$'\0'
-	done
-	for LINE in "${ENT_KEYS[@]}"; do
-		L=${LINE%%:*} ITEM=${LINE#*:} WHY=${ENT_WHY[$LINE]}
-		case $L in
-			(CARRIED) NS="written, edits carried" ;;
-			(BROUGHT) NS="written, brought to what landed" ;;
-			(*) NS="" ;;
-		esac
-		# Its line found by its text as it is – a substituted value is never a pattern here
-		if [ "$WHY" = kept ]; then
-			case $L in
-				(CARRIED) CARRIED=("${(@)CARRIED/#%$ITEM/$ITEM (its index entry left as staged meanwhile)}") ;;
-				(BROUGHT) BROUGHT=("${(@)BROUGHT/#%$ITEM/$ITEM (its index entry left as staged meanwhile)}") ;;
-				(LEFT) LEFT=("${(@)LEFT/#%$ITEM/$ITEM, its index entry left as staged meanwhile}") ;;
-				(*) RESYNCED=("${(@)RESYNCED:#$ITEM}") ;;
-			esac
-			continue
-		fi
-		case $L in
-			(CARRIED) CARRIED=("${(@)CARRIED:#$ITEM}") ;;
-			(BROUGHT) BROUGHT=("${(@)BROUGHT:#$ITEM}") ;;
-			(RESYNCED) RESYNCED=("${(@)RESYNCED:#$ITEM}") ;;
-		esac
-		if [ "$L" = LEFT ]; then
-			if [ "$WHY" = locked ]; then
-				_LOCKED_RESYNC_STEP "$CO" "${OLD:0:12}" "git restore --source=HEAD --staged" "${(@0)ENT_PATHS[$LINE]%$'\0'}"
-				WHY="its index entry not re-synced, the index locked – once it is free, where still on the pre-rewrite content: $REPLY"
-			else
-				WHY="its index entry not written, $WHY – once that staging is committed or unstaged: $AT$(_PATHS_CMD "git restore --source=HEAD --staged" "${(@0)ENT_PATHS[$LINE]%$'\0'}")"
-			fi
-			LEFT=("${(@)LEFT/#%$ITEM/$ITEM, $WHY}")
-		elif [ "$WHY" = locked ]; then
-			ENT_LOCKED+=("$ITEM${NS:+ ($NS)}")
-			ENT_LOCKED_PATHS+=("${(@0)ENT_PATHS[$LINE]%$'\0'}")
-		else
-			ENT_IN_WAY+=("$ITEM (${NS:+$NS – }$WHY)")
-			ENT_IN_WAY_PATHS+=("${(@0)ENT_PATHS[$LINE]%$'\0'}")
-		fi
-	done
-
-	[ ${#CARRIED[@]} -gt 0 ] && PRINT_TEXT "Carried onto the new content: %s" 32 "$(_ALL_PATHS "${CARRIED[@]}")"
-	(( ${#BROUGHT} )) && PRINT_TEXT "Brought to what landed, holding no edits: %s" 32 "$(_SOME_PATHS "${BROUGHT[@]}")"
-	(( ${#RESYNCED} )) && PRINT_TEXT "Index entries brought to what landed, their files left as they are: %s" 32 "$(_SOME_PATHS "${RESYNCED[@]}")"
-	(( ${#DIR_MOVED} )) && PRINT_TEXT "Untracked files moved along with their renamed directory: %s" 32 "$(_ALL_PATHS "${DIR_MOVED[@]}")"
-	(( ${#DIR_RESPELT} )) && PRINT_TEXT "Directories the rewrite renamed by case alone, now spelled as it has them: %s" 32 "$(_ALL_PATHS "${DIR_RESPELT[@]}")"
-	(( ${#DIR_STAYS} )) && PRINT_TEXT "Untracked files left where they are, in a directory the rewrite renamed only in part: %s" 33 "$(_ALL_PATHS "${DIR_STAYS[@]}")"
-	[ -z "$SPARSE_ASKED" ] && REAPPLY=("${ASK[@]}" "${REAPPLY[@]}")
-	if (( ${#REAPPLY} )); then
-		_AT_TOP "$CO"
-		PRINT_TEXT "This git can't ask your sparse checkout's patterns (2.42 can) – the files the rewrite added, left out as outside it: %s – write those inside it with: %s" 33 "$(_SOME_PATHS "${REAPPLY[@]}")" "${REPLY}git sparse-checkout reapply"
-	fi
-	local -a ERRS
-	if (( ${#MERGE_CMDS} )); then
-		PRINT_TEXT "%s" 33 "Merge the conflicting ones, markers and all, once you mean to resolve them:"
-		for LINE in "${MERGE_CMDS[@]}"; do ECHO_E "\e[0;33m  $(_LIT "$AT$LINE")\e[0m"; done
-	fi
-	if (( ${#ENT_LOCKED} )); then
-		_LOCKED_RESYNC_STEP "$CO" "${OLD:0:12}" "git restore --source=HEAD --staged" "${(@u)ENT_LOCKED_PATHS}"
-		ERRS+=("Index entries left on the pre-rewrite content, the index locked: $(_ALL_PATHS "${ENT_LOCKED[@]}") – re-sync each still so once it is free, the files left as they are: $REPLY")
-	fi
-	(( ${#ENT_IN_WAY} )) && ERRS+=("Index entries not written, staging in their way: $(_ALL_PATHS "${ENT_IN_WAY[@]}") – write them once that staging is committed or unstaged: $AT$(_PATHS_CMD "git restore --source=HEAD --staged" "${(@u)ENT_IN_WAY_PATHS}")")
-	(( ${#BLOCKED} )) && ERRS+=("Left as they were, staging in their way: $(_ALL_PATHS "${BLOCKED[@]}") – carry them once that staging is committed or unstaged: git edit --carry=${OLD:0:12}")
-	(( ${#LEFT} )) && ERRS+=("Left as they were, to merge by hand: $(_ALL_PATHS "${LEFT[@]}")")
-	if (( ${#ERRS} )); then
-		for LINE in "${(@)ERRS[1,-2]}"; do PRINT_TEXT "%s" 33 "$LINE"; done
-		PRINT_ERR "${ERRS[-1]}"
-		exit 1
-	fi
-	[ $(( ${#CARRIED[@]} + ${#BROUGHT[@]} + ${#DIR_MOVED[@]} + ${#RESYNCED[@]} + ${#DIR_RESPELT[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "Nothing to carry – no path the rewrite changed holds its pre-rewrite content, edited or not."
+	# Past a tip moved on since, as onto the rewrite – a path the tip changed again left as it is
+	_SYNC_CHECKOUT "$CO" "$OLD" "$NEW" carry "$(git rev-parse HEAD)"
 	_PRINT_DEFERRED_SIGNAL
-	_EMIT_TRAILER "git-edit: ok – carried $(( ${#CARRIED[@]} + ${#BROUGHT[@]} + ${#DIR_MOVED[@]} )) path(s) across ${OLD:0:7}..${NEW:0:7}"
+	_EMIT_TRAILER "git-edit: ok – carried $REPLY path(s) across ${OLD:0:7}..${NEW:0:7}"
 	_STATUS_EMITTED=true
 }
 
@@ -4866,22 +4369,6 @@ _TREE_ENTRY () {
 	git ls-tree --full-tree "$1" -- "$2" 2>/dev/null | awk 'NR == 1 { print $1" "$3 }'
 }
 
-# Merges a checkout file's edits on <old blob> onto <new blob>, as a checkout writes it – filters
-# applied, under the attributes the caller's `ATTR_SRC` names – into <out>, returning
-# `git merge-file`'s exit: 0 clean, a conflict count, above 127 where it can't merge, a binary say
-_SYNC_MERGE () {
-	# Args: <checkout> <file> <old rev:path> <new rev:path> <out>
-	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) RC
-	_TEMP_FILES+=("$BASE" "$THEIRS")
-	git -C "$1" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "$3" > "$BASE" 2>/dev/null && \
-		git -C "$1" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "$4" > "$THEIRS" 2>/dev/null || { rm -f "$BASE" "$THEIRS"; return 255; }
-	# What landed first, as git's own conflicts show `HEAD` – a clean merge is the same either way
-	git merge-file -p -L "landed (HEAD)" -L "before the rewrite" -L "your edits" "$THEIRS" "$BASE" "$1/$2" > "$5" 2>/dev/null
-	RC=$?
-	rm -f "$BASE" "$THEIRS"
-	return $RC
-}
-
 # Answers whether <path> of <checkout> is a directory holding only files the caller's rewrite takes
 # out – tracked before, gone after – so the file it puts there can take its place, as git's own
 # merge brings it, where no empty directory under it holds that up
@@ -4899,42 +4386,109 @@ _DIR_ALL_GOING () {
 	return 0
 }
 
-# Brings the caller's checkout from <old> to the tip <new> its branch just moved to – a file still
-# as <old> had it takes what landed, edits merge onto it where they merge cleanly, a conflict
-# writing nothing, as they may be a peer's, and a file standing where one lands is kept – each named
-# The index entries it changes are written in one step at the end, each only where it still holds
-# what the sync read and drops no staging in its way
+# Queues <path>'s entry as `_SYNC_QUEUE` does – a carry's <item> going on its <list> at once, its
+# report marking what became of the entry, a sync's once the entry is written
+_SYNC_NOTE_Q () {
+	# Args: <path> <entry> [<list> <item>] – reads the caller's `HOW`
+	_SYNC_QUEUE "$@"
+	[ "$HOW" = carry ] && [ -n "$3" ] && set -A "$3" "${(@P)3}" "$4"
+	return 0
+}
+
+# Brings <checkout> from <old> to <new> – the one implementation behind both the sync a run makes of
+# the checkout it moved and `--carry`: a file still as before takes what landed, edits merge onto it
+# where they merge cleanly, a conflict writing nothing, as they may be a peer's, a file standing
+# where one lands is kept, and nothing goes through a symlink, outside a sparse checkout or over
+# another's staging – each path named, a sync's lines worded for its move, a carry's for itself
+# • Every file still as its base has it goes in one two-tree merge, its entry first set back to that
+#   where a re-sync took it ahead, as a carry finds a checkout a landing left – one with edits, or
+#   anything else of its own, path by path
+# • Each file merges from its own base, as `_FILE_BASES` tells it – the tip it was last brought to
+# • The index entries it changes are written in one step at the end, each only where it still holds
+#   what was read and drops no staging in its way
 _SYNC_CHECKOUT () {
-	# Args: <checkout> <old tip> <new tip> – reads `_MOVING_REF`, a drop's content and an undo's named
-	#       apart
-	local CO=$1 OLD=$2 NEW=$3 P SRC O N I MODE WTM WH TMPF OURS BLOB ERR DST WHY NP NS L ITEM HOOK_BASE
-	local -i RC
+	# Args: <checkout> <old tip> <new tip> [carry <tip>] – a sync reads `_MOVING_REF`, a drop's content
+	#       and an undo's named apart – a carry puts the count it carried into `REPLY`, exiting 1
+	#       where it leaves a path to merge by hand
+	local CO=$1 OLD=$2 NEW=$3 HOW=${4:-sync} TIP=${5:-$3} P SRC O N I IP HE MODE WTM WH TMPF OURS BLOB ERR DST WHY NP NS L ITEM
+	local HOOK_BASE FBE FBT FBN UNEDITED LINE Q HASHED
+	local -i RC K
 	local -x GIT_LITERAL_PATHSPECS=1
-	local -a CHANGED CLEAN CARRIED CONFLICTED MERGE_CMDS KEPT KEPT_EDITS GONE_EDITED LEFT DELETED FAILED STALE LOCKED IDX_LOCKED DIFF_PATHS MODE_ONLY HOOKED PARTIAL
+	local -a CHANGED CLEAN CARRIED CONFLICTED MERGE_CMDS KEPT KEPT_EDITS GONE_EDITED LEFT DELETED FAILED STALE LOCKED IDX_LOCKED
+	local -a OWN_LATER
+	local -a DIFF_PATHS MODE_ONLY HOOKED PARTIAL BROUGHT RESYNCED BLOCKED REAPPLY ASK REBASE ORDER RF
 	local -a Q_PATH Q_NEW Q_ON Q_OUT Q_BY
-	local -A UNSTAGED STAGED STAGED_DIRS RENAMED_FROM RENAMED_TO IS_DIRTY DIFF_O DIFF_N IDX_ENT READ_ENT CARRY UNDER_LINK DIR_RENAMED
-	local -a DIR_PARTLY DIR_FROM DIR_TO DIR_TAKEN DIR_STAYS DIR_MOVED
+	local -A UNSTAGED STAGED STAGED_DIRS RENAMED_FROM RENAMED_TO IS_DIRTY DIFF_O DIFF_N IDX_ENT READ_ENT UNDER_LINK DIR_RENAMED
+	local -A TIP_ENT WT_HASH SPARSE_OUT PAIRED FB_ENT FB_TIP FB_NAME TT_EXP TT_FROM ITA WRITTEN NOT_BROUGHT
+	local -a STEP_FROM STEP_TO
+	local -a DIR_PARTLY DIR_FROM DIR_TO DIR_TAKEN DIR_STAYS DIR_MOVED DIR_RESPELT
+	# Its words – a carry's its own, a sync's its move's, commits only added on top rewriting nothing
+	local NOUN=rewrite FORMER=pre-rewrite WHILE="it ran"
+	if [ "$HOW" = carry ]; then
+		WHILE=carrying
+	elif _IS_ANCESTOR "$OLD" "$NEW"; then
+		NOUN=landing FORMER=previous
+	fi
 	_DIFF_ENTRIES "$OLD" "$NEW"
 	CHANGED=("${DIFF_PATHS[@]}")
-	(( ${#CHANGED} )) || return 0
+	(( ${#CHANGED} )) || [ "$HOW" = carry ] || return 0
+	# A carry's paths too that a landing on the way changed and a later one took back, none changed
+	# from <old> to <new> – a file brought along in between holds the first, as its own base tells
+	local -A EXTRA
+	if [ "$HOW" = carry ] && P=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null); then
+		_LANDING_STEPS "$P" "$OLD" "$NEW"
+		for (( K = 1; K <= ${#STEP_FROM}; K++ )); do
+			[ "${STEP_FROM[K]}" = "$OLD" ] && (( K == 1 )) && break
+			for P in ${(0)"$(git diff-tree -r -z --no-renames --name-only "${STEP_FROM[K]}" "${STEP_TO[K]}" 2>/dev/null)"}; do
+				(( ${+DIFF_O[$P]} || ${+DIFF_N[$P]} )) || EXTRA[$P]=1
+			done
+			[ "${STEP_FROM[K]}" = "$OLD" ] && break
+		done
+		if (( ${#EXTRA} )); then
+			local -A TREE_ENT
+			_TREE_ENTRIES "$NEW" "${(@k)EXTRA}"
+			for P in "${(@k)EXTRA}"; do
+				if [[ "${TREE_ENT[$P]% *}" == 100(644|755) ]]; then
+					DIFF_O[$P]=${TREE_ENT[$P]} DIFF_N[$P]=${TREE_ENT[$P]}
+					CHANGED+=("$P")
+				else
+					unset "EXTRA[$P]"
+				fi
+			done
+		fi
+	fi
+	# The tip's entry of each path – the move's own where it is the tip still, as for a sync
+	if [ "$TIP" = "$NEW" ]; then
+		TIP_ENT=("${(@kv)DIFF_N}")
+	else
+		local -A TREE_ENT
+		_TREE_ENTRIES "$TIP" "${CHANGED[@]}"
+		TIP_ENT=("${(@kv)TREE_ENT}")
+	fi
 	# Where the checkout differs from <old>: its files from its index, its index from <old>
 	for P in ${(0)"$(git -C "$CO" diff --ignore-submodules=dirty -z --name-only --no-renames 2>/dev/null)"}; do UNSTAGED[$P]=1; done
 	for P in ${(0)"$(git -C "$CO" diff --cached --ignore-submodules=dirty -z --name-only --no-renames "$OLD" 2>/dev/null)"}; do STAGED[$P]=1; done
-	local -a RF
-	# Asked only where a path went and another came, as a rename needs both
+	# Asked only where a path went and another came, as a rename needs both – NUL-separated, status,
+	# source and destination each, as a quote, backslash or tab in a name comes back C-quoted otherwise
 	(( ${#DIFF_O} < ${#CHANGED} && ${#DIFF_N} < ${#CHANGED} )) && \
 		RF=(${(0)"$(git diff --ignore-submodules=dirty -z -M --name-status --diff-filter=R "$OLD" "$NEW" 2>/dev/null)"})
-	for (( RC = 1; RC + 2 <= ${#RF}; RC += 3 )); do
-		RENAMED_FROM[${RF[RC + 2]}]=${RF[RC + 1]}
-		RENAMED_TO[${RF[RC + 1]}]=${RF[RC + 2]}
+	for (( K = 1; K + 2 <= ${#RF}; K += 3 )); do
+		RENAMED_FROM[${RF[K + 2]}]=${RF[K + 1]}
+		RENAMED_TO[${RF[K + 1]}]=${RF[K + 2]}
 	done
-	# Read before the sync moves an entry, the index telling a rename the run brings from one the
-	# checkout made itself – and the untracked files to take along before a file moves, a
-	# `.gitignore` of the renamed directory's own still telling the ignored ones
+	# Read before an entry moves – a sync's index telling a rename the run brings from one the
+	# checkout made itself – and the untracked files to take along before a file moves, a `.gitignore`
+	# of the renamed directory's own still telling the ignored ones – a carry's directory renamed by
+	# case alone respelt first, so its files read as carried where they need nothing else
 	if (( ${#RENAMED_TO} )); then
-		_DIR_RENAMES "$OLD" "$NEW"
-		_DIR_INDEXED "$CO"
+		if [ "$HOW" = carry ]; then
+			_DIR_RENAMES "$OLD" "$NEW" "$TIP"
+		else
+			_DIR_RENAMES "$OLD" "$NEW"
+			_DIR_INDEXED "$CO"
+		fi
 		(( ${#DIR_RENAMED} + ${#DIR_PARTLY} )) && _DIR_UNTRACKED "$CO" "$OLD" "$NEW"
+		[ "$HOW" = carry ] && _DIR_RESPELL "$CO"
 	fi
 	# Each directory a staged or edited entry lies in
 	for P in "${(@k)STAGED}" "${(@k)UNSTAGED}"; do
@@ -4974,12 +4528,13 @@ _SYNC_CHECKOUT () {
 			fi
 		done
 	done
-	# A renamed file's edits go along to its new path, which they hold up the same way
+	# A renamed file's edits go along to its new path, which they hold up the same way, and a new path
+	# held up keeps its source where it is
 	for P in "${(@k)RENAMED_TO}"; do
 		(( ${+IS_DIRTY[$P]} )) && IS_DIRTY[${RENAMED_TO[$P]}]=1
 	done
-	for P in "${CHANGED[@]}"; do
-		(( ${+IS_DIRTY[$P]} )) || CLEAN+=("$P")
+	for P in "${(@k)RENAMED_FROM}"; do
+		(( ${+IS_DIRTY[$P]} )) && IS_DIRTY[${RENAMED_FROM[$P]}]=1
 	done
 
 	# A peer's `git add` holding the index for a moment is waited out, as every write below needs it
@@ -4987,13 +4542,102 @@ _SYNC_CHECKOUT () {
 	# Flags a fresh entry would drop, set again once the sync is done
 	local -a FLAG_AU FLAG_SW
 	_INDEX_FLAGS "$CO" "" "${CHANGED[@]}"
+	# What the checkout holds at each path that differs from <old>, read once – its index entry, an
+	# intent-to-add one, its file's hash – but a rename's source, read at its new path's turn, as the
+	# moves before it can change what stands at its name
+	local -a DIRTY RENAME_SRCS
+	DIRTY=("${(@k)IS_DIRTY}")
+	if (( ${#DIRTY} )) || [ "$HOW" = carry ]; then
+		_INDEX_ENTRIES "$CO" "" "${CHANGED[@]}"
+		_INDEX_ITA "$CO" "${CHANGED[@]}"
+		RENAME_SRCS=("${(@k)RENAMED_TO}")
+		_WORKTREE_HASHES "$CO" "${(@)DIRTY:|RENAME_SRCS}"
+		# Each file's own base, where it differs from <old>
+		_FILE_BASES "$CO" "$OLD" "$NEW" "${(@)DIRTY:|RENAME_SRCS}"
+	fi
+	# A path taken back on the way stays only where its file has a base of its own
+	if (( ${#EXTRA} )); then
+		local -a DROP
+		for P in "${(@k)EXTRA}"; do
+			(( ${+FB_ENT[$P]} )) && continue
+			DROP+=("$P")
+			unset "IS_DIRTY[$P]"
+		done
+		CHANGED=("${(@)CHANGED:|DROP}")
+	fi
+	# Outside a sparse checkout git keeps no file – for a carry, a skip-worktree entry's path, or one
+	# the rewrite adds where the index holds none yet, as the checkout's patterns tell, which a git
+	# before 2.42 can't, each such path taken as outside it – a flagged path only maybe outside where
+	# this git can't ask, as is one a git before 2.35 lands, flagged unasked – each its own step
+	local SPARSE_ASKED=1 SPARSE_WHY="outside your sparse checkout" SPARSE_MAYBE=""
+	if [ "$HOW" = carry ]; then
+		for P in "${FLAG_SW[@]}"; do SPARSE_OUT[$P]=1; done
+		for P in "${CHANGED[@]}"; do [ -n "${DIFF_N[$P]}" ] && [ -z "${IDX_ENT[$P]}" ] && ASK+=("$P"); done
+		_SPARSE_OUT "$CO" "${ASK[@]}" || SPARSE_ASKED=""
+		ASK=("${reply[@]}")
+		for P in "${ASK[@]}"; do SPARSE_OUT[$P]=1; done
+		(( ${#SPARSE_OUT} )) && ! _SPARSE_OUT "$CO" "${(@k)SPARSE_OUT}" && \
+			SPARSE_MAYBE=1 SPARSE_WHY="maybe outside your sparse checkout, which this git can't ask (2.42 can)"
+		for P in "${(@k)SPARSE_OUT}"; do
+			(( ${+DIFF_O[$P]} || ${+DIFF_N[$P]} )) || continue
+			IS_DIRTY[$P]=1
+			# A rename's other path with it
+			[ -n "${RENAMED_FROM[$P]}" ] && IS_DIRTY[${RENAMED_FROM[$P]}]=1
+			[ -n "${RENAMED_TO[$P]}" ] && IS_DIRTY[${RENAMED_TO[$P]}]=1
+		done
+	fi
+	# A dirty path whose file is still as its base has it goes in the two-tree merge all the same, its
+	# entry set back to that first where a re-sync took it ahead – anything else about it, a mode of
+	# the checkout's own, a rename, staging, a directory or a link, waits for a step of its own, as do
+	# a path still dirty's directories and the paths under it
+	local FILEMODE=$(git -C "$CO" config --bool core.fileMode 2>/dev/null)
+	for P in "${CHANGED[@]}"; do
+		(( ${+IS_DIRTY[$P]} )) || continue
+		(( ${+UNDER_LINK[$P]} || ${+RENAMED_FROM[$P]} || ${+RENAMED_TO[$P]} || ${+ITA[$P]} || ${+SPARSE_OUT[$P]} || ${+STAGED_DIRS[$P]} )) && continue
+		O=${DIFF_O[$P]} N=${DIFF_N[$P]} I=${IDX_ENT[$P]} FBE=${FB_ENT[$P]-${DIFF_O[$P]}}
+		[[ "${FBE% *}" == 100(644|755) ]] && (( ${+WT_HASH[$P]} )) && [ "${WT_HASH[$P]}" = "${FBE#* }" ] || continue
+		if [ -n "$N" ]; then
+			# A change of content – one of mode alone may be the checkout's own already
+			[[ "${N% *}" == 100(644|755) ]] && [ "${TIP_ENT[$P]}" = "$N" ] && [ "${N#* }" != "${FBE#* }" ] || continue
+			[ "$I" = "$O" ] || [ "$I" = "$N" ] || [ "$I" = "$FBE" ] || continue
+			# The mode as git stages it the one before, a chmod of the checkout's its own
+			_WORKTREE_MODE "$CO" "$P" "${O% *}" "$FILEMODE" "${I% *}"
+			[ "$REPLY" = "${FBE% *}" ] || continue
+		else
+			# A removal staged by hand keeps its file, a sync's – a carry's is the re-sync's, which takes
+			# out what the tip lacks
+			[ -n "$O" ] && [ -z "${TIP_ENT[$P]}" ] && { [ "$I" = "$O" ] || { [ -z "$I" ] && [ "$HOW" = carry ]; }; } || continue
+		fi
+		REBASE+=("$P")
+		TT_EXP[$P]=$I TT_FROM[$P]=$FBE
+	done
+	if (( ${#REBASE} )); then
+		local -A DOWN UP
+		for P in "${REBASE[@]}"; do unset "IS_DIRTY[$P]"; done
+		for P in "${(@k)IS_DIRTY}"; do
+			DOWN[$P]=1
+			Q=$P
+			while [[ "$Q" == */* ]]; do Q=${Q%/*}; UP[$Q]=1; done
+		done
+		for P in "${REBASE[@]}"; do
+			Q=$P
+			(( ${+UP[$P]} )) && Q=""
+			while [ -n "$Q" ] && [[ "$Q" == */* ]]; do Q=${Q%/*}; (( ${+DOWN[$Q]} )) && Q=""; done
+			[ -n "$Q" ] && continue
+			IS_DIRTY[$P]=1
+			unset "TT_EXP[$P]" "TT_FROM[$P]"
+		done
+	fi
+	for P in "${CHANGED[@]}"; do
+		(( ${+IS_DIRTY[$P]} )) || CLEAN+=("$P")
+	done
+
 	# The clean ones in one two-tree merge from <old> to <old> with just them taken from <new> – git
 	# checks each is as <old> had it before writing anything, and keeps the rest of the index as is
 	# An entry flagged assume-unchanged or skip-worktree hides edits git then won't overwrite, which
 	# go to the merge below instead – taken path by path, as is everything where git refused the lot
 	local -a FLAGGED PER SPEC
 	local -A WANT
-	local LINE
 	if (( ${#CLEAN} )); then
 		# Many paths are read from the whole index instead, as `_INDEX_FLAGS` does – a failed read
 		# would leave a flagged file's hidden edits to the bulk checkout
@@ -5028,8 +4672,15 @@ _SYNC_CHECKOUT () {
 		CLEAN=("${(@)CLEAN:|TT_HELD}")
 		if (( RC )); then
 			ERR=$REPLY
-			# A lock held past the wait refuses each path alike, so none goes one by one
-			if (( RC == 2 )); then LOCKED+=("${CLEAN[@]}"); else PER+=("${CLEAN[@]}"); fi
+			# A lock held past the wait refuses each path alike, so none goes one by one – a carry's then
+			# each written as its own, its entry left for the locked index to name
+			if (( RC == 2 )) && [ "$HOW" = carry ]; then
+				for P in "${CLEAN[@]}"; do IS_DIRTY[$P]=1; unset "TT_EXP[$P]" "TT_FROM[$P]"; done
+			elif (( RC == 2 )); then
+				LOCKED+=("${CLEAN[@]}")
+			else
+				PER+=("${CLEAN[@]}")
+			fi
 			CLEAN=()
 		fi
 	fi
@@ -5048,40 +4699,53 @@ _SYNC_CHECKOUT () {
 			IS_DIRTY[$P]=1
 			continue
 		fi
-		if _SYNC_TWO_TREE "$CO" "$OLD" "$NEW" "$P"; then
+		_SYNC_TWO_TREE "$CO" "$OLD" "$NEW" "$P"
+		RC=$?
+		if (( ! RC )); then
 			(( ${#TT_MOVED} )) && FAILED+=("$P")
 			(( ${#TT_IN_WAY} )) && HELD_UP+=("${(@kv)TT_IN_WAY}")
 			(( ${#TT_MOVED} + ${#TT_IN_WAY} )) || CLEAN+=("$P")
-		elif (( $? == 2 )); then
+		elif (( RC == 2 )) && [ "$HOW" = carry ]; then
+			IS_DIRTY[$P]=1
+			unset "TT_EXP[$P]" "TT_FROM[$P]"
+		elif (( RC == 2 )); then
 			LOCKED+=("$P")
 		else
 			FAILED+=("$P")
 		fi
 	done
-	# Each index entry read once, after the merge above wrote its own – one superseded by what landed
-	# read as still on <old>, as the agent re-sync takes it
+	# Each entry the move took to what landed, for the step that takes them back after a raw undo
+	local -a MOVED_ENT
+	MOVED_ENT=("${CLEAN[@]}")
+	for P in "${CLEAN[@]}"; do WRITTEN[$P]=1; done
+	# Each index entry read once more, after the merge above wrote its own – one superseded by what
+	# landed read as still on <old>, as the index re-sync takes it
 	_INDEX_ENTRIES "$CO" "" "${CHANGED[@]}"
 	# As read, which each write below is guarded on
 	READ_ENT=("${(@kv)IDX_ENT}")
-	local -A ITA
-	_INDEX_ITA "$CO" "${CHANGED[@]}"
+	(( ${#DIRTY} )) || [ "$HOW" = carry ] || _INDEX_ITA "$CO" "${CHANGED[@]}"
 	for P in "${CHANGED[@]}"; do
 		I=${IDX_ENT[$P]}
 		# An intent-to-add one too where an empty file landed, its empty blob staging nothing
 		[ "$I" != conflict ] && [ "$I" != "${DIFF_O[$P]}" ] && { [ "$I" != "${DIFF_N[$P]}" ] || (( ${+ITA[$P]} )); } && \
 			_ENTRY_SUPERSEDED "$P" "$I" "${DIFF_N[$P]}" && IDX_ENT[$P]=${DIFF_O[$P]}
 	done
-	# A path git refused stays as <old> had it – one staged since the read above is a peer's, left as
-	# staged, one with edits goes to the merge below, and the rest takes its entry from what landed
-	# where git takes one, so it reads as a file to bring along, never as a staged revert
+	# A path git refused stays as it was – one staged since the read above is a peer's, left as staged,
+	# one with edits goes to the merge below, and the rest takes its entry from what landed where git
+	# takes one, so it reads as a file to bring along, never as a staged revert – a carry's each a step
+	# of its own below
 	for P in "${FAILED[@]}"; do
-		if [ "${IDX_ENT[$P]}" != "${DIFF_O[$P]}" ]; then
+		if [ "${IDX_ENT[$P]}" != "${TT_EXP[$P]-${DIFF_O[$P]}}" ]; then
 			_ONE_LINE "$P"
 			LEFT+=("$REPLY – staged meanwhile")
+		elif [ "$HOW" = carry ]; then
+			IS_DIRTY[$P]=1
+			unset "WT_HASH[$P]"
 		elif [ -n "${DIFF_O[$P]}" ] && { [ -e "$CO/$P" ] || [ -L "$CO/$P" ]; } && \
-		     [ "$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)" != "${DIFF_O[$P]#* }" ]; then
+		     [ "$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)" != "${${TT_FROM[$P]-${DIFF_O[$P]}}#* }" ]; then
 			IS_DIRTY[$P]=1
 			UNSTAGED[$P]=1
+			unset "WT_HASH[$P]"
 		# A file put since where the rewrite adds one is someone's own, kept as the read finds it
 		elif [ -z "${DIFF_O[$P]}" ] && { [ -e "$CO/$P" ] || [ -L "$CO/$P" ]; }; then
 			IS_DIRTY[$P]=1
@@ -5092,7 +4756,8 @@ _SYNC_CHECKOUT () {
 		fi
 	done
 	# One the rewrite puts where the index holds nothing, with staging in its way – under it, or at a
-	# directory it lies in – stays as it is, as its entry would drop that staging, and so its file
+	# directory it lies in – stays as it is, as its entry would drop that staging, and so its file, as
+	# does an untracked file moving there
 	local -A GOES IN_WAY
 	local -a ADDS
 	for P in "${CHANGED[@]}"; do
@@ -5103,164 +4768,309 @@ _SYNC_CHECKOUT () {
 			ADDS+=("$P")
 		fi
 	done
+	ADDS+=("${DIR_TO[@]}")
 	(( ${#ADDS} )) && _ENTRIES_IN_THE_WAY "$CO" "$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)" "${ADDS[@]}"
-	# Outside a sparse checkout git keeps no file – such a path the rewrite adds takes its entry alone,
-	# its skip-worktree flag set, a renamed file's edits staying at its old path, named
-	local -A SPARSE_OUT
-	local -a ABSENT
-	local SPARSE_WHY="outside your sparse checkout"
-	for P in "${ADDS[@]}"; do [ -e "$CO/$P" ] || [ -L "$CO/$P" ] || ABSENT+=("$P"); done
-	_SPARSE_OUT "$CO" "${ABSENT[@]}" || SPARSE_WHY="maybe outside your sparse checkout, which this git can't ask (2.42 can)"
-	for P in "${reply[@]}"; do SPARSE_OUT[$P]=1; done
-
-	# Commits only added on top rewrote nothing
-	local NOUN=rewrite FORMER=pre-rewrite
-	_IS_ANCESTOR "$OLD" "$NEW" && NOUN=landing FORMER=previous
+	for (( K = ${#DIR_TO}; K >= 1; K-- )); do
+		(( ${+IN_WAY[${DIR_TO[K]}]} )) || continue
+		_IN_WAY_WHY "${DIR_TO[K]}" "${IN_WAY[${DIR_TO[K]}]}" "$NOUN"
+		WHY=$REPLY
+		_ONE_LINE "${DIR_FROM[K]}"
+		DIR_TAKEN+=("$REPLY – untracked, $WHY")
+		DIR_FROM[K]=() DIR_TO[K]=()
+	done
+	# Outside a sparse checkout git keeps no file – such a path a sync's rewrite adds takes its entry
+	# alone, its skip-worktree flag set, a renamed file's edits staying at its old path, named
+	if [ "$HOW" = sync ]; then
+		local -a ABSENT
+		for P in "${ADDS[@]}"; do (( ${+IS_DIRTY[$P]} )) && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ] && ABSENT+=("$P"); done
+		_SPARSE_OUT "$CO" "${ABSENT[@]}" || SPARSE_WHY="maybe outside your sparse checkout, which this git can't ask (2.42 can)"
+		for P in "${reply[@]}"; do SPARSE_OUT[$P]=1; done
+	fi
 	# Staged in its way after the read, which the merge would have dropped – no file or entry written
 	for P in "${(@ok)HELD_UP}"; do
 		_ONE_LINE "$P"
 		NP=$REPLY
 		_IN_WAY_WHY "$P" "${HELD_UP[$P]}" "$NOUN"
-		LEFT+=("$NP – $REPLY")
+		if [ "$HOW" = carry ]; then BLOCKED+=("$NP ($REPLY)"); else LEFT+=("$NP – $REPLY"); fi
 	done
 	local -a SUBMODULES
 	for P in "${CLEAN[@]}"; do
 		[ "${DIFF_N[$P]% *}" = 160000 ] && \
 			[ "$(git -C "$CO/$P" rev-parse -q --verify HEAD 2>/dev/null)" != "${DIFF_N[$P]#* }" ] && SUBMODULES+=("$P")
 	done
-	# A rename carries the edits at its old path to its new one where the file is still as the
-	# index has it from before, and the new path is free – else each goes its own way below
-	for P in "${(@k)RENAMED_TO}"; do
-		(( ${+IS_DIRTY[$P]} )) || continue
-		DST=${RENAMED_TO[$P]}
-		(( ${+UNDER_LINK[$P]} || ${+UNDER_LINK[$DST]} || ${+IN_WAY[$DST]} || ${+SPARSE_OUT[$DST]} )) && continue
-		# Free where nothing stands there, or where only the old name's own file does – a case-only
-		# rename on a filesystem that ignores case
-		[ -z "${DIFF_N[$P]}" ] && [ "${IDX_ENT[$P]}" = "${DIFF_O[$P]}" ] && [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && \
-			{ { [ ! -e "$CO/$DST" ] && [ ! -L "$CO/$DST" ]; } || [ "$CO/$DST" -ef "$CO/$P" ]; } && \
-			[ -z "${IDX_ENT[$DST]}" ] && CARRY[$P]=$DST
-	done
-	local OUTF=$(MKTEMP_FILE git-edit-sync) FILEMODE=$(git -C "$CO" config --bool core.fileMode 2>/dev/null)
-	# A merged file is written in the git dir, on the checkout's filesystem as a rename into
-	# place needs, where no `git add -A` of a peer's meanwhile picks it up, under a short
-	# name, as a name near the length limit leaves no room
-	local GD=$(git -C "$CO" rev-parse --absolute-git-dir 2>/dev/null)
-	local WRITE_TMP="$GD/git-edit-sync.$$"
-	_TEMP_FILES+=("$OUTF" "$WRITE_TMP")
-	_ATTR_SOURCE "$OLD"
-	local ATTR_SRC=$REPLY
-	for P in "${CHANGED[@]}"; do
-		(( ${+IS_DIRTY[$P]} )) || continue
-		# A carried rename's destination is handled from its source
-		[ -n "${RENAMED_FROM[$P]}" ] && [ "${CARRY[${RENAMED_FROM[$P]}]}" = "$P" ] && continue
-		O=${DIFF_O[$P]}
-		N=${DIFF_N[$P]}
-		I=${IDX_ENT[$P]}
-		SRC=$P
-		if [ -n "${CARRY[$P]}" ]; then
-			P=${CARRY[$P]}
-			N=${DIFF_N[$P]}
+	# A file is written in the git dir first, on the checkout's filesystem as a rename into place
+	# needs, where no `git add -A` of a peer's meanwhile picks it up, under a short name, as a name
+	# near the length limit leaves no room – a carry's read copied out too, as `git diff --no-index`
+	# cleans one inside the checkout
+	local GD=$(git -C "$CO" rev-parse --absolute-git-dir 2>/dev/null) SYMLINKS="" OUTF="" BASEF="" THEIRS="" OURSF="" ATTR_SRC=""
+	local CARRY_TMP="$GD/git-edit-$HOW.$$"
+	if (( ${#IS_DIRTY} )); then
+		SYMLINKS=$(git -C "$CO" config --bool core.symlinks 2>/dev/null)
+		_TEMP_FILES+=("$CARRY_TMP")
+		_ATTR_SOURCE "$OLD"
+		ATTR_SRC=$REPLY
+	fi
+	# A carry's what the rewrite took out first – a directory it turned into a file is gone by the time
+	# that file comes – a rename's source going with its new path, at that one's turn
+	if [ "$HOW" = carry ]; then
+		for P in "${CHANGED[@]}"; do [ -z "${DIFF_N[$P]}" ] && ORDER+=("$P"); done
+		for P in "${CHANGED[@]}"; do [ -n "${DIFF_N[$P]}" ] && ORDER+=("$P"); done
+	else
+		ORDER=("${CHANGED[@]}")
+	fi
+	for P in "${ORDER[@]}"; do
+		if (( ! ${+IS_DIRTY[$P]} )); then
+			# A carry names what the two-tree merge wrote as it reaches it – a rename by both its paths
+			[ "$HOW" = carry ] && (( ${+WRITTEN[$P]} )) || continue
+			[ -n "${RENAMED_TO[$P]}" ] && (( ${+WRITTEN[${RENAMED_TO[$P]}]} )) && continue
+			_ONE_LINE "$P"; NP=$REPLY
+			if [ -n "${RENAMED_FROM[$P]}" ] && (( ${+WRITTEN[${RENAMED_FROM[$P]}]} )); then
+				_ONE_LINE "${RENAMED_FROM[$P]}"
+				BROUGHT+=("$REPLY → $NP")
+			elif [ -z "${DIFF_N[$P]}" ]; then
+				BROUGHT+=("$NP (removed)")
+			else
+				BROUGHT+=("$NP")
+			fi
+			continue
 		fi
+		SRC=$P NS="" HOOK_BASE="" WH="" UNEDITED=""
 		_ONE_LINE "$P"; NP=$REPLY
-		_ONE_LINE "$SRC"; NS=$REPLY
+		O=${DIFF_O[$P]} N=${DIFF_N[$P]} I=${IDX_ENT[$P]} HE=${TIP_ENT[$P]}
 		if [ "$I" = conflict ]; then
 			LEFT+=("$NP – mid-merge in your index")
 			continue
 		fi
-		if (( ${+IN_WAY[$P]} )); then
-			_IN_WAY_WHY "$P" "${IN_WAY[$P]}" "$NOUN"
-			LEFT+=("$NP – $REPLY")
-			continue
-		fi
-		# Under a symlink or a file of the caller's, which a restore would replace with a directory, it
-		# stays as it is – an entry still as before taking what landed, so a commit can't take that back
-		if (( ${+UNDER_LINK[$P]} )); then
-			_ONE_LINE "${UNDER_LINK[$P]}"
+		# Nothing goes through a symlink, wherever it points, or under a file of the caller's, which a
+		# restore would replace with a directory – named where the rewrite puts a file there, a rename
+		# with its source – a sync's entry still as before taking what landed, so a commit can't take
+		# that back
+		if _LEADING_NON_DIR "$CO" "$P"; then
+			L=$REPLY
+			[ -n "${RENAMED_FROM[$P]}" ] && { [ -e "$CO/${RENAMED_FROM[$P]}" ] || [ -L "$CO/${RENAMED_FROM[$P]}" ]; } && \
+				{ _ONE_LINE "${RENAMED_FROM[$P]}"; NS="$REPLY → "; }
+			_ONE_LINE "$L"
 			WHY=""
-			if [ -L "$CO/${UNDER_LINK[$P]}" ]; then
-				WHY="$NP – under your symlink $REPLY, which git writes no file through"
-			# Nothing stands under a file, so only a path the rewrite puts there is named
+			if [ -L "$CO/$L" ]; then
+				WHY="$NS$NP – under your symlink $REPLY, which git writes no file through"
 			elif [ -n "$N" ]; then
-				WHY="$NP – your file $REPLY stands where its directory goes"
+				WHY="$NS$NP – your file $REPLY stands where its directory goes"
 			fi
-			if [ "$I" = "$O" ]; then
+			if [ "$HOW" = sync ] && [ "$I" = "$O" ] && [ "$O" != "$N" ]; then
 				_SYNC_QUEUE "$P" "$N" "${WHY:+LEFT}" "$WHY"
 			elif [ -n "$WHY" ]; then
 				LEFT+=("$WHY")
 			fi
 			continue
 		fi
-		if [ -z "$N" ]; then
-			# Removed by the rewrite: a file still as before goes, with its entry – its removal staged
-			# already the same – edits stay untracked
-			if [ -n "$I" ] && [ "$I" != "$O" ]; then
-				LEFT+=("$NP – staged changes on a file the $NOUN removed")
-			# As does one byte for byte as before, read as modified only through its attributes
-			elif [ -n "$I" ] && [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && \
-			     [ "$(git -C "$CO" hash-object --no-filters -- "$P" 2>/dev/null)" = "${O#* }" ] && rm -f -- "$CO/$P"; then
-				_SYNC_QUEUE "$P" "" CLEAN "$P"
-			# Renamed outside a sparse checkout, where no file takes the edits
-			elif (( ${+SPARSE_OUT[${RENAMED_TO[$P]:-/}]} )) && { [ -e "$CO/$P" ] || [ -L "$CO/$P" ]; }; then
-				_ONE_LINE "${RENAMED_TO[$P]}"
-				ITEM="$NP → $REPLY – renamed $SPARSE_WHY, the edits left at $NP"
-				_SPARSE_CARRY_CMD "$CO" "$OLD" "${RENAMED_TO[$P]}"
-				ITEM+=" – carry them once it takes that path in: $REPLY"
-				if [ -n "$I" ]; then _SYNC_QUEUE "$P" "" LEFT "$ITEM"; else LEFT+=("$ITEM"); fi
-			elif [ -e "$CO/$P" ] || [ -L "$CO/$P" ]; then
-				if [ -n "$I" ]; then _SYNC_QUEUE "$P" "" GONE_EDITED "$P"; else GONE_EDITED+=("$P"); fi
-			elif [ -n "$I" ]; then
-				_SYNC_QUEUE "$P" ""
+		# A directory of the caller's where a file lands holds what no write may take – a submodule's
+		# worktree is a repository of its own – a sync's entry still as before taking what landed
+		if [ -d "$CO/$P" ] && [ ! -L "$CO/$P" ] && [[ "${O% *} ${N% *}" != *160000* ]] && { [ -n "$N" ] || [ "$HOW" = carry ]; }; then
+			[ -n "$N" ] || continue
+			if [ -z "$O" ]; then WHY="your directory stands where the $NOUN put a file"; else WHY="a directory of yours where a file was"; fi
+			if [ "$HOW" = sync ] && [ "$I" = "$O" ] && [ -n "$O" ]; then
+				_SYNC_QUEUE "$P" "$N" KEPT_EDITS "$NP ($WHY)"
+			elif [ "$I" = "$O" ] && [ -z "$O" ]; then
+				_SYNC_NOTE_Q "$P" "$N" LEFT "$NP – $WHY"
+			else
+				LEFT+=("$NP – $WHY")
 			fi
 			continue
 		fi
+		# Outside a sparse checkout, only an entry still as before takes what is at the tip, its flag
+		# kept – there is no file to write – a rename's under its source's line
+		if (( ${+SPARSE_OUT[$P]} )) && [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
+			if [ "$I" = "$O" ] && [ "$HE" != "$I" ] && [ "${HE% *}" != 160000 ]; then
+				if [ -n "$HE" ] && (( ${+IN_WAY[$P]} )); then
+					_IN_WAY_WHY "$P" "${IN_WAY[$P]}" "$NOUN"
+					if [ "$HOW" = carry ]; then BLOCKED+=("$NP ($REPLY)"); else LEFT+=("$NP – $REPLY"); fi
+					continue
+				fi
+				[ -n "$HE" ] && FLAG_SW+=("$P")
+				if (( ${+PAIRED[$P]} )); then
+					_SYNC_QUEUE "$P" "$HE" "${PAIRED[$P]%%:*}" "${PAIRED[$P]#*:}"
+				else
+					_SYNC_NOTE_Q "$P" "$HE" RESYNCED "$NP"
+				fi
+			# A file the rewrite added, its entry in place and flagged unasked, is maybe inside it
+			elif [ -n "$SPARSE_MAYBE" ] && [ -z "$O" ] && [ -n "$I" ] && [ "$I" = "$HE" ]; then
+				REAPPLY+=("$P")
+			fi
+			continue
+		fi
+		if [ -z "$N" ]; then
+			# Deleted in the checkout, it stays deleted, its entry going where still as before – unless the
+			# tip has it back – a sync's staged otherwise named
+			if [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
+				if [ -n "$I" ] && [ "$I" = "$O" ]; then
+					if [ "$HOW" = sync ]; then
+						_SYNC_QUEUE "$P" ""
+					elif [ "$TIP" = "$NEW" ] || [ -z "$HE" ]; then
+						_SYNC_NOTE_Q "$P" "" RESYNCED "$NP"
+					fi
+				elif [ -n "$I" ] && [ "$HOW" = sync ]; then
+					LEFT+=("$NP – staged changes on a file the $NOUN removed")
+				fi
+				continue
+			fi
+			# A rename out of a sparse checkout has no file at its new path to take the edits – a source
+			# still as before goes, its entry with it where as before too, an edited one stays, named
+			if [ -n "${RENAMED_TO[$P]}" ] && (( ${+SPARSE_OUT[${RENAMED_TO[$P]}]} )) && \
+			   [ ! -e "$CO/${RENAMED_TO[$P]}" ] && [ ! -L "$CO/${RENAMED_TO[$P]}" ]; then
+				_ONE_LINE "${RENAMED_TO[$P]}"
+				ITEM="$NP → $REPLY"
+				if [ -n "$I" ] && [ "$I" != "$O" ]; then
+					LEFT+=("$ITEM – staged changes at its old path, which stays as it is till they are committed or unstaged")
+					continue
+				fi
+				_HASH_READ "$CO" "$P"
+				OURS=$REPLY
+				_WORKTREE_MODE "$CO" "$P" "${O% *}" "$FILEMODE" "${I% *}"
+				if [ "$OURS" = "${O#* }" ] && [ "$REPLY" = "${O% *}" ]; then
+					_CARRY_TAKE "$CO" "$P" "" "$OURS"
+					case $? in
+						(1) LEFT+=("$ITEM – changed while $WHILE"); continue ;;
+						(2) LEFT+=("$ITEM – not writable"); continue ;;
+					esac
+					if [ "$HOW" = carry ]; then ITEM+=" (outside your sparse checkout, its entry alone)" L=BROUGHT; else ITEM=$P L=CLEAN; fi
+				else
+					_SPARSE_CARRY_CMD "$CO" "$OLD" "${RENAMED_TO[$P]}"
+					ITEM+=" – renamed $SPARSE_WHY, the edits left at $NP – carry them once it takes that path in: $REPLY"
+					L=LEFT
+				fi
+				# Its new path's entry goes under the same line
+				PAIRED[${RENAMED_TO[$P]}]="$L:$ITEM"
+				if [ -n "$I" ]; then _SYNC_NOTE_Q "$P" "" "$L" "$ITEM"; else set -A "$L" "${(@P)L}" "$ITEM"; fi
+				continue
+			fi
+			# A rename's source goes with its new path, unless that path is in the checkout already – as
+			# anything but what the rewrite landed there, which a rename this checkout landed leaves
+			[ -n "${RENAMED_TO[$P]}" ] && (( ${+IS_DIRTY[${RENAMED_TO[$P]}]} )) && \
+				_CARRY_DEST_FREE "$CO" "$NEW" "${RENAMED_TO[$P]}" "$P" && continue
+			# A removed file still exactly as before goes, its entry with it where that is as before too
+			# – unless the tip has it back – byte for byte as before too, read as modified only through
+			# its attributes
+			OURS="" HASHED=""
+			if [ -z "${RENAMED_TO[$P]}" ] && [ -n "$O" ]; then
+				_HASH_READ "$CO" "$P"
+				OURS=$REPLY HASHED=$REPLY
+				[ "$OURS" != "${O#* }" ] && [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && \
+					[ "$(git -C "$CO" hash-object --no-filters -- "$P" 2>/dev/null)" = "${O#* }" ] && OURS=${O#* }
+			fi
+			if [ -n "$OURS" ] && [ "$OURS" = "${O#* }" ] && { [ -n "$I" ] || [ "$HOW" = carry ]; }; then
+				[ "$TIP" != "$NEW" ] && [ -n "$HE" ] && continue
+				if [ -n "$I" ] && [ "$I" != "$O" ]; then
+					LEFT+=("$NP – staged changes on a file the $NOUN removed")
+					continue
+				fi
+				# Checked again as hashed, as one equal only byte for byte hashes otherwise through its
+				# attributes
+				_CARRY_TAKE "$CO" "$P" "" "$HASHED"
+				case $? in
+					(1) LEFT+=("$NP – changed while $WHILE"); continue ;;
+					(2) LEFT+=("$NP – not writable"); continue ;;
+				esac
+				if [ "$HOW" = carry ]; then ITEM="$NP (removed)" L=BROUGHT; else ITEM=$P L=CLEAN; fi
+				if [ -n "$I" ]; then _SYNC_NOTE_Q "$P" "" "$L" "$ITEM"; else set -A "$L" "${(@P)L}" "$ITEM"; fi
+				continue
+			fi
+			if [ "$HOW" = carry ]; then
+				if [ -n "${RENAMED_TO[$P]}" ]; then
+					_ONE_LINE "${RENAMED_TO[$P]}"
+					LEFT+=("$NP – renamed to $REPLY, which the checkout holds already")
+				else
+					LEFT+=("$NP – removed by the $NOUN")
+				fi
+			# Edits a sync's move removed the file of stay untracked, as does a removal staged by hand
+			elif [ -n "$I" ] && [ "$I" != "$O" ]; then
+				LEFT+=("$NP – staged changes on a file the $NOUN removed")
+			elif [ -n "$I" ]; then
+				_SYNC_QUEUE "$P" "" GONE_EDITED "$P"
+			else
+				GONE_EDITED+=("$P")
+			fi
+			continue
+		fi
+		# A rename's source the checkout still holds, never under a symlink, moves to a free new path –
+		# unless either path holds staging the rewrite never read there, which the move would orphan
+		if [ -n "${RENAMED_FROM[$P]}" ] && { [ -e "$CO/${RENAMED_FROM[$P]}" ] || [ -L "$CO/${RENAMED_FROM[$P]}" ]; } && \
+		   ! _LEADING_NON_DIR "$CO" "${RENAMED_FROM[$P]}" && _CARRY_DEST_FREE "$CO" "$NEW" "$P" "${RENAMED_FROM[$P]}"; then
+			SRC=${RENAMED_FROM[$P]}
+			_ONE_LINE "$SRC"; NS=$REPLY
+			I=${IDX_ENT[$SRC]} O=${DIFF_O[$SRC]}
+			if [ -n "$I" ] && [ "$I" != "$O" ]; then
+				LEFT+=("$NS → $NP – staged changes at its old path, which stays as it is till they are committed or unstaged")
+				continue
+			fi
+			IP=${IDX_ENT[$P]}
+			if [ -n "$IP" ] && [ "$IP" != "$N" ]; then
+				LEFT+=("$NS → $NP – staged at its new path as the $NOUN has it nowhere, so its old path stays as it is")
+				continue
+			fi
+		fi
+		if (( ${+IN_WAY[$P]} )); then
+			_IN_WAY_WHY "$P" "${IN_WAY[$P]}" "$NOUN"
+			if [ "$HOW" = carry ]; then BLOCKED+=("${NS:+$NS → }$NP ($REPLY)"); else LEFT+=("$NP – $REPLY"); fi
+			continue
+		fi
+		# Each file from its own base – the tip it was last brought to, <old> but where told otherwise
+		FBE=${FB_ENT[$SRC]-$O} FBT=${FB_TIP[$SRC]:-$OLD} FBN=${FB_NAME[$SRC]:-$SRC}
 		# A file this run took whole, still as it read it, that its commit's hooks or a fold's replay then
 		# changed holds no edits of anyone's – it takes what landed, merged from what the run read
-		HOOK_BASE="" WH=""
-		if [ -n "$WHOLE_TREE" ] && [ -n "$N" ] && [ "$SRC" = "$P" ] && [ "$I" = "$O" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
-		   [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && WH=$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null) && [ "$WH" != "${N#* }" ] && \
+		if [ -n "$WHOLE_TREE" ] && [ "$SRC" = "$P" ] && [ "$I" = "$O" ] && (( ${WHOLE_PATHS[(Ie)$P]} )) && \
+		   [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && _HASH_READ "$CO" "$P" && WH=$REPLY && [ "$WH" != "${N#* }" ] && \
 		   [ "$(git rev-parse -q --verify "$WHOLE_TREE:$P" 2>/dev/null)" = "$WH" ]; then
 			HOOK_BASE=$WHOLE_TREE
 		fi
-		if [ -z "$O" ] && [ "$SRC" = "$P" ] && [ -z "$HOOK_BASE" ]; then
-			# Added by the rewrite where the checkout had a file of its own – kept, the index taking what
-			# landed, so it shows as a change to that and a commit can't take the addition back – and a
-			# free place takes the file, a rename's destination its source's edits could not reach
-			if [ -n "$I" ] && [ "$I" != "$N" ]; then
-				LEFT+=("$NP – you staged your own version where the $NOUN put one")
-				continue
-			fi
-			# Never forced – a file of the caller's where a directory of it has to go stays – and never
-			# outside a sparse checkout, where its entry alone goes, flagged
+		if [ -z "$FBE" ] && [ "$SRC" = "$P" ] && [ -z "$HOOK_BASE" ]; then
+			# Added by the rewrite where the checkout has no file – it takes what is at the tip, never
+			# forced, an entry staged as the rewrite has it nowhere named
 			if [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
-				if (( ${+SPARSE_OUT[$P]} )); then
-					_SYNC_QUEUE "$P" "$N"
-					FLAG_SW+=("$P")
+				[ -n "$HE" ] || continue
+				if [ -n "$I" ] && [ "$I" != "$HE" ]; then
+					if [ "$HOW" = carry ]; then LEFT+=("$NP – staged as the $NOUN has it nowhere")
+					else LEFT+=("$NP – you staged your own version where the $NOUN put one"); fi
 					continue
 				fi
-				_SYNC_CHECKOUT_FILE "$CO" "$P" "$N" && { _SYNC_QUEUE "$P" "$N" CLEAN "$P"; continue; }
-				if { [ -e "$CO/${P:h}" ] || [ -L "$CO/${P:h}" ]; } && [ ! -d "$CO/${P:h}" ]; then
-					_ONE_LINE "${P:h}"
-					_SYNC_QUEUE "$P" "$N" LEFT "$NP – your file $REPLY stands where its directory goes"
-					continue
+				# A submodule's worktree git never writes as a file – a sync's entry alone, a carry's neither
+				[ "${HE% *}" = 160000 ] && [ "$HOW" = carry ] && continue
+				if [ "${HE% *}" != 160000 ]; then
+					_CARRY_TAKE "$CO" "$P" "$HE" ""
+					case $? in
+						(1) LEFT+=("$NP – changed while $WHILE"); continue ;;
+						(2) LEFT+=("$NP – not writable"); continue ;;
+					esac
 				fi
-			fi
-			if [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P"; then
-				_SYNC_QUEUE "$P" "$N"
+				if [ "$HOW" = carry ]; then ITEM=$NP L=BROUGHT; else ITEM=$P L=CLEAN; fi
+				if [ -z "$I" ]; then _SYNC_NOTE_Q "$P" "$HE" "$L" "$ITEM"; else set -A "$L" "${(@P)L}" "$ITEM"; fi
 				continue
 			fi
-			# A directory there holds what no restore of the file may take – one of untracked files say
-			if [ -d "$CO/$P" ] && [ ! -L "$CO/$P" ] && [ "${N% *}" != 160000 ]; then
-				_SYNC_QUEUE "$P" "$N" LEFT "$NP – your directory stands where the $NOUN put a file"
+			# Where the checkout has a file of its own – a sync's staging named, a file already as it
+			# landed taking its entry alone – it is kept, the index taking what landed, so it shows as a
+			# change to that and a commit can't take the addition back
+			if [ -n "$I" ] && [ "$I" != "$N" ]; then
+				[ "$HOW" = sync ] && LEFT+=("$NP – you staged your own version where the $NOUN put one")
 				continue
 			fi
-			_SYNC_QUEUE "$P" "$N" KEPT "$P"
+			_HASH_READ "$CO" "$P"
+			if [ "$REPLY" = "${N#* }" ] || \
+			   { [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P"; }; then
+				[ "$I" = "$N" ] || _SYNC_NOTE_Q "$P" "$N" RESYNCED "$NP"
+			elif [ "$HOW" = sync ]; then
+				_SYNC_QUEUE "$P" "$N" KEPT "$P"
+			elif [ -z "$I" ]; then
+				_SYNC_NOTE_Q "$P" "$N" RESYNCED "$NP"
+			fi
 			continue
 		fi
-		# Changed by the rewrite, the checkout holding edits on it
+		# Deleted in the checkout – it stays deleted, the index taking what landed where still as before
 		if [ ! -e "$CO/$SRC" ] && [ ! -L "$CO/$SRC" ]; then
-			# Deleted in the checkout – it stays deleted, the index taking what landed
-			if [ "$I" = "$O" ]; then
+			if [ "$I" = "$O" ] && [ "$HOW" = sync ]; then
 				_SYNC_QUEUE "$P" "$N" DELETED "$P"
+			elif [ "$I" = "$O" ]; then
+				[ "${HE#* }" = "${N#* }" ] && _SYNC_NOTE_Q "$P" "$N" RESYNCED "$NP"
+			elif [ "$HOW" = carry ]; then
+				:
 			elif [ "$I" = "$N" ]; then
 				DELETED+=("$P")
 			else
@@ -5268,41 +5078,153 @@ _SYNC_CHECKOUT () {
 			fi
 			continue
 		fi
-		# Its removal staged by hand, the file kept untracked – as it stays
-		if [ -z "$I" ] && [ -z "$HOOK_BASE" ]; then
-			LEFT+=("$NP – its removal staged, the file untracked")
+		# A sync leaves a file whose removal is staged by hand untracked, and one staged as neither side
+		# has it and edited past that whole, staging and all
+		if [ "$HOW" = sync ] && [ "$SRC" = "$P" ] && [ -z "$HOOK_BASE" ]; then
+			if [ -z "$I" ]; then
+				LEFT+=("$NP – its removal staged, the file untracked")
+				continue
+			fi
+			if [ "$I" != "$O" ] && [ "$I" != "$N" ] && (( ${+UNSTAGED[$SRC]} )); then
+				LEFT+=("$NP – staged and unstaged edits both, made before the $NOUN – committed as staged, they take it back")
+				PARTIAL+=("$P")
+				NOT_BROUGHT[$P]=$FBT
+				continue
+			fi
+		fi
+		_HASH_READ "$CO" "$SRC"
+		OURS=$REPLY
+		_WORKTREE_MODE "$CO" "$SRC" "${O% *}" "$FILEMODE" "${I% *}"
+		WTM=$REPLY
+		# As the lists below show it, a rename's with its source
+		ITEM="${NS:+$NS → }$NP"
+		# Content still as its base has it, a symlink where it was one, it takes what is at the tip, with
+		# a mode the checkout changed – an entry staged as neither side has it is a peer's or the caller's
+		if [ "$SRC" = "$P" ] && [ -z "$HOOK_BASE" ] && [ -n "$OURS" ] && [ "$OURS" = "${FBE#* }" ] && \
+		   [ "${WTM/100755/100644}" = "${${FBE% *}/100755/100644}" ]; then
+			[ "$HE" = "$FBE" ] && continue
+			if [ "${HE% *}" = 160000 ]; then
+				LEFT+=("$NP – a submodule now")
+				continue
+			fi
+			if [ "$I" != "$O" ] && [ "$I" != "$HE" ] && [ "$I" != "$FBE" ]; then
+				LEFT+=("$NP – staged as neither side has it")
+				continue
+			fi
+			_CARRY_MODE "$WTM" "${FBE% *}" "${HE% *}"
+			# A change of mode alone, the file's own already, leaves only an entry still as before to take
+			if [ "$OURS" = "${HE#* }" ] && [ "$WTM" = "$REPLY" ]; then
+				[ "$I" = "$O" ] && _SYNC_NOTE_Q "$P" "$HE" RESYNCED "$NP"
+				continue
+			fi
+			_CARRY_TAKE "$CO" "$P" "${HE:+$REPLY ${HE#* }}" "$OURS"
+			case $? in
+				(1) LEFT+=("$NP – changed while $WHILE"); continue ;;
+				(2) LEFT+=("$NP – not writable"); continue ;;
+			esac
+			if [ "$HOW" = carry ]; then ITEM=$NP L=BROUGHT; else ITEM=$P L=CLEAN; fi
+			# An entry still on the base, a re-sync's or an older tip's, takes it too
+			if { [ "$I" = "$O" ] || [ "$I" = "$FBE" ]; } && [ "$I" != "$HE" ]; then
+				_SYNC_NOTE_Q "$P" "$HE" "$L" "$ITEM"
+			else
+				set -A "$L" "${(@P)L}" "$ITEM"
+			fi
 			continue
 		fi
-		if [ "$I" != "$O" ] && [ "$I" != "$N" ] && (( ${+UNSTAGED[$SRC]} )); then
-			LEFT+=("$NP – staged and unstaged edits both, made before the $NOUN – committed as staged, they take it back")
-			PARTIAL+=("$P")
+		# Staged as it landed already, a sync's edits on top of that or none are the checkout's own
+		[ "$HOW" = sync ] && [ "$I" = "$N" ] && [ "$SRC" = "$P" ] && continue
+		# Already as it landed, its mode as it goes, only an entry still as before has anything to take –
+		# where `HEAD` changed it again since, the file is the checkout's own business
+		if [ "$SRC" = "$P" ] && [ "$OURS" = "${N#* }" ]; then
+			_CARRY_MODE "$WTM" "${FBE% *}" "${N% *}"
+			if [ "$HOW" = carry ] && [ "$WTM" = "$REPLY" ]; then
+				[ "${HE#* }" = "${N#* }" ] && _CARRY_QUEUE "$P" "$P" RESYNCED "$NP" && RESYNCED+=("$NP")
+				continue
+			# One just committed whole, its mode as it landed – a sync's other modes named below
+			elif [ "$HOW" = sync ] && [ "$I" = "$O" ] && [ "$WTM" = "${N% *}" ]; then
+				_SYNC_QUEUE "$P" "$N"
+				continue
+			fi
+		fi
+		# A commit since the rewrite brought content of its own, which the merge would take back
+		if [ "${HE#* }" != "${N#* }" ]; then
+			LEFT+=("$ITEM – changed again since the $NOUN")
+			[ "$SRC" = "$P" ] && NOT_BROUGHT[$P]=$FBT
 			continue
 		fi
-		if [ "$I" = "$N" ] && [ "$SRC" = "$P" ]; then
-			# Staged as it landed already, edits on top of that or none
-			continue
-		fi
-		# A file already as it landed, mode and all – one just committed whole – takes its entry alone
-		if [ "$I" = "$O" ] && [ "$SRC" = "$P" ] && [ "${WH:-$(_WORKTREE_HASH "$CO" "$P" 2>/dev/null)}" = "${N#* }" ] && \
-		   [ "${N% *}" = "$(_WORKTREE_MODE "$CO" "$P" "${O% *}" "$FILEMODE" "${I% *}")" ]; then
-			_SYNC_QUEUE "$P" "$N"
-			continue
-		fi
-		# What no text merge takes stays as yours – an entry still as before takes what landed, so the
-		# edits read as changes to that, never as a staged revert
+		# A file still as either side has it holds no edits – at a rename's old path it moves all the
+		# same, as the merge onto what landed then writes just that
+		{ [ "$OURS" = "${FBE#* }" ] || [ "$OURS" = "${N#* }" ]; } && UNEDITED=1
 		WHY=""
-		if [ -d "$CO/$SRC" ] && [ ! -L "$CO/$SRC" ] && [[ "${O% *} ${N% *}" != *160000* ]]; then
-			WHY="a directory of yours where a file was"
-		elif [ -L "$CO/$SRC" ] || [ -d "$CO/$SRC" ] || [[ "${O% *} ${N% *}" == *(120000|160000)* ]]; then
+		if [ -L "$CO/$SRC" ]; then
+			# A retargeted symlink has no lines to merge, and writing through it would replace it – an
+			# unedited one at a rename's old path moves as the link that landed
+			if [ -n "$UNEDITED" ] && [ "$SRC" != "$P" ] && [ "${N% *}" = 120000 ]; then
+				# Carried before, a case-only rename's link spelled the new way already
+				if [ "$OURS" = "${N#* }" ] && _SAME_ENTRY "$CO/$SRC" "$CO/$P" && _SPELLED_AS "$CO" "$P"; then
+					_CARRY_QUEUE "$SRC" "$P" RESYNCED "$ITEM" && [ "$HOW" = carry ] && RESYNCED+=("$ITEM")
+					continue
+				fi
+				TMPF=$CARRY_TMP
+				rm -f "$TMPF"
+				if ! mkdir -p "$CO/${P:h}" 2>/dev/null || ! ln -s -- "$(git cat-file blob "${N#* }")" "$TMPF" 2>/dev/null; then
+					LEFT+=("$ITEM – not writable")
+					continue
+				fi
+				if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS" ] || ! _CARRY_DEST_FREE "$CO" "$NEW" "$P" "$SRC"; then
+					rm -f "$TMPF"
+					LEFT+=("$ITEM – changed while $WHILE")
+					continue
+				fi
+				if ! _MOVE_ONTO "$TMPF" "$CO/$P"; then
+					rm -f "$TMPF"
+					LEFT+=("$ITEM – not writable")
+					continue
+				fi
+				# The old name goes, unless it is the new one by another case, which sheds its spelling –
+				# the links' own entries compared, as `-ef` compares where they point – or retargeted
+				# since the read, which stays
+				if _SAME_ENTRY "$CO/$SRC" "$CO/$P"; then _MOVE_ONTO "$CO/$SRC" "$CO/$P"
+				elif [ "$(_WORKTREE_HASH "$CO" "$SRC")" = "$OURS" ]; then rm -f "$CO/$SRC"
+				else LEFT+=("$NS – changed while $WHILE, kept untracked – $NP took the link that landed")
+				fi
+				_DIR_PRUNE "$CO" "$SRC"
+				if [ "$HOW" = carry ]; then
+					_CARRY_QUEUE "$SRC" "$P" BROUGHT "$ITEM"
+					BROUGHT+=("$ITEM")
+				else
+					_CARRY_QUEUE "$SRC" "$P" CLEAN "$P" || CLEAN+=("$P")
+				fi
+				continue
+			fi
+			WHY="a symlink"
+			[ "$HOW" = sync ] && WHY="a symlink or submodule"
+		elif [ -d "$CO/$SRC" ] || [[ "${O% *} ${N% *}" == *(120000|160000)* ]]; then
 			WHY="a symlink or submodule"
+		# All in checked-out form, as the edits are – a raw blob differs wherever a filter or `eol`
+		# rewrites lines – both sides read under the attributes the edits were made under, where the
+		# rewrite changed them, what landed first, as git's own conflicts show `HEAD` – in temp files
+		# made for the first merge
+		elif ! { [ -n "$OUTF" ] || { OUTF=$(MKTEMP_FILE git-edit-sync) BASEF=$(MKTEMP_FILE git-edit-base) \
+		         THEIRS=$(MKTEMP_FILE git-edit-theirs) OURSF=$(MKTEMP_FILE git-edit-ours) && \
+		         _TEMP_FILES+=("$OUTF" "$BASEF" "$THEIRS" "$OURSF"); }; } || \
+		     ! git -C "$CO" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "${HOOK_BASE:-$FBT}:${${HOOK_BASE:+$SRC}:-$FBN}" > "$BASEF" 2>/dev/null || \
+		     ! git -C "$CO" ${ATTR_SRC:+--attr-source=$ATTR_SRC} cat-file --filters "${NEW}:$P" > "$THEIRS" 2>/dev/null; then
+			if [ "$HOW" = carry ]; then WHY="not readable through its filters"; else WHY="no text merge"; fi
+		elif [ -n "$UNEDITED" ]; then
+			cat "$THEIRS" > "$OUTF" 2>/dev/null || WHY="not writable"
+			RC=0
 		else
-			OURS=$(_WORKTREE_HASH "$CO" "$SRC")
-			_SYNC_MERGE "$CO" "$SRC" "${HOOK_BASE:-$OLD}:$SRC" "$NEW:$P" "$OUTF"
+			git merge-file -p -L "landed (HEAD)" -L "before the rewrite" -L "your edits" "$THEIRS" "$BASEF" "$CO/$SRC" > "$OUTF" 2>/dev/null
 			RC=$?
 			(( RC > 127 )) && WHY="no text merge"
 		fi
+		# What no text merge takes stays as it is – a sync's entry still as before taking what landed, so
+		# the edits read as changes to that, never as a staged revert
 		if [ -n "$WHY" ]; then
-			if [ "$SRC" != "$P" ] || [ "$I" != "$O" ]; then
+			if [ "$HOW" = carry ]; then
+				LEFT+=("$ITEM – $WHY")
+			elif [ "$SRC" != "$P" ] || [ "$I" != "$O" ]; then
 				LEFT+=("$NP – $WHY")
 			else
 				_SYNC_QUEUE "$P" "$N" KEPT_EDITS "$NP ($WHY)"
@@ -5314,42 +5236,69 @@ _SYNC_CHECKOUT () {
 		# that merges them, markers and all, once someone means to resolve it
 		if (( RC > 0 )); then
 			# Edits beside the move's own lines conflict too, where the file holds the move already – a
-			# change made in the checkout first, then landed – its entry alone then taking what landed
-			if [ "$SRC" = "$P" ] && [ "$I" = "$O" ] && _EDITS_HOLD_MOVE "$CO/$P" "${O#* }" "${N#* }"; then
-				_SYNC_QUEUE "$P" "$N"
+			# change made in the checkout first, then landed – its entry alone then taking what landed,
+			# as for a file this run put or took whole from here, whose edits past that are the caller's
+			# later work, a stage of the file committed while it holds the rest – no merge offered, its
+			# record kept all the same, as a put rebuilt around a peer's lines leaves those in the file
+			if [ "$SRC" = "$P" ] && { [ "$I" = "$O" ] || [ "$I" = "$N" ]; } && [ "$HOW" != carry ] && \
+			   [ -n "${_LANDED_OWN[1]}" ] && [ "${_LANDED_OWN[1]}" -ef "$CO" ] && (( ${_LANDED_OWN[(Ie)$P]} > 1 )); then
+				_SYNC_NOTE_Q "$P" "$N"
+				NOT_BROUGHT[$P]=$FBT
+				OWN_LATER+=("$NP")
 				continue
 			fi
+			if [ "$SRC" = "$P" ] && [ "$I" = "$O" ] && _EDITS_HOLD_MOVE "$CO/$P" "${FBE#* }" "${N#* }"; then
+				_SYNC_NOTE_Q "$P" "$N" RESYNCED "$NP"
+				continue
+			fi
+			WHY=""
 			if [ "$SRC" = "$P" ]; then
-				[ "$I" = "$O" ] && _SYNC_QUEUE "$P" "$N"
-				_MERGE_CMD "$OLD" "$NEW" "$P" "$P" "$P"
+				_MERGE_CMD "$FBT" "$NEW" "$FBN" "$P" "$P"
 			elif [ "$CO/$SRC" -ef "$CO/$P" ]; then
 				# A case-only rename on a filesystem that ignores case is one file, holding the edits – it
 				# takes the new name, the merge taking both other sides from the commits
 				mv -f "$CO/$SRC" "$CO/$P" 2>/dev/null
-				_SYNC_QUEUE "$P" "$N"
-				_SYNC_QUEUE "$SRC" ""
-				_MERGE_CMD "$OLD" "$NEW" "$SRC" "$P" "$P"
+				_MERGE_CMD "$FBT" "$NEW" "$FBN" "$P" "$P"
 			else
 				# A rename's new path takes what landed, the edits staying untracked at the old one, which
 				# the merge leaves for whoever resolves it to remove
-				_SYNC_CHECKOUT_FILE "$CO" "$P" "$N"
-				_SYNC_QUEUE "$P" "$N"
-				_SYNC_QUEUE "$SRC" ""
-				_MERGE_CMD "$OLD" "$NEW" "$SRC" "$P" "$SRC"
+				if [ ! -e "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
+					_CARRY_TAKE "$CO" "$P" "$N" ""
+					case $? in
+						(1) LEFT+=("$ITEM – changed while $WHILE"); continue ;;
+						(2) LEFT+=("$ITEM – not writable"); continue ;;
+					esac
+				fi
+				_MERGE_CMD "$FBT" "$NEW" "$FBN" "$P" "$SRC"
+				WHY=", the edits left at $NS"
 			fi
 			MERGE_CMDS+=("$REPLY")
-			CONFLICTED+=("${${SRC:#$P}:+$NS → }$NP")
+			# Its file still on its base – the next one to bring it along merges from there
+			[ "$SRC" = "$P" ] && NOT_BROUGHT[$P]=$FBT
+			if [ "$HOW" = carry ]; then
+				ITEM+=" – $RC conflict(s)$WHY"
+				_CARRY_QUEUE "$SRC" "$P" LEFT "$ITEM"
+				LEFT+=("$ITEM")
+			else
+				_CARRY_QUEUE "$SRC" "$P"
+				CONFLICTED+=("$ITEM")
+			fi
 			continue
 		fi
-		# Written apart and moved into place, keeping the mode – what landed, unless the checkout's own
-		# differed from before, as git stages it – and only over the file as it was read
-		WTM=$(_WORKTREE_MODE "$CO" "$SRC" "${O% *}" "$FILEMODE" "${I% *}")
-		_CARRY_MODE "$WTM" "${O% *}" "${N% *}"
+		# Written apart and moved into place, its mode three-way as its content – what landed, unless the
+		# checkout's own differs from before – and only over the file as it was read, a parallel edit the
+		# merge never saw left as it is
+		_CARRY_MODE "$WTM" "${FBE% *}" "${N% *}"
 		MODE=$REPLY
 		# Merged to what it holds already – its edits made on what landed, a change landed through the
-		# checkout first – it is never written, so a peer's write meanwhile can't be lost, its entry alone
-		# taking what landed
-		if [ "$SRC" = "$P" ] && [ "$MODE" = "$WTM" ] && cmp -s "$OUTF" "$CO/$P"; then
+		# checkout first, carried before, a case-only rename's file spelled the new way – it is never
+		# written, so a peer's write meanwhile can't be lost, its entry alone taking what landed
+		if [ "$MODE" = "$WTM" ] && cmp -s "$OUTF" "$CO/$SRC" && \
+		   { [ "$SRC" = "$P" ] || { [ "$CO/$SRC" -ef "$CO/$P" ] && _SPELLED_AS "$CO" "$P"; }; }; then
+			if [ "$HOW" = carry ]; then
+				_CARRY_QUEUE "$SRC" "$P" RESYNCED "$ITEM" && RESYNCED+=("$ITEM")
+				continue
+			fi
 			# What landed under another mode – a bit a file moved into place lost, a chmod not committed –
 			# named apart, as "edits" there invite committing "the rest", which lands the loss
 			[ "$WTM" != "${N% *}" ] && git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P" && \
@@ -5358,80 +5307,190 @@ _SYNC_CHECKOUT () {
 				if BLOB=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$BLOB" ]; then _SYNC_QUEUE "$P" "$MODE $BLOB"
 				else IDX_LOCKED+=("$P"); fi
 			else
-				_SYNC_QUEUE "$P" "$N"
+				_CARRY_QUEUE "$SRC" "$P"
 			fi
 			continue
 		fi
-		[ "$SRC" = "$P" ] || mkdir -p "$CO/${P:h}"
-		TMPF=$WRITE_TMP
-		if ! cat "$OUTF" > "$TMPF" 2>/dev/null; then
-			rm -f "$TMPF"
-			LEFT+=("$NP – not writable")
+		if [ "$HOW" = carry ] && [ -z "$UNEDITED" ] && \
+		   { ! cat "$CO/$SRC" > "$OURSF" 2>/dev/null || [ "$(_CHANGED_LINES "$BASEF" "$OURSF")" != "$(_CHANGED_LINES "$THEIRS" "$OUTF")" ]; }; then
+			LEFT+=("$ITEM – the merge would alter the edits")
+			[ "$SRC" = "$P" ] && NOT_BROUGHT[$P]=$FBT
 			continue
 		fi
-		if [ "$MODE" = 100755 ]; then chmod 755 "$TMPF"; else chmod 644 "$TMPF"; fi
-		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS" ]; then
+		TMPF=$CARRY_TMP
+		# As its line names it, a carry's with its source
+		L=$NP
+		[ "$HOW" = carry ] && L=$ITEM
+		rm -f "$TMPF"
+		# A rename into a new directory finds none in the checkout yet, and a file keeps the rest of its
+		# permissions
+		[ "$SRC" = "$P" ] || mkdir -p "$CO/${P:h}" 2>/dev/null
+		if ! { cp -p "$CO/$SRC" "$TMPF" && cat "$OUTF" > "$TMPF"; } 2>/dev/null; then
 			rm -f "$TMPF"
-			LEFT+=("$NP – changed while it ran")
+			LEFT+=("$L – not writable")
+			continue
+		fi
+		if [ "$MODE" = 100755 ]; then chmod +x "$TMPF"; else chmod -x "$TMPF"; fi
+		if [ "$(_WORKTREE_HASH "$CO" "$SRC")" != "$OURS" ] || { [ "$SRC" != "$P" ] && ! _CARRY_DEST_FREE "$CO" "$NEW" "$P" "$SRC"; }; then
+			rm -f "$TMPF"
+			LEFT+=("$L – changed while $WHILE")
 			continue
 		fi
 		if ! _MOVE_ONTO "$TMPF" "$CO/$P"; then
 			rm -f "$TMPF"
-			LEFT+=("$NP – not writable")
+			LEFT+=("$L – not writable")
 			continue
 		fi
-		# The old name goes, with the directories that leaves empty in one renamed whole – where it is
-		# the new one by another case, a move onto it kept the old spelling, which the file sheds by a
-		# rename of its own – unless edited again since the read, which stays, untracked
+		# The old name goes, with the directories that leaves empty in one renamed whole – where it is the
+		# new one by another case, a move onto it kept the old spelling, which the file sheds by a rename
+		# of its own – unless edited again since the read, which stays, untracked
 		if [ "$SRC" != "$P" ]; then
 			if [ "$CO/$SRC" -ef "$CO/$P" ]; then mv -f "$CO/$SRC" "$CO/$P" 2>/dev/null
 			elif [ "$(_WORKTREE_HASH "$CO" "$SRC")" = "$OURS" ]; then rm -f "$CO/$SRC"
-			else LEFT+=("$NS – edited again while it ran, kept untracked – the edits read before went to $NP")
+			else LEFT+=("$NS – edited again while $WHILE, kept untracked – the edits read before went to $NP")
 			fi
 			_DIR_PRUNE "$CO" "$SRC"
-			_SYNC_QUEUE "$SRC" ""
 		fi
-		# Edits all in what landed already – a commit's hooks changed the file – leave none to carry
-		# A fold's tip differs from what it read by what later commits replayed – no hook at work
-		if [ -n "$HOOK_BASE" ] && (( ${#OPT_COMMIT} )); then
+		# Edits all in what landed already – a commit's hooks changed the file – leave none to carry, a
+		# fold's tip differing from what it read by what later commits replayed – no hook at work
+		if [ "$HOW" = carry ]; then
+			if [ -n "$UNEDITED" ]; then L=BROUGHT; else L=CARRIED; fi
+		elif [ -n "$HOOK_BASE" ] && (( ${#OPT_COMMIT} )); then
 			L=HOOKED ITEM=$P
-		elif [ -n "$HOOK_BASE" ]; then
-			L=CLEAN ITEM=$P
-		elif git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P"; then
+		elif [ -n "$HOOK_BASE" ] || git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P"; then
 			L=CLEAN ITEM=$P
 		else
-			L=CARRIED ITEM="${${SRC:#$P}:+$NS → }$NP"
+			L=CARRIED
 		fi
-		# Staged where it was staged whole before, as `git add` would hash it, else the index takes
-		# what landed – the file listed with its entry, written or not
-		if [ "$I" != "$O" ] && [ "$SRC" = "$P" ]; then
+		# Staged where it was staged whole before, as `git add` would hash it, else the index takes what
+		# landed – the file listed with its entry, written or not
+		if [ "$I" != "$O" ] && [ "$SRC" = "$P" ] && [ -n "$I" ] && (( ! ${+UNSTAGED[$P]} )); then
 			if BLOB=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$BLOB" ]; then
-				_SYNC_QUEUE "$P" "$MODE $BLOB" "$L" "$ITEM"
+				_SYNC_NOTE_Q "$P" "$MODE $BLOB" "$L" "$ITEM"
 			else
 				IDX_LOCKED+=("$P")
 				set -A "$L" "${(@P)L}" "$ITEM"
 			fi
+		elif _CARRY_QUEUE "$SRC" "$P" "$L" "$ITEM"; then
+			[ "$HOW" = carry ] && set -A "$L" "${(@P)L}" "$ITEM"
 		else
-			_SYNC_QUEUE "$P" "$N" "$L" "$ITEM"
+			set -A "$L" "${(@P)L}" "$ITEM"
 		fi
 	done
-	rm -f "$OUTF"
+	(( ${#IS_DIRTY} )) && rm -f "$CARRY_TMP" ${OUTF:+"$OUTF"} ${BASEF:+"$BASEF"} ${THEIRS:+"$THEIRS"} ${OURSF:+"$OURSF"}
+	# Untracked files go along with a directory renamed whole, the tracked ones having gone first, and
+	# one a sync's move renamed by case alone takes the new spelling
+	(( ${#DIR_FROM} )) && _DIR_MOVE "$CO"
+	LEFT+=("${DIR_TAKEN[@]}")
+	[ "$HOW" = carry ] || _DIR_RESPELL "$CO"
 
-	# Every entry the loop decided on, in one step under the index lock – one a peer
-	# staged since the read above keeps its staging, as does staging the entry would
-	# replace, each named once, and the lists each write stood for take it once done –
-	# a file the sync wrote, or a path left already, whatever became of its entry
+	# Every entry decided on, in one step under the index lock – one a peer staged since the read
+	# above keeps its staging, as does staging the entry would replace
 	_SYNC_WRITE_ENTRIES "$CO" "${(l:${#OLD}::0:)}"
-	# Each entry the move took to what landed – the two-tree merge's, then each one written so – for
-	# the step that takes them back after a raw undo
-	local -a MOVED_ENT
-	MOVED_ENT=("${CLEAN[@]}")
-	for (( RC = 1; RC <= ${#Q_PATH}; RC++ )); do
-		P=${Q_PATH[RC]}
-		L=${Q_ON[RC]%%:*}
-		ITEM=${Q_ON[RC]#*:}
-		[ "${Q_OUT[RC]}" = done ] && [ "${Q_NEW[RC]}" = "${DIFF_N[$P]}" ] && MOVED_ENT+=("$P")
-		case ${Q_OUT[RC]} in
+	# Each file left on its base recorded with it, as its entry no longer tells – one brought along
+	# cleared
+	{ (( ${#NOT_BROUGHT} )) || [ -s "$GD/git-edit-unbrought" ]; } && _UNBROUGHT_NOTE "$CO" "$OLD" "$NEW"
+	if [ "$HOW" = carry ]; then
+		(( ${#Q_PATH} )) && _INDEX_FLAGS_BACK "$CO" ""
+		# A path whose entry stayed is named once – a peer's staging meanwhile kept, its file named as
+		# written, and one left already saying so – by the worst of what its entries met
+		local -A ENT_WHY ENT_PATHS
+		local -a ENT_KEYS ENT_LOCKED ENT_LOCKED_PATHS ENT_IN_WAY ENT_IN_WAY_PATHS ERRS
+		_AT_TOP "$CO"
+		local AT=$REPLY
+		for (( K = 1; K <= ${#Q_PATH}; K++ )); do
+			[ "${Q_OUT[K]}" = done ] && continue
+			ITEM=${Q_ON[K]}
+			(( ${+ENT_WHY[$ITEM]} )) || ENT_KEYS+=("$ITEM")
+			case ${Q_OUT[K]} in
+				(kept) [ -n "${ENT_WHY[$ITEM]}" ] || ENT_WHY[$ITEM]=kept ;;
+				(in-way)
+					_IN_WAY_WHY "${Q_PATH[K]}" "${Q_BY[K]}" rewrite
+					[ "${ENT_WHY[$ITEM]}" = locked ] || ENT_WHY[$ITEM]=$REPLY ;;
+				(*) ENT_WHY[$ITEM]=locked ;;
+			esac
+			# The paths an item's command takes, NUL-joined
+			[ "${Q_OUT[K]}" = kept ] || ENT_PATHS[$ITEM]+=${Q_PATH[K]}$'\0'
+		done
+		for LINE in "${ENT_KEYS[@]}"; do
+			L=${LINE%%:*} ITEM=${LINE#*:} WHY=${ENT_WHY[$LINE]}
+			case $L in
+				(CARRIED) NS="written, edits carried" ;;
+				(BROUGHT) NS="written, brought to what landed" ;;
+				(*) NS="" ;;
+			esac
+			# Its line found by its text as it is – a substituted value is never a pattern here
+			if [ "$WHY" = kept ]; then
+				case $L in
+					(CARRIED) CARRIED=("${(@)CARRIED/#%$ITEM/$ITEM (its index entry left as staged meanwhile)}") ;;
+					(BROUGHT) BROUGHT=("${(@)BROUGHT/#%$ITEM/$ITEM (its index entry left as staged meanwhile)}") ;;
+					(LEFT) LEFT=("${(@)LEFT/#%$ITEM/$ITEM, its index entry left as staged meanwhile}") ;;
+					(*) RESYNCED=("${(@)RESYNCED:#$ITEM}") ;;
+				esac
+				continue
+			fi
+			case $L in
+				(CARRIED) CARRIED=("${(@)CARRIED:#$ITEM}") ;;
+				(BROUGHT) BROUGHT=("${(@)BROUGHT:#$ITEM}") ;;
+				(RESYNCED) RESYNCED=("${(@)RESYNCED:#$ITEM}") ;;
+			esac
+			if [ "$L" = LEFT ]; then
+				if [ "$WHY" = locked ]; then
+					_LOCKED_RESYNC_STEP "$CO" "${OLD:0:12}" "git restore --source=HEAD --staged" "${(@0)ENT_PATHS[$LINE]%$'\0'}"
+					WHY="its index entry not re-synced, the index locked – once it is free, where still on the pre-rewrite content: $REPLY"
+				else
+					WHY="its index entry not written, $WHY – once that staging is committed or unstaged: $AT$(_PATHS_CMD "git restore --source=HEAD --staged" "${(@0)ENT_PATHS[$LINE]%$'\0'}")"
+				fi
+				LEFT=("${(@)LEFT/#%$ITEM/$ITEM, $WHY}")
+			elif [ "$WHY" = locked ]; then
+				ENT_LOCKED+=("$ITEM${NS:+ ($NS)}")
+				ENT_LOCKED_PATHS+=("${(@0)ENT_PATHS[$LINE]%$'\0'}")
+			else
+				ENT_IN_WAY+=("$ITEM (${NS:+$NS – }$WHY)")
+				ENT_IN_WAY_PATHS+=("${(@0)ENT_PATHS[$LINE]%$'\0'}")
+			fi
+		done
+
+		(( ${#CARRIED} )) && PRINT_TEXT "Carried onto the new content: %s" 32 "$(_ALL_PATHS "${CARRIED[@]}")"
+		(( ${#BROUGHT} )) && PRINT_TEXT "Brought to what landed, holding no edits: %s" 32 "$(_SOME_PATHS "${BROUGHT[@]}")"
+		(( ${#RESYNCED} )) && PRINT_TEXT "Index entries brought to what landed, their files left as they are: %s" 32 "$(_SOME_PATHS "${RESYNCED[@]}")"
+		(( ${#DIR_MOVED} )) && PRINT_TEXT "Untracked files moved along with their renamed directory: %s" 32 "$(_ALL_PATHS "${DIR_MOVED[@]}")"
+		(( ${#DIR_RESPELT} )) && PRINT_TEXT "Directories the rewrite renamed by case alone, now spelled as it has them: %s" 32 "$(_ALL_PATHS "${DIR_RESPELT[@]}")"
+		(( ${#DIR_STAYS} )) && PRINT_TEXT "Untracked files left where they are, in a directory the rewrite renamed only in part: %s" 33 "$(_ALL_PATHS "${DIR_STAYS[@]}")"
+		[ -z "$SPARSE_ASKED" ] && REAPPLY=("${ASK[@]}" "${REAPPLY[@]}")
+		if (( ${#REAPPLY} )); then
+			PRINT_TEXT "This git can't ask your sparse checkout's patterns (2.42 can) – the files the rewrite added, left out as outside it: %s – write those inside it with: %s" 33 "$(_SOME_PATHS "${REAPPLY[@]}")" "${AT}git sparse-checkout reapply"
+		fi
+		if (( ${#MERGE_CMDS} )); then
+			PRINT_TEXT "%s" 33 "Merge the conflicting ones, markers and all, once you mean to resolve them:"
+			for LINE in "${MERGE_CMDS[@]}"; do ECHO_E "\e[0;33m  $(_LIT "$AT$LINE")\e[0m"; done
+		fi
+		if (( ${#ENT_LOCKED} )); then
+			_LOCKED_RESYNC_STEP "$CO" "${OLD:0:12}" "git restore --source=HEAD --staged" "${(@u)ENT_LOCKED_PATHS}"
+			ERRS+=("Index entries left on the pre-rewrite content, the index locked: $(_ALL_PATHS "${ENT_LOCKED[@]}") – re-sync each still so once it is free, the files left as they are: $REPLY")
+		fi
+		(( ${#ENT_IN_WAY} )) && ERRS+=("Index entries not written, staging in their way: $(_ALL_PATHS "${ENT_IN_WAY[@]}") – write them once that staging is committed or unstaged: $AT$(_PATHS_CMD "git restore --source=HEAD --staged" "${(@u)ENT_IN_WAY_PATHS}")")
+		(( ${#BLOCKED} )) && ERRS+=("Left as they were, staging in their way: $(_ALL_PATHS "${BLOCKED[@]}") – carry them once that staging is committed or unstaged: git edit --carry=${OLD:0:12}")
+		(( ${#LEFT} )) && ERRS+=("Left as they were, to merge by hand: $(_ALL_PATHS "${LEFT[@]}")")
+		if (( ${#ERRS} )); then
+			for LINE in "${(@)ERRS[1,-2]}"; do PRINT_TEXT "%s" 33 "$LINE"; done
+			PRINT_ERR "${ERRS[-1]}"
+			exit 1
+		fi
+		(( ${#CARRIED} + ${#BROUGHT} + ${#DIR_MOVED} + ${#RESYNCED} + ${#DIR_RESPELT} )) || \
+			PRINT_TEXT "%s" 32 "Nothing to carry – no path the rewrite changed holds its pre-rewrite content, edited or not."
+		REPLY=$(( ${#CARRIED} + ${#BROUGHT} + ${#DIR_MOVED} ))
+		return 0
+	fi
+	# The lists each write stood for take it once done – a file the sync wrote, or a path left
+	# already, whatever became of its entry – and each entry taken to what landed goes with those the
+	# two-tree merge took there, for the step that takes them back after a raw undo
+	for (( K = 1; K <= ${#Q_PATH}; K++ )); do
+		P=${Q_PATH[K]}
+		L=${Q_ON[K]%%:*}
+		ITEM=${Q_ON[K]#*:}
+		[ "${Q_OUT[K]}" = done ] && [ "${Q_NEW[K]}" = "${DIFF_N[$P]}" ] && MOVED_ENT+=("$P")
+		case ${Q_OUT[K]} in
 			(done) [ -z "$L" ] || set -A "$L" "${(@P)L}" "$ITEM" ;;
 			(kept)
 				if [[ "$L" == (CLEAN|CARRIED|HOOKED) ]]; then
@@ -5445,7 +5504,7 @@ _SYNC_CHECKOUT () {
 			(in-way)
 				_ONE_LINE "$P"
 				NP=$REPLY
-				_IN_WAY_WHY "$P" "${Q_BY[RC]}" "$NOUN"
+				_IN_WAY_WHY "$P" "${Q_BY[K]}" "$NOUN"
 				[[ "$L" == (CLEAN|CARRIED|HOOKED) ]] && REPLY+=" – its file written all the same"
 				LEFT+=("$NP – $REPLY") ;;
 			(*)
@@ -5453,12 +5512,6 @@ _SYNC_CHECKOUT () {
 				if [ "$L" = STALE ]; then LOCKED+=("$P"); else IDX_LOCKED+=("$P"); fi ;;
 		esac
 	done
-	# Untracked files go along with a directory renamed whole, as `--carry` takes them, and one
-	# renamed by case alone takes the new spelling
-	(( ${#DIR_FROM} )) && _DIR_MOVE "$CO"
-	LEFT+=("${DIR_TAKEN[@]}")
-	local -a DIR_RESPELT
-	_DIR_RESPELL "$CO"
 
 	(( ${#CLEAN} )) && PRINT_TEXT "Your checkout came along – now as they landed: %s" 32 "$(_SOME_PATHS "${CLEAN[@]}")"
 	(( ${#CARRIED} )) && PRINT_TEXT "Uncommitted edits merged onto what landed: %s" 32 "$(_SOME_PATHS "${CARRIED[@]}")"
@@ -5490,7 +5543,7 @@ _SYNC_CHECKOUT () {
 		if _IS_NON_INTERACTIVE; then
 			PRINT_TEXT "Uncommitted edits conflict with what landed – left as they were, as changes to it: %s" 33 "$(_ALL_PATHS "${CONFLICTED[@]}")"
 			_TODO_ADD "the merge of $(_ALL_PATHS "${CONFLICTED[@]}"), if those edits are yours" "%s" 33 \
-				"If those edits are yours, merge them, markers and all, once you mean to resolve them – if another session's, leave them: its next commit of the file whole is refused, naming this merge:"
+				"If those edits are yours, merge them, markers and all, once you mean to resolve them – if another session's, leave them: its next commit of the file is refused, naming this merge:"
 		else
 			PRINT_TEXT "Your uncommitted edits conflict with what landed – left as they were, as changes to it: %s" 33 "$(_ALL_PATHS "${CONFLICTED[@]}")"
 			_TODO_ADD "the merge of $(_ALL_PATHS "${CONFLICTED[@]}")" "%s" 33 "Merge them, markers and all, once you mean to resolve them:"
@@ -5500,6 +5553,7 @@ _SYNC_CHECKOUT () {
 	# Whose they are no sync can tell, so nothing is offered that takes them
 	(( ${#KEPT} )) && PRINT_TEXT "Files stood where the $NOUN put its own – they stay, as changes to what landed: %s" 33 "$(_SOME_PATHS "${KEPT[@]}")"
 	(( ${#KEPT_EDITS} )) && PRINT_TEXT "Uncommitted edits stay as they were, now changes to what landed, which no merge could take them onto: %s" 33 "$(_ALL_PATHS "${KEPT_EDITS[@]}")"
+	(( ${#OWN_LATER} )) && PRINT_TEXT "Files you committed keep your later edits, now changes to what landed: %s" 32 "$(_SOME_PATHS "${OWN_LATER[@]}")"
 	_PRINT_MODE_ONLY "$CO" "$NEW" "${MODE_ONLY[@]}"
 	# What git refused or a locked index kept back takes the carry, which writes only a file and an
 	# entry still as this sync left them, so a peer's write or staging since stays
@@ -5539,25 +5593,319 @@ _SYNC_CHECKOUT () {
 		fi
 	fi
 	_OTHER_CHECKOUTS_TODO "$GD" "${_MOVING_REF[1]}" "$OLD"
+	# Brought along – a second signal from here on has no carry to name
+	_SYNC_DONE=1
 	return 0
 }
 
+# Fills `STEP_FROM` and `STEP_TO` with the landings journaled on <ref> that led to <new> in the last
+# 7 days, newest first, each its old and new tip, at most 40 – an undo puts back a tip, the line of
+# the run it took back gone, so the walk goes on from that tip to the landing that made it
+# • Where <old> is no tip on the way, the move from <old> to <new> stands first, the walk going on
+#   from <old>, as nothing tells what came between
+_LANDING_STEPS () {
+	# Args: <ref> <old> <new>
+	local REF=$1 OLD=$2 AT=$3 JF=$(_JOURNAL_FILE_PATH) LINE TEXT
+	local -i NOW=$EPOCHSECONDS K REACHED=0
+	local -a J
+	STEP_FROM=() STEP_TO=()
+	[ -n "$JF" ] && [ -s "$JF" ] && { TEXT=$(<"$JF") } 2>/dev/null
+	for K in 1 2; do
+		for LINE in "${(@Oaf)TEXT}"; do
+			(( ${#STEP_FROM} < 40 )) || break
+			J=(${=${LINE%%$'\t'*}})
+			[[ "${J[1]}" == <-> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] && [ "${J[4]}" = "$AT" ] && [ -n "${J[3]}" ] || continue
+			[ "${J[5]}" = undo ] && continue
+			STEP_FROM+=("${J[3]}") STEP_TO+=("${J[4]}")
+			AT=${J[3]}
+			[ "$AT" = "$OLD" ] && REACHED=1
+		done
+		(( REACHED )) || [ "$OLD" = "$3" ] && return 0
+		# <old> on no landing that led here – its own move first, then what led to it
+		STEP_FROM=("$OLD") STEP_TO=("$3") AT=$OLD REACHED=1
+	done
+	return 0
+}
+
+# Puts into `REPLY` the blob <tip> holds at <name>, nothing where it holds none – asked once, kept
+# in the caller's `FB_BLOB`
+_BLOB_AT () {
+	# Args: <tip> <name>
+	if (( ! ${+FB_BLOB[$1:$2]} )); then
+		FB_BLOB[$1:$2]=$(git rev-parse -q --verify "$1:$2" 2>/dev/null)
+	fi
+	REPLY=${FB_BLOB[$1:$2]}
+}
+
+# Tells whether the edits in blob <ours> lack the change a landing made from blob <before> to blob
+# <after> – 0 where they do, 1 where they hold it, its lines all among theirs where the merge
+# conflicts, 2 where no text merge tells, a binary say
+_LANDING_LACKED () {
+	# Args: <ours> <before> <after> – reads the caller's `_MERGE_FILE_IDS`, `-` until asked
+	local ID RC OURS BASE THEIRS
+	if [ "$_MERGE_FILE_IDS" = - ]; then
+		_MERGE_FILE_IDS=""
+		[[ "$(LC_ALL=C git merge-file -h 2>&1)" == *object-id* ]] && _MERGE_FILE_IDS=yes
+	fi
+	ID=$(_MERGE_LANDING "$1" "$2" "$3")
+	RC=$?
+	if (( RC == 0 )); then
+		[ "$ID" = "$1" ] && return 1
+		return 0
+	fi
+	(( RC > 127 )) && return 2
+	OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs)
+	_TEMP_FILES+=("$OURS" "$BASE" "$THEIRS")
+	RC=2
+	if git cat-file blob "$1" > "$OURS" 2>/dev/null && git cat-file blob "$2" > "$BASE" 2>/dev/null && git cat-file blob "$3" > "$THEIRS" 2>/dev/null; then
+		RC=1
+		[ -n "$(LC_ALL=C comm -23 <(_CHANGED_LINES "$BASE" "$THEIRS") <(_CHANGED_LINES "$BASE" "$OURS"))" ] && RC=0
+	fi
+	rm -f "$OURS" "$BASE" "$THEIRS"
+	return $RC
+}
+
+# Fills `FB_ENT`, `FB_TIP` and `FB_NAME` with each <path>'s own base, where it is other than <old>'s
+# entry at its own name – the tip its file was last brought to, the old tip of the earliest landing
+# it lacks past the last it holds:
+# • A path a run left unbrought – a conflict, staging, or no sync at all – takes its record's base,
+#   `_UNBROUGHT_BASE`'s, while the file still lacks the landing that left it
+# • Else the landings that led to <new> tell, newest first: a file holding a tip's content as it
+#   is was brought to that tip, one holding a landing's change to that landing's new tip, one
+#   lacking it to a tip before – a landing that changed none of it, or renamed it alone, telling
+#   nothing
+# • Where none tells – no journal, a peer's staging on the path, a binary, a path added on the way –
+#   it keeps <old>, the one base a carry names for every file
+_FILE_BASES () {
+	# Args: <checkout> <old> <new> <path>... – reads the caller's `DIFF_O`, `DIFF_N`, `IDX_ENT` and
+	# `WT_HASH`, and its `STEP_FROM` and `STEP_TO`, filled here where empty
+	local CO=$1 OLD=$2 NEW=$3 P W I A B NAME FROM BT BN BB CT CN CB RF REF _MERGE_FILE_IDS=""
+	local -i S RC K
+	local -a ASK QUERY ANS GOT REC FALLBACK
+	local -A FB_BLOB UNBROUGHT SEEN
+	shift 3
+	FB_ENT=() FB_TIP=() FB_NAME=()
+	# A regular file at <new> holding neither side's content, its name on one line
+	for P in "$@"; do
+		W=${WT_HASH[$P]}
+		[ -n "$W" ] && [[ "${DIFF_N[$P]% *}" == 100(644|755) ]] && [[ "$P" != (*$'\n'*|*$'\r') ]] || continue
+		[ "$W" = "${DIFF_N[$P]#* }" ] || [ "$W" = "${DIFF_O[$P]#* }" ] || [ "${IDX_ENT[$P]}" = conflict ] || ASK+=("$P")
+	done
+	(( ${#ASK} )) || return 0
+	# Its content in the object store, as each landing's merge reads it
+	ANS=("${(@f)$(print -rl -- "${ASK[@]}" | git -C "$CO" hash-object -w --stdin-paths 2>/dev/null)}")
+	(( ${#ANS} == ${#ASK} )) || return 0
+	# Whether git merges blobs by ID (2.43), asked once a merge is due
+	_MERGE_FILE_IDS=-
+	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null)
+	_UNBROUGHT_READ "$CO"
+	(( ${#STEP_FROM} )) || [ -z "$REF" ] || _LANDING_STEPS "$REF" "$OLD" "$NEW"
+	# Every tip's blob at each name as it stands at <new>, in one call
+	for P in "${ASK[@]}"; do
+		for (( S = 1; S <= ${#STEP_FROM}; S++ )); do QUERY+=("${STEP_FROM[S]}:$P" "${STEP_TO[S]}:$P"); done
+	done
+	if (( ${#QUERY} )); then
+		GOT=("${(@f)$(print -rl -- "${QUERY[@]}" | git cat-file --batch-check='%(objectname) %(objecttype)' 2>/dev/null)}")
+		if (( ${#GOT} == ${#QUERY} )); then
+			for (( S = 1; S <= ${#QUERY}; S++ )); do
+				if [[ "${GOT[S]}" == *" blob" ]]; then FB_BLOB[${QUERY[S]}]=${GOT[S]%% *}; else FB_BLOB[${QUERY[S]}]=""; fi
+			done
+		fi
+	fi
+	for (( K = 1; K <= ${#ASK}; K++ )); do
+		P=${ASK[K]} W=${ANS[K]} NAME=${ASK[K]}
+		BT="" BN="" BB="" CT="" CN="" CB=""
+		SEEN=()
+		# Left unbrought by a run, its record tells – unless the file holds by now all that changed from
+		# its base to the landing that left it, merged by hand
+		if (( ${+UNBROUGHT[$P]} )); then
+			REC=(${=UNBROUGHT[$P]})
+			_BLOB_AT "${REC[3]}" "$P"; A=$REPLY
+			_BLOB_AT "${REC[1]}" "$P"; BB=$REPLY
+			if [ -n "$BB" ]; then
+				RC=0
+				[ -n "$A" ] && [ "$A" != "$BB" ] && { _LANDING_LACKED "$W" "$BB" "$A"; RC=$?; }
+				(( RC == 1 )) || BT=${REC[1]} BN=$P
+			fi
+		fi
+		# Else each landing, newest first
+		for (( S = 1; S <= ${#STEP_FROM} && ! ${#BT}; S++ )); do
+			_BLOB_AT "${STEP_TO[S]}" "$NAME"; A=$REPLY
+			[ -n "$A" ] || break
+			SEEN[$A]=1
+			if [ "$W" = "$A" ]; then BT=${STEP_TO[S]} BN=$NAME BB=$A; break; fi
+			FROM=$NAME
+			_BLOB_AT "${STEP_FROM[S]}" "$NAME"; B=$REPLY
+			# Missing before it – renamed into place, followed back to its old name, or added there
+			if [ -z "$B" ]; then
+				RF=x$(git diff -z -M --name-status --diff-filter=R "${STEP_FROM[S]}" "${STEP_TO[S]}" 2>/dev/null)
+				GOT=("${(@0)RF#x}") FROM=""
+				for (( RC = 1; RC + 2 <= ${#GOT}; RC += 3 )); do
+					[ "${GOT[RC + 2]}" = "$NAME" ] && FROM=${GOT[RC + 1]} && break
+				done
+				[ -n "$FROM" ] || break
+				_BLOB_AT "${STEP_FROM[S]}" "$FROM"; B=$REPLY
+				[ -n "$B" ] || break
+				_BLOB_AT "${STEP_TO[S]}" "$NAME"; A=$REPLY
+			fi
+			SEEN[$B]=1
+			if [ "$W" = "$B" ]; then BT=${STEP_FROM[S]} BN=$FROM BB=$B; break; fi
+			if [ "$B" != "$A" ]; then
+				# The move a sync makes is its own merge's to take – what it lacks is what lies before
+				if (( S == 1 )) && [ "${STEP_FROM[S]}" = "$OLD" ]; then
+					RC=0
+				else
+					_LANDING_LACKED "$W" "$B" "$A"
+					RC=$?
+				fi
+				if (( RC == 1 )); then BT=${STEP_TO[S]} BN=$NAME BB=$A; break; fi
+				(( RC == 2 )) && { CT="" CN=-; break; }
+				CT=${STEP_FROM[S]} CN=$FROM CB=$B
+			fi
+			NAME=$FROM
+		done
+		[ -z "$BT" ] && [ -n "$CT" ] && BT=$CT BN=$CN BB=$CB
+		# No text merge tells, or a peer's staging on the path tells another story – the one base
+		I=${IDX_ENT[$P]}
+		if [ "$CN" = - ] || { [ -n "$BT" ] && [ -n "$I" ] && [ "${I#* }" != "${DIFF_O[$P]#* }" ] && [ "${I#* }" != "${DIFF_N[$P]#* }" ] && \
+		   (( ! ${+SEEN[${I#* }]} && ! ${+UNBROUGHT[$P]} )); }; then
+			FALLBACK+=("$P")
+			continue
+		fi
+		[ -n "$BT" ] || continue
+		_FILE_BASE_SET "$P" "$BT" "$BN" "$BB"
+	done
+	# Those it couldn't tell keep the one base a carry names for every file – the old tip of the
+	# earliest landing one of them lacks that <old> still holds, never one past a landing they lack
+	if (( ${#FALLBACK} )); then
+		_CARRY_BASE "$CO" "$OLD" "${FALLBACK[@]}"
+		BT=$REPLY
+		if [ "$BT" != "$OLD" ]; then
+			for P in "${FALLBACK[@]}"; do
+				_BLOB_AT "$BT" "$P"
+				[ -n "$REPLY" ] && _FILE_BASE_SET "$P" "$BT" "$P" "$REPLY"
+			done
+		fi
+	fi
+	return 0
+}
+
+# Sets <path>'s base in the caller's `FB_ENT`, `FB_TIP` and `FB_NAME` – <name> at <tip>, holding
+# <blob> – where it is a regular file and other than <old>'s own entry there
+_FILE_BASE_SET () {
+	# Args: <path> <tip> <name> <blob> – reads the caller's `DIFF_O`
+	local E
+	local -x GIT_LITERAL_PATHSPECS=1
+	[ "$3" = "$1" ] && [ "$4" = "${DIFF_O[$1]#* }" ] && return 0
+	E=$(git ls-tree --full-tree "$2" -- "$3" 2>/dev/null)
+	[[ "${E%% *}" == 100(644|755) ]] || return 0
+	FB_TIP[$1]=$2 FB_NAME[$1]=$3 FB_ENT[$1]="${E%% *} $4"
+}
+
+# Fills the caller's `UNBROUGHT` with each path a run left unbrought in <checkout> – its base tip,
+# the landing that left it and when, and the file's blob then where stored, "<base> <old> <new>
+# <epoch> [<blob>]" – a record on its branch, of a landing of the last 7 days still standing, the
+# newest per path, `REPLY` naming the record
+# One line a path, "<epoch> <ref> <old> <new> <base> [<blob>]", a tab and the path closing it
+_UNBROUGHT_READ () {
+	# Args: <checkout>
+	local CO=$1 F JF REF TEXT LINE JT=""
+	local -a R
+	UNBROUGHT=()
+	F=$(git -C "$CO" rev-parse --path-format=absolute --git-path git-edit-unbrought 2>/dev/null)
+	REPLY=$F
+	[ -n "$F" ] && [ -s "$F" ] && { TEXT=$(<"$F") } 2>/dev/null || return 0
+	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null)
+	JF=$(_JOURNAL_FILE_PATH) && { JT=$(<"$JF") } 2>/dev/null
+	for LINE in "${(@f)TEXT}"; do
+		R=(${=${LINE%%$'\t'*}})
+		(( ${#R} == 5 || ${#R} == 6 )) && [[ "${R[1]}" == <-> ]] && (( R[1] >= EPOCHSECONDS - 604800 )) && [ "${R[2]}" = "$REF" ] || continue
+		# An undo leaves the landing no line of its own
+		[[ $'\n'"$JT" == *$'\n'<->" ${R[2]} ${R[3]} ${R[4]} "* ]] || continue
+		UNBROUGHT[${LINE#*$'\t'}]="${R[5]} ${R[3]} ${R[4]} ${R[1]}${R[6]:+ ${R[6]}}"
+	done
+	REPLY=$F
+}
+
+# Puts into `REPLY` the base tip of <path> where a run left it unbrought in <checkout> – the old tip
+# its file still sits on – nothing where none did, or the landing that left it was undone or is past
+# 7 days
+_UNBROUGHT_BASE () {
+	# Args: <checkout> <path>
+	local -A UNBROUGHT
+	_UNBROUGHT_READ "$1"
+	REPLY=${${UNBROUGHT[$2]}%% *}
+}
+
+# Records in <checkout> each path its move from <old> to <new> left unbrought, with the base its
+# file still sits on, and clears each it brought along – the caller's `NOT_BROUGHT` (path -> base)
+# and the rest of its `CHANGED` – dropping lines past 7 days, of another branch, or of a landing
+# undone since
+_UNBROUGHT_NOTE () {
+	# Args: <checkout> <old> <new>
+	local CO=$1 F P REF TMPF
+	local -i K
+	local -a OUT
+	local -A UNBROUGHT KEEP
+	_UNBROUGHT_READ "$CO"
+	F=$REPLY
+	KEEP=("${(@kv)UNBROUGHT}")
+	for P in "${CHANGED[@]}"; do unset "KEEP[$P]"; done
+	# Nothing to add, and nothing this move touched to clear
+	[ -n "$F" ] && (( ${#NOT_BROUGHT} || ${#KEEP} < ${#UNBROUGHT} )) || return 0
+	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null) || return 0
+	for P in "${(@k)KEEP}"; do
+		OUT+=("${${KEEP[$P]}[(w)4]} $REF ${${KEEP[$P]}[(w)2]} ${${KEEP[$P]}[(w)3]} ${${KEEP[$P]}[(w)1]}${${KEEP[$P]}[(w)5]:+ ${${KEEP[$P]}[(w)5]}}"$'\t'"$P")
+	done
+	# Each file newly left stored as it stands, which the landings guard reads its owner's edits since
+	# against – in one call, none where it answers short
+	local -a NEW_PATHS SNAPS
+	for P in "${(@k)NOT_BROUGHT}"; do
+		[[ "$P" == *$'\n'* ]] || [ "${${UNBROUGHT[$P]}[(w)1]}" = "${NOT_BROUGHT[$P]}" ] || \
+			{ [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && NEW_PATHS+=("$P"); }
+	done
+	(( ${#NEW_PATHS} )) && SNAPS=("${(@f)$(print -rl -- "${NEW_PATHS[@]}" | git -C "$CO" hash-object -w --stdin-paths 2>/dev/null)}")
+	(( ${#SNAPS} == ${#NEW_PATHS} )) || SNAPS=()
+	local -A SNAP
+	for (( K = 1; K <= ${#SNAPS}; K++ )); do SNAP[${NEW_PATHS[K]}]=${SNAPS[K]}; done
+	# A path left again on the same base keeps the landing that first left it there, which an undo of
+	# a later one leaves standing, and its file as it stood then
+	for P in "${(@k)NOT_BROUGHT}"; do
+		[[ "$P" == *$'\n'* ]] && continue
+		if [ "${${UNBROUGHT[$P]}[(w)1]}" = "${NOT_BROUGHT[$P]}" ]; then
+			OUT+=("${${UNBROUGHT[$P]}[(w)4]} $REF ${${UNBROUGHT[$P]}[(w)2]} ${${UNBROUGHT[$P]}[(w)3]} ${NOT_BROUGHT[$P]}${${UNBROUGHT[$P]}[(w)5]:+ ${${UNBROUGHT[$P]}[(w)5]}}"$'\t'"$P")
+		else
+			OUT+=("$EPOCHSECONDS $REF $2 $3 ${NOT_BROUGHT[$P]}${SNAP[$P]:+ ${SNAP[$P]}}"$'\t'"$P")
+		fi
+	done
+	TMPF="$F.$$"
+	if (( ${#OUT} )); then
+		print -rl -- "${OUT[@]}" > "$TMPF" 2>/dev/null || return 0
+		if (( ${+builtins[zf_mv]} )); then zf_mv -f "$TMPF" "$F" 2>/dev/null; else mv -f "$TMPF" "$F" 2>/dev/null; fi
+	else
+		rm -f "$F"
+	fi
+	return 0
+}
 # Brings <paths> in <checkout> from <old> to <new> in one two-tree merge – from <old> to <old> with
 # just them taken from <new>, so git checks each file before writing anything and keeps the rest of
 # the index as is – run on a copy of the index under its lock, each path checked there first to
-# still hold <old>'s entry with no staging in its way, as the sync read it: a peer's `git add`
-# meanwhile would have the merge drop that staging, file and all
+# still hold the entry the sync read, <old>'s but where it read another, with no staging in its way:
+# a peer's `git add` meanwhile would have the merge drop that staging, file and all
+# • A path whose file is still as another base has it – an older tip's, or <old>'s where a re-sync
+#   took its entry ahead – merges from that, its entry set to it first, its stat read off the file
 # Returns 1 where git refused, its words in `REPLY`, and 2 where the index stayed locked
 _SYNC_TWO_TREE () {
-	# Args: <checkout> <old tip> <new tip> <path>... – reads the caller's `DIFF_O` and `DIFF_N`, and
-	# fills its `TT_MOVED` with each path staged since, `TT_IN_WAY` with each one staging blocks
-	# (path -> the staged one), the merge taking the rest
-	local CO=$1 OLD=$2 NEW=$3 IDX TMP PRIV MID OUT P
+	# Args: <checkout> <old tip> <new tip> <path>... – reads the caller's `DIFF_O` and `DIFF_N`, its
+	# `TT_EXP` and `TT_FROM` with a path's entry as read and its file's base where either isn't
+	# <old>'s, and fills its `TT_MOVED` with each path staged since, `TT_IN_WAY` with each one staging
+	# blocks (path -> the staged one), the merge taking the rest
+	local CO=$1 OLD=$2 NEW=$3 IDX TMP PRIV MID FROM OUT P E
 	local -x GIT_LITERAL_PATHSPECS=1
-	local -a TAKE ADDS
+	local -a TAKE ADDS BACK
 	local -A IDX_ENT GOES IN_WAY
 	shift 3
-	REPLY="" TT_MOVED=() TT_IN_WAY=()
+	REPLY="" TT_MOVED=() TT_IN_WAY=() FROM=$OLD
 	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)
 	if [ -z "$IDX" ] || ! _LOCK_INDEX "$IDX"; then
 		REPLY="the index is locked"
@@ -5573,12 +5921,12 @@ _SYNC_TWO_TREE () {
 		fi
 		_INDEX_ENTRIES "$CO" "$TMP" "$@"
 		for P in "$@"; do
-			if [ "${IDX_ENT[$P]}" != "${DIFF_O[$P]}" ]; then
+			if [ "${IDX_ENT[$P]}" != "${TT_EXP[$P]-${DIFF_O[$P]}}" ]; then
 				TT_MOVED+=("$P")
 				continue
 			fi
 			TAKE+=("$P")
-			[ -n "${IDX_ENT[$P]}" ] || ADDS+=("$P")
+			[ -n "${IDX_ENT[$P]}" ] || [ -z "${DIFF_N[$P]}" ] || ADDS+=("$P")
 			# One the merge takes out goes alongside, never in the way – a file turned into a directory
 			[ -n "${DIFF_N[$P]}" ] || GOES[$P]=1
 		done
@@ -5589,8 +5937,24 @@ _SYNC_TWO_TREE () {
 			TAKE=("${(@)TAKE:|ADDS}")
 		fi
 		(( ${#TAKE} )) || return 0
+		for P in "${TAKE[@]}"; do
+			[ "${IDX_ENT[$P]}" = "${TT_FROM[$P]-${DIFF_O[$P]}}" ] || BACK+=("$P")
+		done
+		if (( ${#BACK} )); then
+			{ for P in "${BACK[@]}"; do E=${TT_FROM[$P]}; printf '%s %s\t%s\0' "${E% *}" "${E#* }" "$P"; done; :; } | \
+				GIT_INDEX_FILE=$TMP git -C "$CO" update-index -z --index-info 2>/dev/null || { REPLY="the index could not be written"; return 1; }
+			GIT_INDEX_FILE=$TMP git -C "$CO" update-index -q --refresh >/dev/null 2>&1
+		fi
 		rm -f "$PRIV"
+		# The tree each path merges from – <old>'s, but where a file's base is another
 		if GIT_INDEX_FILE=$PRIV git read-tree "$OLD" 2>/dev/null && \
+		   { (( ! ${#TT_FROM} )) || {
+		       { for P in "${TAKE[@]}"; do
+		           (( ${+TT_FROM[$P]} )) && [ "${TT_FROM[$P]}" != "${DIFF_O[$P]}" ] || continue
+		           E=${TT_FROM[$P]}
+		           if [ -n "$E" ]; then printf '%s %s\t%s\0' "${E% *}" "${E#* }" "$P"; else printf '0 %s\t%s\0' "${(l:${#OLD}::0:)}" "$P"; fi
+		         done; :; } | GIT_INDEX_FILE=$PRIV git update-index -z --index-info 2>/dev/null && \
+		       FROM=$(GIT_INDEX_FILE=$PRIV git write-tree 2>/dev/null); }; } && \
 		   { for P in "${TAKE[@]}"; do
 		       if [ -n "${DIFF_N[$P]}" ]; then printf '%s %s\t%s\0' "${DIFF_N[$P]% *}" "${DIFF_N[$P]#* }" "$P"
 		       else printf '0 %s\t%s\0' "${(l:${#OLD}::0:)}" "$P"
@@ -5600,7 +5964,7 @@ _SYNC_TWO_TREE () {
 		     :
 		   } | GIT_INDEX_FILE=$PRIV git update-index -z --index-info 2>/dev/null && \
 		   MID=$(GIT_INDEX_FILE=$PRIV git write-tree 2>/dev/null) && \
-		   OUT=$(GIT_INDEX_FILE=$TMP git -C "$CO" read-tree -m -u "$OLD" "$MID" 2>&1) && \
+		   OUT=$(GIT_INDEX_FILE=$TMP git -C "$CO" read-tree -m -u "$FROM" "$MID" 2>&1) && \
 		   mv -f "$TMP" "$IDX"; then
 			return 0
 		fi
@@ -5693,21 +6057,6 @@ _SYNC_WRITE_ENTRIES () {
 	} always {
 		rm -f "$TMP" "$IDX.lock"
 	}
-}
-
-# Writes <path> into <checkout> as the "<mode> <blob>" <entry> has it, never over anything there –
-# from an index of its own, as the checkout's takes its entry in `_SYNC_WRITE_ENTRIES`' step
-_SYNC_CHECKOUT_FILE () {
-	# Args: <checkout> <path> <entry>
-	local IDX=$(MKTEMP_FILE git-edit-sync-index) RC
-	local -x GIT_LITERAL_PATHSPECS=1
-	_TEMP_FILES+=("$IDX")
-	rm -f "$IDX"
-	printf '%s\t%s\0' "$3" "$2" | GIT_INDEX_FILE=$IDX git -C "$1" update-index -z --index-info 2>/dev/null && \
-		GIT_INDEX_FILE=$IDX git -C "$1" checkout-index -- "$2" 2>/dev/null
-	RC=$?
-	rm -f "$IDX"
-	return $RC
 }
 
 # Names the submodules a rewrite moved whose checkouts are where they were, with the command that
@@ -5834,18 +6183,30 @@ _CARRY_TODO () {
 	_CARRY_BASE "$CO" "$OLD" "$@"
 	FROM=${REPLY:0:12}
 	BACK=("${reply[@]}")
-	HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
 	if (( ${#BACK} )); then
 		_AT_TOP "$CO"
 		CMD=$REPLY
 		_MOVE_BACK_CMD "$CO" "${BACK[@]}"
 		CMD+="${REPLY}git edit --carry=$FROM"
-	elif [ -n "$HERE" ] && [ "${HERE:A}" = "${CO:A}" ]; then
-		CMD="git edit --carry=$FROM"
 	else
-		CMD="git -C $(_SHQ "$CO") edit --carry=$FROM"
+		_CARRY_CMD "$CO" "$FROM"
+		CMD=$REPLY
 	fi
 	_TODO_ADD "$CMD" "$MSG" 33 "${ARGS[@]}" "$CMD"
+	# Named – a second signal stopping the run has no carry of its own to name
+	_SYNC_DONE=1
+}
+
+# Puts into `REPLY` the `git edit --carry=<old>` that brings <checkout> along – run there where the
+# caller stands in another checkout
+_CARRY_CMD () {
+	# Args: <checkout> <old>
+	local HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+	if [ -n "$HERE" ] && [ "${HERE:A}" = "${1:A}" ]; then
+		REPLY="git edit --carry=${2:0:12}"
+	else
+		REPLY="git -C $(_SHQ "$1") edit --carry=${2:0:12}"
+	fi
 }
 
 # Adds the carry for each other checkout of <ref> – a branch checked out twice, by `git worktree add
@@ -6141,6 +6502,7 @@ _RECONCILE_CHECKOUT () {
 	   [[ "$_SYNC_WHY" != *halfway* ]]; then
 		# "Index re-synced" holds only where no entry was left alone or locked out, nor a file left out
 		[ -n "$CURRENT_HEADLINE" ] && [ $(( ${#RESET_SPARSE[@]} + ${#MODIFIED[@]} + ${#MISSING[@]} + ${#DIRS[@]} + ${#LINKED[@]} + ${#UNDER_FILE[@]} + ${#MODE_ONLY[@]} + ${#LEFT_ALONE[@]} + ${#DIR_TAKEN[@]} + ${#DIR_STAYS[@]} )) -eq 0 ] && PRINT_TEXT "%s" 32 "$CURRENT_HEADLINE"
+		_SYNC_DONE=1
 		return 0
 	fi
 	if (( ${#STALE} + ${#GONE} )); then
@@ -6162,6 +6524,18 @@ _RECONCILE_CHECKOUT () {
 	PRINT_TEXT "Your checkout was not brought along – %s." 33 "$_SYNC_WHY"
 	local -a BASE_OF
 	for P in "${REVERTING[@]}"; do BASE_OF+=("${CASE_FROM[$P]:-$P}"); done
+	# Each file whose edits sit on the content before recorded so, its re-synced entry no longer
+	# telling – an earlier record's base kept, else the old tip of the earliest landing it lacks
+	if (( ${#REVERTING} )); then
+		local -a CHANGED=("${REVERTING[@]}")
+		local -A NOT_BROUGHT
+		for P in "${REVERTING[@]}"; do
+			_UNBROUGHT_BASE "$CO" "$P"
+			[ -n "$REPLY" ] || _CARRY_BASE "$CO" "$OLD" "$P"
+			NOT_BROUGHT[$P]=$REPLY
+		done
+		_UNBROUGHT_NOTE "$CO" "$OLD" "$NEW"
+	fi
 	if [[ "$_SYNC_WHY" == "it is checked out at"* ]]; then
 		_CARRY_TODO "$CO" "$OLD" "Bring that checkout along – files to what landed, edits merged onto it: %s" -- "${BASE_OF[@]}" "${EDITED_OLD[@]}"
 	else
@@ -6202,6 +6576,8 @@ _RECONCILE_KEEP () {
 	local CO=$1 OLD=$2 NEW=$3 P
 	local -a RESYNCED LEFT_ALONE LOCKED KEPT DIFF_PATHS
 	local -A DIFF_O DIFF_N VS_HEAD
+	# Its files stay as they are – no carry to name, a second signal stopping the run included
+	_SYNC_DONE=1
 	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
 	(( ${#RESYNCED} )) && PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "$(_SOME_PATHS -q "${RESYNCED[@]}")"
 	(( ${#LEFT_ALONE} )) && PRINT_TEXT "Index entries left alone – they differ from the undone run's tip (a peer's staging, or your own): %s" 33 "$(_ALL_PATHS -q "${LEFT_ALONE[@]}")"
@@ -6492,12 +6868,11 @@ _REQUIRE_PLAIN_GIT_ENV () {
 	# without, so the route is a `.git` file pointing there, which `--separate-git-dir` makes
 	if [ -z "${WITHOUT[1]}" ] && [ -n "${WITH[1]}" ] && [ -n "${WITH[2]}" ] && \
 	   (( ! ${+GIT_INDEX_FILE} && ! ${+GIT_COMMON_DIR} && ! ${+GIT_OBJECT_DIRECTORY} && ! ${+GIT_ALTERNATE_OBJECT_DIRECTORIES} )); then
-		# Its top named only where known – without `GIT_WORK_TREE` or `core.worktree`, git takes the
-		# cwd for it, which only every tracked file found from here bears out – a `.git` file in a
-		# subdirectory would have every one read as deleted
+		# Its top named only where `GIT_WORK_TREE` or `core.worktree` names it – else git takes the cwd
+		# for it, which no listing proves, skip-worktree entries and a subdirectory mirroring the
+		# tracked names passing alike – a `.git` file in a subdirectory would have every file deleted
 		local TOP="" CMD
-		if (( ${+GIT_WORK_TREE} )) || [ -n "$(git config --get core.worktree 2>/dev/null)" ] || \
-		   { [ -n "$(git ls-files 2>/dev/null | head -1)" ] && [ -z "$(git ls-files -d 2>/dev/null | head -1)" ]; }; then
+		if (( ${+GIT_WORK_TREE} )) || [ -n "$(git config --get core.worktree 2>/dev/null)" ]; then
 			TOP=${WITH[2]:A}
 		fi
 		CMD="printf 'gitdir: %s\n' $(_SHQ "${WITH[1]}") > $(_SHQ "${TOP:-<top of the work tree>}/.git")"
@@ -6507,7 +6882,7 @@ _REQUIRE_PLAIN_GIT_ENV () {
 		if [ -n "$TOP" ]; then
 			ECHO_E "\e[0;31m  Give the work tree a .git file pointing there, as git init --separate-git-dir does, then run git edit without GIT_DIR: $(_LIT "$CMD")\e[0m" >&2
 		else
-			ECHO_E "\e[0;31m  Give the work tree a .git file pointing there, at its top – the directory its tracked paths start from, which neither GIT_WORK_TREE nor core.worktree names, and the current directory may not be – as git init --separate-git-dir does, then run git edit without GIT_DIR: $(_LIT "$CMD")\e[0m" >&2
+			ECHO_E "\e[0;31m  Give the work tree a .git file pointing there, at its top – the directory its tracked paths start from, which neither GIT_WORK_TREE nor core.worktree names, and the current directory need not be – as git init --separate-git-dir does, then run git edit without GIT_DIR: $(_LIT "$CMD")\e[0m" >&2
 		fi
 		exit 1
 	fi
@@ -7077,39 +7452,63 @@ GIT_REBASE_SQUASH () {
 	_REBASE_FROM_START "LC_ALL=C sed -i.git-edit$SED_SCRIPT -e '/^pick $TARGET/a$APPEND'" "$TEXT_FILE" "${OPT_MESSAGE:+real}" "${CMD[@]}"
 }
 
-# Names the commits a drop or squash left empty and its rebase dropped – the caller named the
-# others, so only these go unasked, matched by subject as a rewrite changes every SHA
-_PRINT_EMPTIED () {
-	# Args: <old tip> <new tip> <squash target or empty> <commit the caller named>...
-	[ -n "$_IN_LANDED_STEP" ] || { _LANDED_STEP "$0" "$@"; return; }
-	local OLD=$1 NEW=$2 TGT=$3 LINE SUBJECT
+# Puts into `REPLY` how many commits a drop or squash left empty and its rebase dropped, and into
+# `reply` each as "<sha> <subject>" – the caller named the others, so only these go unasked
+# • Matched by authorship and subject, which a rebase keeps as it changes every SHA – a subject
+#   alone takes a twin left standing for the one dropped
+# • Listed only where the count agrees, and with `--sure` only those sharing that with no other
+#   commit of the span, where which twin went is no guess
+# • Returns 1 where the rebase dropped none
+_EMPTIED_COMMITS () {
+	# Args: [--sure] <old tip> <new tip> <squash target or empty> <commit the caller named>...
+	local SURE=""
+	[ "$1" = --sure ] && { SURE=1; shift; }
+	local OLD=$1 NEW=$2 TGT=$3 LINE KEY F=$'\x01'
 	shift 3
 	local MB=$(git merge-base "$OLD" "$NEW" 2>/dev/null)
 	local -a BEFORE GONE
-	local -A NAMED SURVIVING
+	local -A NAMED SURVIVING SHARED
+	REPLY=0 reply=()
 	for LINE in "$@"; do NAMED[$LINE]=1; done
-	for LINE in ${(f)"$(git log --format='%H %s' ${MB:+$MB..}$OLD 2>/dev/null)"}; do
-		(( ${+NAMED[${LINE%% *}]} )) || BEFORE+=("$LINE")
+	for LINE in ${(f)"$(git log --format="%H %an$F%ae$F%ad$F%s" --date=raw ${MB:+$MB..}$OLD 2>/dev/null)"}; do
+		(( ${+NAMED[${LINE%% *}]} )) && continue
+		BEFORE+=("$LINE")
+		SHARED[k:${LINE#* }]=$(( ${SHARED[k:${LINE#* }]:-0} + 1 ))
 	done
 	local -i AFTER=$(git rev-list --count ${MB:+$MB..}$NEW 2>/dev/null)
 	# The squash's target is the one named commit left standing
 	[ -n "$TGT" ] && AFTER=$(( AFTER - 1 ))
-	(( ${#BEFORE} > AFTER )) || return 0
-	while IFS= read -r SUBJECT; do
-		SURVIVING[s:$SUBJECT]=$(( ${SURVIVING[s:$SUBJECT]:-0} + 1 ))
-	done <<< "$(git log --format=%s ${MB:+$MB..}$NEW 2>/dev/null)"
+	(( ${#BEFORE} > AFTER )) || return 1
+	while IFS= read -r KEY; do
+		SURVIVING[k:$KEY]=$(( ${SURVIVING[k:$KEY]:-0} + 1 ))
+	done <<< "$(git log --format="%an$F%ae$F%ad$F%s" --date=raw ${MB:+$MB..}$NEW 2>/dev/null)"
+	local -i N=0
 	for LINE in "${BEFORE[@]}"; do
-		SUBJECT=${LINE#* }
-		if (( ${SURVIVING[s:$SUBJECT]:-0} > 0 )); then
-			SURVIVING[s:$SUBJECT]=$(( ${SURVIVING[s:$SUBJECT]} - 1 ))
-		else
-			GONE+=("${LINE:0:7} $SUBJECT")
+		KEY=${LINE#* }
+		if (( ${SURVIVING[k:$KEY]:-0} > 0 )); then
+			SURVIVING[k:$KEY]=$(( ${SURVIVING[k:$KEY]} - 1 ))
+			continue
 		fi
+		N+=1
+		[ -n "$SURE" ] && (( ${SHARED[k:$KEY]} > 1 )) && continue
+		GONE+=("${LINE%% *} ${${${KEY#*$F}#*$F}#*$F}")
 	done
-	PRINT_TEXT "%s commit(s) left empty by the %s were dropped:" 33 "$(( ${#BEFORE} - AFTER ))" "${ACTION:-$STATE_ACTION}"
-	# Named only where the count agrees – a commit whose subject has no counterpart is not one
-	(( ${#GONE} == ${#BEFORE} - AFTER )) || return 0
-	printf '%s\n' "${GONE[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/  emptied: /;s/^/${_DIM}/;s/\$/${_OFF}/"
+	REPLY=$(( ${#BEFORE} - AFTER ))
+	# A commit whose authorship and subject find no counterpart is not one
+	(( N == REPLY )) && reply=("${GONE[@]}")
+	return 0
+}
+
+# Names the commits a drop or squash left empty and its rebase dropped
+_PRINT_EMPTIED () {
+	# Args: <old tip> <new tip> <squash target or empty> <commit the caller named>...
+	[ -n "$_IN_LANDED_STEP" ] || { _LANDED_STEP "$0" "$@"; return; }
+	local LINE
+	_EMPTIED_COMMITS "$@" || return 0
+	local -a GONE=("${reply[@]}")
+	PRINT_TEXT "%s commit(s) left empty by the %s were dropped:" 33 "$REPLY" "${ACTION:-$STATE_ACTION}"
+	(( ${#GONE} )) || return 0
+	for LINE in "${GONE[@]}"; do print -r -- "${LINE:0:7} ${LINE#* }"; done | _CARET_LINES | LC_ALL=C sed "s/^/  emptied: /;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
 # Prints the commit a squash's rebase made of its target – the target's place in the todo,
@@ -7181,6 +7580,10 @@ _LAND_REBASE () {
 		if _IS_ANCESTOR "$INTO" "$NEW"; then
 			for T in "${NAMED[@]}"; do [ "$T" = "$TGT" ] || _RUN_FATES[$T]="squashed $INTO"; done
 		fi
+	fi
+	# One the rebase dropped as emptied is gone as surely as one named
+	if _EMPTIED_COMMITS --sure "$OLD" "$NEW" "$TGT" "${NAMED[@]}"; then
+		for T in "${reply[@]}"; do _RUN_FATES[${T%% *}]=dropped; done
 	fi
 	# Only where the ref still holds the tip the run read, so a concurrent commit, from an editor
 	# working in the checkout say, is never overwritten
@@ -8512,6 +8915,35 @@ _INPUT_SPELLING () {
 	fi
 }
 
+# Puts into `REPLY` the path <path as given> names read from the top instead of from where the
+# caller stands – returns 1 where both readings are one, from the top or an absolute path
+_INPUT_TOP_READING () {
+	# Args: <path as given> – reads the composer's `_IN_PREFIX` and `_IN_PRECOMPOSE`
+	REPLY=""
+	[ -n "$_IN_PREFIX" ] && [[ "$1" != /* ]] || return 1
+	REPLY=${${:-/@top@/$1}:a}
+	[[ "$REPLY" == /@top@/?* ]] || { REPLY=""; return 1; }
+	REPLY=${REPLY#/@top@/}
+	[ "$_IN_PRECOMPOSE" = true ] && [[ "$REPLY" == *[^[:ascii:]]* ]] && REPLY=$(_COMPOSED "$REPLY")
+	return 0
+}
+
+# Refuses a `--put` from a subdirectory of a path new to the tip where the same name read from the
+# top is a tracked path – a name spelled from the top would silently add a file beside it, where
+# `--edits` refuses the same spelling
+_REFUSE_PUT_READINGS () {
+	# Args: <path from the top> <path as given> – reads the composer's `_IN_TOP` and `_IN_PREFIX`
+	local P=$1 GIVEN=$2 ALT KEY
+	_INPUT_TOP_READING "$GIVEN" || return 0
+	ALT=$REPLY
+	[ -n "$(_INPUT_ENTRY "$ALT")" ] || return 0
+	_INPUT_SPELLING "$ALT"
+	KEY=$REPLY
+	PRINT_ERR "--put $GIVEN: new to the tip – paths are read from where you stand, $_IN_PREFIX, so it names $P, while $ALT, its reading from the top, is tracked"
+	ECHO_E "\e[0;31m  Nothing landed – put $(_LIT "$(_SHQ "$KEY")")=<file> for $ALT, or $(_LIT "$(_SHQ "$_IN_TOP/$P")")=<file> to add $P, then run this again.\e[0m" >&2
+	exit 1
+}
+
 # Refuses an `--edits` path holding no file at the tip, naming what stands there instead – the
 # commit that renamed or removed it, or the file a key read from the top names
 _REFUSE_EDITS_NO_FILE () {
@@ -8548,9 +8980,8 @@ _REFUSE_EDITS_NO_FILE () {
 				exit 1
 			fi
 			# A key spelled from the top, given from a subdirectory
-			if [ -n "$_IN_PREFIX" ] && [[ "$GIVEN" != /* ]]; then
-				ALT=${${:-/@top@/$GIVEN}:a}
-				ALT=${ALT#/@top@/}
+			if _INPUT_TOP_READING "$GIVEN"; then
+				ALT=$REPLY
 				if [[ "$(_INPUT_ENTRY "$ALT")" == (100644|100755)\ * ]]; then
 					_INPUT_SPELLING "$ALT"
 					KEY=$REPLY
@@ -8566,7 +8997,8 @@ _REFUSE_EDITS_NO_FILE () {
 }
 
 # Puts into `REPLY` how often <old> occurs in <text> – occurrences overlapping the first counted
-# too, `}\n}\n` twice in `}\n}\n}\n`
+# too, `}\n}\n` twice in `}\n}\n}\n` – each `--edits` old text must count 1, composed on the tip
+# or resolving a fold's stop
 _EDIT_MATCHES () {
 	# Args: <text> <old>
 	setopt local_options no_multibyte
@@ -8615,7 +9047,7 @@ _COMPOSE_INPUTS () {
 	local _IN_TOP=${reply[1]} _IN_PREFIX=${reply[2]}
 	local _IN_PRECOMPOSE=${reply[4]}
 	local IDX=$(MKTEMP_FILE git-edit-index) ERR P SPEC SRC MODE BLOB TEXT OLD NEW BASE_AT TIP_AT FILE FILTER START
-	local -a PATCHES PUTS PUT_SRCS RMS CHMODS CHMOD_X NAMED FLIPS UNNAMED WHOLE_FLIPS
+	local -a PATCHES PUTS PUT_SRCS PUT_GIVEN RMS CHMODS CHMOD_X NAMED FLIPS UNNAMED WHOLE_FLIPS
 	local -A EDITS_GIVEN
 	local -i K C HITS I J
 	_TEMP_FILES+=("$IDX")
@@ -8664,7 +9096,7 @@ _COMPOSE_INPUTS () {
 			PRINT_ERR "--put $REPLY: named twice – put it once"
 			exit 1
 		fi
-		PUTS+=("$REPLY") PUT_SRCS+=("${SRC:a}")
+		PUTS+=("$REPLY") PUT_SRCS+=("${SRC:a}") PUT_GIVEN+=("${SPEC[1,FILE-1]}")
 	done
 	if [ ${#OPT_EDITS} -gt 0 ]; then
 		_OPT_VALUES OPT_EDITS
@@ -8739,7 +9171,7 @@ _COMPOSE_INPUTS () {
 			_AT_TOP "$(git rev-parse --show-toplevel)"
 			PRINT_ERR "$P: changed between --base ${EXEC_BASE:0:9} and the tip ${WHOLE_HEAD:0:9} (${REPLY}git log --oneline ${EXEC_BASE:0:9}..${WHOLE_HEAD:0:9} -- $(_QUOTE_PATHS "$P"))"
 			if [ $SPEC = --put ]; then
-				ECHO_E "\e[0;31m  Rebuild it from the tip and put it again, or replay your change with --edits.\e[0m" >&2
+				ECHO_E "\e[0;31m  Rebuild it from the tip and put it again, or replay your change with --edits, resting on the tip as --base=${WHOLE_HEAD:0:12} – as where taking it back is the point.\e[0m" >&2
 			else
 				ECHO_E "\e[0;31m  See whether it still goes, then remove it with the tip as --base.\e[0m" >&2
 			fi
@@ -8767,6 +9199,7 @@ _COMPOSE_INPUTS () {
 		P=${PUTS[K]} SRC=${PUT_SRCS[K]}
 		MODE=$(_INPUT_ENTRY "$P")
 		MODE=${MODE%% *}
+		[ -n "$MODE" ] || _REFUSE_PUT_READINGS "$P" "${PUT_GIVEN[K]}"
 		if [ "$MODE" = 160000 ]; then
 			PRINT_ERR "--put $P: a submodule at the tip – a file put there would read as a broken one"
 			exit 1
@@ -8943,41 +9376,59 @@ _COMPOSE_INPUTS () {
 		exit 1
 	fi
 	_INPUT_FLIPS=${#FLIPS}
-	# Without a `--base`, puts and removals are checked as whole files are, against other callers'
-	# landings of the last 7 days – on a tree holding them alone, as edits and patches apply to the
-	# tip itself and take nothing back
+	# Each route guarded on a tree holding its own paths alone, with its own remedies – against other
+	# callers' landings of the last 7 days, or the `--base` named, which puts and removals met above
+	# – an edit or a patch as much as a put, as one built from a checkout file that predates a landing
+	# takes it back all the same
+	local -a INPUT_PATHS=(${${${WHOLE_PATHS:|PUTS}:|RMS}:|TAKEN}) BY
+	(( ${#OPT_PATCH} )) && BY+=(--patch)
+	(( ${#OPT_EDITS} )) && BY+=(--edits)
+	(( ${#OPT_CHMOD} )) && BY+=(--chmod)
+	local -i ROUTES=$(( (${#PUTS} + ${#RMS} > 0) + (${#TAKEN} > 0) + (${#INPUT_PATHS} > 0) ))
+	# A file put or taken whole is the caller's own, which edits and patches rest on a file holding a
+	# peer's lines to leave out – those keep a conflicting sync's report and record
+	_LANDED_OWN=("$_IN_TOP" "${PUTS[@]}" "${RMS[@]}" "${TAKEN[@]}")
 	if [ -z "$EXEC_BASE" ] && [ $(( ${#PUTS} + ${#RMS} )) -gt 0 ]; then
-		rm -f "$IDX"
-		GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" || exit 1
-		for P in "${PUTS[@]}"; do
-			GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "$(git ls-tree --full-tree "$WHOLE_TREE" -- ":(literal)$P" | awk '{ print $1 "," $3 }'),$P" || exit 1
-		done
-		for P in "${RMS[@]}"; do
-			(cd "$_IN_TOP" && GIT_INDEX_FILE=$IDX git update-index --force-remove -- "$P") || exit 1
-		done
-		WHOLE_TREE=$(GIT_INDEX_FILE=$IDX git write-tree) _WHOLE_WHAT='Put or removed' _GUARD_WHOLE_LANDINGS
-		rm -f "$IDX"
+		REPLY=$WHOLE_TREE
+		(( ROUTES == 1 )) || _TREE_HOLDING "$WHOLE_HEAD" "$WHOLE_TREE" "$_IN_TOP" "${PUTS[@]}" "${RMS[@]}" || exit 1
+		WHOLE_TREE=$REPLY _WHOLE_WHAT='Put or removed' _GUARD_WHOLE_LANDINGS
 	fi
-	# Files taken whole are guarded as `-- <paths>` alone guards them – conflict markers, then other
-	# callers' landings or the `--base` named, on a tree holding them alone
+	if [ ${#INPUT_PATHS} -gt 0 ]; then
+		REPLY=$WHOLE_TREE
+		(( ROUTES == 1 )) || _TREE_HOLDING "$WHOLE_HEAD" "$WHOLE_TREE" "$_IN_TOP" "${INPUT_PATHS[@]}" || exit 1
+		_GUARD_STAGED_FOLD "$WHOLE_HEAD" "$REPLY" "Changed by ${(j:, :)BY}" "${INPUT_PATHS[@]}"
+	fi
+	# Files taken whole are guarded as `-- <paths>` alone guards them – conflict markers first
 	if [ ${#TAKEN} -gt 0 ]; then
 		_GUARD_FOLD_MARKERS "$WHOLE_HEAD" "$WHOLE_TREE" "taken whole" "${TAKEN[@]}"
-		local -a RECS LISTED
-		RECS=(${(0)"$(git --literal-pathspecs ls-tree --full-tree -r -z "$WHOLE_TREE" -- "${TAKEN[@]}")"})
-		LISTED=("${(@)RECS#*$'\t'}")
-		rm -f "$IDX"
-		GIT_INDEX_FILE=$IDX git read-tree "$WHOLE_HEAD" || exit 1
-		if [ ${#RECS} -gt 0 ]; then
-			print -rN -- "${RECS[@]}" | GIT_INDEX_FILE=$IDX git update-index -z --index-info || exit 1
-		fi
-		LISTED=("${(@)TAKEN:|LISTED}")
-		if [ ${#LISTED} -gt 0 ]; then
-			print -rN -- "${LISTED[@]}" | (cd "$_IN_TOP" && GIT_INDEX_FILE=$IDX git update-index --force-remove -z --stdin) || exit 1
-		fi
-		SPEC=$(GIT_INDEX_FILE=$IDX git write-tree) || exit 1
-		rm -f "$IDX"
-		_GUARD_STAGED_FOLD "$WHOLE_HEAD" "$SPEC" "${${1:#fold}:+Committed whole}${${1:#commit}:+Folded whole}" "${TAKEN[@]}"
+		REPLY=$WHOLE_TREE
+		(( ROUTES == 1 )) || _TREE_HOLDING "$WHOLE_HEAD" "$WHOLE_TREE" "$_IN_TOP" "${TAKEN[@]}" || exit 1
+		_GUARD_STAGED_FOLD "$WHOLE_HEAD" "$REPLY" "${${1:#fold}:+Committed whole}${${1:#commit}:+Folded whole}" "${TAKEN[@]}"
 	fi
+}
+
+# Puts into `REPLY` the tree of <tip> holding <path>s as <tree> has them – each one <tree> lacks
+# removed – the paths one route composed, apart from the rest
+_TREE_HOLDING () {
+	# Args: <tip> <tree> <top> <path>...
+	local TIP=$1 TREE=$2 TOP=$3 IDX=$(MKTEMP_FILE git-edit-index)
+	local -a RECS LISTED GONE
+	shift 3
+	_TEMP_FILES+=("$IDX")
+	rm -f "$IDX"
+	GIT_INDEX_FILE=$IDX git read-tree "$TIP" || return 1
+	RECS=(${(0)"$(git --literal-pathspecs ls-tree --full-tree -r -z "$TREE" -- "$@")"})
+	LISTED=("${(@)RECS#*$'\t'}")
+	GONE=("${(@)argv:|LISTED}")
+	# Removals first, so a file turned directory takes its new entries
+	if (( ${#GONE} )); then
+		print -rN -- "${GONE[@]}" | (cd "$TOP" && GIT_INDEX_FILE=$IDX git update-index --force-remove -z --stdin) || return 1
+	fi
+	if (( ${#RECS} )); then
+		print -rN -- "${RECS[@]}" | GIT_INDEX_FILE=$IDX git update-index -z --index-info || return 1
+	fi
+	REPLY=$(GIT_INDEX_FILE=$IDX git write-tree) || return 1
+	rm -f "$IDX"
 }
 
 # Merges a landing's change into <ours> – the result's blob on stdout, or a failure where it
@@ -9008,17 +9459,32 @@ _MERGE_LANDING () {
 # Succeeds where <ours> – a copy edited beside a landing – touches none of its changed lines, read
 # against its before, which edits made on the landed lines would overlap, and lacks the landing
 # by its lines – an edit on the line next to a landed one folds that line into its own hunk
+# • Given <kept>, the file's blob when a run's sync conflicting there left it unbrought (`-` where
+#   none was stored), an overlap tells only where <ours> changed since the lines of <kept> the
+#   landing conflicts with – edits elsewhere in the file leave those as they were
 _EDITS_MISS_LANDING () {
-	# Args: <ours blob> <before blob> <after blob>
+	# Args: <ours blob> <before blob> <after blob> [<kept blob> or -]
 	local O=$(MKTEMP_FILE git-edit-ours) B=$(MKTEMP_FILE git-edit-base) A=$(MKTEMP_FILE git-edit-theirs) SHARED
-	local D=$(MKTEMP_FILE git-edit-landed)
-	local -x LANDED
-	_TEMP_FILES+=("$O" "$B" "$A" "$D")
+	local D=$(MKTEMP_FILE git-edit-landed) KEPT=$(MKTEMP_FILE git-edit-kept)
+	local -x LANDED CONF
+	_TEMP_FILES+=("$O" "$B" "$A" "$D" "$KEPT")
+	# Prints "overlap" where a span on stdin meets one in the env var `v` names – with `p` set, the
+	# third and fourth column of each such line instead
+	local OVERLAP='
+		BEGIN { n = split(ENVIRON[v], F, /[ \n]+/); for (i = 1; i < n; i += 2) { S[++k] = F[i] + 0; E[k] = F[i + 1] + 0 } }
+		NF { for (i = 1; i <= k; i++) if (S[i] <= $2 + 0 && $1 + 0 <= E[i]) { if (p) { print $3, $4; next } print "overlap"; exit } }'
 	if git cat-file blob "$1" > "$O" && git cat-file blob "$2" > "$B" && git cat-file blob "$3" > "$A"; then
 		LANDED=$(_CHANGED_SPANS "$B" "$A")
-		SHARED=$(_CHANGED_SPANS "$B" "$O" | awk '
-			BEGIN { n = split(ENVIRON["LANDED"], F, /[ \n]+/); for (i = 1; i < n; i += 2) { S[++k] = F[i] + 0; E[k] = F[i + 1] + 0 } }
-			NF { for (i = 1; i <= k; i++) if (S[i] <= $2 + 0 && $1 + 0 <= E[i]) { print "overlap"; exit } }')
+		SHARED=$(_CHANGED_SPANS "$B" "$O" | awk -v v=LANDED "$OVERLAP")
+		# The kept file's spans whose before the landing changed too, read in its own lines
+		if [ -n "$SHARED" ] && [ -n "$4" ]; then
+			if [ "$4" = - ] || ! git cat-file blob "$4" > "$KEPT" 2>/dev/null; then
+				SHARED=""
+			else
+				CONF=$(_CHANGED_SPANS -t "$B" "$KEPT" | awk -v v=LANDED -v p=1 "$OVERLAP")
+				[ -n "$CONF" ] && SHARED=$(_CHANGED_SPANS "$KEPT" "$O" | awk -v v=CONF "$OVERLAP")
+			fi
+		fi
 		# Held where <ours> gained each line the landing added, and lost each it removed, as often
 		# as the landing did against its before – a line it both removes and adds (a move) tells
 		# nothing, so the miss stands
@@ -9036,7 +9502,7 @@ _EDITS_MISS_LANDING () {
 	else
 		SHARED=unknown
 	fi
-	rm -f "$O" "$B" "$A" "$D"
+	rm -f "$O" "$B" "$A" "$D" "$KEPT"
 	[ -z "$SHARED" ]
 }
 
@@ -9054,9 +9520,10 @@ _AGO () {
 	fi
 }
 
-# Refuses whole files taking back another caller's landing of the last 7 days – a file lacking one
-# the tip still carries, one a landing removed, or the removal of one it added – where a conflict
-# proves nothing, later edits on its lines conflicting too
+# Refuses composed content taking back another caller's landing of the last 7 days, whatever route
+# composed it – a file lacking one the tip still carries, one a landing removed, or the removal of
+# one it added – where a conflict proves nothing, later edits on its lines conflicting too, but in
+# a file that landing's sync left unbrought
 _GUARD_WHOLE_LANDINGS () {
 	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE Q QOURS DST DSTBLOB O
 	local HEAD_BLOB NAME_AT_TIP AT_TIP N
@@ -9066,8 +9533,11 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST
-	local KIND BMODE AMODE HIT B L FROM
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R
+	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
+	local -i FIRST_K=0
+	# The paths a run's sync left unbrought, read where a merge first conflicts
+	local -A UNBROUGHT UNB_AT
 	# Opens each printed merge – its sides kept in the step's own temp dir, as `_MERGE_CMD`'s are
 	local T='T=$(mktemp -d) && '
 	local -A MODE_OF RENAMED_TO RENAMES_OF IS_CHANGED LANDED AWAY NAME_THEN NAME_WAS ST_BASE ST_THEIRS ST_FROM
@@ -9253,10 +9723,20 @@ _GUARD_WHOLE_LANDINGS () {
 					# A conflict lacks the landing only where the file's edits share none of its changed
 					# lines – edits on those lines, made after it, conflict as much – and the file
 					# lacks a line it added or holds one it removed
+					# • Where this landing's sync conflicted, its record tells the edits predate it – they
+					#   take it back until changed on its lines since, or holding all of it
 					if (( MRC == 0 )); then
 						[ "$MERGED" != "$O" ] || continue
 					elif (( MRC <= 127 )); then
-						_EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER" || continue
+						[ -n "$UB_READ" ] || { UB_READ=1; _UNBROUGHT_READ "$TOPDIR"; }
+						R=(${=UNBROUGHT[$P]}) UB=""
+						(( ${#R} >= 4 )) && [ "${R[2]}" = "${M[2]}" ] && [ "${R[3]}" = "${M[3]}" ] && UB=${R[5]:--}
+						# Its own remedy only where the record alone tells – edits apart from the landing
+						# keep theirs
+						if ! _EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER"; then
+							[ -n "$UB" ] && _EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER" "$UB" || continue
+							KIND=unbrought UNB_AT[$P]=${R[1]}
+						fi
 					else
 						continue
 					fi
@@ -9319,8 +9799,14 @@ _GUARD_WHOLE_LANDINGS () {
 			# The label last, as one given with a space spells it as `$'…'` does
 			WHO="${M[5,-1]}'s"
 			[ "${M[5,-1]}" = "-" ] && WHO="an unlabeled caller's"
+			[ "$KIND" = unbrought ] && GONE+=", its sync conflicting with the edits in your checkout"
 			HITS+=("$P – $WHO ${M[4]} run $(_AGO $(( NOW - M[1] ))) ago (${M[2]:0:7}..${M[3]:0:7})$GONE")
 			HIT_PATHS+=("$P")
+			# The carry a change built from a stale file takes first, every later landing with it
+			if [ -z "$FIRST_OLD" ] || (( K < FIRST_K )); then
+				FIRST_K=$K
+				FIRST_OLD=${M[2]}
+			fi
 			# A carry reads a file renamed since from its old name – where something else holds that,
 			# here or at the tip, what landed is merged into the new name instead
 			Q=${NAME_WAS[$K:$P]}
@@ -9336,6 +9822,7 @@ _GUARD_WHOLE_LANDINGS () {
 					RENAMED+=("${T}git show ${BEFORE:0:12} > $B && git show ${HEAD_BLOB:0:12} > $L && git merge-file -- $Q $B $L")
 					;;
 				restore) RESTORE+=("$P") ;;
+				unbrought) UNB+=("$P") ;;
 				own) OWN+=("$P") ;;
 				mode) [ "$AMODE" = 100755 ] && CHMOD_X+=("$P") || CHMOD_NX+=("$P") ;;
 				leave) REMOVED+=("$P") ;;
@@ -9467,7 +9954,7 @@ _GUARD_WHOLE_LANDINGS () {
 			# removed is left out below, and a removal is looked at first, whatever the landing did
 			local -a PUT_STALE
 			for P in "${HIT_PATHS[@]}"; do
-				(( ${PUTS[(Ie)$P]} )) && ! (( ${REMOVED[(Ie)$P]} )) || continue
+				(( ${PUTS[(Ie)$P]} )) && ! (( ${REMOVED[(Ie)$P]} + ${UNB[(Ie)$P]} )) || continue
 				if (( ! ${+AWAY[$P]} )); then
 					PUT_STALE+=("$P")
 					continue
@@ -9483,6 +9970,14 @@ _GUARD_WHOLE_LANDINGS () {
 				(( ${RMS[(Ie)$P]} )) && EDITED+=("$P")
 			done
 			RESTORE=() RENAMED=() OWN=() CHMOD_X=() CHMOD_NX=()
+			;;
+		"Changed by "*)
+			# Edits and patches rest on the tip – content lacking what landed comes from a file they
+			# were built from, which the carry brings along first, unless the change undoes it by hand
+			local -a STALE=("${CARRIED[@]}" "${RESTORE[@]}" "${RENAMED_DST[@]}")
+			(( ${#STALE} )) && ECHO_E "\e[0;31m  Your change takes back what landed on $(_LIT "$(_ALL_PATHS -q "${STALE[@]}")") – built from a checkout file that predates it, bring the file along with 'git edit --carry=${FIRST_OLD:0:12}' and build the change from it again, or leave out the part undoing it, then run this again.\e[0m" >&2
+			(( ${#CHMOD_X} + ${#CHMOD_NX} )) && ECHO_E "\e[0;31m  The bit you set on $(_LIT "$(_ALL_PATHS -q "${CHMOD_X[@]}" "${CHMOD_NX[@]}")") takes back the one that landed – drop that --chmod, or the patch's mode line, then run this again.\e[0m" >&2
+			RESTORE=() RENAMED=() CHMOD_X=() CHMOD_NX=()
 			;;
 		*)
 			# The carry moves a file renamed away to its new name, which the run then names
@@ -9505,6 +10000,19 @@ _GUARD_WHOLE_LANDINGS () {
 			fi
 			;;
 	esac
+	# A file a sync left on its conflict takes the merge that sync named, from the base it sits on,
+	# which a carry would conflict on again – then whatever the route builds from the file
+	case "$_WHOLE_WHAT" in
+		"Folded as staged") Q="stage it again and run this again$FROM" ;;
+		"Folded from --tree") Q="compose the tree again on the current tip" ;;
+		'Put or removed') Q="put it again as resolved" ;;
+		"Changed by "*) Q="build your change from it again and run this again" ;;
+		*) Q="run this again$FROM" ;;
+	esac
+	for P in "${UNB[@]}"; do
+		_MERGE_CMD "${UNB_AT[$P]}" "$WHOLE_HEAD" "$P" "$P" "$P"
+		ECHO_E "\e[0;31m  Your checkout's $(_LIT "$(_SHQ "$P")") still sits on ${UNB_AT[$P]:0:7}, where the sync of what landed conflicted with its edits – merge that in, markers and all, with: $(_LIT "${AT}$REPLY") – resolve the conflict, then $Q.\e[0m" >&2
+	done
 	[ ${#RESTORE} -gt 0 ] && ECHO_E "\e[0;31m  Take what landed with: $(_LIT "${AT}$(_PATHS_CMD "git restore --source=HEAD --worktree" "${RESTORE[@]}")") – or leave it out.\e[0m" >&2
 	# A restore would overwrite the caller's own file for good
 	[ ${#OWN} -gt 0 ] && ECHO_E "\e[0;31m  Your own $(_LIT "$(_ALL_PATHS -q "${OWN[@]}")") stands where another caller added one – move yours aside or merge the two by hand, then run this again, or pass --base as below where yours is meant to replace it.\e[0m" >&2
@@ -9657,10 +10165,10 @@ _MODE_REMEDY () {
 
 # Guards a fold of staged content, or of a bare `--tree`, as whole files are guarded – either read
 # before another caller's landing takes it back, the fold rebuilding those files as they hold them –
-# and files taken whole beside the inputs, on a tree holding them alone
+# and the paths an input route composed, on a tree holding them alone
 _GUARD_STAGED_FOLD () {
-	# Args: <tip> <tree> <what, "Folded as staged", "Folded from --tree", "Committed whole" or
-	# "Folded whole"> <path>...
+	# Args: <tip> <tree> <what, "Folded as staged", "Folded from --tree", "Committed whole", "Folded
+	# whole" or "Changed by <inputs>"> <path>...
 	local WHOLE_HEAD=$1 WHOLE_TREE=$2 _WHOLE_WHAT=$3
 	shift 3
 	local -a WHOLE_PATHS=("$@")
@@ -9705,8 +10213,8 @@ GIT_COMMIT_WHOLE () {
 	else
 		_GUARD_WHOLE_MARKERS
 	fi
-	# Inputs and a composed tree rest on the tip itself – a put, a removal or a file taken whole
-	# beside them was guarded as composed
+	# A composed tree rests on the tip itself – the inputs, and files taken whole beside them, were
+	# guarded as composed
 	[ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN && _GUARD_WHOLE
 	local MSG=$(MKTEMP_FILE git-edit-message)
 	_TEMP_FILES+=("$MSG")
@@ -9718,6 +10226,7 @@ GIT_COMMIT_WHOLE () {
 	else
 		PRINT_ACTION "Committing ${#WHOLE_PATHS} file(s) on %s..." "$WHOLE_HEAD"
 	fi
+	[ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN && _LANDED_OWN=("$(git rev-parse --show-toplevel)" "${WHOLE_PATHS[@]}")
 	EXEC_BASE=$WHOLE_HEAD
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
@@ -9879,6 +10388,8 @@ GIT_AMEND_INTO () {
 		fi
 		[ -n "$TREE_BASE" ] || _GUARD_STAGED_FOLD "$ORIG_HEAD" "$FOLD_SNAP" "Folded from --tree" "${STAGED_PATHS[@]}"
 	fi
+	# Staging is the caller's own content – files and inputs composed apart named theirs as composed
+	[ -z "$AMEND_TREE" ] && _LANDED_OWN=("$MAIN_DIR" "${STAGED_PATHS[@]}")
 
 	# Pre-flight – a staged path the target predates is refused where a later commit introduces
 	# it, since folding beneath that introduction replays it as an add/add conflict of the
@@ -10215,19 +10726,14 @@ _FOLD_TREE () {
 _EDITS_REPLACED () {
 	# Args: <path from the top> <text>
 	setopt local_options no_multibyte
-	local TEXT=$2 OLD SPEC
-	local -i K HITS
+	local TEXT=$2 OLD
+	local -i K
 	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 		[ "${EDITS_PATH[K]}" = "$1" ] || continue
 		OLD=${EDITS_OLD[K]}
 		[ -n "$OLD" ] || return 1
-		HITS=$(( (${#TEXT} - ${#${TEXT//$OLD}}) / ${#OLD} ))
-		# Occurrences overlapping the first count too
-		if (( HITS == 1 )); then
-			SPEC=${TEXT%%$OLD*}
-			[[ ${TEXT[${#SPEC}+2,-1]} == *$OLD* ]] && HITS=2
-		fi
-		(( HITS == 1 )) || return 1
+		_EDIT_MATCHES "$TEXT" "$OLD"
+		(( REPLY == 1 )) || return 1
 		TEXT=${TEXT/$OLD/${EDITS_NEW[K]}}
 	done
 	REPLY=$TEXT
@@ -16314,9 +16820,10 @@ _ABORT_AMEND_INTO () {
 	EMIT_STATUS "$STATE_ORIG_HEAD" "$STATE_BRANCH" false
 }
 
-# Detects non-interactive execution – an agent, CI or a scripted run – which gets no prompt, sync,
-# confirm or editor: no terminal on stdin or stdout, as output piped away hides a prompt, or
-# `$CLAUDECODE`, `$CI` or a `GIT_EDIT_ACTOR` label set, backstops for a PTY-allocating agent
+# Detects non-interactive execution – an agent, CI or a scripted run – which gets no prompt,
+# confirm or editor, and leaves a sync's conflicting merge to whoever owns the edits: no terminal
+# on stdin or stdout, as output piped away hides a prompt, or `$CLAUDECODE`, `$CI` or a
+# `GIT_EDIT_ACTOR` label set, backstops for a PTY-allocating agent
 _IS_NON_INTERACTIVE () {
 	# A landing step holding its output back leaves a terminal's run one
 	if [ ! -t 0 ] || { [ ! -t 1 ] && [ -z "$_STEP_TTY" ]; }; then return 0; fi
@@ -19251,13 +19758,11 @@ if [ ${#OPT_BASE} -gt 0 ]; then
 		PRINT_ERR "--base only applies to --exec, --commit, --amend-into and --land"
 		exit 1
 	fi
-	# Edits, patches, chmods and a tree composed on the tip apply to the tip itself – a base would
-	# check nothing, where a bare tree's fold has no tip of its own to pin, so takes one, and files
-	# taken whole beside the inputs rest on one
-	if [ ${#OPT_EXEC} -eq 0 ] && { { [ ${#OPT_TREE} -gt 0 ] && { [ ${#OPT_COMMIT} -gt 0 ] || _PEEL_SHA "${OPT_TREE[2]#=}" commit >/dev/null; }; } || \
-	   { _INPUTS_GIVEN && [ $(( ${#OPT_PUT} + ${#OPT_RM} + ${#OPT_WHOLE} )) -eq 0 ] && \
-	     { [ ${#OPT_COMMIT} -eq 0 ] || [ $# -eq 0 ] || [ "$*" = -- ]; }; }; }; then
-		PRINT_ERR "--base checks puts, removals and files taken whole – what this run composes applies to the tip itself, so drop it"
+	# A tree composed on the tip applies to the tip itself – a base would check nothing, where a bare
+	# tree's fold has no tip of its own to pin, so takes one, as every input takes the commit the
+	# files it was built from rest on
+	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_TREE} -gt 0 ] && { [ ${#OPT_COMMIT} -gt 0 ] || _PEEL_SHA "${OPT_TREE[2]#=}" commit >/dev/null; }; then
+		PRINT_ERR "--base checks what a run composes from files – a --tree commit composed on the tip applies to the tip itself, so drop it"
 		exit 1
 	fi
 	if [[ ${#OPT_BASE} -gt 1 ]]; then
@@ -20057,8 +20562,8 @@ if [ ${#OPT_AMEND_INTO} -gt 0 ]; then
 	# Paths alone name staged changes – beside the inputs only --whole says to take them from the
 	# checkout
 	if [ ${#OPT_WHOLE} -eq 0 ] && _INPUTS_GIVEN && [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
-		USAGE
-		PRINT_ERR "--amend-into takes staged paths or the inputs – the inputs name their own paths, and files folded whole beside them take --whole: git edit --amend-into=<sha> --whole <input>... -- <path>..."
+		PRINT_ERR "--amend-into takes staged paths or the inputs – the inputs name their own paths, and files folded whole beside them take --whole"
+		ECHO_E "\e[0;31m  Nothing landed – drop the paths to fold the inputs alone, or add --whole to fold those files whole from the checkout beside them: git edit --amend-into=<sha> --whole <input>... -- <path>...\e[0m" >&2
 		exit 1
 	fi
 	# The target pinned by SHA before any wait – `auto` picks its
