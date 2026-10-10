@@ -307,14 +307,21 @@ fixup placed beside it. A \fIpathspec\fR narrows the fold to those staged paths 
 leaves the rest staged \(em worth using when the index may hold more than you
 mean to fold, since a parallel session can stage into it between your
 .BR git\-add (1)
-and this call. A \fIpathspec\fR holding pattern characters that names a staged
+and this call. A \fIpathspec\fR holding pattern characters, or opening with a
+.B :
+that no magic follows, that names a staged
 path, a staged removal included (or, with
 .BR \-\-tree ,
 a path the tree holds or removes), is that path alone \(em as a pattern too,
 .I app/[id].tsx
 would also fold
-.IR app/i.tsx ;
-one naming no path stays a pattern, and magic given outright stays as given.
+.IR app/i.tsx ,
+and git reads
+.I :a.txt
+as
+.IR a.txt ;
+one naming no path stays as git reads it, and magic given outright
+(\fB:(\fR...\fB)\fR, \fB:/\fR, \fB:!\fR, \fB:^\fR) stays as given.
 .B auto
 targets the unpushed commit that last touched the folded \fIlines\fR \(em staged here,
 or composed by the inputs,
@@ -325,14 +332,19 @@ or
 .BR git\-blame ),
 falling back to the newest commit touching the staged paths only where the
 change adds lines and so attributes to nothing. It refuses when the evidence
-points at several commits, or at a pushed one. Only staged changes are folded;
+points at several commits, or at a pushed one, and where a submodule's pointer
+is among the changes, which no line attributes \(em name its commit instead.
+Only staged changes are folded;
 unstaged edits are left untouched.
 A conflict on the fold's final step resolves itself, as a reorder's does:
 that step's result is the staged tree, provable before anything is committed,
 so only earlier steps pause \(em and so does the final one when that
 resolution would leave its commit empty, since whether the overlapped change
-survives is the resolver's call. The completion summary verifies what landed: it
-counts commits a conflict resolution left empty (the rebase drops them), and
+survives is the resolver's call. A pause carries any name but one holding a
+newline: a fold that would pause over one refuses instead, naming it, with
+nothing landed. The completion summary names the folded paths, ten at most and
+how many more, and verifies what landed: it counts commits a conflict
+resolution left empty (the rebase drops them), and
 notes a tip that differs from the staged result \(em the pre\-op tip plus
 the staged changes, which a faithful fold must reproduce. A fold that would leave history unchanged
 \(em every staged hunk already carried by the target \(em is refused, with
@@ -407,7 +419,20 @@ that merges what landed into the checkout and the
 .B "git add"
 that stages the files again \(em a file the landing renamed unstaged first,
 as a carry leaves a staged old path where it is, and staged again under its
-new name \(em or, for an executable bit alone, the
+new name. That
+.B "git add"
+is named only for a file the checkout holds just as staged; one holding more,
+another caller's uncommitted lines say, has its staging rebuilt alone instead,
+what landed merged into the staged copy by the
+.B git merge\-file
+and
+.B "git update\-index \-\-cacheinfo"
+named, under the entry's own mode, and one whose staging conflicts with what
+landed is to be replayed with
+.B \-\-edits
+or
+.BR \-\-patch ,
+then unstaged. For an executable bit alone, it names the
 .B "git update\-index \-\-chmod"
 that sets it on the staging, which staging the file again would not.
 Staging or a
@@ -433,7 +458,9 @@ extracted into their own commit (message from
 the rest keep the original message. Plumbing only \(em no conflicts possible.
 The \fIpathspec\fR has to match a nonempty, proper subset of the commit's
 changes: matching none of them, or all of them, is refused rather than
-composing an empty half. One holding pattern characters that names a path in
+composing an empty half. One holding pattern characters, or opening with a
+.B :
+that no magic follows, that names a path in
 the commit is that path alone, as under
 .BR \-\-amend\-into .
 Where the commit turns a file into a directory at one path, the
@@ -475,7 +502,12 @@ clean replay too, as a revert moved before what it reverts no longer takes
 it back. Nor may a stop's resolution take in what a commit the new order puts
 after it changes \(em a commit moved below one it builds on, its stop resolved
 to what it holds, empties that one into it: the landing refuses, naming it,
-and offers to squash the two instead. A rebase that fails with nothing to
+and offers to squash the two instead \(em or, where other commits stood
+between them, the move right after it. A stop whose pre\-op content would
+leave its own commit no change there says so at the pause, naming that same
+way on rather than the pre\-op content. A later commit that, rebuilt, still
+rewrites the line the moved one changes lands, its change rebased onto that
+one's. A rebase that fails with nothing to
 resolve \(em a
 .B pre\-rebase
 hook's veto, a failed signature \(em refuses with git's own error and pauses
@@ -800,7 +832,14 @@ does, though only files named one by one, no directory or glob \(em a new
 file needs no
 .BR "git add" ,
 a deleted one is removed, a moved one is named at both paths \(em on top of
-the tip. The tree is composed in a private index seeded from
+the tip. A submodule, read from the checkout a directory, records no pointer
+this way, so it refuses, naming the
+.B \-\-exec
+run that commits its pointer (with
+.BR \-\-whole ,
+the
+.B "git add"
+and staged fold that do). The tree is composed in a private index seeded from
 .BR HEAD ,
 each file read through its filters as
 .B "git add"
@@ -892,7 +931,8 @@ naming the run and the remedy:
 .B "git edit \-\-carry=<old tip>"
 to merge edits onto what landed, a rename's too \(em from the earliest such
 run the file lacks, an edit a later run renamed away included, and one made on
-its old name before a run renamed it into place, by case alone too, a file
+its old name before a run renamed it into place, or by that run itself, by
+case alone too, a file
 moved to the new name by hand moved back first, as the carry takes its edits
 from the old name \(em where nothing stands there, in the checkout or at the
 tip, the step checking again as it runs, else, or for a fold of what is staged
@@ -1210,6 +1250,12 @@ replay
 onto the tip's text, given as a file or inline, each old text matching exactly
 once; see
 .BR MODES .
+The text is the one the commit stores: under a clean/smudge filter, an old text
+read from the checkout holds the smudged form, refused as such, and
+.B \-\-put
+takes the whole file, cleaned as
+.B "git add"
+cleans it.
 .TP
 .B \-\-patch=\fIfile\fR
 With
@@ -1485,15 +1531,21 @@ as it stood when the run began \(em one on the branch's own line that the
 landing rewrote resolved as a stale SHA is, so the branch is never replanted
 onto the orphaned commit.
 .B \-\-wait=0
-refuses at once. A pause of the caller's own \(em the same
+refuses at once, leaving another caller's pause to that caller or to a run
+with a longer
+.BR \-\-wait ,
+while an unlabeled caller, which may take up any pause, is told to continue
+or abort one that is its own.
+A pause of the caller's own \(em the same
 .BR GIT_EDIT_ACTOR ,
 or neither labeled \(em is never waited for, as only its
 .B \-\-continue
 or
 .B \-\-abort
-ends it. Only the run's first check waits, before it takes any lock or
-worktree; one asked again later, a pause recorded while the run went on,
-refuses as before. Ctrl\-C or
+ends it, nor one an older git\-edit wrote before pauses recorded their
+label, which any caller may resume. Only the run's first check waits,
+before it takes any lock or worktree; one asked again later, a pause
+recorded while the run went on, refuses as before. Ctrl\-C or
 .B SIGTERM
 while waiting stops the run with nothing taken. For a longer wait, say
 .BR \-\-wait=600 ,
@@ -1690,7 +1742,12 @@ owner's, or an unlabeled caller's, to clear with
 and another label's to leave, or clear with
 .BR "\-\-abort \-\-allow\-other\-actor" ;
 one cut short to where it names neither its caller nor its operation counts
-as no label's.
+as no label's. It also names the temp worktrees no pause names that a killed
+run left registered, with the
+.B "git worktree remove \-\-force"
+\fIpath\fR that removes each, and those no run's mark tells of \(em an older
+git\-edit's, or one a live run is making \(em to remove once no run is live in
+the repository.
 .TP
 .BR \-\-selftest [ =\fIids\fR ]
 Run the end\-to\-end test suite in a scratch repository. A passing run removes
@@ -1731,8 +1788,13 @@ name that one.
 Independently, each mutating run sweeps temp worktrees left in
 .B TMPDIR
 by a killed process, but only where the worktree's gitdir pointer no longer
-resolves and it has sat untouched for 24 hours \(em never one that is still
-registered, which may be a paused resolution.
+resolves and it has sat untouched for 24 hours. A still\-registered one goes
+only where no pause names it, it was made 10 minutes ago or more, and the run
+that made it is provably gone \(em each run marks the worktrees it makes with
+its pid and start time, judged as a stale lock is, and one a run resuming the
+pause holds counts as in use \(em while one without that mark, or any beside a
+pause whose state file names no worktree, is only named, by
+.BR \-\-status .
 .TP
 .B \-\-version
 Print the released version as
@@ -1879,7 +1941,9 @@ drops that commit, as does a resolution staged empty. A commit lost by hand
 instead \(em taken out of the rebase's todo, or stepped over with a raw
 .B "git rebase \-\-skip"
 whose change the replay does not already hold \(em refuses the resume, named,
-landing nothing:
+landing nothing, and
+.B \-\-status
+gives the same verdict:
 .B git edit \-\-skip
 is the way to leave one out of a replant or a land, and elsewhere the run
 starts again. Before git 2.40 whether the replay holds that change is read
@@ -1909,7 +1973,9 @@ hand to its end, its result lands, judged as one the run continued itself;
 quit or aborted there by hand, it lands nothing \(em
 .B \-\-continue
 refuses, naming the picks the result lacks, a pick git left out as emptied
-counting as made, and
+counting as made,
+.B \-\-status
+gives a pause aborted there the same verdict, and
 .B \-\-abort
 clears the pause. Every stop a rebase continued there by hand passed counts
 as one the run paused at, for the guards below. A rebase begun there by hand,
@@ -1938,11 +2004,19 @@ beside, where most of those lines, blank and punctuation\-only ones
 aside, and ones the stop's own commit undoes, as a line it removes that the
 later one adds, now sit in that stop's commit \(em a line the later commit
 removed counting where that commit holds the line its hunk put in its place,
-so a later edit of a single line counts whole \(em a partial take counts too,
+so a later edit of a single line counts whole, unless that commit, rebuilt,
+still rewrites the line's place, its change rebased onto the stop's rather
+than taken in \(em a partial take counts too,
 in a reorder or move as in a fold, and for
 a binary file a change gone whole whose very content that commit holds \(em and
 .B \-\-abort
-then a resolution to the commit's own content lands it. Only what the stop's
+then a resolution to the commit's own content lands it, as does a commit
+placed with
+.B \-\-after
+or
+.B \-\-before
+placed after the latest commit named instead, which the refusal names.
+Only what the stop's
 commit changes beyond its own pick and the fold or fixups in it counts, so a
 fold whose file a later commit renames, moves or deletes lands. Each replayed
 commit is matched to its own pick by git's record of the replay, which a
@@ -1953,7 +2027,11 @@ refused as lost whole where a stop's commit took in its change, named
 Lines the
 rewrite itself took from a later commit, as a drop, an edit or a replant onto
 an upstream that already holds them can, turn up in no stop's commit, so such
-a run lands. A resume whose pause
+a run lands. A pause an older git\-edit wrote kept no record of its stops:
+its resume records the stop its worktree stands at, so that stop's
+resolution is checked alike, while a stop a hand
+.B "git rebase \-\-continue"
+passed before it goes unchecked. A resume whose pause
 another run ended meanwhile \(em an abort, a new run's pause in the slot
 since, even the same run repeated in the same
 .B \-C
@@ -2211,7 +2289,17 @@ runs once it is through \(em with a trailer naming the move \(em
 .B "stopped by SIGTERM after refs/heads/main moved <old-sha> \(-> <new-sha>"
 \(em that
 .B "git edit \-\-undo"
-takes back. One sent to the whole process group still ends the Git command or
+takes back. It re\-syncs the index entries the move stranded first, as its
+landing would have \(em left on the old tip, they read as a staged revert of
+the move that a peer's plain
+.B "git commit"
+takes in \(em the index alone, and the trailer names them; where the index is
+locked, it names the guarded
+.B "git diff \-\-cached \-\-exit\-code"
+and
+.B "git restore \-\-staged"
+that re\-sync them once it is free. One sent to the whole process group still
+ends the Git command or
 hook running at that moment, so the run reads again what that command was
 reading, and redoes a re\-sync or report it cut short, rather than take its
 cut\-short answer for \(lqnothing changed\(rq; one that ends the
@@ -2227,7 +2315,35 @@ trailer naming the signal \(em and a second signal stops it with
 .B "stopped by SIGTERM after cancelling the pause (<operation> <sha>)"
 the worktree removed all the same. A signal at a terminal's prompt leaves the
 pause as q does, exiting 2, and one arriving once the trailer is out exits with
-the status the trailer stands for.
+the status the trailer stands for. A run stopped while it holds a pause it
+saved or took up, and has not landed, keeps it, worktree and all \(em one
+arriving as the pause is first saved included \(em its trailer adding
+.BR "its pause stays, \(aqgit edit \-\-status\(aq shows it" .
+.IP
+A run killed outright (SIGKILL) once its branch moved leaves the move in the
+branch's reflog alone. The next run on that branch, its
+.B \-\-status
+or
+.B \-\-undo
+included, journals it from there \(em under the label and caller its reflog
+message names, so
+.B \-\-undo
+takes it back and the whole\-file guards weigh it \(em and re\-syncs the index
+entries it stranded, saying so in one line. It does so only where no other
+run holds the journal's lock, never waiting for one, and never for an
+.B undo
+move, which
+.B \-\-undo
+already finds back where it went. Killed once its move is journaled but
+before its index re\-sync, a run leaves that re\-sync to the next run the
+same way: each landing marks its re\-sync done in a
+.I git\-edit\-resynced
+file in the checkout's git dir, and a journaled move at the tip that it
+doesn't name, whose run is gone, is re\-synced once, in one line. A revert
+staged by hand after a landing that finished is never touched. A move
+journaled by a git\-edit before 1.8.0, which marks nothing, is re\-synced
+once too, each entry only where it still holds the content from before that
+move.
 .SH CONFIGURATION
 .TP
 .B edit.worktreeLink
@@ -2309,9 +2425,11 @@ maps to
 since it could break the command the message rides in, and the run says so,
 as two labels may then read as one there. Whose run or pause it is goes by
 the label as given, though: the journal and a pause record a mapped one in
-\fB$\(aq\&...\(aq\fR quoting, so two labels mapping alike stay two callers \(em a pause recorded
-before git\-edit kept it so holds the mapped label alone, and counts as the
-caller's whose label maps to it. A set label marks the run as an agent's:
+\fB$\(aq\&...\(aq\fR quoting, so two labels mapping alike stay two callers \(em a pause or
+journal line recorded before git\-edit kept it so holds the mapped label
+alone, and counts as the caller's whose label maps to it, for
+.B \-\-undo
+too. A set label marks the run as an agent's:
 no prompt at a pause, no checkout brought along, at a terminal too. An undo's
 entry names only whoever undid; a pause records its label, which another
 label's
@@ -2361,6 +2479,21 @@ instead of in one proven \fBgit replay\fR pass.
 If set, the verify gate names each commit as its check starts even where
 stdout is not a terminal \(em for a caller that shows a long gate's progress.
 A captured run leaves the lines out otherwise, since nobody watches them live.
+.TP
+.BR GIT_DIR ", " GIT_WORK_TREE ", " GIT_INDEX_FILE ", " GIT_COMMON_DIR ", " GIT_OBJECT_DIRECTORY
+Taken, and dropped, only where they name what the directory finds without
+them; otherwise refused, as every git the run's temporary worktrees start would
+take them too and work on the caller's checkout. A work tree only
+.B GIT_DIR
+reaches, as in a dotfiles setup, is told the
+.B .git
+file that works instead \(em a
+.B gitdir:
+line naming that repository, as
+.B "git init \-\-separate\-git\-dir"
+writes, with
+.B core.bare
+set false where it was true.
 .SH FILES
 All three sit in the repository's common git directory, so every worktree
 shares them.
@@ -2379,7 +2512,9 @@ and
 .B \-\-undo
 only where the pause is on the branch they move, and
 .B \-\-undo
-refuses at once, as does a run on a pause of the caller's own. A run
+refuses at once, naming whose pause it is \(em another caller's is left to
+that caller to continue or abort \(em as does a run on a pause of the caller's
+own. A run
 reaching a pause of its
 own after a parallel session's took the slot refuses without waiting, and
 removes
@@ -2419,7 +2554,9 @@ it by pid and start time. Another run waits while that run lives, up to 60 s,
 then refuses, moving nothing \(em at once where it runs under that run, as a
 .B git edit
 a landing's hook runs does; one whose run is gone is broken at once, and one
-naming none, as a run killed while writing it leaves, once older than 10 s.
+naming none, as a run killed while writing it leaves, once older than 10 s
+\(em and one naming a pid alone, as an older git\-edit wrote it, once older
+than 60 s, its pid then taken for another process's.
 .SH EXAMPLES
 .TP
 Fold staged changes into the commit that introduced the code:

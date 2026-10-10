@@ -107,7 +107,7 @@ _ST_OUT_LACKS "without waiting" 'Waiting up to'
 _W180_BG w5 GIT_EDIT_ACTOR=w-self -- -M --text="WT c zero" --wait=0 HEAD
 _W180_END w5
 _ST_EQ "--wait=0 refuses at once" "$RC:$(git rev-parse HEAD)" "1:$WT_HEAD"
-_ST_OUT_HAS "as before" "if another session's, wait for it ('git edit --status' shows it)"
+_ST_OUT_HAS "leaving it to that caller, or a wait" "Leave it to that caller, or wait for it to clear: run this again with --wait=<secs>"
 _ST_OUT_LACKS "never waiting" 'Waiting up to'
 
 # The caller's own pause is never waited for – the same label, or both unlabeled – while a labeled

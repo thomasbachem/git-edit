@@ -51,7 +51,7 @@ git checkout -q -b side HEAD~1 && _ST_PZ_C s.txt s "PB2 side" && git checkout -q
 mkdir -p "$TMP/pb2-bin"
 cat > "$TMP/pb2-bin/git" <<EOF
 #!/bin/sh
-if [ "\$1 \$2 \$3" = "config --type=bool core.ignorecase" ] && [ ! -e "$TMP/pb2-merged" ]; then
+if [ "\$1 \$2 \$3" = "config --type=bool-or-str --get-regexp" ] && [ ! -e "$TMP/pb2-merged" ]; then
 	: > "$TMP/pb2-merged"
 	command -p env PATH="$PATH" git -C "$TMP/pz-pb2" merge -q --no-ff -m "PB2 merge" side >/dev/null 2>&1
 fi
@@ -70,7 +70,7 @@ _ST_PZ_C a.txt a "PB3 A" && _ST_PZ_C b.txt b "PB3 B anchor" && _ST_PZ_C c.txt c 
 PB_A=$(git rev-parse HEAD~1)
 cat > "$TMP/pb2-bin/git" <<EOF
 #!/bin/sh
-if [ "\$1 \$2 \$3" = "config --type=bool core.ignorecase" ] && [ ! -e "$TMP/pb3-dropped" ]; then
+if [ "\$1 \$2 \$3" = "config --type=bool-or-str --get-regexp" ] && [ ! -e "$TMP/pb3-dropped" ]; then
 	: > "$TMP/pb3-dropped"
 	env PATH="$PATH" git -C "$TMP/pz-pb3" rebase -q --onto HEAD~2 HEAD~1 >/dev/null 2>&1
 fi

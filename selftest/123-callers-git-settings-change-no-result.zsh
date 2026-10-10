@@ -47,7 +47,7 @@ for RS_N in ign ext tc tc2 safe home; do
 	_ST_EQ "auto-target folds into the line's owner – $RS_N" "$RC:$(git show HEAD~1:bl.txt | sed -n 2p)" "0:b2 A2"
 done
 git config --file "$GIT_CONFIG_GLOBAL" --unset safe.directory
-# A submodule's pointer has no lines to blame, so its bump folds into the commit that last moved it
+# A submodule's pointer has no lines to blame, so auto refuses its bump, and the commit named folds it
 _ST_PZ_NEW rs1-sm
 _ST_PZ_C f.txt f "RS sm base"
 git update-index --add --cacheinfo 160000,"$(git rev-parse HEAD)",sub && git commit -qm "RS sm add sub"
@@ -55,7 +55,9 @@ _ST_PZ_C g.txt g "RS sm later"
 RS_T=$(git rev-parse HEAD)
 git update-index --cacheinfo 160000,"$RS_T",sub
 _ST_RUN --amend-into=auto
-_ST_EQ "a submodule bump folds into the commit that last moved it" "$RC:$(git log -1 --format=%s HEAD~1):$(git rev-parse HEAD~1:sub)" "0:RS sm add sub:$RS_T"
+_ST_EQ "auto refuses a submodule bump, the staging kept" "$RC:$(git diff --cached --name-only)" "1:sub"
+_ST_RUN --amend-into="$(git rev-parse HEAD~1)"
+_ST_EQ "and the commit named folds it" "$RC:$(git log -1 --format=%s HEAD~1):$(git rev-parse HEAD~1:sub)" "0:RS sm add sub:$RS_T"
 # Insertions alone carry no owner, however close a caller's hunk context draws them to a line
 _ST_PZ_NEW rs1-ihc
 printf 'l%s\n' {1..12} > f.txt && git add f.txt && git commit -qm "RS ihc base"

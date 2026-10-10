@@ -280,7 +280,7 @@ if [[ "$(git add -h 2>&1)" == *(--|\])sparse\ * ]]; then
 	_ST_OUT_HAS "but the merge into the new name" "^  Merge what landed into the new name with: .* && git merge-file -- y/h "
 	_ST_OUT_HAS "and the staging again, past the cone" "^  Then stage them again with: git add --sparse -- y/h "
 	OV_CMD=$(sed -n 's/^  Merge what landed into the new name with: //p' <<<"$OUT")
-	OV_HINT=$(sed -n 's/^  Then stage them again with: \(.*\) (.git add -p.*$/\1/p' <<<"$OUT")
+	OV_HINT=$(sed -n 's/^  Then stage them again with: \(.*\) (each holding just what you staged).*$/\1/p' <<<"$OUT")
 	GIT_EDIT_ACTOR=ov-a _OV_FOLLOW "$OV_CMD" && eval "$OV_HINT"
 	GIT_EDIT_ACTOR=ov-a _ST_RUN --amend-into="$OV_TIP" -- y/h
 	_ST_EQ "followed as printed, the fold keeps every landing" "$RC:$(_OV_KEPT "$(git show HEAD:y/h)")" "0:2"
