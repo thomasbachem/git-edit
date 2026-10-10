@@ -181,7 +181,8 @@ chmod +x "$TMP/km5-bin/git"
 print -r -- c > c
 : > "$TMP/km5-arm"
 PATH="$TMP/km5-bin:$PATH" _ST_RUN --commit --text "KM5 c" -- c
-_ST_OUT_HAS "a --commit losing the race says it moved during the commit" "Ref 'refs/heads/main' moved during commit – refusing to overwrite"
+_ST_OUT_HAS "a --commit losing the race says nothing landed, its trailer too" \
+	"^git-edit: error – main moved to ${$(git rev-parse "$KM_TIP~1"):0:7} while the commit was composed on ${KM_TIP:0:7} – nothing landed, so run it again"
 git reset -q --hard "$KM_TIP"
 : > "$TMP/km5-arm"
 PATH="$TMP/km5-bin:$PATH" _ST_RUN --exec -- sh -c 'echo d > d && git add d && git commit -qm "KM5 d"'

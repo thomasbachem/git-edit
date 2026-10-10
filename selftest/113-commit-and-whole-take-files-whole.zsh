@@ -38,6 +38,15 @@ _ST_RUN --commit --text "x"
 _ST_OUT_HAS "and one without files" 'needs the files to take'
 _ST_RUN --commit --text "x" -- wc-sub
 _ST_OUT_HAS "a directory refuses, naming the files instead" 'is a directory – name its files'
+_ST_OUT_LACKS "listing none where nothing in it changed" 'Changed in it'
+echo more > wc-sub/new.txt && echo changed > wc-sub/moved.txt
+_ST_RUN --commit --text "x" -- wc-sub/
+_ST_OUT_HAS "one holding changes lists them to name instead" 'Changed in it: wc-sub/moved.txt wc-sub/new.txt'
+cd wc-sub
+_ST_RUN --commit --text "x" -- .
+_ST_OUT_HAS "spelled from the name given, as from a subdirectory" 'Changed in it: \./moved\.txt \./new\.txt'
+cd ..
+git checkout -q -- wc-sub/moved.txt && rm wc-sub/new.txt
 _ST_RUN --commit --text "x" -- wc-nope.txt
 _ST_OUT_HAS "a path neither the checkout nor the tip has refuses" 'no such file'
 _ST_RUN --commit --text "x" -- ':wc-nope.txt'

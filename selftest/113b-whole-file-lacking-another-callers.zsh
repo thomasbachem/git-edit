@@ -121,7 +121,7 @@ echo race > wc-race.txt
 WC_TIP=$(git rev-parse HEAD)
 _ST_RUN --commit --text "x" -- wc-race.txt
 _ST_EQ "a tip moving while the commit is made refuses, the landing kept" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD~1)" "1:WC peer lands mid-commit:$WC_TIP"
-_ST_OUT_HAS "asking for a rerun rather than offering the stale commit" 'Nothing landed – run it again'
+_ST_OUT_HAS "asking for a rerun rather than offering the stale commit" 'nothing landed, so run it again'
 rm -f "$WC_HOOK" wc-race.txt
 # The repo's gate runs on it, and a path names it from anywhere
 git config edit.verifyCmd "! grep -q REJECT wc-gate.txt"

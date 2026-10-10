@@ -189,6 +189,18 @@ _ST_EQ "the race lost again" "$RC" "1"
 _ST_OUT_HAS "with a third other caller's landing, points at the recipe" "main is busy – other callers landed on it 3 times in the last 10 minutes.* 'fixup! <target's subject>' commit"
 git update-ref refs/heads/main "$S_OLD"
 git reset -q
+# A `--commit` losing the race on that busy branch is pointed at no recipe it already follows
+print -r -- l7 > l7.txt
+S_PEER=$(git commit-tree -p HEAD -m "S222 peer three" "HEAD^{tree}")
+printf '#!/bin/sh\ngit update-ref refs/heads/main %s\n' "$S_PEER" > "$TMP/s222-race.sh"
+export GIT_EDIT_ACTOR=s-me
+_ST_RUN --commit --text "S222 l7" --verify="$TMP/s222-race.sh" -- l7.txt
+export GIT_EDIT_ACTOR=
+_ST_EQ "a --commit whose branch moves under its gate loses the race too" "$RC" "1"
+_ST_OUT_HAS "saying nothing landed" "^git-edit: error – main moved to ${S_PEER:0:7} while the commit was composed on ${S_OLD:0:7} – nothing landed, so run it again"
+_ST_OUT_LACKS "and no busy hint" "is busy"
+git update-ref refs/heads/main "$S_OLD"
+rm -f l7.txt
 
 # An edit's pause wins too – a fold below its target, replaying as it began, would take that
 # target out of the branch, the edit's work then nowhere to land

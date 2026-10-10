@@ -7952,10 +7952,10 @@ _MOVED_BY () {
 
 # Points a run that lost a race at the way many sessions share one history, where its branch is
 # busy – other callers landed on <ref> 3 or more times in the last 10 minutes, as <journal>
-# reads – so a lone caller never sees it
+# reads – so a lone caller never sees it, nor a `--commit`, which its fixup recipe already is
 _PRINT_BUSY_HINT () {
 	# Args: <ref> <journal>
-	[ -n "$1" ] && [ -s "$2" ] || return 0
+	[ -n "$1" ] && [ -s "$2" ] && (( ! ${#OPT_COMMIT} )) || return 0
 	local LINE BY
 	local -a F
 	local -i N=0 SINCE=$(( EPOCHSECONDS - 600 ))
@@ -9119,11 +9119,12 @@ GIT_EXEC () {
 	local UPDATE="git update-ref -m ${(q-)${:-git edit: $LABEL$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE"
 	if ! _MOVE_REF "$UPDATE"; then
-		PRINT_ERR "Ref '$REF' moved during ${EXEC_LABEL:-exec} – refusing to overwrite"
-		# A `--commit` sits on the old tip, so landing it would take back what moved the branch
+		# A `--commit` sits on the old tip, so landing it would take back what moved the branch –
+		# refused as a tip moved before its gate is, the trailer saying nothing landed
 		if [ ${#OPT_COMMIT} -gt 0 ]; then
-			PRINT_TEXT "Nothing landed – run it again to commit on the new tip." 33
+			_REFUSE_EXEC_BASE_MOVED "$ORIG_HEAD" "$(git rev-parse -q --verify "$REF" 2>/dev/null)" "$REF"
 		else
+			PRINT_ERR "Ref '$REF' moved during ${EXEC_LABEL:-exec} – refusing to overwrite"
 			PRINT_TEXT "Rewritten history is at %s (not applied)." 33 "$NEW_HEAD"
 		fi
 		exit 1
@@ -9339,7 +9340,7 @@ _WHOLE_PATHS () {
 	local ICASE=${reply[3]} S
 	local PRECOMPOSE=${reply[4]}
 	local -A RESPELT UNMERGED TREE_ENT TAG IGNORED SEEN
-	local -a GIVENS PS GONE_AT_TIP NEW_HERE
+	local -a GIVENS PS GONE_AT_TIP NEW_HERE CHANGED
 	local -i K
 	# Taking files whole mid-merge splits the merge, the partial commit `git commit` refuses too
 	if [ -n "${reply[5]}" ]; then
@@ -9410,6 +9411,11 @@ _WHOLE_PATHS () {
 				_REFUSE_WHOLE_SUBMODULE "$GIVEN" "$P" "$TOP"
 			else
 				PRINT_ERR "$GIVEN is a directory – name its files"
+				# Its changed files, spelled from the name given, to name instead
+				for E in ${(0)"$(git --no-optional-locks -C "$TOP" status --porcelain -z --no-renames --untracked-files=all -- ":(literal)$P" 2>/dev/null)"}; do
+					CHANGED+=("${GIVEN%/}/${${E[4,-1]}#$P/}")
+				done
+				(( ${#CHANGED} )) && ECHO_E "\e[0;31m  Changed in it: $(_LIT "$(_ALL_PATHS -q "${CHANGED[@]}")")\e[0m" >&2
 			fi
 			exit 1
 		elif [ ! -e "$TOP/$P" ] && [ ! -L "$TOP/$P" ]; then
