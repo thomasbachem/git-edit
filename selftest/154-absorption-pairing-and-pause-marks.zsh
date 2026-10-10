@@ -163,7 +163,7 @@ _ST_EQ "another label's status trailer says drop" "$([[ "${OUT##*$'\n'}" == "git
 # A status whose pause is replaced as it reads ends on what it read, never on the ownership refusal
 AB_SF="$(git rev-parse --git-common-dir)/git-edit-state"
 cp "$AB_SF" "$TMP/ab-sf"
-print -r -- "sed 's/^orig_head=.*/orig_head=0000000000000000000000000000000000000000/' ${(q)AB_SF} > ${(q)AB_SF}.x && mv ${(q)AB_SF}.x ${(q)AB_SF}" > "$TMP/ab-replace"
+print -r -- "sed 's/^nonce=.*/nonce=replaced/' ${(q)AB_SF} > ${(q)AB_SF}.x && mv ${(q)AB_SF}.x ${(q)AB_SF}" > "$TMP/ab-replace"
 _AB_GIT_HOOK "$TMP/ab-gw1" "$TMP/ab-replace" "-C "
 : > "$TMP/ab-gw1/arm"
 PATH="$TMP/ab-gw1:$PATH" _ST_RUN --status

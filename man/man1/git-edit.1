@@ -1007,7 +1007,12 @@ holds what landed or its owner changed the conflicting lines since, the
 refusal naming the
 .B git merge\-file
 the sync named \(em as for edits beside the landed lines there, which
-conflict as that sync did, so a carry would too. A rename of the caller's
+conflict as that sync did, so a carry would too. Where a later rewrite
+replaced that run's tips \(em a fold below it, say \(em a carry from there
+reads the run as held, so the refusal names the
+.B git merge\-file
+from the base the file's record names, else from that run's old tip.
+A rename of the caller's
 own made on
 a file such a run changed refuses too, naming the
 .B git merge\-file
@@ -1789,7 +1794,10 @@ checkout missed since, an undo of one too, and each file its record names as
 left unbrought; with no mark, one no journaled
 landing leads on from, or one written before the checkout's
 .B HEAD
-moved by other than git\-edit \(em a branch switch away and back, say \(em the
+moved by other than git\-edit \(em a branch switch away and back, say, while a
+reset to
+.BR HEAD ,
+a stash or a checkout of the branch it is on moves nothing \(em the
 rewrite is the branch's last one on record, a
 .B \-\-commit
 landing aside. Given, it is the one from \fIold\-tip\fR to \fBHEAD\fR.
@@ -1863,7 +1871,10 @@ below the tip, landings since on record, or files a run's sync left
 unbrought that still lack what landed \(em with the
 .B "git edit \-\-carry"
 that brings it along: the bare one from where it was last brought, or one
-from a file's recorded base. To a
+from a file's recorded base \(em a fold's, recorded on what the fold read,
+taking the
+.B git merge\-file
+its sync named. To a
 .B GIT_EDIT_ACTOR
 caller whose label the pause doesn't carry, it names whose the pause is and
 no step to take there, its trailer leaving the pause to that caller. A pause
@@ -2125,11 +2136,10 @@ landing merges from that landing's old tip, never taking it back as an
 uncommitted edit; and a file moved to its new name by hand takes its edits from
 the old name. The landings journaled on the branch in the last 7 days tell
 this, down to the tip the checkout was last brought to \(em below it, a file
-holding what came before a landing holds an edit, never a stale file, once a
-sync or carry looked at every file the checkout differs on; until then, as in
-a checkout an older git\-edit left, the walk goes on past it \(em and a
-path a sync left as it was \(em a conflict, staging, or no sync at
-all \(em is recorded with the tip it still sits on, in
+holding what came before a landing holds an edit, never a stale file \(em and a
+path a sync left as it was \(em a conflict, staging, no sync at all, or a file
+the landings show stale where a sync found no mark, as in a checkout an older
+git\-edit left \(em is recorded with the tip it still sits on, in
 .I git\-edit\-unbrought
 in the checkout's git dir, until a later sync or carry brings it along. Where
 nothing tells \(em a peer's staging on the path, no journal, a binary \(em the
@@ -2275,11 +2285,20 @@ whose pause was replaced that way cancels nothing of the new one. An abort
 meeting a resume as it lands either ends the pause before the move, which the
 resume then refuses, or finds it landed and says so.
 .PP
-If a parallel session moves the branch while you resolve, the final
-compare\-and\-swap refuses and the rewrite does not apply \(em but the worktree
+If a parallel session moves the branch while you resolve, the
+.B \-\-continue
+refuses as it starts, before it replays anything, naming who moved the
+branch \(em or, where the move comes while it replays, before its gate or at
+its compare\-and\-swap \(em and the rewrite does not apply, but the worktree
 and its resolution are kept, not discarded, and named in the error. Redo the
 operation against the new tip after
 .BR "git edit \-\-abort" .
+An edit or a content split reads the branch again at its
+.B \-\-continue
+instead, so it builds on the new tip. See
+.B Many sessions at once
+under
+.BR SCRIPTING .
 .PP
 Every conflict\-capable rebase runs with
 .B rerere
@@ -2465,6 +2484,44 @@ that every commit from its target up holds exactly once, whose replay resolves
 each of those stops itself. Prove the tip against the result intended,
 and read each patch the range\-diff marks changed beyond the targets rather than
 counting them: each is a later commit the fold's text reached.
+.SS Many sessions at once
+Every run lands by compare\-and\-swap, so where many sessions rewrite one
+branch, some lose the race. A run asks whether it can still land wherever it
+would invest more \(em before it writes a pause, before its gate, as a
+.B \-\-continue
+starts, and right before its compare\-and\-swap \(em and stops there with
+nothing applied once its branch moved off the tip it read, or another run
+paused on that branch since it started. The refusal names who moved the
+branch: a git\-edit run by its operation and
+.B GIT_EDIT_ACTOR
+label, or a commit outside git\-edit. A pause wins over a run in flight, which
+reruns with
+.B \-\-wait=600
+to run on the tip the pause's landing leaves; a resume refused keeps its
+resolution for
+.B git edit \-\-abort
+and a redo, the step
+.B \-\-status
+names for it too.
+.PP
+When many sessions fold fixes into the same deep history at once, each fold
+replays everything above its target and collides with the next. Land each fix
+at the tip as its own commit instead, then have each owner squash its fixes
+into their target, one session at a time, and run the suite once on the
+result:
+.PP
+.nf
+.RS
+git edit \-\-commit \-\-text "fixup! <target's subject>" \-\- <paths>
+git edit \-s=<target> <fixup commit>...
+.RE
+.fi
+.PP
+The fixup's gate may wait for the squash
+.RB ( \-\-no\-verify ),
+and each squash runs gated. A lost race, or a wait that ran out, points here
+when other callers landed on the branch 3 or more times in the last 10
+minutes.
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -2772,7 +2829,13 @@ own. A run
 reaching a pause of its
 own after a parallel session's took the slot refuses without waiting, and
 removes
-the temporary worktree it made, as nothing there is authored yet. An edit,
+the temporary worktree it made, as nothing there is authored yet \(em as does a
+run about to gate or land on a branch another run paused on since it started,
+the pause winning (see
+.B Many sessions at once
+under
+.BR SCRIPTING ).
+An edit,
 drop or squash asks again once it holds its
 .B \-C
 path, or before it makes its temporary worktree, so a pause recorded while it

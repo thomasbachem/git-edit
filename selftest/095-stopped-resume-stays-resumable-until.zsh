@@ -53,7 +53,8 @@ _ST_RUN --status
 _ST_OUT_HAS "leaves nothing in flight" 'no operation in flight'
 _ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VR_WORKTREES"
 # Only the state the run resumed – a pause another run wrote while this one was checking holds
-# that run's work, so finishing this one leaves it be
+# that run's work, so finishing this one leaves it be – on another branch, as one on this run's own
+# wins over its landing
 local VR_SF="$(git rev-parse --git-common-dir)/git-edit-state"
 local VR_ONE=$(git log -1 --format=%H --grep='^VR one$' HEAD)
 git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; \"$TMP/st-hold\" \"$TMP/vr-release3\"'"
@@ -64,7 +65,7 @@ VR_WAIT=0
 until [ -s "$TMP/vr-check" ] || ! kill -0 $VR_PID 2>/dev/null || (( ++VR_WAIT > 1200 )); do
 	sleep 0.1
 done
-printf 'operation=reorder\nworktree=%s\n' "$TMP/vr-foreign" > "$VR_SF"
+printf 'operation=reorder\nworktree=%s\nbranch=refs/heads/vr-elsewhere\n' "$TMP/vr-foreign" > "$VR_SF"
 : > "$TMP/vr-release3"
 until [ -f "$TMP/vr-moving" ] || ! kill -0 $VR_PID 2>/dev/null; do
 	sleep 0.05

@@ -130,17 +130,18 @@ git worktree remove --force "$TMP/mk12-o"
 
 # RC-3: a checkout an older build left with a stale file – the first landing elsewhere wrote the
 # mark final, though its sync never looked at that file, so the next landing on it merged the stale
-# file as edited, taking the older landing back
+# file as edited, taking the older landing back – the file is recorded, the mark final (RC2-1)
 _MK220_REPO mk10
 print -l W1 g{2..6} > g
 _ST_RUN_UNSYNCED --commit --text "MK10 old" --edits='{"g": [["g5\n", "O5\n"]]}'
-rm -f .git/git-edit-brought
+rm -f .git/git-edit-brought .git/git-edit-unbrought
 _ST_RUN --commit --text "MK10 f" --edits='{"f": [["l10\n", "L10\n"]]}'
-_ST_EQ "a sync that never looked at a differing file leaves the mark held" "$(sed -n 1p .git/git-edit-brought | cut -d' ' -f3)" "held"
+_ST_EQ "a first sync records a differing file a landing left stale, the mark final" \
+	"$(sed -n 1p .git/git-edit-brought | cut -d' ' -f3):$(cut -f2 .git/git-edit-unbrought 2>/dev/null)" ":g"
 _ST_RUN --commit --text "MK10 g" --edits='{"g": [["g3\n", "N3\n"]]}'
 _ST_EQ "so the next landing on the file brings the older landing along, the edit kept" \
 	"$RC:$(tr -d '\n' < g):$(git status --porcelain | tr '\n' ' ')" "0:W1g2N3g4O5g6: M g "
-_ST_EQ "a sync that looked at every differing file writes it final" "$(sed -n 1p .git/git-edit-brought | cut -d' ' -f3)" ""
+_ST_EQ "its record cleared once that landing came along" "$([ -s .git/git-edit-unbrought ] && echo recorded)" ""
 # A clean checkout's first sync writes it final at once
 _MK220_REPO mk11
 _ST_RUN --commit --text "MK11 f" --edits='{"f": [["l10\n", "L10\n"]]}'

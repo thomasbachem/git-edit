@@ -109,7 +109,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PT_RAW _REAL_EDITOR \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
@@ -481,6 +481,16 @@ _UNDONE_LINE=""
 # The state file holding a pause this run recorded or resumed – the repo has one slot, and a pause
 # another run recorded there meanwhile is that run's to keep, not this one's
 _STATE_OWNED=""
+# The keys of the pause standing as the run started, if any – one with other keys began since
+_PAUSE_AT_START=""
+# The ref and journal of a race this run lost, for the busy-branch hint above its trailer
+typeset -ga _RACE_LOST
+_RACE_LOST=()
+# A message typed in an editor and the command rerunning with it, kept where a landing refuses
+typeset -ga _TYPED_KEEP
+_TYPED_KEEP=()
+# A `-C` path a first run's replay stands halfway in, taken back where that run refuses
+_UNWIND_PATH=""
 
 # Runs the cleanup hook, then emits a machine-readable error trailer matching the success
 # form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
@@ -538,6 +548,7 @@ _GLOBAL_EXIT_TRAP () {
 		_CAPTURE_REMOVE "$_CAPTURE_DIR"
 	fi
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
+		(( ${#_RACE_LOST} )) && _PRINT_BUSY_HINT "${_RACE_LOST[@]}"
 		_PRINT_TODO
 		if [ -n "$_LAST_ERROR" ]; then
 			_EMIT_TRAILER "git-edit: error – $_LAST_ERROR"
@@ -2078,6 +2089,9 @@ _MOVE_REF () {
 		fi
 	fi
 	_REQUIRE_OWN_PAUSE
+	# A pause another run took on this branch while this one worked wins over it, checked
+	# under the lock every pause is written under – the CAS covers the branch, naming a move
+	[ "$(git rev-parse -q --verify "${W[-3]}" 2>/dev/null)" = "${W[-1]}" ] && _REQUIRE_CURRENT "${W[-3]}" ""
 	ERRF=$(MKTEMP_FILE git-edit-move 2>/dev/null) && _TEMP_FILES+=("$ERRF")
 	# The journal the landing writes to, read now – once the ref moved, a signal to the whole process
 	# group would end the git call that names it
@@ -2117,6 +2131,8 @@ _MOVE_REF () {
 		PRINT_ERR "git refused to move ${W[-3]#refs/heads/}, still at the tip this run read – nothing was ${${OPT_UNDO:+undone}:-applied}${ERR:+: ${ERR%%$'\n'*}}"
 		_PAUSE_EXIT 1 retry
 	fi
+	# A race lost, which the caller's refusal names
+	_RACE_LOST=("${W[-3]}" "$_MOVE_JOURNAL")
 	return $RC
 }
 
@@ -3518,7 +3534,10 @@ GIT_CARRY () {
 	# From the checkout's mark, where every landing it missed since is on record
 	elif NEW=$(git rev-parse HEAD) && _BROUGHT_UPTO "$CO" "$REF" "$NEW" && [ -n "$REPLY" ]; then
 		OLD=$REPLY
-		if [ "$OLD" = "$NEW" ]; then
+		# At the tip, nothing to carry – but a file recorded as left unbrought, its record's base telling
+		local -A UNBROUGHT
+		[ "$OLD" = "$NEW" ] && _UNBROUGHT_READ "$CO"
+		if [ "$OLD" = "$NEW" ] && (( ! ${#UNBROUGHT} )); then
 			PRINT_TEXT "%s" 32 "Nothing to carry – your checkout was brought along to the tip already."
 			_EMIT_TRAILER "git-edit: ok – carried 0 path(s) across ${OLD:0:7}..${NEW:0:7}"
 			_STATUS_EMITTED=true
@@ -3581,6 +3600,14 @@ _STATUS_UNBROUGHT () {
 				(( $? == 1 )) && continue
 			fi
 		fi
+		# What a fold read, no commit a carry starts from, takes the merge its sync named
+		if [ "$(git cat-file -t "${R[1]}" 2>/dev/null)" != commit ]; then
+			_AT_TOP "$CO"
+			B=$REPLY
+			_MERGE_CMD "${R[1]}" "$TIP" "$P" "$P" "$P"
+			PRINT_TEXT "Left unbrought by a run's sync, its edits conflicting with what landed: %s – merge that in, markers and all, once you mean to resolve it: %s" 33 "$(_ALL_PATHS "$P")" "$B$REPLY"
+			continue
+		fi
 		# A base at or past the mark on the way to the tip is one the bare carry starts below
 		KB=${STEP_FROM[(Ie)${R[1]}]}
 		FROM=${R[1]}
@@ -3639,6 +3666,22 @@ GIT_STATUS_REPORT () {
 			PRINT_ERR "The pause records no operation this version knows${STATE_OPERATION:+ ('$STATE_OPERATION')} – its state file cut short, or written by a newer git-edit – so nothing can resume it"
 			ECHO_E "\e[0;31m  Clear it with 'git edit --abort', then run it again.\e[0m" >&2
 			exit 1
+		fi
+		# One whose branch moved off the tip it read can't land – its `--continue` refuses at once – so
+		# the step named is the abort and redo, as that refusal names it
+		if [ -z "$OWNER" ] && [[ "$STATE_OPERATION" == (amend-into|snapshot|reorder|onto|land|rebase) ]] && \
+		   [[ "$STATE_BRANCH" == refs/* ]] && [ -d "$STATE_WORKTREE" ]; then
+			local AT=${STATE_HEAD_WITH_FIXUP:-$STATE_ORIG_HEAD} NOW
+			NOW=$(git rev-parse -q --verify "$STATE_BRANCH" 2>/dev/null)
+			if [ -n "$NOW" ] && [ "$NOW" != "$AT" ] && [ "$NOW" != "$(git -C "$STATE_WORKTREE" rev-parse -q --verify HEAD 2>/dev/null)" ]; then
+				_MOVED_BY "$STATE_BRANCH"
+				PRINT_TEXT "Branch '%s' moved from %s to %s since this paused%s – the resolution in %s was built on the old tip, so it can't land." 33 "${STATE_BRANCH#refs/heads/}" "${AT:0:7}" "${NOW:0:7}" "${REPLY:+ – $REPLY}" "$STATE_WORKTREE"
+				_PAUSE_NAME
+				[ -n "$STATE_PLACE_LABEL" ] || REPLY+=" ${STATE_TARGET:0:7}"
+				_EMIT_TRAILER "git-edit: paused – $REPLY can no longer land: 'git edit --abort', then redo it against the new tip"
+				_STATUS_EMITTED=true
+				return 0
+			fi
 		fi
 		if [ -d "$STATE_WORKTREE" ]; then
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
@@ -4354,10 +4397,16 @@ _SYNC_FOLDED () {
 	fi
 	_TODO_ADD "the merge of $(_ALL_PATHS "${GO[@]}")" "%s" 33 \
 		"Files you folded lack what the replay changed in them since, as $_SYNC_WHY – merge it in once it can run:"
+	local -a CHANGED
+	local -A NOT_BROUGHT
 	for P in "${GO[@]}"; do
 		_MERGE_CMD "${_FOLD_READ[2]}" "$3" "$P" "$P" "$P"
 		_TODO_CMD "$REPLY"
+		NOT_BROUGHT[$P]=${_FOLD_READ[2]}
 	done
+	# Each recorded on what the fold read, as that merge reads it – the landings guard and `--status`
+	# naming it till then
+	_UNBROUGHT_NOTE "$CO" "$2" "$3"
 	return 0
 }
 
@@ -4666,15 +4715,23 @@ _SYNC_CHECKOUT () {
 			CHANGED+=("${WIDENED[@]}")
 		fi
 	fi
+	# A sync with no mark ending the walk records each other file a landing left stale, as the mark
+	# it writes ends the walk for every file from then on
+	local -A UNB_BY
 	if (( ! ${#CHANGED} )) && [ "$HOW" != carry ]; then
-		_BROUGHT_SYNCED "$CO" "$NEW"
+		if [ -n "$CO_REF" ] && [ -z "$BROUGHT_END" ]; then
+			_UNBROUGHT_UNSEEN "$CO" "$OLD" "$NEW"
+			(( ${#NOT_BROUGHT} )) && _UNBROUGHT_NOTE "$CO" "$OLD" "$NEW"
+		fi
+		_BROUGHT_PUT "$CO" "$NEW"
 		return 0
 	fi
 	# A carry's paths too that a landing on the way changed and a later one took back, none changed
 	# from <old> to <new> – a file brought along in between holds the first, as its own base tells
 	local -A EXTRA
 	if [ "$HOW" = carry ] && P=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null); then
-		_LANDING_STEPS "$P" "$OLD" "$NEW"
+		# None from a carry at the tip – one for the files its record names
+		[ "$OLD" != "$NEW" ] && _LANDING_STEPS "$P" "$OLD" "$NEW"
 		for (( K = 1; K <= ${#STEP_FROM}; K++ )); do
 			[ "${STEP_FROM[K]}" = "$OLD" ] && (( K == 1 )) && break
 			for P in ${(0)"$(git diff-tree -r -z --no-renames --name-only "${STEP_FROM[K]}" "${STEP_TO[K]}" 2>/dev/null)"}; do
@@ -5607,9 +5664,9 @@ _SYNC_CHECKOUT () {
 				WHY=", the edits left at $NS"
 			fi
 			MERGE_CMDS+=("$REPLY")
-			# Its file still on its base – the next one to bring it along merges from there – a rename's
-			# record going to its new name
-			{ [ "$SRC" = "$P" ] || (( ${+FB_TIP[$SRC]} )); } && NOT_BROUGHT[$P]=$FBT
+			# Its file still on its base – the next one to bring it along merges from there, as the merge
+			# named does, what a fold read where it merges from that – a rename's record going to its new name
+			{ [ "$SRC" = "$P" ] || (( ${+FB_TIP[$SRC]} )); } && NOT_BROUGHT[$P]=${HOOK_BASE:-$FBT}
 			if [ "$HOW" = carry ]; then
 				ITEM+=" – $RC conflict(s)$WHY"
 				_CARRY_QUEUE "$SRC" "$P" LEFT "$ITEM"
@@ -5724,6 +5781,7 @@ _SYNC_CHECKOUT () {
 	_SYNC_WRITE_ENTRIES "$CO" "${(l:${#OLD}::0:)}"
 	# Each file left on its base recorded with it, as its entry no longer tells – one brought along
 	# cleared
+	[ "$HOW" = sync ] && [ -n "$CO_REF" ] && [ -z "$BROUGHT_END" ] && _UNBROUGHT_UNSEEN "$CO" "$OLD" "$NEW"
 	{ (( ${#NOT_BROUGHT} )) || [ -s "$GD/git-edit-unbrought" ]; } && _UNBROUGHT_NOTE "$CO" "$OLD" "$NEW"
 	if [ "$HOW" = carry ]; then
 		(( ${#Q_PATH} )) && _INDEX_FLAGS_BACK "$CO" ""
@@ -5853,7 +5911,7 @@ _SYNC_CHECKOUT () {
 	if (( ${#STALE} + ${#LOCKED} + ${#IDX_LOCKED} )); then
 		_BROUGHT_HOLD "$CO" "$OLD"
 	else
-		_BROUGHT_SYNCED "$CO" "$NEW"
+		_BROUGHT_PUT "$CO" "$NEW"
 	fi
 
 	# A path outside a sparse checkout took its entry alone, git keeping no file there – named apart
@@ -5969,7 +6027,7 @@ _LANDING_STEPS () {
 		for LINE in "${(@Oaf)TEXT}"; do
 			(( ${#STEP_FROM} < 40 )) || break
 			J=(${=${LINE%%$'\t'*}})
-			[[ "${J[1]}" == <-> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] && [ "${J[4]}" = "$AT" ] && [ -n "${J[3]}" ] || continue
+			[[ "${J[1]}" == <1-9999999999> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] && [ "${J[4]}" = "$AT" ] && [ -n "${J[3]}" ] || continue
 			if [ "${J[5]}" = undo ]; then
 				[[ "${J[6]}" == (commit|amend-into) ]] && continue
 				[ "${J[6]}" = exec ] && _IS_ANCESTOR "${J[4]}" "${J[3]}" && continue
@@ -6065,6 +6123,7 @@ _FILE_BASES () {
 	# an edit – so the walk ends at the landing from there
 	LIM=${#STEP_FROM}
 	[ -n "$BROUGHT_END" ] && (( ${STEP_FROM[(Ie)$BROUGHT_END]} )) && LIM=${STEP_FROM[(ie)$BROUGHT_END]}
+	[ "$BROUGHT_END" = "$NEW" ] && LIM=0
 	# Every tip's blob at each name as it stands at <new>, in one call
 	for P in "${ASK[@]}"; do
 		for (( S = 1; S <= LIM; S++ )); do QUERY+=("${STEP_FROM[S]}:$P" "${STEP_TO[S]}:$P"); done
@@ -6184,7 +6243,7 @@ _UNBROUGHT_READ () {
 	JF=$(_JOURNAL_FILE_PATH) && { JT=$(<"$JF") } 2>/dev/null
 	for LINE in "${(@f)TEXT}"; do
 		R=(${=${LINE%%$'\t'*}})
-		(( ${#R} == 5 || ${#R} == 6 )) && [[ "${R[1]}" == <-> ]] && (( R[1] >= EPOCHSECONDS - 604800 )) && [ "${R[2]}" = "$REF" ] || continue
+		(( ${#R} == 5 || ${#R} == 6 )) && [[ "${R[1]}" == <1-9999999999> ]] && (( R[1] >= EPOCHSECONDS - 604800 )) && [ "${R[2]}" = "$REF" ] || continue
 		# An undo leaves the landing no line of its own
 		[[ $'\n'"$JT" == *$'\n'<->" ${R[2]} ${R[3]} ${R[4]} "* ]] || continue
 		UNBROUGHT[${LINE#*$'\t'}]="${R[5]} ${R[3]} ${R[4]} ${R[1]}${R[6]:+ ${R[6]}}"
@@ -6203,15 +6262,17 @@ _UNBROUGHT_BASE () {
 }
 
 # Records in <checkout> each path its move from <old> to <new> left unbrought, with the base its
-# file still sits on, and clears each it brought along – the caller's `NOT_BROUGHT` (path -> base)
-# and the rest of its `CHANGED` – dropping lines past 7 days, of another branch, or of a landing
-# undone since
+# file still sits on, and clears each it brought along – the caller's `NOT_BROUGHT` (path -> base),
+# its `UNB_BY` naming another landing that left one, and the rest of its `CHANGED` – dropping lines
+# past 7 days, of another branch, or of a landing undone since
 _UNBROUGHT_NOTE () {
 	# Args: <checkout> <old> <new>
 	local CO=$1 F P REF TMPF
 	local -i K
 	local -a OUT
-	local -A UNBROUGHT KEEP
+	local -A UNBROUGHT KEEP BY
+	# Only a caller declaring `UNB_BY` names one – read so, as a name unset there is no association
+	[[ ${(t)UNB_BY} == association* ]] && BY=("${(@kv)UNB_BY}")
 	_UNBROUGHT_READ "$CO"
 	F=$REPLY
 	KEEP=("${(@kv)UNBROUGHT}")
@@ -6243,7 +6304,7 @@ _UNBROUGHT_NOTE () {
 		if [ "${${UNBROUGHT[$P]}[(w)1]}" = "${NOT_BROUGHT[$P]}" ]; then
 			OUT+=("${${UNBROUGHT[$P]}[(w)4]} $REF ${${UNBROUGHT[$P]}[(w)2]} ${${UNBROUGHT[$P]}[(w)3]} ${NOT_BROUGHT[$P]}${${UNBROUGHT[$P]}[(w)5]:+ ${${UNBROUGHT[$P]}[(w)5]}}"$'\t'"$P")
 		else
-			OUT+=("$EPOCHSECONDS $REF $2 $3 ${NOT_BROUGHT[$P]}${SNAP[$P]:+ ${SNAP[$P]}}"$'\t'"$P")
+			OUT+=("$EPOCHSECONDS $REF ${BY[$P]:-$2 $3} ${NOT_BROUGHT[$P]}${SNAP[$P]:+ ${SNAP[$P]}}"$'\t'"$P")
 		fi
 	done
 	TMPF="$F.$$"
@@ -6286,6 +6347,49 @@ _UNBROUGHT_OTHER () {
 	_UNBROUGHT_NOTE "$CO" "$2" "$3"
 }
 
+# Adds to the caller's `NOT_BROUGHT` each file of <checkout> outside its `CHANGED` that a landing
+# left stale – one other than <new> whose walk finds a landing it lacks – with that walk's base, and
+# to its `UNB_BY` the newest such landing, which the record names
+# • For a sync that started with no mark ending the walk – an older git-edit's checkout, say – so
+#   the mark it writes ends the walk for every other file, as uncommitted work no landing touched
+#   records nothing
+_UNBROUGHT_UNSEEN () {
+	# Args: <checkout> <old> <new>
+	local CO=$1 P B
+	local -i S
+	local -a ASK STEP_FROM STEP_TO
+	local -A SEEN DIFF_O DIFF_N IDX_ENT WT_HASH FB_ENT FB_TIP FB_NAME FB_BLOB TREE_ENT UNBROUGHT
+	for P in "${CHANGED[@]}" "${(@k)NOT_BROUGHT}"; do SEEN[$P]=1; done
+	# One already recorded keeps its record
+	_UNBROUGHT_READ "$CO"
+	for P in ${(0)"$(git -C "$CO" diff --ignore-submodules=dirty -z --name-only --no-renames "$3" 2>/dev/null)"} \
+	         ${(0)"$(git -C "$CO" diff --cached --ignore-submodules=dirty -z --name-only --no-renames "$3" 2>/dev/null)"}; do
+		(( ${+SEEN[$P]} || ${+UNBROUGHT[$P]} )) && continue
+		SEEN[$P]=1
+		ASK+=("$P")
+	done
+	(( ${#ASK} )) || return 0
+	_TREE_ENTRIES "$3" "${ASK[@]}"
+	for P in "${ASK[@]}"; do
+		[[ "${TREE_ENT[$P]% *}" == 100(644|755) ]] && DIFF_O[$P]=${TREE_ENT[$P]} DIFF_N[$P]=${TREE_ENT[$P]}
+	done
+	(( ${#DIFF_N} )) || return 0
+	ASK=("${(@k)DIFF_N}")
+	_INDEX_ENTRIES "$CO" "" "${ASK[@]}"
+	_WORKTREE_HASHES "$CO" "${ASK[@]}"
+	_FILE_BASES "$CO" "$2" "$3" "${ASK[@]}"
+	for P in "${(@k)FB_TIP}"; do
+		NOT_BROUGHT[$P]=${FB_TIP[$P]}
+		for (( S = 1; S <= ${#STEP_FROM}; S++ )); do
+			_BLOB_AT "${STEP_FROM[S]}" "$P"
+			B=$REPLY
+			_BLOB_AT "${STEP_TO[S]}" "$P"
+			[ "$B" != "$REPLY" ] && UNB_BY[$P]="${STEP_FROM[S]} ${STEP_TO[S]}" && break
+		done
+	done
+	return 0
+}
+
 # Puts into `REPLY` the tip <checkout>'s last sync or carry on <ref> finished at – its "brought"
 # mark, `git-edit-brought` in its own git dir, or <file> where given – nothing where it keeps none
 # for <ref>, and into `reply` `held` where no sync or carry made it, only a run that left the
@@ -6295,7 +6399,7 @@ _UNBROUGHT_OTHER () {
 #   tells – or where its reflog no longer names the entry the mark was written at
 _BROUGHT_READ () {
 	# Args: <checkout> <ref> [<file>]
-	local F=$3 TEXT L
+	local F=$3 TEXT L G A
 	local -a T E
 	REPLY="" reply=()
 	[ -n "$F" ] || F=$(git -C "$1" rev-parse --path-format=absolute --git-path git-edit-brought 2>/dev/null) && [ -n "$F" ] || return 0
@@ -6308,7 +6412,12 @@ _BROUGHT_READ () {
 	reply=()
 	for L in "${E[@]}"; do
 		[ "$L" = "${TEXT#*$'\n'}" ] && break
-		[[ "${L#*$'\t'*$'\t'}" == "git edit: "* ]] || return 0
+		# Bar one moving nothing – a reset to `HEAD`, a stash's say, or a checkout of the branch it
+		# is on, which a `checkout -B` names apart, as "branch: Reset to …" – its message telling,
+		# as git-edit's own moves of the branch leave the entry before it no tip to compare with
+		G=${L#*$'\t'*$'\t'}
+		A=${${G#checkout: moving from }%% to *}
+		[[ "$G" == "git edit: "* || "$G" == "reset: moving to HEAD" ]] || [ "$G" = "checkout: moving from $A to $A" ] || return 0
 	done
 	(( ${E[(Ie)${TEXT#*$'\n'}]} )) || return 0
 	REPLY=${T[2]}
@@ -6379,26 +6488,6 @@ _BROUGHT_CARRIED () {
 		(( ${STEP_FROM[(Ie)$2]} )) || return 0
 	fi
 	_BROUGHT_PUT "$1" "$3"
-}
-
-# Moves <checkout>'s mark to <new> once a sync brought it along – held where the sync started with
-# no mark ending the walk for a file's base, and the checkout differs from <new> on a path it never
-# looked at: a file a landing before any mark left stale, which only that walk tells
-# • Final once a sync looked at every path it differs on, or a carry brought it along
-_BROUGHT_SYNCED () {
-	# Args: <checkout> <new> – reads the caller's `BROUGHT_END` and `CHANGED`
-	local P
-	local -A SEEN
-	if [ -z "$BROUGHT_END" ]; then
-		for P in "${CHANGED[@]}"; do SEEN[$P]=1; done
-		for P in ${(0)"$(git -C "$1" diff --ignore-submodules=dirty -z --name-only --no-renames "$2" 2>/dev/null)"} \
-		         ${(0)"$(git -C "$1" diff --cached --ignore-submodules=dirty -z --name-only --no-renames "$2" 2>/dev/null)"}; do
-			(( ${+SEEN[$P]} )) && continue
-			_BROUGHT_PUT "$1" "$2" "" "" held
-			return 0
-		done
-	fi
-	_BROUGHT_PUT "$1" "$2"
 }
 
 # Brings <paths> in <checkout> from <old> to <new> in one two-tree merge – from <old> to <old> with
@@ -6655,7 +6744,7 @@ _CARRY_BASE () {
 	for LINE in "${(@Oaf)$(<"$JF")}"; do
 		[ -n "$LAST" ] && break
 		J=(${=${LINE%%$'\t'*}})
-		[[ "${J[1]}" == <-> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] && [ "${J[4]}" = "$AT" ] && [ -n "${J[3]}" ] || continue
+		[[ "${J[1]}" == <1-9999999999> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] && [ "${J[4]}" = "$AT" ] && [ -n "${J[3]}" ] || continue
 		# An undo puts back an earlier tip, the line of the run it took back gone from the journal – the
 		# walk goes on from that tip to the landing that made it
 		[ "${J[5]}" = undo ] || AT=${J[3]}
@@ -7447,6 +7536,7 @@ _REQUIRE_NO_INFLIGHT () {
 	if [ -n "$WAITED" ]; then
 		PRINT_ERR "Another git-edit operation is still in flight${SB:+ on $SB} after waiting ${WAITED}s, paused for its resolution${REPLY:+ – $REPLY} – nothing ran"
 		ECHO_E "\e[0;31m  Wait longer with --wait=600 – run in the background, or in the foreground with a 10-minute call timeout ('git edit --status' shows the pause).\e[0m" >&2
+		[ -n "$SB" ] && _RACE_LOST=("refs/heads/$SB" "$(_JOURNAL_FILE_PATH)")
 		exit 1
 	fi
 	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB}, paused for its resolution${REPLY:+ – $REPLY}"
@@ -7640,13 +7730,148 @@ _PAUSE_FOREIGN () {
 	fi
 }
 
-# Refuses a pause where a parallel run's took the state slot while this one ran – that check came
-# too late, so the same error, which drivers already wait out, and the exit trap removes a worktree
-# the run made, as a pause records itself before anything is authored there
+# Refuses a pause or a landing where a parallel run's pause took the state slot while this one
+# ran – that check came too late, so the same error, which drivers already wait out, and the exit
+# trap removes a worktree the run made, as a pause records itself before anything is authored there
+# The pause wins – landing past it would refuse its finished resolution at its CAS
 _REFUSE_PEER_PAUSE () {
-	PRINT_ERR "Another git-edit operation is in flight (paused for resolution)"
-	ECHO_E "\e[0;31m  It paused while this one ran, so nothing was applied – retry once it is continued or aborted.\e[0m" >&2
+	# Args: [<ref this run moves> [<message typed in an editor> <command rerunning with it>]]
+	local SF=$(_STATE_FILE_PATH) SB WHOSE
+	SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
+	SB=${SB#refs/heads/}
+	# The busy hint reads the branch this run lands on, never the pause's
+	[[ "$1" == refs/heads/* ]] && _RACE_LOST=("$1" "$(_JOURNAL_FILE_PATH)")
+	_UNWIND_KEPT_PATH
+	_PAUSE_WHOSE "$SF"
+	WHOSE=$REPLY
+	_PAUSE_OWNER "$SF"
+	# An undo never waits for a pause – the wording its own start check gives
+	if [ ${#OPT_UNDO} -gt 0 ]; then
+		PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this undo ran, so nothing was undone"
+		ECHO_E "\e[0;31m  Wait for it to clear, then undo ('git edit --status' shows it).\e[0m" >&2
+		exit 1
+	fi
+	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this one ran, so nothing was applied"
+	if [ "$WHOSE" = other ]; then
+		ECHO_E "\e[0;31m  Its resolution lands only on the tip it read – rerun with --wait=600: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+	else
+		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=600: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+	fi
+	_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 	exit 1
+}
+
+# Takes back the replay a first run left halfway in a `-C` path, as its refusal kept none of it – a
+# temp worktree goes with the run, and a resume's path holds its pause
+_UNWIND_KEPT_PATH () {
+	[ -n "$_UNWIND_PATH" ] && [ -z "$_STATE_OWNED" ] || return 0
+	git -C "$_UNWIND_PATH" rebase --abort >/dev/null 2>&1
+	_UNWIND_PATH=""
+}
+
+# Tells whether a pause in the way of a landing on <ref> began since this run started – one on
+# another branch is not, nor the pause this run took up or wrote, nor one standing as it started,
+# which a run it was in the way of never got past
+_PAUSE_BEGAN () {
+	# Args: <ref>
+	local SF=$(_STATE_FILE_PATH) KEYS SB
+	[ -n "$SF" ] && [ -f "$SF" ] || return 1
+	KEYS=$(_PAUSE_KEYS "$SF")
+	[ -n "$KEYS" ] || return 1
+	[ -n "$_STATE_OWNED" ] && [ "$KEYS" = "$_STATE_ID" ] && return 1
+	[ "$KEYS" = "$_PAUSE_AT_START" ] && return 1
+	SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
+	# A pause naming no branch, cut short or hand-made, is in every run's way
+	[ -z "$SB" ] || [ "refs/heads/${SB#refs/heads/}" = "$1" ]
+}
+
+# Refuses a run that can no longer land, before it pauses, gates, resumes or lands – its branch
+# moved off the tip it read, which its CAS would refuse, or another run's pause on that branch began
+# since it started, whose resolution its landing would strand – a resolution or typed message kept
+# A detached `HEAD` is left to the CAS, as a temp worktree's own would read in its place
+_REQUIRE_CURRENT () {
+	# Args: <ref> <tip the run read, empty for the pause alone> [<message typed in an editor>
+	# <command rerunning with it>]
+	local NOW
+	if [ -n "$2" ] && [[ "$1" == refs/* ]]; then
+		NOW=$(git rev-parse -q --verify "$1" 2>/dev/null)
+		[ -n "$NOW" ] && [ "$NOW" != "$2" ] && _REFUSE_STALE "$1" "$2" "$NOW" "$3" "$4"
+	fi
+	_PAUSE_BEGAN "$1" && _REFUSE_PEER_PAUSE "$1" "$3" "$4"
+	return 0
+}
+
+# Refuses a run whose branch moved from <tip read> to <now> since it read it, naming who moved
+# it – where it resumes a pause, that pause and its resolution are kept for the abort and redo
+_REFUSE_STALE () {
+	# Args: <ref> <tip read> <now> [<message typed in an editor> <command rerunning with it>]
+	_RACE_LOST=("$1" "$(_JOURNAL_FILE_PATH)")
+	_MOVED_BY "$1"
+	PRINT_ERR "Branch '${1#refs/heads/}' moved from ${2:0:7} to ${3:0:7} since this run read it${REPLY:+ – $REPLY} – nothing was applied"
+	if [ -n "$_STATE_OWNED" ]; then
+		_REQUIRE_OWN_PAUSE
+		_CLEANUP_HOOK=""
+		local WT=$(LC_ALL=C sed -n 's/^worktree=//p' "$_STATE_OWNED" 2>/dev/null | tail -1)
+		# An edit's or a split's resume reads the branch again, so it rebuilds on the new tip
+		if [[ "$STATE_OPERATION" == (edit|split) ]]; then
+			PRINT_TEXT "Your work is intact in %s – %s again builds it on the new tip." 33 "$WT" "git edit --continue"
+		else
+			PRINT_TEXT "Your resolution is intact in %s" 33 "$WT"
+			PRINT_TEXT "It was built on the old tip, so it can't apply – %s, then redo it against the new tip." 33 "git edit --abort"
+		fi
+	else
+		_UNWIND_KEPT_PATH
+		ECHO_E "\e[0;31m  Run it again on the new tip.\e[0m" >&2
+	fi
+	_KEEP_TYPED_MESSAGE "${4:-${_TYPED_KEEP[1]}}" "${5:-${_TYPED_KEEP[2]}}"
+	exit 1
+}
+
+# Names what moved <ref> last into `REPLY`, from its reflog's newest entry – a git-edit run by its
+# operation and label, anything else as a commit outside git-edit with its reflog message – empty
+# where the ref keeps no reflog
+_MOVED_BY () {
+	# Args: <ref>
+	local M=$(git reflog show -n 1 --format=%gs "$1" -- 2>/dev/null) TAG=""
+	REPLY=""
+	[ -n "$M" ] || return 0
+	_CARET "${M%%$'\n'*}"
+	M=$REPLY
+	if [[ "$M" == "git edit: "* ]]; then
+		M=${M#git edit: }
+		if [[ "$M" == *" ["*"]" ]]; then
+			TAG=${${M##* \[}%\]}
+			M=${M% \[*}
+		fi
+		REPLY="git edit $M by ${${TAG:+[$TAG]}:-an unlabeled caller}"
+		return 0
+	fi
+	(( ${#M} > 72 )) && M="${M[1,71]}…"
+	if [[ "$M" == *": "* ]]; then
+		REPLY="a commit outside git-edit (${M%%: *} '${M#*: }')"
+	else
+		REPLY="a commit outside git-edit ('$M')"
+	fi
+}
+
+# Points a run that lost a race at the way many sessions share one history, where its branch is
+# busy – other callers landed on <ref> 3 or more times in the last 10 minutes, as <journal>
+# reads – so a lone caller never sees it
+_PRINT_BUSY_HINT () {
+	# Args: <ref> <journal>
+	[ -n "$1" ] && [ -s "$2" ] || return 0
+	local LINE BY
+	local -a F
+	local -i N=0 SINCE=$(( EPOCHSECONDS - 600 ))
+	for LINE in "${(@f)$(tail -n 300 "$2" 2>/dev/null)}"; do
+		F=(${=${LINE%%$'\t'*}})
+		[[ "${F[1]}" == <1-9999999999> ]] && (( F[1] >= SINCE )) && [ "${F[2]}" = "$1" ] || continue
+		BY=""
+		[[ "$LINE" == *$'\t'* ]] && BY=${LINE#*$'\t'}
+		[ "$BY" = "$_ACTOR_ID" ] || N+=1
+	done
+	(( N >= 3 )) || return 0
+	ECHO_E "\e[0;33m  ${1#refs/heads/} is busy – other callers landed on it $N times in the last 10 minutes. Where many sessions fold into one history, land each fix at the tip as its own 'fixup! <target's subject>' commit, squashed in later one session at a time – 'Many sessions at once' in the README, or git-edit(1).\e[0m" >&2
 }
 
 # Refuses a branch that moved under a resolution – a parallel session landed a commit, so the
@@ -7669,6 +7894,7 @@ _REFUSE_MOVED_DURING () {
 	# rerunning with it>]
 	local NOW=$(git rev-parse -q --verify "$1" 2>/dev/null) WHAT="Branch '${1#refs/heads/}'"
 	[ "$1" = HEAD ] && WHAT=HEAD
+	[[ "$1" == refs/* ]] && _RACE_LOST=("$1" "$(_JOURNAL_FILE_PATH)")
 	if [ -n "$NOW" ] && [ "$NOW" != "$2" ]; then
 		PRINT_ERR "$WHAT moved from ${2:0:7} to ${NOW:0:7} during the $3 – refusing to overwrite"
 	else
@@ -8104,6 +8330,12 @@ _LAND_REBASE () {
 		fi
 		exit 1
 	fi
+	# A message `-m`'s editor took is kept for the rerun
+	local TYPED="" RERUN="git edit -s${TGT:+=$TGT}"
+	[ "$ACT" = squash ] && [ -s "$_MSG_TYPED" ] && TYPED=$(<"$_MSG_TYPED")
+	for T in "${NAMED[@]}"; do [ "$T" = "$TGT" ] || RERUN+=" $T"; done
+	_TYPED_KEEP=("$TYPED" "$RERUN")
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$OLD" "$TYPED" "$RERUN"
 	if ! _GUARD_TIP_MODES "$WT" "$NEW" "$OLD" "$MEANT" || ! _VERIFY_REWRITE "$WT" "$NEW" "$OLD" ""; then
 		[ -n "$_STATE_OWNED" ] || _SAVE_REBASE_STATE
 		_CLEANUP_HOOK=""
@@ -8131,10 +8363,6 @@ _LAND_REBASE () {
 	local CMD="git update-ref -m ${(q-)${:-git edit: $ACT ${LBL:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW} ${(q-)OLD}"
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD"; then
-		# A message `-m`'s editor took is kept for the rerun
-		local TYPED="" RERUN="git edit -s${TGT:+=$TGT}"
-		[ "$ACT" = squash ] && [ -s "$_MSG_TYPED" ] && TYPED=$(<"$_MSG_TYPED")
-		for T in "${NAMED[@]}"; do [ "$T" = "$TGT" ] || RERUN+=" $T"; done
 		[ -n "$_STATE_OWNED" ] && _REFUSE_MOVED_BRANCH "${REF#refs/heads/}" "$WT" "$TYPED" "$RERUN"
 		PRINT_ERR "Branch '${REF#refs/heads/}' moved during the $ACT – refusing to overwrite"
 		ECHO_E "\e[0;31m  Nothing was applied – run the $ACT again on its new tip.\e[0m" >&2
@@ -8777,6 +9005,7 @@ GIT_EXEC () {
 	# Having no pause to offer, a failure refuses outright: the built commits stay in the object
 	# store, reachable by SHA, and `--no-verify` applies them
 	_VERIFY_NO_RESUME=true
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$ORIG_HEAD"
 	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$EXEC_PLACED"; then
 		ECHO_E "\e[0;31m  Built history is at $NEW_HEAD – --no-verify runs the command again unchecked, or land that history as is: git edit --exec --no-verify --base=${ORIG_HEAD:0:12} -- git reset --hard ${NEW_HEAD:0:12}\e[0m" >&2
 		exit 1
@@ -10077,7 +10306,7 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN
 	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
 	local -i FIRST_K=0
 	# The paths a run's sync left unbrought, read where a merge first conflicts
@@ -10095,7 +10324,7 @@ _GUARD_WHOLE_LANDINGS () {
 	# caller's being every unlabeled one, which nothing tells apart
 	for LINE in "${(@f)$(<"$JF")}"; do
 		J=(${=${LINE%%$'\t'*}})
-		[[ "${J[1]}" == <-> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] || continue
+		[[ "${J[1]}" == <1-9999999999> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] || continue
 		ACTOR=""
 		[[ "$LINE" == *$'\t'* ]] && ACTOR=${LINE##*$'\t'}
 		[ "$ACTOR" = "$_ACTOR_ID" ] && continue
@@ -10395,6 +10624,19 @@ _GUARD_WHOLE_LANDINGS () {
 				done
 			fi
 			[ -n "${NAME_THEN[$K:$P]}" ] && GONE+=", on its old name ${NAME_THEN[$K:$P]}"
+			# A carry reads a landing as held once a later rewrite replaced its new tip, a fold's old tip
+			# being off the branch anyway – then the file's record names its sync's merge, else the old
+			# tip's file is merged – bar staging apart from the checkout file, its own remedies rebuilding it
+			if [ "$KIND" = carry ] && [ "$FROM" = "$P" ] && (( ! ${+AWAY[$P]} && ! ${+NAME_WAS[$K:$P]} )) && \
+				! git merge-base --is-ancestor "${M[3]}" "$WHOLE_HEAD" 2>/dev/null && \
+				{ [ "$_WHOLE_WHAT" != "Folded as staged" ] || [ "$(_WORKTREE_HASH "$TOPDIR" "$P" 2>/dev/null)" = "$O" ]; }; then
+				[ -n "$UB_READ" ] || { UB_READ=1; _UNBROUGHT_READ "$TOPDIR"; }
+				if (( ${+UNBROUGHT[$P]} )); then
+					KIND=unbrought UNB_AT[$P]=${${UNBROUGHT[$P]}%% *}
+				elif git cat-file -e "${M[2]}:$P" 2>/dev/null; then
+					KIND=rewritten UNB_AT[$P]=${M[2]} GONE+=", its tips replaced by a rewrite since"
+				fi
+			fi
 			# The label last, as one given with a space spells it as `$'…'` does
 			WHO="${M[5,-1]}'s"
 			[ "${M[5,-1]}" = "-" ] && WHO="an unlabeled caller's"
@@ -10422,6 +10664,7 @@ _GUARD_WHOLE_LANDINGS () {
 					;;
 				restore) RESTORE+=("$P") ;;
 				unbrought) UNB+=("$P") ;;
+				rewritten) REWRITTEN+=("$P") ;;
 				own) OWN+=("$P") ;;
 				mode) [ "$AMODE" = 100755 ] && CHMOD_X+=("$P") || CHMOD_NX+=("$P") ;;
 				leave) REMOVED+=("$P") ;;
@@ -10628,6 +10871,10 @@ _GUARD_WHOLE_LANDINGS () {
 	for P in "${UNB[@]}"; do
 		_MERGE_CMD "${UNB_AT[$P]}" "$WHOLE_HEAD" "$P" "$P" "$P"
 		ECHO_E "\e[0;31m  Your checkout's $(_LIT "$(_SHQ "$P")") still sits on ${UNB_AT[$P]:0:7}, where the sync of what landed conflicted with its edits – merge that in, markers and all, with: $(_LIT "${AT}$REPLY") – resolve the conflict, then $Q.\e[0m" >&2
+	done
+	for P in "${REWRITTEN[@]}"; do
+		_MERGE_CMD "${UNB_AT[$P]}" "$WHOLE_HEAD" "$P" "$P" "$P"
+		ECHO_E "\e[0;31m  Your checkout's $(_LIT "$(_SHQ "$P")") predates ${UNB_AT[$P]:0:7}, its landing replaced by a rewrite since – merge what landed in, markers and all, with: $(_LIT "${AT}$REPLY") – resolve any conflict, then $Q.\e[0m" >&2
 	done
 	[ ${#RESTORE} -gt 0 ] && ECHO_E "\e[0;31m  Take what landed with: $(_LIT "${AT}$(_PATHS_CMD "git restore --source=HEAD --worktree" "${RESTORE[@]}")") – or leave it out.\e[0m" >&2
 	# A restore would overwrite the caller's own file for good
@@ -11277,6 +11524,7 @@ SEQEOF
 	else
 		VERIFY_PRIMARY=$(git rev-list --reverse "$REBASE_BASE..$NEW_HEAD" 2>/dev/null | head -1)
 	fi
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$ORIG_HEAD"
 	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$(_MODE_LINES "$WT" "$ORIG_HEAD" "$STAGED_TREE")" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_REFUSE_NEWLINE_NAMES --fold "$TARGET_FULL" "${STAGED_PATHS[@]}" "${AMEND_PATHSPECS[@]}"
 		_SAVE_STATE \
@@ -11694,6 +11942,7 @@ _SNAPSHOT_RUN () {
 	done
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 	STATE_RESOLVED="${_SNAPSHOT_RESOLVED_TREES[*]}"
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$STATE_BRANCH" "$STATE_ORIG_HEAD"
 	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_MODE_LINES "$WT" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE")" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$STATE_ORIG_HEAD" ""; then
 		_SNAPSHOT_SAVE_STATE
 		_CLEANUP_HOOK=""
@@ -12239,6 +12488,7 @@ _SPLIT_APPLY () {
 	# flag – so record the bypass ahead of it, where every other mode records it from the gate
 	_VERIFY_NOTE_BYPASS
 	if _VERIFY_CONFIGURED; then
+		_REQUIRE_CURRENT "$REF" "$ORIG_HEAD"
 		local VWT
 		VWT=$(MKTEMP_DIR git-edit-verify) || exit 1
 		_TEMP_WORKTREES+=("$VWT")
@@ -12843,6 +13093,7 @@ GIT_REORDER () {
 		exit 1
 	fi
 
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$ORIG_HEAD"
 	if ! _GUARD_TIP_MODES "$WT" "$NEW_HEAD" "$ORIG_HEAD" || ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$ORIG_HEAD" "$(_REORDER_CHECKS "$ORIG_HEAD" "$NEW_HEAD")"; then
 		_SAVE_STATE \
 			"operation=reorder" \
@@ -13155,6 +13406,7 @@ _ONTO_REPLAY () {
 		return 0
 	fi
 
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$OLD"
 	if ! _VERIFY_REWRITE "$WT" "$NEW_HEAD" "$OLD" "" "$BASE"; then
 		_SAVE_STATE "$@"
 		_CLEANUP_HOOK=""
@@ -14289,6 +14541,7 @@ GIT_LAND () {
 			_PREPARE_RUN_WORKTREE "$LAND_TIP" git-edit-land
 			# Having no pause to offer, a failure refuses outright, as `--exec`'s does
 			_VERIFY_NO_RESUME=true
+			_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$TIP"
 			if ! _VERIFY_REWRITE "$WORKTREE_DIR" "$LAND_TIP" "$TIP"; then
 				ECHO_E "\e[0;31m  Nothing landed – fix it on $(_LIT "$LAND_NAME"), or land it unchecked: $(_LIT "$AGAIN") --no-verify\e[0m" >&2
 				exit 1
@@ -14844,6 +15097,7 @@ _CONTINUE_ONTO () {
 		return 0
 	fi
 
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$STATE_BRANCH" "$STATE_ORIG_HEAD"
 	if ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "" "$BASE"; then
 		_CLEANUP_HOOK=""
 		EMIT_VERIFY_PAUSED "$_VERIFY_FAILED" "$STATE_WORKTREE" "$NEW_HEAD"
@@ -14988,6 +15242,7 @@ _CONTINUE_REORDER () {
 		exit 1
 	fi
 
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$STATE_BRANCH" "$STATE_ORIG_HEAD"
 	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$BUILT" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_REORDER_CHECKS "$STATE_ORIG_HEAD" "$NEW_HEAD")"; then
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
@@ -15449,6 +15704,7 @@ _CONTINUE_EDIT () {
 	_GUARD_ABSORBED "$STATE_WORKTREE" "$NEW_HEAD"
 
 	# The pause's own flips are meant – the amended commit against the one it replaced
+	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$STATE_BRANCH" "$BASE"
 	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$BASE" "$(_MODE_LINES "$STATE_WORKTREE" "$STATE_TARGET" "$STATE_AMENDED")" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$STATE_AMENDED"; then
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
@@ -15667,11 +15923,18 @@ _SAVE_STATE () {
 	# Args: key=value pairs to persist (one per arg)
 	local SF
 	SF=$(_STATE_FILE_PATH) || { PRINT_ERR "Not in a git repo"; return 1; }
-	local KV
+	local KV REF="" AT="" REPLAYED="" PAUSE_WT="" KEPT=""
 	local SAVE_VERIFY_CMD=${VERIFY_VALUE:-$STATE_VERIFY_CMD}
 	# One key a line – a value holding a newline, a path's say, would read back as keys of its own
 	for KV in "$@"; do
 		_REFUSE_NEWLINE_NAMES "${KV#*=}"
+		case $KV in
+			branch=*)     REF=${KV#*=} ;;
+			orig_head=*)  AT=${KV#*=} ;;
+			replay_tip=*) REPLAYED=${KV#*=} ;;
+			worktree=*)   PAUSE_WT=${KV#*=} ;;
+			wt_ours=0)    KEPT=1 ;;
+		esac
 	done
 	local SF_NEW="$SF.$$"
 	_TEMP_FILES+=("$SF_NEW")
@@ -15716,6 +15979,12 @@ _SAVE_STATE () {
 	# and the write, nor clears the slot between its own check and its removal
 	_SLOT_LOCK "$SF" "nothing was applied"
 	local JF=$REPLY
+	# A first run's refusal takes back the replay it left in a `-C` path, for the rerun to reuse
+	[ -n "$KEPT" ] && _UNWIND_PATH=$PAUSE_WT
+	# No pause for a run whose branch moved off the tip it lands on – an edit's replay onto that
+	# tip, the rest onto the one they read – as its resolution could never land
+	# Under the lock `_MOVE_REF` looks for a pause under, so a landing and a pause never both pass
+	_REQUIRE_CURRENT "$REF" "${REPLAYED:-$AT}"
 	if [ -n "$_STATE_OWNED" ]; then
 		_REQUIRE_OWN_PAUSE
 		mv -f "$SF_NEW" "$SF"
@@ -15729,9 +15998,10 @@ _SAVE_STATE () {
 		else
 			_IN_WRITE=""
 			rm -f "$SF_NEW"
-			_REFUSE_PEER_PAUSE
+			_REFUSE_PEER_PAUSE "$REF"
 		fi
 	fi
+	_UNWIND_PATH=""
 	_STATE_OWNED=$SF
 	_STATE_ID=$(_PAUSE_KEYS "$SF")
 	[ -n "$JF" ] && _JOURNAL_UNLOCK "$JF"
@@ -17368,6 +17638,9 @@ _CONTINUE_AMEND_INTO () {
 	elif [ -n "$STATE_REBASEBASE" ]; then
 		VERIFY_PRIMARY=$(git rev-list --reverse "$STATE_REBASEBASE..$NEW_HEAD" 2>/dev/null | head -1)
 	fi
+	# Bar a branch holding this result already, which a run cut off after landing it left there
+	_VERIFY_CONFIGURED && [ "$(git rev-parse -q --verify "$STATE_BRANCH" 2>/dev/null)" != "$NEW_HEAD" ] && \
+		_REQUIRE_CURRENT "$STATE_BRANCH" "${STATE_HEAD_WITH_FIXUP:-$STATE_ORIG_HEAD}"
 	if ! _GUARD_TIP_MODES "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$(_MODE_LINES "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE")" || ! _VERIFY_REWRITE "$STATE_WORKTREE" "$NEW_HEAD" "$STATE_ORIG_HEAD" "$VERIFY_PRIMARY"; then
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$STATE_WORKTREE" "$NEW_HEAD"
@@ -17882,6 +18155,7 @@ GIT_REWORD () {
 	# A message typed in the editor is kept for the rerun
 	local TYPED=""
 	[ -z "$TEXT_VALUE$SUBJECT_VALUE" ] && TYPED=$NEW_MSG
+	_TYPED_KEEP=("$TYPED" "git edit -M ${TARGET:0:12}")
 	_MOVE_REF "$CMD" || _REFUSE_MOVED_DURING "$REF" "$ORIG_HEAD" reword "$TYPED" "git edit -M ${TARGET:0:12}"
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "reword ${TARGET:0:7}"
 	# The walk reuses every commit's tree object verbatim, so this holds by construction, and a
@@ -18325,6 +18599,7 @@ GIT_RESQUASH () {
 	PRINT_CMD "$CMD"
 	local TYPED=""
 	[ -z "$TEXT_VALUE" ] && [ ${#OPT_MESSAGE} -gt 0 ] && TYPED=$NEW_MSG
+	_TYPED_KEEP=("$TYPED" "git edit -S ${(j: :)COMMITS}")
 	_MOVE_REF "$CMD" || _REFUSE_MOVED_DURING "$REF" "$ORIG_HEAD" squash "$TYPED" "git edit -S ${(j: :)COMMITS}"
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$PREV_NEW" "squash ${#COMMITS[@]} into ${OLDEST:0:7}"
 	# The squashed commit takes the newest member's tree and descendants keep
@@ -20271,6 +20546,8 @@ _REQUIRE_PLAIN_GIT_ENV
 # Capture `HEAD` before any change, for the status trailer's `old_head` – empty in an empty repo,
 # where the script fails later on commit resolution, so the trailer is never reached
 SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
+# And the pause standing then, one the run got past – a pause begun since wins over its landing
+[ ${#OPT_SELFTEST} -gt 0 ] || _PAUSE_AT_START=$(_PAUSE_KEYS "$(_STATE_FILE_PATH)")
 
 # Resolves the `--text` value into `TEXT_VALUE` – `--text "msg"` as a separate arg or after
 # an `=`, and `--text -` to read stdin, multi-line included
@@ -20589,6 +20866,13 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 	fi
 	_HOLD_PAUSE_WORKTREE applied
 	_REQUIRE_PAUSE_AS_READ
+	# A resume landing on the tip its pause read refuses before it replays or gates anything
+	# where the branch moved since – an edit or a split reads the branch again instead, and a
+	# branch at what the worktree built is the pause's own landing, its run cut off before clearing
+	if [[ "$STATE_OPERATION" == (amend-into|snapshot|reorder|onto|land|rebase) ]] && \
+	   [ "$(git rev-parse -q --verify "$STATE_BRANCH" 2>/dev/null)" != "$(git -C "$STATE_WORKTREE" rev-parse -q --verify HEAD 2>/dev/null)" ]; then
+		_REQUIRE_CURRENT "$STATE_BRANCH" "${STATE_HEAD_WITH_FIXUP:-$STATE_ORIG_HEAD}"
+	fi
 	_NOTE_UNRECORDED_STOP
 	if [ -n "$STATE_WORKTREE" ] && [ -d "$STATE_WORKTREE" ]; then
 		# Config added mid-pause reaches the existing worktree here – links are created only at

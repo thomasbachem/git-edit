@@ -22,12 +22,12 @@ while [ "$RC" = "2" ] && [ $CAS_ROUNDS -lt 4 ]; do
 	_ST_RESOLVE "$CAS_WT" cas.txt $'cas one\ncas RESOLVED'
 	_ST_RUN --continue
 done
-_ST_EQ "the CAS refuses the write" "$RC" "1"
-_ST_OUT_HAS "says the branch moved" 'moved during resolution'
+_ST_EQ "the resume refuses the write" "$RC" "1"
+_ST_OUT_HAS "says the branch moved" 'moved from [0-9a-f]* to [0-9a-f]* since this run read it'
 # A refusal must not fire the exit trap, which would delete the one copy of the work and
-# leave a state whose worktree is gone
+# leave a state whose worktree is gone – the resume refuses before replaying past its stop
 _ST_CHECK "the worktree survives the refusal" sh -c "[ -d '$CAS_WT' ]"
-_ST_CHECK "and still holds the resolution" sh -c "grep -q 'cas FOLDED' '$CAS_WT/cas.txt' && git -C '$CAS_WT' show 'HEAD~1:cas.txt' | grep -q 'cas RESOLVED'"
+_ST_CHECK "and still holds the resolution" sh -c "git -C '$CAS_WT' show ':cas.txt' | grep -qx 'cas RESOLVED'"
 _ST_OUT_HAS "points at the surviving worktree" 'resolution is intact'
 _ST_RUN --status
 _ST_OUT_LACKS "status is not orphaned" 'worktree is gone'
