@@ -1,15 +1,17 @@
-# A run another caller's pause blocks waits for it to clear up to `--wait` – 90 s outside the suite,
-# none in it – then runs, or refuses naming whose pause and how long it waited; never on its own
-# pause, nor at a check made once it holds a path, and a signal while waiting ends it with nothing
-# taken – a staged path renamed after the target names its old name and the edit pause that works
-# there, and the documented grep keeps the tree lines
+# Runs wait out a pause, and renamed paths name their old one:
+# • A run another caller's pause blocks waits for it to clear up to `--wait` – 90 s outside the
+#   suite, none in it – then runs, or refuses naming whose pause and how long it waited
+# • It never waits on its own pause, nor at a check made once it holds a path
+# • A signal while waiting ends it with nothing taken
+# • A staged path renamed after the target names its old name and the edit pause that works there
+# • The documented grep keeps the tree lines
 _ST_SCENARIO "\e[1;96m[180] a run waits out another's pause, a renamed path names its old name\e[0m"
 local WT_HEAD WT_TIP WT_WTD WT_SF WT_N WT_RE WT_MAN WT_OLD WT_REN
 local -i WT_T
 # Starts `git edit <arg>...` in the background, outside the suite's no-wait pin, under the env
 # assignments before `--` – its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
 _W180_BG () {
-	# Args: <name> [<name>=<value>...] -- <arg>...
+	# Args: <name> [<name>=<value>...] `--` <arg>...
 	local N=$1
 	local -a ENVS=()
 	shift
@@ -28,8 +30,8 @@ _W180_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, at most 60 s – a run still going then is stopped – into
-# `OUT` and `RC`
+# Waits for background run <name> to end, its output and status into `OUT` and `RC` –
+# at most 60 s, a run still going then stopped
 _W180_END () {
 	# Args: <name>
 	local -i I=0
@@ -56,7 +58,8 @@ _W180_PAUSE w-peer HEAD~1
 _ST_EQ "a peer's edit pause stands" "$RC" "2"
 WT_N=$(git worktree list | wc -l | tr -d ' ')
 
-# The bound runs out: the run waits it whole, then refuses, naming whose pause and how long it waited
+# The bound runs out: the run waits it whole, then refuses,
+# naming whose pause and how long it waited
 WT_T=$EPOCHSECONDS
 _W180_BG w1 GIT_EDIT_ACTOR=w-self -- -M --text="WT c reworded" --wait=2 HEAD
 _W180_END w1
@@ -184,7 +187,7 @@ _ST_RUN --abort
 export GIT_EDIT_ACTOR=
 
 # The bound takes the value-flag forms – required, a whole number, given once – and none beside a
-# resume or a standalone command; with no pause in the way a run waits for nothing
+# resume or a standalone command, while with no pause in the way a run waits for nothing
 _ST_RUN -M --text="WT c plain" --wait=5 HEAD
 _ST_EQ "with no pause a run with --wait runs at once" "$RC:$(git log -1 --format=%s HEAD)" "0:WT c plain"
 _ST_OUT_LACKS "saying nothing of waiting" 'Waiting up to'

@@ -2,7 +2,7 @@
 # it was named – and never guesses a copy landed: a branch commit that looks like one of the
 # target's refuses the land, naming each, with steps that land as printed – the branch moved onto
 # the copies, the --base past them, the fold into the target's own rewrite of it – while a commit
-# the target took by another branch's land stays out by that land's record; a refusal names no
+# the target took by another branch's land stays out by that land's record, a refusal names no
 # --base ending in the merge refusal, and a dry run's "Land it:" keeps the --base it was given
 _ST_SCENARIO "\e[1;96m[184] --land sets aside what an undo took back and refuses a copy it would guess at\e[0m"
 local Q1_T Q1_C Q1_F
@@ -14,14 +14,14 @@ _Q1_AS_PRINTED () {
 	[[ "$1" == "git edit "* || "$1" == "git -C "*" edit "* ]] || return 1
 	( export PATH="$TMP/q1-bin:$PATH" GIT_EDIT_NO_AUTO_OPEN=1; eval "command $1" </dev/null ) > "$TMP/q1-step.out" 2>&1
 }
-# Prints the step after <lead> in `OUT`, its colour codes cut
+# Prints the step after <lead> in `OUT`, its color codes cut
 _Q1_STEP () {
 	local S=$(print -r -- "$OUT" | sed -n "s/^.*$1//p" | head -1)
 	print -r -- "${S%%$'\e'*}"
 }
 
-# A land of a revision taken back counts for the branch, as its commits do – both land, the fork said
-# as set aside by that land; a dry run with --base keeps it in the command it prints
+# A land of a revision taken back counts for the branch, as its commits do – both land, the fork
+# said as set aside by that land, and a dry run with --base keeps it in the command it prints
 _ST_PZ_NEW q1a
 _ST_PZ_C a.txt a "Q1A base"
 git checkout -q -b feat && _ST_PZ_C b.txt b "Q1A F1" && _ST_PZ_C c.txt c "Q1A F2" && git checkout -q main
@@ -68,8 +68,8 @@ for Q1_F in fold reword; do
 done
 
 # A commit main dropped and one it rewrote, inside a catch-up merge – the rewrite named as such, and
-# no --base back from the fork, which would end in the merge refusal; the one past the merge lands
-# as printed, and its dry run keeps that --base
+# no --base back from the fork, which would end in the merge refusal, while the one past the merge
+# lands as printed, and its dry run keeps that --base
 _ST_PZ_NEW q1d
 _ST_PZ_C a.txt a "Q1D base"
 git worktree add -q -b feat "$TMP/q1d-wt" main 2>/dev/null
@@ -94,7 +94,7 @@ _ST_EQ "which lands what follows it" "$(git log --format=%s | tr '\n' '|')" "Q1D
 git worktree remove --force "$TMP/q1d-wt"
 
 # A second land after a replay, the branch never moved onto the copies, refuses – the move from its
-# checkout offered, which lands only the new commit after it; first lands go through
+# checkout offered, which lands only the new commit after it, while first lands go through
 _ST_PZ_NEW q1e
 _ST_PZ_C a.txt a "Q1E base"
 git worktree add -q -b feat "$TMP/q1e-wt" main 2>/dev/null
@@ -153,7 +153,7 @@ _ST_EQ "whose fold, run as printed, brings the fix to main" "$(git show HEAD~1:b
 git worktree remove --force "$TMP/q1f-wt"
 
 # A catch-up merge of main into the branch after a replay – its copies refuse, no merge offered,
-# whether main moved since or not; the --base past the merge lands the new commit alone
+# whether main moved since or not, while the --base past the merge lands the new commit alone
 _ST_PZ_NEW q1g
 _ST_PZ_C a.txt a "Q1G base"
 git worktree add -q -b feat "$TMP/q1g-wt" main 2>/dev/null
@@ -178,7 +178,7 @@ _ST_EQ "which lands the new commit alone, each commit once" "$(git log --format=
 git worktree remove --force "$TMP/q1g-wt"
 
 # Main reworded its copy, the branch folded a fix into the commit – named against that reworded
-# copy, never as dropped, whose fold run as printed brings the fix; the messages left to tell apart
+# copy, never as dropped, whose fold run as printed brings the fix – the messages left to tell apart
 _ST_PZ_NEW q1h
 _ST_PZ_C a.txt a "Q1H base"
 git worktree add -q -b feat "$TMP/q1h-wt" main 2>/dev/null

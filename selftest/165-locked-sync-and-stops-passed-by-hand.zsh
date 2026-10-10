@@ -1,15 +1,16 @@
 # The terminal sync's two-tree merge runs on a copy of the index under its lock, each path checked
-# there first, so a peer staging in a landed path's way keeps it, named, never "came along"; every
-# stop a hand `git rebase --continue` passed counts for the absorption and marker guards; a hand
-# finish whose last pick git left out as emptied is judged by the replay record, no refusal
-# offering a hard reset past the guards; and no resume prints the record step's `Executing:` line
+# there first, so a peer staging in a landed path's way keeps it, named, never "came along"
+# Every stop a hand `git rebase --continue` passed counts for the absorption and marker guards
+# A hand finish whose last pick git left out as emptied is judged by the replay record, no refusal
+# offering a hard reset past the guards
+# No resume prints the record step's `Executing:` line
 _ST_SCENARIO "\e[1;96m[165] the sync merges under the index lock, stops passed by hand count for the guards\e[0m"
 local HP_REAL HP_BIN HP_T HP_WT HP_L
 HP_REAL=$(whence -p git)
 
-# A peer staging a file `d` where a terminal drop lands d/x.txt, and P/u.txt where it lands a file
-# P, after the sync read the checkout – once, the unlocked merge deleted both, files and all, and
-# named them as come along
+# A peer staging a file `d` where a terminal drop lands d/x.txt, and P/u.txt where it
+# lands a file P, after the sync read the checkout – once, the unlocked merge deleted
+# both, files and all, and named them as come along
 _ST_PZ_NEW hp1
 _ST_PZ_C a.txt a "HP1 base"
 mkdir d && print -r -- x > d/x.txt && print -r -- notes > P && git add -A && git commit -qm "HP1 add d/x.txt, P"
@@ -57,8 +58,8 @@ _HP_SEED () {
 	_ST_PZ_C t.txt t "HP2 top"
 	HP_T=$(git rev-parse HEAD)
 }
-# Starts the drop and resolves its first stop to Z's own content, a hand continue taking it on
-# to the second
+# Starts the drop and resolves its first stop to Z's own content,
+# a hand continue taking it on to the second
 _HP_TO_SECOND () {
 	_ST_RUN -d -y HEAD~4
 	HP_WT=$(_ST_PZ_WT)

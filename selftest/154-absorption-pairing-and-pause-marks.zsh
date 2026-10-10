@@ -180,8 +180,9 @@ _ST_EQ "an abort of a pause re-taken alike meanwhile cancels nothing" "$RC:$([ -
 _ST_OUT_HAS "saying so" 'ended by another run meanwhile – nothing was cancelled'
 cp "$TMP/ab-sf" "$AB_SF"
 GIT_EDIT_ACTOR= _ST_RUN --abort
-# A resume holds its -C path, so an abort and a new run there both refuse while its gate runs – and
-# a pause re-taken alike meanwhile, its nonce alone telling it apart, it lands nothing of, leaving it
+# A resume holds its `-C` path, so an abort and a new run there both refuse while
+# its gate runs – and a pause re-taken alike meanwhile, its nonce alone telling it
+# apart, it lands nothing of, leaving it
 _ST_PZ_NEW ab10
 _ST_PZ_C f $'1\n2\n3' "AB10 A" && _ST_PZ_C f $'1\n2b\n3' "AB10 B" && _ST_PZ_C f $'1\n2c\n3' "AB10 C"
 AB_T=$(git rev-parse HEAD)

@@ -1,9 +1,11 @@
-# A run that waits out another caller's pause acts on the commits its arguments named as it started –
-# pinned by SHA before the wait, then resolved as any stale SHA is – and an argument it refuses
-# refuses before any wait; a signal ends the wait at once, `--wait` beside `--undo` says why it has
-# nothing to bound, a `--subject` changing nothing at an edit's continue refuses as nothing to amend,
-# one replacing a first paragraph of several lines names them, and the documented grep keeps a
-# fold's tip-tree note
+# A waiting run acts on what it named:
+# • A run that waits out another caller's pause acts on the commits its arguments named as it
+#   started – pinned by SHA before the wait, then resolved as any stale SHA is – and an argument
+#   it refuses refuses before any wait
+# • A signal ends the wait at once, `--wait` beside `--undo` says why it has nothing to bound
+# • A `--subject` changing nothing at an edit's continue refuses as nothing to amend, one replacing
+#   a first paragraph of several lines names them
+# • The documented grep keeps a fold's tip-tree note
 _ST_SCENARIO "\e[1;96m[182] a waiting run acts on what it named, and a bad argument never waits\e[0m"
 local PW_WTD PW_HEAD PW_C PW_MAN PW_RE PW_RD PW_ARGS
 local PW_T
@@ -27,8 +29,8 @@ _W182_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, at most 60 s – a run still going then is stopped – into
-# `OUT` and `RC`
+# Waits for background run <name> to end, its output and status into `OUT` and `RC` –
+# at most 60 s, a run still going then stopped
 _W182_END () {
 	# Args: <name>
 	local -i I=0
@@ -72,7 +74,8 @@ _W182_LANDED () {
 	_W182_PEER --continue
 }
 
-# A reword of `HEAD` waiting out a land acts on the commit `HEAD` was, never the one the land put there
+# A reword of `HEAD` waiting out a land acts on the commit `HEAD` was,
+# never the one the land put there
 _W182_LANDING pw1
 _ST_EQ "a peer's land pauses" "$RC" "2"
 _W182_BG pw1 -M --subject="PW C reworded" --wait=30 HEAD
@@ -120,7 +123,8 @@ _ST_EQ "a pinned commit the landing rebuilt is reworded at its new identity" \
 	"$RC:$(git log -1 --format=%s HEAD):$(git show HEAD:a.txt)" "0:PW4 C reworded:a2"
 _ST_OUT_HAS "found by its unchanged diff" "^Commit ${PW_C:0:7} was rewritten – using its current identity"
 
-# One the landing changed refuses, naming its counterpart, rather than take whatever the name means now
+# One the landing changed refuses, naming its counterpart,
+# rather than take whatever the name means now
 _ST_PZ_NEW pw5
 _ST_PZ_C a.txt a "PW5 A" && _ST_PZ_C b.txt b "PW5 B" && _ST_PZ_C c.txt c "PW5 C"
 _W182_PEER HEAD~1
@@ -212,9 +216,6 @@ _ST_EQ "an edit's continue replacing a 2-line first paragraph lands" "$RC:$(git 
 _ST_OUT_HAS "naming the lines too" "^--subject replaced a first paragraph of 2 lines, all of it git's subject – still readable at ${PW_C:0:12}:"
 _ST_OUT_HAS "with the --text for the edited commit" "give the whole message instead: git edit -M --text=\"…\" $(git rev-parse --short=12 HEAD)"
 
-# A body `-M --text` or an edit's `--continue --text` dropped whole is named with a command that,
-# run as printed, puts it back under the new subject on the landed commit – quotes, `$`, backticks,
-# a backslash and blank lines kept, bar the trailing ones `--text`'s cleanup drops
 # Prints commit <1>'s message as its object holds it, byte for byte
 _W182_MSG () {
 	local O
@@ -229,6 +230,9 @@ _W182_PUT_BACK () {
 	OUT=$(eval "GIT_EDIT_NO_AUTO_OPEN=1 ${CMD/#git edit /\"\$SELF\" }" </dev/null 2>&1)
 	RC=$?
 }
+# A body `-M --text` or an edit's `--continue --text` dropped whole is named with a command that,
+# run as printed, puts it back under the new subject on the landed commit – quotes, `$`, backticks,
+# a backslash and blank lines kept, bar the trailing ones `--text`'s cleanup drops
 _ST_PZ_NEW pw11
 _ST_PZ_C a.txt a "PW11 base"
 print -r -- b > b.txt && git add b.txt

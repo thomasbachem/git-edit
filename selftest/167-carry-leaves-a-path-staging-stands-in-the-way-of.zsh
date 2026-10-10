@@ -1,12 +1,12 @@
 # `--carry` leaves a path whose new entry would drop staging in its way – a file staged where its
 # directory goes, files staged under it – whole, neither file nor entry written, a rename's source
-# and a renamed directory's untracked files staying with it, named once with the carry to run
-# again; a directory of a peer's files where a file lands is never replaced, and staging put in
-# the way meanwhile still keeps its entry out, the file named as written
+# and a renamed directory's untracked files staying with it, named once with the carry to run again
+# A directory of a peer's files where a file lands is never replaced, and staging put in the way
+# meanwhile still keeps its entry out, the file named as written
 _ST_SCENARIO "\e[1;96m[167] --carry leaves a path staging stands in the way of whole, named with the carry to run again\e[0m"
 local KC_OLD KC_B KC_REAL=${commands[git]}
 
-# Moves `main` to `topic` the way a landing made elsewhere does – the index and files left as they were
+# Moves `main` to `topic` as a landing made elsewhere does – the index and files left as they were
 _KC_RAW () {
 	git update-ref refs/heads/main topic "$KC_OLD"
 }
@@ -56,8 +56,8 @@ _ST_RUN --carry="$KC_OLD"
 _ST_EQ "a directory of a peer's files where a file lands keeps them, staged and untracked" "$RC:$(cat P/a.md P/u.txt 2>/dev/null | tr '\n' ' '):$(git ls-files -- P)" "1:mine u :P/a.md"
 _ST_OUT_HAS "named as a directory standing there" 'P – your directory stands where the rewrite put a file'
 
-# A rename into a directory a file is staged in the place of leaves the old path as it is, edits,
-# entry and all
+# A rename into a directory a file is staged in the place of leaves the old path
+# as it is, edits, entry and all
 _ST_PZ_NEW kc4
 print -l 1 2 3 4 5 6 > src.txt && git add -A && git commit -qm "KC4 base" && KC_OLD=$(git rev-parse HEAD)
 git checkout -q -b topic && mkdir d && git mv src.txt d/x.txt && git commit -qm "KC4 topic" && git checkout -q main
@@ -94,8 +94,8 @@ _ST_EQ "an entry outside the cone staging stands in the way of stays out" "$RC:$
 _ST_OUT_HAS "named alike" 'staging in their way: gen/x\.txt (gen staged where its directory goes) – carry them'
 git sparse-checkout disable 2>/dev/null
 
-# Staging put in the way while the carry writes keeps its entry out all the same – the file named
-# as written, its entry left
+# Staging put in the way while the carry writes keeps its entry out all the same –
+# the file named as written, its entry left
 _ST_PZ_NEW kc7
 print a > a.txt && git add -A && git commit -qm "KC7 base" && KC_OLD=$(git rev-parse HEAD)
 git checkout -q -b topic && mkdir d && print x > d/x.txt && git add -A && git commit -qm "KC7 topic" && git checkout -q main

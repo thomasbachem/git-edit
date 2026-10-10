@@ -145,8 +145,8 @@ _ST_RUN --amend-into="$(git rev-parse HEAD)" --edits '{"f.txt": [["a\n", "A\n"]]
 _ST_EQ "a peer's staging on a path a fold changes stays staged" "${RC}:$(git show HEAD:f.txt | head -1):$(git show :f.txt | tail -1)" "0:A:PEER"
 _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --edits '{"f.txt": [["B2\n", "B3\n"]]}'
 _ST_EQ "a fold into the older commit pauses on its replay" "$RC" "2"
-# Each stop resolved to what its own commit holds – the fold's B3 on the older commit, then the later
-# one's A on top – as taking the later A in early is an absorption the replay refuses
+# Each stop resolved to what its own commit holds – the fold's B3 on the older commit, then the
+# later one's A on top – as taking the later A in early is an absorption the replay refuses
 local FI_N
 for FI_N in $'a\nB3\nc\nx\ny\nz' $'A\nB3\nc\nx\ny\nz'; do
 	[ "$RC" = 2 ] || break

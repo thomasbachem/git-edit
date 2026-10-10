@@ -32,8 +32,10 @@ _ST_RUN --amend-into=auto --tree="$TF_COMPOSED"
 _ST_EQ "auto targets from the tree's diff" "$RC" "0"
 _ST_OUT_HAS "naming the commit that owns the line" 'amended: [0-9a-f]* TF base'
 # Refusals: a tree composed on a tip that moved since, one matching `HEAD`,
-# a bad tree-ish, and `--tree` outside a fold
+# a bad tree-ish, and `--tree` outside a fold – the target as the fold above left it, as one it
+# rewrote is refused before the tree is read
 git reset -q --hard
+TF_BASE2=$(git rev-parse HEAD~1)
 TF_COMPOSED=$(_ST_COMPOSE tf.txt "tf-stale")
 echo "tf-moved" > tf3.txt && git add tf3.txt && git commit -qm "TF moved"
 _ST_RUN --amend-into="$TF_BASE2" --tree="$TF_COMPOSED" -- tf.txt

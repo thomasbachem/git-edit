@@ -1,7 +1,8 @@
-# A staged fold over a file a landing renamed names the unstage its carry needs, and followed as
-# printed it lands; a sparse-checkout flag with no patterns file leaves the checkout full, as git
-# reads it; and an `--exec` program is read from where the command runs, a refusal naming that
-# place and the name that works there, a failure from a subdirectory naming where it ran
+# Remedies work as printed, programs read from where they run:
+# • A staged fold over a file a landing renamed names the unstage its carry needs, lands as printed
+# • A sparse-checkout flag with no patterns file leaves the checkout full, as git reads it
+# • An `--exec` program is read from where the command runs, a refusal naming that place and the
+#   name that works there, a failure from a subdirectory naming where it ran
 _ST_SCENARIO "\e[1;96m[176] remedies work as printed, programs read from where they run\e[0m"
 local AX_T AX_OLD AX_RS AX_C AX_ADD AX_MV AX_WHY
 
@@ -65,16 +66,17 @@ _ST_PZ_NEW ax2c
 mkdir d && print -l {1..10} > d/a && print -r -- t > top && git add -A && git commit -qm "AX2C base"
 git sparse-checkout set --cone d
 print -l 1 2-A {3..10} > d/a
-# A git before 2.42 asks no patterns, takes the new path as maybe outside, and moves without `--sparse`
+# A git before 2.42 asks no patterns, so it takes the new path as maybe outside
 AX_MV="git mv" AX_WHY="maybe outside your sparse checkout, which this git can't ask"
-_ST_SPARSE_RULES_OK && AX_MV="git mv --sparse" AX_WHY="outside your sparse checkout"
+_ST_SPARSE_RULES_OK && AX_WHY="outside your sparse checkout"
+_ST_MV_SPARSE_OK && AX_MV="git mv --sparse"
 _ST_TTY -- --exec -y -- sh -c "mkdir -p e && $AX_MV d/a e/a && git commit -qm 'AX2C move'"
 _ST_EQ "while one with patterns leaves the new path outside, the edits where they were" \
 	"$RC:$([ -e e/a ] && echo written):$(sed -n 2p d/a):$(git ls-files -t -- e/a)" "0::2-A:S e/a"
 _ST_OUT_HAS "and says so" "d/a → e/a – renamed $AX_WHY"
 
-# A relative program is read from where the command runs, a refusal naming that place and the name
-# that works from it – once, one committed was "not at the tip", and one named from the top a bare 127
+# A relative program is read where the command runs, a refusal naming that place and the name
+# that works from it – once, one committed was "not at the tip", one named from the top a bare 127
 _ST_PZ_NEW ax3
 mkdir tools sub && print -l '#!/bin/sh' 'echo "fmt-ran $*"' > tools/fmt.sh && chmod +x tools/fmt.sh && print -r -- s > sub/s.txt
 git add -A && git commit -qm "AX3 base" && AX_T=$(git rev-parse HEAD)

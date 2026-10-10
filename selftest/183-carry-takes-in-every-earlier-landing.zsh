@@ -64,8 +64,8 @@ _ST_OUT_HAS "a fold holding the first landing names the rename's own carry" \
 	"Then merge what landed into the checkout with 'git edit --carry=${CB_L1:0:12}'"
 _ST_OUT_HAS "the rename named as the landing" "f\.txt – cb-peer's exec run .*, which renamed it to g\.txt$"
 
-# Two landings of one second on two files: the carry starts from the one journaled first, whichever
-# file reads first
+# Two landings of one second on two files:
+# the carry starts from the one journaled first, whichever file reads first
 _ST_PZ_NEW cb4
 print -l {1..10} > a.txt && print -l {1..10} > b.txt && git add -A && git commit -qm "CB4 base"
 CB_T=$(git rev-parse HEAD)
@@ -84,8 +84,8 @@ GIT_EDIT_ACTOR=cb-self _ST_RUN --commit --text "CB4 mine" -- a.txt b.txt
 _ST_EQ "followed as printed, it keeps both" \
 	"$RC:$(git show HEAD:a.txt | sed -n '2p;8p' | tr '\n' ' ')$(git show HEAD:b.txt | sed -n '2p;5p' | tr '\n' ' ')" "0:2-A 8-B 2-A 5-L1 "
 
-# An agent's landing on a file whose edits predate an earlier landing too names the carry from
-# that one's old tip
+# An agent's landing on a file whose edits predate an earlier landing too
+# names the carry from that one's old tip
 _ST_PZ_NEW cb5
 print -l {1..10} > f.txt && git add -A && git commit -qm "CB5 base"
 CB_T=$(git rev-parse HEAD)

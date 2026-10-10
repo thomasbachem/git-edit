@@ -1,8 +1,9 @@
 # A run takes a `-C` path, a resume its pause, as they stand once it holds them – a pause recorded
 # in that path meanwhile refuses the run, never reset, and a pause another resume moved on refuses
 # the stale one – a half-broken lock a dead breaker left is waited out, never named a live run, and
-# a fresh lock taken during a stalled break stays; an undo a hook vetoes says nothing was undone, and
-# a run under a landing's own hook refuses its journal at once
+# a fresh lock taken during a stalled break stays
+# An undo a hook vetoes says nothing was undone, and a run under a landing's own
+# hook refuses its journal at once
 _ST_SCENARIO "\e[1;96m[164] paths and pauses are taken as they stand once held\e[0m"
 local ZL_P ZL_WT ZL_GD ZL_LOCK ZL_N ZL_X ZL_PID ZL_LIVE
 local -i ZL_I
@@ -26,8 +27,9 @@ _ZL_WAIT () {
 }
 mkdir -p "$TMP/zl-nap" && print -l '#!/bin/sh' 'exit 0' > "$TMP/zl-nap/sleep" && chmod +x "$TMP/zl-nap/sleep"
 
-# A drop past its look at the pause slot, a pause recorded in its `-C` path before it holds the path –
-# that run gone, its commit amended there – refuses there, rather than reset what the pause holds
+# A drop past its look at the pause slot, a pause recorded in its `-C` path
+# before it holds the path – that run gone, its commit amended there – refuses
+# there, rather than reset what the pause holds
 _ST_PZ_NEW zl1
 _ST_PZ_C a.txt a1 "ZL1 a" && _ST_PZ_C b.txt b1 "ZL1 b" && _ST_PZ_C c.txt c1 "ZL1 c"
 ZL_P="$TMP/zl1-wt"
@@ -133,8 +135,8 @@ _ST_RUN -C "$ZL_P" HEAD~1
 _ST_EQ "until that holder ends" "$RC:$(cd "${ZL_LOCK:h}" && print -r -- git-edit-run.lock.*(N))" "2:"
 _ST_RUN --abort
 
-# An undo a `reference-transaction` hook vetoes says nothing was undone, and one it lets through
-# then undoes
+# An undo a `reference-transaction` hook vetoes says nothing was undone,
+# and one it lets through then undoes
 _ST_PZ_NEW zl5
 _ST_PZ_C a.txt a1 "ZL5 a" && _ST_PZ_C b.txt b1 "ZL5 b"
 _ST_RUN -M --text "ZL5 b2" HEAD

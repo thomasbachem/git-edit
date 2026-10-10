@@ -1,5 +1,5 @@
 # `--subject` replaces git's subject – the whole first paragraph – with -M and an edit pause's
-# `--continue`, keeping everything from the blank line after it byte for byte; one line only, never
+# `--continue`, keeping everything from the blank line after it byte for byte, one line only, never
 # beside `--text`, refused by a mode writing a new message – and a `--text` dropping a body
 # names it as the way to keep one
 _ST_SCENARIO "\e[1;96m[178] --subject replaces the subject and keeps the body\e[0m"
@@ -58,7 +58,8 @@ _ST_PZ_C d.txt d "Plain old"
 _ST_RUN -M --subject="Plain new" HEAD
 printf 'Plain new\n' > "$TMP/sj-want"
 _ST_CHECK "so does one ending in its own newline" cmp -s <(_SJ_MSG HEAD) "$TMP/sj-want"
-# Neighbor: `--text` still replaces the whole message, naming the command putting a body it drops back
+# Neighbor: `--text` still replaces the whole message,
+# naming the command putting a body it drops back
 _SJ_COMMIT 'Text target\n\n• kept by subject alone\n• second line\n'
 _ST_RUN -M --text="Text whole" HEAD
 printf 'Text whole\n' > "$TMP/sj-want"
@@ -93,7 +94,8 @@ _ST_OUT_LACKS "naming no body as dropped" 'carried a .*-line body'
 _ST_RUN HEAD~1
 _ST_RUN --continue --subject=SJ3-again
 _ST_EQ "a subject alone is something to amend" "$RC:$(git log -1 --format=%s HEAD~1):$(git log -1 --format=%b HEAD~1 | head -1)" "0:SJ3-again:• edit body"
-# Neighbor: `--continue --text` still drops the body, naming the reword of the landed commit that puts it back
+# Neighbor: `--continue --text` still drops the body,
+# naming the reword of the landed commit that puts it back
 _ST_RUN HEAD~1
 _ST_RUN --continue --text "SJ3 whole"
 _ST_EQ "--continue --text replaces the whole message" "$RC:$(git log -1 --format=%B HEAD~1)" "0:SJ3 whole"

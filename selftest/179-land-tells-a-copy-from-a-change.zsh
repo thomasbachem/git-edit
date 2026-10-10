@@ -1,20 +1,22 @@
-# A branch commit sharing author and date with one the target held, and its subject or patch, looks
-# like a copy: one bringing a change the tip lacks – an amend or fold on the branch since it landed,
-# or a pick main resolved by hand – refuses whatever the dates, naming both, with a step that brings
-# its change, or lands past it, as printed; one whose change and message the tip holds ends landed;
-# a land resumed past a conflict names the catch-up copy it left out; a catch-up of a branch checked
-# out nowhere into a worktree's never offers to move or delete it
+# A land tells a copy from a change:
+# • A branch commit sharing author and date with one the target held, and its subject or patch,
+#   looks like a copy, and one bringing a change the tip lacks – an amend or fold on the branch
+#   since it landed, or a pick main resolved by hand – refuses whatever the dates, naming both,
+#   with a step that brings its change, or lands past it, as printed
+# • One whose change and message the tip holds ends landed
+# • A land resumed past a conflict names the catch-up copy it left out
+# • A catch-up of a branch checked out nowhere into a worktree's never offers to move or delete it
 _ST_SCENARIO "\e[1;96m[179] --land tells a copy from a change made since it landed\e[0m"
 local LC_L LC_B LC_T LC_C LC_WT
 mkdir -p "$TMP/lc-bin" && ln -sf "$SELF" "$TMP/lc-bin/git-edit"
-# Runs a printed `git edit …` step as a caller would – past the suite's `git`, whose clock a subshell
-# would wind back to the parent's tick, dating its commits before ones the parent made since
+# Runs a printed `git edit …` step as a caller would – past the suite's `git`, whose clock a
+# subshell would wind back to the parent's tick, dating its commits before the parent's later ones
 _LC_AS_PRINTED () {
 	[[ "$1" == "git edit "* ]] || return 1
 	( export PATH="$TMP/lc-bin:$PATH" GIT_EDIT_NO_AUTO_OPEN=1; eval "command $1" </dev/null ) >/dev/null 2>&1
 }
 # A fix folded on the branch into a commit main took by a fast-forward – the land refuses, naming
-# both, and the fold it prints, run as printed, brings the fix; the land again ends landed
+# both, and the fold it prints, run as printed, brings the fix, the land again ending landed
 _ST_PZ_NEW lc1
 _ST_PZ_C f.txt $'a\nb\nc' "LC1 base"
 git worktree add -q -b feat "$TMP/lc1-wt" main 2>/dev/null
@@ -41,8 +43,7 @@ _ST_EQ "the land run again ends landed" "$RC:$(git rev-parse HEAD)" "0:$(git rev
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lc1-wt"
 # The same after a replay land, the two commits on other parents – the fold composed on main's tip
-# still carries the fix alone; the fold given a later date, as a replay and a fold a second apart
-# would tie
+# still carries the fix alone, the fold dated later, as a replay and a fold a second apart would tie
 _ST_PZ_NEW lc2
 _ST_PZ_C f.txt $'a\nb\nc' "LC2 base"
 git worktree add -q -b feat "$TMP/lc2-wt" main 2>/dev/null
@@ -97,7 +98,7 @@ _ST_OUT_HAS "the land again ending landed" '^git-edit: ok – refs/heads/main un
 git worktree remove --force "$TMP/lc3-wt"
 # Fixes folded into two landed commits – the first fold run as printed rewrites main's copy of the
 # second, which still refuses, weighed against the commit main first took, its own fold then
-# landing it; the land again ends landed with both fixes on main
+# landing it, the land again ending landed with both fixes on main
 _ST_PZ_NEW lc7
 _ST_PZ_C f.txt $'a\nb\nc' "LC7 base"
 git worktree add -q -b feat "$TMP/lc7-wt" main 2>/dev/null
@@ -127,8 +128,8 @@ _ST_EQ "its fold run as printed, the land again ends landed with both fixes" \
 	"$RC:$(git show HEAD~1:f.txt | tr '\n' ' '):$(git show HEAD:g.txt | tr '\n' ' ')" "0:a B c FIX1 :x y FIX2 "
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lc7-wt"
-# A fix folded on the branch that main already holds, made apart, brings nothing – left out as
-# landed, no refusal
+# A fix folded on the branch that main already holds, made apart, brings nothing –
+# left out as landed, no refusal
 _ST_PZ_NEW lc8
 _ST_PZ_C f.txt $'a\nb\nc\nd\ne' "LC8 base"
 git worktree add -q -b feat "$TMP/lc8-wt" main 2>/dev/null
@@ -187,7 +188,7 @@ _ST_OUT_HAS "naming the copy left out" "^1 commit(s) left out as main's own by a
 _ST_OUT_HAS "by name" '^  [0-9a-f]* LC5 B$'
 git worktree remove --force "$TMP/lc5-wt"
 # A catch-up of main, checked out nowhere, into a worktree's branch leaves main as it is – no move
-# onto the worktree's commits, no deletion – landed or already landed; landed into the main
+# onto the worktree's commits, no deletion – landed or already landed, while landed into the main
 # worktree's branch, a branch checked out nowhere is still offered both
 _ST_PZ_NEW lc6
 _ST_PZ_C a.txt a "LC6 A"

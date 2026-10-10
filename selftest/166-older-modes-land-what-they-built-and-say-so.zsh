@@ -1,8 +1,10 @@
-# A reorder lands only the tree it began with, a clean replay included; a rebase failing with
-# nothing to resolve refuses with git's words and pauses nothing; a split resolves a stale SHA and
-# refuses a file turned directory named on one side; an undo blocked by a peer's run names the
-# caller's own way back; a squash names the commit its target became; a reader gone mid-run stops
-# nothing – and the summaries, hints and refusals around them name what is so
+# A reorder lands only the tree it began with, a clean replay included
+# A rebase failing with nothing to resolve refuses with git's words and pauses nothing
+# A split resolves a stale SHA and refuses a file turned directory named on one side
+# An undo blocked by a peer's run names the caller's own way back
+# A squash names the commit its target became
+# A reader gone mid-run stops nothing
+# The summaries, hints and refusals around them name what is so
 _ST_SCENARIO "\e[1;96m[166] older modes land what they built, refuse git's own failures and say so\e[0m"
 local ZR_A ZR_B ZR_C ZR_X ZR_T ZR_WT ZR_N ZR_PIPE
 # Commits <file> holding <line>... as <subject>
@@ -32,7 +34,7 @@ _ST_CHECK "leaving no pause or worktree" _ZR_CLEAN
 _ST_RUN --move="$ZR_B" --before="$ZR_A"
 _ST_EQ "a move doing the same refuses too" "$RC:$(git rev-parse HEAD)" "1:$ZR_T"
 _ST_OUT_HAS "naming itself a move" 'The move no longer ends on the tree it began with'
-# Its neighbour: commits on files of their own reorder as ever, the tree proven identical
+# Its neighbor: commits on files of their own reorder as ever, the tree proven identical
 _ZR_C g.txt "ZR1 G" g
 _ZR_C h.txt "ZR1 H" h
 _ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
@@ -84,7 +86,7 @@ _ST_EQ "a move whose commit cannot be signed refuses" "$RC:$(git rev-parse HEAD)
 _ST_OUT_HAS "naming the signature" 'without a conflict to resolve: gpg failed to sign the data'
 _ST_CHECK "nothing paused" _ZR_CLEAN
 git config --unset commit.gpgSign && git config --unset gpg.program
-# Its neighbours: a conflict and a step left empty still pause
+# Its neighbors: a conflict and a step left empty still pause
 _ZR_C f.txt "ZR2 F1" 1
 _ZR_C f.txt "ZR2 F2" 2
 _ZR_C f.txt "ZR2 F3" 1
@@ -124,8 +126,8 @@ _ST_EQ "a pathspec split of a stale SHA lands" "$RC:$(git log -3 --format=%s | t
 _ST_OUT_HAS "resolving it first" "Commit ${ZR_X:0:7} was rewritten – using its current identity"
 _ST_OUT_LACKS "never calling it a branch that moved mid-run" 'The branch moved while this run read it'
 
-# A file turned directory, the pathspec naming one side, refuses with both named; naming both
-# splits, and a directory turned back to a file splits by its path
+# A file turned directory, the pathspec naming one side, refuses with both named
+# Naming both splits, and a directory turned back to a file splits by its path
 _ST_PZ_NEW zr5
 _ZR_C a.txt "ZR5 base" a
 print old > d && git add d && git commit -qm "ZR5 d as file"

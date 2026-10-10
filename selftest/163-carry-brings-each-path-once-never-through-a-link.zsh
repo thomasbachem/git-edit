@@ -1,16 +1,16 @@
 # `--carry` brings every path a landing changed – an entry still on the old tip, a directory turned
 # into a file, a retargeted symlink, a landed mode – but never through a symlink, outside a sparse
-# checkout or over another's staging, each path left there named once with its next step; a
-# terminal run's sync keeps a renamed directory's ignored files and takes out its emptied ones
+# checkout or over another's staging, each path left there named once with its next step
+# A terminal run's sync keeps a renamed directory's ignored files and takes out its emptied ones
 _ST_SCENARIO "\e[1;96m[163] --carry brings each changed path once, never through a link, a cone or a peer's staging\e[0m"
 local CZ_OLD CZ_B CZ_REAL=${commands[git]}
 
-# Moves `main` to `topic` the way a landing made elsewhere does – the index and files left as they were
+# Moves `main` to `topic` as a landing made elsewhere does – the index and files left as they were
 _CZ_RAW () {
 	git update-ref refs/heads/main topic "$CZ_OLD"
 }
-# Writes `<dir>/git` standing in for the real one, running <script> first where <case pattern> takes
-# the call's arguments
+# Writes `<dir>/git` standing in for the real one, running <script> first where
+# <case pattern> takes the call's arguments
 _CZ_STAND_IN () {
 	# Args: <dir> <case pattern> <script>
 	mkdir -p "$1"
@@ -82,7 +82,8 @@ _ST_EQ "nothing written where the link points, the edits where they were" "$(ls 
 y"
 _ST_EQ "while a file it adds elsewhere is written" "$(cat doc/n.txt 2>/dev/null)" "n"
 
-# A renamed directory's own `.gitignore` still tells what stays behind – the carry's and a terminal sync's
+# A renamed directory's own `.gitignore` still tells what stays behind –
+# the carry's and a terminal sync's
 _ST_PZ_NEW cz5
 mkdir old && print a > old/a.js && print '*.log' > old/.gitignore
 git add -A && git commit -qm "CZ5 base" && CZ_OLD=$(git rev-parse HEAD)
@@ -90,7 +91,7 @@ git checkout -q -b topic && git mv old new && git commit -qm "CZ5 topic" && git 
 print log > old/build.log && print u > old/u.txt
 _CZ_RAW
 _ST_RUN --carry="$CZ_OLD"
-_ST_EQ "the carry leaves a file the directory's own .gitignore ignores" "$RC:$(cat old/build.log 2>/dev/null):$(ls -A new | tr '\n' ' ')" "0:log:.gitignore a.js u.txt "
+_ST_EQ "the carry leaves a file the directory's own .gitignore ignores" "$RC:$(cat old/build.log 2>/dev/null):$(LC_ALL=C ls -A new | tr '\n' ' ')" "0:log:.gitignore a.js u.txt "
 _ST_OUT_HAS "while the untracked one moves along" 'moved along with their renamed directory: old/u\.txt → new/u\.txt$'
 _ST_PZ_NEW cz5t
 mkdir old && print a > old/a.js && print '*.log' > old/.gitignore
@@ -98,7 +99,7 @@ git add -A && git commit -qm "CZ5T base"
 git checkout -q -b topic && git mv old new && git commit -qm "CZ5T topic" && git checkout -q main
 print log > old/build.log && print u > old/u.txt
 _ST_TTY -- --land=topic
-_ST_EQ "as does a terminal landing's sync" "$RC:$(cat old/build.log 2>/dev/null):$(ls -A new | tr '\n' ' ')" "0:log:.gitignore a.js u.txt "
+_ST_EQ "as does a terminal landing's sync" "$RC:$(cat old/build.log 2>/dev/null):$(LC_ALL=C ls -A new | tr '\n' ' ')" "0:log:.gitignore a.js u.txt "
 
 # Staging in the way of an entry the carry adds – a peer's file staged where its directory goes – is
 # kept, the path named once, as left

@@ -116,7 +116,7 @@ _ST_OUT_HAS "naming both names" 'wc-rnm.txt – wc-peer.*which this commit renam
 _ST_OUT_HAS "and the merge bringing what landed into the new one" "git merge-file -- wc-rnm2\.txt [^ ]*/\.git/git-edit-base [^ ]*/\.git/git-edit-landed"
 # Run as printed, by a plain `sh`
 sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name with: //p")"
-_ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(ls wc-rnm2.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "P3 C7 :0"
+_ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(local -a G=(wc-rnm2.txt.git-edit-*(N)); print ${#G})" "P3 C7 :0"
 _ST_RUN --commit --text "WC own rename" -- wc-rnm.txt wc-rnm2.txt
 _ST_EQ "while one made on the landed content lands" "$RC:$(git show HEAD:wc-rnm2.txt | sed -n '3p;7p' | tr '\n' ' ')" "0:P3 C7 "
 # What a peer stages of a file while it is taken whole or folded keeps its staging – only the entry

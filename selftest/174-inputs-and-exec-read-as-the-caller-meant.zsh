@@ -1,14 +1,16 @@
-# An `--exec` command runs where the caller stands, `GIT_PREFIX` naming it, and a program the tip
-# lacks refuses with the path to run; a patch applies byte for byte, whatever the repo's whitespace
-# settings; and every remedy for inputs a landing or the tip stands against names the step that
-# works – a staged fold the carry and the re-stage, an edit the commit that renamed or removed its
-# path or the key read from where the caller stands, a put its file's new name, a removal what
-# landed on it – while a moved tip names the inputs, and `--commit` beside `-C` or a removal below
-# the commit adding its path is named for what was passed
+# Inputs and `--exec` read as the caller meant:
+# • An `--exec` command runs where the caller stands, `GIT_PREFIX` naming it, and a program the tip
+#   lacks refuses with the path to run
+# • A patch applies byte for byte, whatever the repo's whitespace settings
+# • Every remedy for inputs a landing or the tip stands against names the step that works – a
+#   staged fold the carry and the re-stage, an edit the commit that renamed or removed its path or
+#   the key read from where the caller stands, a put its file's new name, a removal what landed on
+#   it – while a moved tip names the inputs, and `--commit` beside `-C` or a removal below the
+#   commit adding its path is named for what was passed
 _ST_SCENARIO "\e[1;96m[174] inputs and --exec read as the caller meant, every remedy a working step\e[0m"
 local IX_T IX_C IX_REAL IX_PEER
-# Lands <file> as <lines> on a branch of its own, through `--land` under the peer's label, leaving the
-# checkout's copy as it was
+# Lands <file> as <lines> on a branch of its own, through `--land`
+# under the peer's label, leaving the checkout's copy as it was
 _IX_PEER_LANDS () {
 	# Args: <name> <subject> <file> <line>...
 	git branch "$1" && git worktree add -q "$TMP/$1-wt" "$1" && print -l "${@:4}" > "$TMP/$1-wt/$3" && \
@@ -16,8 +18,8 @@ _IX_PEER_LANDS () {
 		GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --land="$1" </dev/null >/dev/null 2>&1
 }
 
-# A command run from a subdirectory runs in the worktree's copy of it, `GIT_PREFIX` naming it – once,
-# a relative path there named the top-level file of the same name, which landed `ok`
+# A command run from a subdirectory runs in the worktree's copy of it, `GIT_PREFIX` naming it –
+# once, a relative path there named the top-level file of the same name, which landed `ok`
 _ST_PZ_NEW ix1
 mkdir sub && print -r -- 'version = 1' > config.txt && print -r -- 'version = 1' > sub/config.txt
 print -l '#!/bin/sh' 'echo ran-tool' > sub/tool.sh && chmod +x sub/tool.sh
@@ -41,7 +43,8 @@ _ST_RUN --exec -- sh -c 'printf "%s|%s\n" "$GIT_PREFIX" "$(git rev-parse --show-
 cd ..
 _ST_EQ "a directory the tip lacks runs it at the top" "$RC:$(<"$TMP/ix1-new")" "0:newdir/|"
 _ST_OUT_HAS "and says so" 'the tip has no newdir/ – the command runs at the worktree.s top'
-# A program only the checkout holds refuses before it runs, naming the absolute path – once, a bare 127
+# A program only the checkout holds refuses before it runs,
+# naming the absolute path – once, a bare 127
 IX_T=$(git rev-parse HEAD)
 print -l '#!/bin/sh' 'echo ran-fix' > sub/fix.sh && chmod +x sub/fix.sh
 cd sub
@@ -92,7 +95,8 @@ git add f.txt
 GIT_EDIT_ACTOR=ix-self _ST_RUN --amend-into="$IX_T" -- f.txt
 _ST_EQ "followed as printed, the fold lands keeping what landed" \
 	"$RC:$(git show HEAD~1:f.txt | sed -n 2p):$(git show HEAD:f.txt | sed -n 15p)" "0:line 2 A:line 15 B"
-# Each of two bits taken back names its own command – once, the second took the first line as its `cd`
+# Each of two bits taken back names its own command –
+# once, the second took the first line as its `cd`
 _ST_PZ_NEW ix3b
 print -r -- a > a.sh && print -r -- b > b.sh && chmod +x b.sh && git add . && git commit -qm "IX3B base"
 git branch ix3b-feat && git worktree add -q "$TMP/ix3b-wt" ix3b-feat
@@ -171,7 +175,8 @@ cp f.txt "$TMP/ix6-put"
 GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX6 put" --put f.txt="$TMP/ix6-put"
 _ST_OUT_HAS "while a stale put names its rebuild from the tip" "What you put predates what landed – rebuild it from the tip, .*: f\.txt (the tip's copy: git show [0-9a-f]\{12\}:<path>)"
 
-# `--commit` beside `-C` names `-C`, and only the `--amend-into` mix-up names the fold of whole files
+# `--commit` beside `-C` names `-C`,
+# and only the `--amend-into` mix-up names the fold of whole files
 _ST_PZ_NEW ix7
 _ST_PZ_C f.txt a "IX7 base" && IX_T=$(git rev-parse HEAD)
 print -r -- b > n.txt && git add n.txt && git commit -qm "IX7 add n"

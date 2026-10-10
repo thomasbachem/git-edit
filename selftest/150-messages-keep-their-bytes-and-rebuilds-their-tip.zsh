@@ -180,7 +180,9 @@ _ST_EQ "and a fold rewording its target" "$RC:$(git log --format=%s | grep -c 'M
 # C3-5 – a move under a rewrite is refused naming it and the rerun, offering nothing built
 _ST_PZ_NEW mb7
 _ST_PZ_C f.txt 0 "MB7 c0" && _ST_PZ_C f.txt 1 "MB7 c1" && _ST_PZ_C f.txt 2 "MB7 c2" && _ST_PZ_C f.txt 3 "MB7 c3"
-_MB_PEER stripspace 2 0 amend -M --text "--- $(git rev-parse HEAD~2)
+# Past the four `stripspace` calls reading the records before any wait, two a record, the reword's
+# second
+_MB_PEER stripspace 6 0 amend -M --text "--- $(git rev-parse HEAD~2)
 MB7 new c1
 --- $(git rev-parse HEAD~1)
 MB7 new c2"

@@ -1,15 +1,18 @@
-# `--land`'s own commits are those the target never held, by its reflog, a land of the branch an
-# `--undo` took back set aside – so a branch redone or moved onto its copies after that undo, a land
-# kept and partly dropped since, or a catch-up to a commit the target dropped all land exactly their
-# own; without a reflog to read, a span past the merge base holding what looks like the target's
-# rewritten history refuses; what landed comes from the replay, never a patch id, and every hint runs
+# `--land`'s own commits are those the target never held, by its reflog, a land of the
+# branch an `--undo` took back set aside – so a branch redone or moved onto its copies
+# after that undo, a land kept and partly dropped since, or a catch-up to a commit the
+# target dropped all land exactly their own
+# Without a reflog to read, a span past the merge base holding what looks like the
+# target's rewritten history refuses
+# What landed comes from the replay, never a patch id, and every hint runs
 _ST_SCENARIO "\e[1;96m[170] --land lands what the target never held, and says what landed\e[0m"
 local LH_T LH_B LH_C LH_WT
 # The branch's moves after an undo dated past it, as they come in real time – the undo's entry takes
 # the wall clock, the suite's commits a pinned one long before
 local LH_LATE="@$(( $(date +%s) + 3600 )) +0000"
-# A land taken back, the branch's last commit then redone – both its commits land, where the redone
-# one alone did; a land kept and one of its commits dropped since – only what the branch gained lands
+# A land taken back, the branch's last commit then redone – both its commits land,
+# where the redone one alone did
+# A land kept and one of its commits dropped since – only what the branch gained lands
 _ST_PZ_NEW lh1
 _ST_PZ_C a.txt m1 "LH1 m1"
 _ST_PZ_C a.txt m2 "LH1 m2"
@@ -67,9 +70,10 @@ for LH_B in fm fu fl; do
 	_ST_RUN --land=$LH_B
 	_ST_EQ "a catch-up ($LH_B) to a commit main dropped since keeps that commit out" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH3 $LH_B c1|LH3 m2|LH3 m1|"
 done
-# Round 4's shapes keep landing: a commit main dropped below the fork stays out; a land taken back,
-# main reworded below the fork and one commit cherry-picked, refuses on the pick's original, the
-# --base past it landing the rest
+# Round 4's shapes keep landing:
+# • A commit main dropped below the fork stays out
+# • A land taken back, main reworded below the fork and one commit cherry-picked, refuses on the
+#   pick's original, the `--base` past it landing the rest
 _ST_PZ_NEW lh4
 _ST_PZ_C a.txt a "LH4 base"
 _ST_PZ_C b.txt b "LH4 dropped"
@@ -91,9 +95,9 @@ _ST_EQ "a land taken back, a reword below and a pick – the pick's original ref
 _ST_OUT_HAS "named with its copy" "^  $(git rev-parse --short=7 feat~2) LH5 f1 – on main as $(git rev-parse --short=7 HEAD), change and message alike$"
 _ST_RUN --land=feat --base="$(git rev-parse feat~2)"
 _ST_EQ "the --base past it lands the rest" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH5 f3|LH5 f2|LH5 f1|LH5 m reworded|LH5 base|"
-# With no reflog to read, a span past the merge base holding a copy of a main commit refuses, naming
-# it and the --base for each reading; with nothing alike it lands from there, and with the branch's
-# reflog alone it forks where that puts it
+# With no reflog to read, a span past the merge base holding a copy of a main commit refuses,
+# naming it and the `--base` for each reading
+# With nothing alike it lands from there, with the branch's reflog alone forking where that puts it
 _ST_PZ_NEW lh6
 _ST_PZ_C a.txt m1 "LH6 m1"
 _ST_PZ_C m2.txt m2 "LH6 m2"
@@ -151,8 +155,9 @@ _ST_RUN --continue
 _ST_EQ "a skip and a hand resolution land the resolved one" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH9 c2|LH9 main d|LH9 main c|LH9 base two|LH9 base|"
 _ST_OUT_HAS "the skipped one alone kept by the branch" 'Branch feat keeps 1 commit(s) main holds in no form'
 _ST_OUT_HAS "and counted as skipped" '^1 commit(s) were skipped'
-# A revision lands the commit it names, said so, with no branch command for it; --base on the
-# branch's own commit is said as --base's choice; the hint from the branch's checkout runs as printed
+# A revision lands the commit it names, said so, with no branch command for it
+# `--base` on the branch's own commit is said as `--base`'s choice
+# The hint from the branch's checkout runs as printed
 _ST_PZ_NEW lh10
 _ST_PZ_C a.txt m1 "LH10 m1"
 git checkout -q -b feat && _ST_PZ_C b.txt c1 "LH10 c1" && _ST_PZ_C c.txt c2 "LH10 c2" && git checkout -q main

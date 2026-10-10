@@ -75,8 +75,9 @@ _ST_RUN --abort
 _ST_RUN -d -y HEAD
 _ST_EQ "while one with no pause about lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:ZK2 b|ZK2 a|"
 
-# A move of a commit below the one it builds on, its stop resolved to the file as it holds it –
-# the final step resolving itself empties the other into it – refuses, naming it, and offers the squash
+# A move of a commit below the one it builds on, its stop resolved to the file as it
+# holds it – the final step resolving itself empties the other into it – refuses,
+# naming it, and offers the squash
 _ST_PZ_NEW zk3
 git config rerere.enabled false
 _ZK_C "ZK3 base" 1 2 3 4 5 6 7 8
@@ -110,8 +111,8 @@ _ST_EQ "a move whose stop took part of a later commit's change refuses" "$RC:$(g
 _ST_OUT_HAS "naming that commit and file" 'ZK4 A edit 4 – f\.txt$'
 _ST_RUN --abort
 
-# Its neighbour: abutting edits that build on nothing of each other, the stop resolved to its own
-# change alone, land in the new order
+# Its neighbor: abutting edits that build on nothing of each other, the stop resolved
+# to its own change alone, land in the new order
 _ST_PZ_NEW zk5
 git config rerere.enabled false
 _ZK_C "ZK5 base" 1 2 3 4 5 6 7 8
@@ -124,8 +125,8 @@ _ST_RUN --continue
 _ST_EQ "while one resolved to its own change alone lands, both kept" "$RC:$(git log --format=%s | tr '\n' '|')" "0:ZK5 A edit 4|ZK5 B edit 5|ZK5 base|"
 _ST_EQ "on the tree it began with" "$(git rev-parse 'HEAD^{tree}')" "$(git rev-parse "$ZK_B^{tree}")"
 
-# And a commit the new order cancels – a line it adds that the stop's own commit removes, nothing
-# taken in – lands as dropped
+# And a commit the new order cancels – a line it adds that the stop's own commit
+# removes, nothing taken in – lands as dropped
 _ST_PZ_NEW zk6
 git config rerere.enabled false
 _ZK_C "ZK6 base" 1 2 3 4 5

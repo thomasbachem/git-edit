@@ -1,5 +1,5 @@
-# A commit placed below a later rewrite of a line it rewrites lands where that later commit keeps the
-# rest of its change to the file, the line named as superseded – one left with none of it refuses
+# A commit placed below a later rewrite of a line it rewrites lands where that later commit keeps
+# the rest of its change to the file, the line named as superseded – one left with none refuses
 _ST_SCENARIO "\e[1;96m[185] a superseded line lands, a commit losing all its change to a file refuses\e[0m"
 local SU_A SU_L
 
@@ -30,7 +30,7 @@ _ST_OUT_HAS "naming the line it rewrote as superseded" 'SU1 L trims and rewords 
 _ST_EQ "that commit keeping the rest of its change" "$(git show --format= HEAD~1 -- c.md | grep -c '^+intro trimmed')" "1"
 _ST_EQ "the tip holding the note" "$(git show HEAD:c.md | sed -n 3p)" "Restart: NOTE one curl waits it out."
 
-# Its neighbour: a later commit that only rewords that line, left with nothing of its own, refuses
+# Its neighbor: a later commit that only rewords that line, left with nothing of its own, refuses
 _ST_PZ_NEW su2
 git config rerere.enabled false
 _SU_C "SU2 base" "# Doc" "Restart: poll until it answers 200." "tail"

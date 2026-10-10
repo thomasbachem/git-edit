@@ -1,7 +1,7 @@
-# What an agent reads names a step that works for it – a printed command runs as printed from where
-# it is pasted, every mode refuses outside a repository or a cwd that is gone, `--status` names whose
-# a damaged or orphaned pause is and what clears it, owners are told apart by the label as given, and
-# a new `-C` path a late refusal stops is taken back out
+# What an agent reads names a step that works for it – a printed command runs as printed from
+# where it is pasted, every mode refuses outside a repository or a cwd that is gone, `--status`
+# names whose a damaged or orphaned pause is and what clears it, owners are told apart by the
+# label as given, and a new `-C` path a late refusal stops is taken back out
 _ST_SCENARIO "\e[1;96m[175] the agent surface names a step that works, owners by their label as given\e[0m"
 local AS_TOP AS_WT AS_CMD AS_SF AS_D AS_REAL AS_ARG
 local -i AS_RC
@@ -174,7 +174,8 @@ mv "$AS_SF" "$TMP/asc-state3"
 _ST_RUN -C="$TMP/asc-new4" -d -y HEAD~1
 _ST_EQ "a new -C path nothing refuses lands and stays" "$RC:$([ -d "$TMP/asc-new4" ] && echo kept)" "0:kept"
 
-# A stranded branch opening on a dash is moved by its full ref, as `git branch` reads it as an option
+# A stranded branch opening on a dash is moved by its full ref,
+# as `git branch` reads it as an option
 _ST_PZ_NEW asb
 _ST_PZ_C a.txt a "ASB A" && _ST_PZ_C b.txt b "ASB B" && _ST_PZ_C c.txt c "ASB C"
 git update-ref refs/heads/-side HEAD~1

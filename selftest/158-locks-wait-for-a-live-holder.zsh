@@ -1,7 +1,8 @@
-# The journal's lock and a `-C` path's are broken only once their holder is gone – its process ended,
-# or another started since under its pid, while another user's counts as live – and waited on while
-# it lives; a landing ends its pause in that same hold of the lock, a resume holds its pause's
-# worktree, a note never makes a pause anew, and a second signal waits for the `update-ref`
+# The journal's lock and a `-C` path's are broken only once their holder is gone –
+# its process ended, or another started since under its pid, while another user's
+# counts as live – and waited on while it lives
+# A landing ends its pause in that same hold of the lock, a resume holds its pause's worktree, a
+# note never makes a pause anew, and a second signal waits for the `update-ref`
 _ST_SCENARIO "\e[1;96m[158] locks wait for a live holder, a landing ends its pause, a resume holds its path\e[0m"
 local JL_WT JL_P JL_GD JL_PID JL_B JL_C JL_REAL JL_SF JL_N
 local -i JL_I
@@ -208,7 +209,7 @@ wait $JL_PID
 _ST_EQ "a pause taken in a resume's -C path once it landed outlives the resume" "$JL_N:$(sed -n 's/^target=//p' .git/git-edit-state 2>/dev/null)" "2:$(git rev-parse HEAD)"
 _ST_RUN --abort
 
-# A `-C` lock's holder another user runs is live, signalling it failing – one from before start
+# A `-C` lock's holder another user runs is live, signaling it failing – one from before start
 # times were kept naming its pid alone – and a pid taken by a process started since is not
 _ST_PZ_NEW jl7
 _ST_PZ_C a.txt a1 "JL7 a" && _ST_PZ_C b.txt b1 "JL7 b"
@@ -258,9 +259,7 @@ _ST_TTY_END
 git config --unset edit.verifyCmd
 _ST_EQ "Enter's resume holds the -C path while its gate runs" "$RC:$(<"$TMP/jl8-gate"):$(git show HEAD~1:b.txt)" "0:held:b2"
 
-# A note goes into its pause under the journal's lock and onto the file there only – an abort
-# ending the pause around one leaves the slot free, the resume refusing rather than leave a
-# conflict for a pause gone, or a stub holding no operation where it was
+# Races an abort against a resume stalled noting its resolution, `OUT` the resume's output
 _JL_NOTE_RACE () {
 	# Args: <name> <which read of the pause's keys, once a resolution is noted, stalls>
 	_ST_PZ_NEW "$1"
@@ -311,6 +310,9 @@ _JL_NOTE_RACE () {
 	wait $JL_PID "${JL_PIDS[1]}"
 	OUT=$(<"$TMP/$1.c")
 }
+# A note goes into its pause under the journal's lock and onto the file there only – an abort
+# ending the pause around one leaves the slot free, the resume refusing rather than leave a
+# conflict for a pause gone, or a stub holding no operation where it was
 _JL_NOTE_RACE jl9 1
 _ST_EQ "a resume whose pause an abort ended as it named it refuses" "$([ -e "$TMP/jl9-in" ] && echo stalled):$(<"$TMP/jl9.crc"):$([ -e "$JL_SF" ] && echo slot)" "stalled:1:"
 _ST_OUT_HAS "saying the pause was ended" 'ended by another run meanwhile'

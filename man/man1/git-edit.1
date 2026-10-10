@@ -220,7 +220,9 @@ rewrite left in those paths, which for an edit that removed content is the work
 just handed back. A path carrying further uncommitted edits is named as left
 alone and kept out of it \(em as taking the rewrite back if committed whole
 where those edits sit on the pre\-edit content, and beside its new path where
-the rewrite renamed it, the edits left untracked at the old one \(em as are the
+the rewrite renamed it, the edits left untracked at the old one, or as missing
+where the checkout has no file there, deleted or never moved in from the old
+path of an earlier run's rename \(em as are the
 untracked files left in a directory it renamed whole, each with its place under
 the new one, and those right in one it renamed only in part, which stay \(em
 as is a
@@ -582,7 +584,12 @@ a commit the target held and dropped since that the span carries \(em a
 peer's commit inside an undone land's window, even between \fIbranch\fR's
 own \(em stays out of the replay, named, the drop standing, as does one the
 target's by a land's own record: a copy a land of the target into
-\fIbranch\fR made, by \fIbranch\fR's reflog, or a commit of another branch
+\fIbranch\fR made, by \fIbranch\fR's reflog \(em each commit the target holds
+or held pairing with one at most, by the author name, email and date a
+replay keeps, else by its whole message after git's comment and whitespace
+cleanup, as a resolution committed by hand at a stop keeps it, so a
+commit made in that land's pause stays \fIbranch\fR's own \(em or a commit
+of another branch
 whose change and message the tip holds in a copy a land of that branch
 brought. A fast\-forward happens only where nothing stays out. Inside a
 merge no replay can leave such a commit out, so a span carrying one there
@@ -601,24 +608,41 @@ looks like a copy of a commit the target holds or held \(em the same author
 name, email and author date, and the same subject or patch, as a replay, a
 pick or a rewrite leaves one \(em refuses the whole land, landing and
 leaving out nothing. The refusal names each with its lookalike \(em on the
-target with its change and message, or its change alone; of another patch
-than the lookalike as the target first took it; or like one the target
-dropped since \(em then each step that lands as printed. Where the tip lacks
-its change, the
+target with its change and message, or its change alone; its change as the
+target first took it, the target's copy changed since; its change on the
+target already in another form; as a land of \fIbranch\fR took it, the
+difference that land's conflict resolution, the branch holding that very
+commit when that land started (by its reflog, from the earliest copy the
+land made where that first pick needed no resolution, else from the
+target's move before it, as a stop's copy is made only once it resumes, a
+land under a name \fIbranch\fR had before a rename counting too); of
+another patch than the lookalike as the target first took it; or like one
+the target dropped
+since \(em then each step that lands as printed, one for each that needs one.
+Where the tip lacks its change, the
 .B "\-\-amend\-into=\fIlookalike\fP \-\-tree=\fIcommit\fP"
 that folds that change alone, composed on the target's tip, into the copy
 there \(em one the target reworded or folded into since found by the
-lookalike's own subject or patch \(em or, where it does not apply, the
+lookalike's own subject or patch, the first such fold alone, as each moves
+the tip the next is composed on \(em or, where it does not apply, the
 .B "git range\-diff"
-to make it by hand; where it lacks the message, the
+to make it by hand; never for a copy a land of \fIbranch\fR brought whose
+difference the branch's reflog cannot tell from that land's resolution
+\(em its reflog not reaching back past that land's start, as after an expiry
+or the branch deleted and made anew, or a value of it in that very second
+changing the answer \(em which is named as such, with the
+.B \-\-base
+past those copies, which lands what follows them and ends with nothing to
+land where nothing does, and a difference of its own left to fold by hand.
+Where it lacks the message, the
 .B "\-M \-\-subject=\fIsubject\fP \fIlookalike\fP"
 that gives the copy \fIbranch\fR's subject where the rest stands, else the
 .BR "\-M \-\-text=""$(git log \-1 \-\-format=%B \fIcommit\fP)"" \fIlookalike\fP" ;
 where the target dropped the lookalike, the
 .B "\-\-exec \-\- git cherry\-pick"
-that lands the commit back whole. Where the tip holds every change,
-\fIbranch\fR moved onto the copies, the target's messages standing: from its
-checkout in a linked worktree by the
+that lands the commit back whole. Where each copy on the tip carries its
+commit's patch, \fIbranch\fR moved onto the copies, the target's messages
+standing: from its checkout in a linked worktree by the
 .B "git \-C \fIpath\fP edit \-\-onto=\fItarget\fP"
 that drops the copies as there already, or with nothing else of its own, by
 the
@@ -627,10 +651,16 @@ or
 .B "git branch \-f"
 a land names anyway. Then the
 .B \-\-base
-past them, and past any merge after them, landing what follows; and
-where the target dropped every lookalike, the
+past them, past any merge after them and past every commit not
+\fIbranch\fR's own \(em a catch\-up copy, one the target dropped \(em landing its
+own commits that follow; and where the target dropped every lookalike and
+all past the fork is \fIbranch\fR's own, the
 .B \-\-base
-landing them back all the same. The commits the target holds already, by
+landing them back all the same. Its own commits no step lands are named,
+with the
+.B "git \-C \fIpath\fP edit \-d"
+that takes the copies of what the target dropped off it first, the drop
+standing. The commits the target holds already, by
 ancestry or by patch id, drop out of the span. Only where
 the checked\-out branch keeps no reflog does \fIbranch\fR's own answer, by
 the newest value in it the target still holds, and where neither keeps one
@@ -693,11 +723,17 @@ or
 .B master
 \(em the main line a land into another branch catches up from. A commit skipped at a stop, or emptied there by the
 resolution, lands nowhere, by the replay's own record of what each commit
-became: the run names it, and offers nothing that moves or deletes
-\fIbranch\fR, the only branch still holding it; a run that lands nothing at
+became, a commit made at a stop then skipped counting as made in the pause:
+the run names it, and offers nothing that moves or deletes
+\fIbranch\fR, the only branch still holding it \(em as for commits of its own a
+.B \-\-base
+leaves out below a fork the target lacks, which the target holds in no form,
+then or ever, even where the rest ends already landed. A resumed land counts
+apart the commits the caller made in its pause. A run that lands nothing at
 all moves and journals nothing. A \fIbranch\fR whose commits the target
 holds already, by ancestry, by patch id or each with its change and
-message, or whose replay comes out empty
+message \(em or as a land of it took it, its conflict resolved \(em or whose
+replay comes out empty
 commit for commit, or one with no commits of its own past its fork, ends
 .B "ok \(en \fIref\fP unchanged, already landed"
 or
@@ -737,7 +773,11 @@ takes it back, as does the raw
 .B "git update\-ref \-m"
 printed beside it, which writes the reflog message
 .B \-\-undo
-would, so a later land reads either as undone. A land taken back any other
+would, so a later land reads either as undone \(em that one moving the ref
+alone, the land's re\-synced index entries put back by the step named beside
+them, as
+.B \-\-undo
+says. A land taken back any other
 way stays held: landing a fast\-forward's commits again ends
 .B "nothing to land" ,
 and a replay's, like the copies the target dropped, refuses \(em either
@@ -851,14 +891,21 @@ flip of its executable bit or without the bit of one it added executable,
 naming the run and the remedy:
 .B "git edit \-\-carry=<old tip>"
 to merge edits onto what landed, a rename's too \(em from the earliest such
-run the file lacks, an edit a later run renamed away included, so one carry
-takes in every run since \(em a
+run the file lacks, an edit a later run renamed away included, and one made on
+its old name before a run renamed it into place, by case alone too, a file
+moved to the new name by hand moved back first, as the carry takes its edits
+from the old name \(em where nothing stands there, in the checkout or at the
+tip, the step checking again as it runs, else, or for a fold of what is staged
+outside a sparse checkout, what landed is merged into the new name with the
+.B git merge\-file
+named \(em so one carry takes in every run since \(em a
 .B "git restore"
 where the file holds no edits of its own or is missing one the run added,
 moving the caller's own file aside or merging it by hand where it stands in
 place of one the run added, a
 .B chmod
-for the bit, and leaving out one it removed.
+for the bit, and leaving out one it removed, or renamed to a path a later run
+removed.
 Runs under the caller's own label never count
 \(em for an unlabeled caller, every unlabeled one \(em nor do edits made on
 the landed lines themselves afterwards. A rename of the caller's own made on
@@ -1011,10 +1058,11 @@ the reword happens before the replay starts, so the commits being resolved
 already carry the message. It replaces the whole message, not just the
 subject: where a reword or a squash drops a body the new message does not
 restate, the run names it and the commit it is still readable at \(em and
-where a reword or an edit dropped the body whole, a
+where a reword or an edit dropped the body whole for a subject alone, a
 .B \-M \-\-text
 command that, run as printed, puts it back under the new subject on the
-landed commit, its blank lines kept bar trailing ones.
+landed commit, its blank lines kept bar trailing ones. A new message with a
+body of its own gets no such command, which would drop that body.
 .TP
 .B \-\-subject \fIline\fR
 With
@@ -1426,7 +1474,16 @@ a branch name, a range or a
 .B :/
 search is pinned by SHA before the wait, and a commit the landing rewrote is
 resolved as any stale SHA is \(em taken at its current identity where its
-change is intact, else refused, naming its counterpart.
+change is intact, else refused, naming its counterpart. An
+.B \-\-onto
+upstream naming a branch is taken as that branch stands once the wait is
+over, and any other, such as
+.B main~1
+or
+.BR main@{1} ,
+as it stood when the run began \(em one on the branch's own line that the
+landing rewrote resolved as a stale SHA is, so the branch is never replanted
+onto the orphaned commit.
 .B \-\-wait=0
 refuses at once. A pause of the caller's own \(em the same
 .BR GIT_EDIT_ACTOR ,
@@ -1509,7 +1566,22 @@ a refusal names, say \(em moves nothing: it says so, ends
 .BR "ok \(en \fIref\fP unchanged, already at \fIsha\fP" ,
 and records the run as undone, so a further
 .B \-\-undo
-takes back the one before it.
+takes back the one before it. The raw
+.B "git update\-ref"
+every landing prints beside
+.B "git edit \-\-undo"
+moves the ref alone: the index entries the run re\-synced stay as it staged
+them, and the run names, beside them, the step that re\-syncs them back \(em a
+.B "git restore \-\-staged"
+of exactly those paths, a no\-op before that undo, guarded by a
+.B "git diff \-\-cached \-\-exit\-code"
+that resets none where one holds other staging since, a peer's say, and lists
+those. Where one of those paths is flagged skip\-worktree or lies outside a
+sparse checkout \(em any path, on a git before 2.42, which can't ask its
+patterns \(em a restore would miss it or clear its flag, so no such step is
+printed: the run says the raw form moves the ref alone and names
+.BR "git edit \-\-undo" ,
+which re\-syncs them, their flags kept.
 .TP
 .BR \-\-carry [ =\fIold\-tip\fR ]
 Merge the checkout's uncommitted edits onto what a rewrite landed, for each

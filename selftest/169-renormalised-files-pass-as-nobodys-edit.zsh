@@ -1,17 +1,18 @@
 # A file committed with CRLF under `eol=lf` reads as modified wherever git wrote it in its index's
 # second – a pause there resumes, a first run replays over it, an edit or split takes in no
-# renormalisation of it, a change left unstaged is named as what refuses the continue, and a
+# renormalization of it, a change left unstaged is named as what refuses the continue, and a
 # checkout's sync and its hints read it as the content it holds rather than as the caller's edit
 _ST_SCENARIO "\e[1;96m[169] renormalised files block no resume and pass as nobody's edit\e[0m"
 local RN_WT RN_CR RN_LF RN_TIP RN_X
-# Writes <path> as <printf format> and stages its bytes unfiltered, as a commit made before the
-# attribute holds them
+# Writes <path> as <printf format> and stages its bytes unfiltered, as a commit made
+# before the attribute holds them
 _RN_RAW () {
 	# Args: <path> <printf format>
 	printf "$2" > "$1" && git update-index --add --cacheinfo "100644,$(git hash-object -w --no-filters -- "$1"),$1"
 }
-# Starts repo <name> with `crlf.txt` committed CRLF, then `.gitattributes` putting text files under `eol=lf`,
-# then `f.txt` – every later file staged by name, as `commit -a` would renormalise `crlf.txt`
+# Starts repo <name> with `crlf.txt` committed CRLF, then `.gitattributes` putting
+# text files under `eol=lf`, then `f.txt` – every later file staged by name, as
+# `commit -a` would renormalize `crlf.txt`
 _RN_REPO () {
 	# Args: <name>
 	_ST_PZ_NEW "$1"
@@ -142,6 +143,9 @@ git branch rn7b-up
 _RN_F "RN7b F" 1 2 F 4 5 6 7 8 9
 _RN_ON rn7b-up crlf.txt 'one\r\ntwo\r\nup\r\n' "RN7b U"
 RN_X=$(git rev-parse rn7b-up:crlf.txt)
+# Its stat made other than the index's, so git reads it again – one the index took a second or more
+# after it was written, as under load, git trusts as clean, letting the update through
+touch -m -t 200001010000 crlf.txt
 _ST_RUN --onto rn7b-up
 _ST_EQ "a replant over an upstream rewriting the CRLF file lands" "$RC:$(git log --format=%s -2 | tr '\n' ' ')" "0:RN7b F RN7b U "
 _ST_EQ "its shared checkout left as it was" "$(git rev-parse :crlf.txt)" "$(git rev-parse rn7b-up~1:crlf.txt)"

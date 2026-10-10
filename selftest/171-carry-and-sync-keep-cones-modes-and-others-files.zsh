@@ -1,17 +1,18 @@
-# `--carry` and a terminal run's sync bring a file swapped for a directory either way, keep what lies
-# outside a sparse checkout, take a mode from the index where git reads no executable bit, merge
-# under the attributes the edits were made under, respell a directory renamed by case alone, keep
-# their temporaries out of the checkout, a peer's file and a peer's late edit whole, and supersede an
-# intent-to-add entry an empty landed file matches – each path named once with a step that works
+# `--carry` and a terminal run's sync bring a file swapped for a directory either way,
+# keep what lies outside a sparse checkout, take a mode from the index where git reads
+# no executable bit, merge under the attributes the edits were made under, respell a
+# directory renamed by case alone, keep their temporaries out of the checkout, a peer's
+# file and a peer's late edit whole, and supersede an intent-to-add entry an empty
+# landed file matches – each path named once with a step that works
 _ST_SCENARIO "\e[1;96m[171] --carry and a terminal sync keep cones, modes, attributes and others' files\e[0m"
 local CS_OLD CS_REAL=${commands[git]} CS_CMD CS_GOT
 
-# Moves `main` to `topic` the way a landing made elsewhere does – the index and files left as they were
+# Moves `main` to `topic` as a landing made elsewhere does – the index and files left as they were
 _CS_RAW () {
 	git update-ref refs/heads/main topic "$CS_OLD"
 }
-# Writes `<dir>/git` standing in for the real one, running <script> first where <case pattern> takes
-# the call's arguments
+# Writes `<dir>/git` standing in for the real one, running <script> first where
+# <case pattern> takes the call's arguments
 _CS_STAND_IN () {
 	# Args: <dir> <case pattern> <script>
 	mkdir -p "$1"
@@ -58,13 +59,13 @@ print dfile-mine > d
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "an edited file where a directory comes back stays" "$RC:$(cat d 2>/dev/null)" "0:dfile-mine"
 
-# A rename out of a sparse checkout: an agent's landing names the edits left at the old path, and
-# `--carry` too, with the widening that takes them along – which, run as printed, carries them – while
-# an untracked file whose place lies outside stays where it is
-# A git before 2.42 asks no patterns, so every path the move adds reads as maybe outside, and moves
-# without `--sparse`
+# A rename out of a sparse checkout: an agent's landing names the edits left at the old path,
+# and `--carry` too, with the widening that takes them along – which, run as printed, carries
+# them – while an untracked file whose place lies outside stays where it is
+# A git before 2.42 asks no patterns, so every path the move adds reads as maybe outside
 local CS_MV="git mv" CS_WHY="maybe outside your sparse checkout, which this git can't ask (2\.42 can)"
-_ST_SPARSE_RULES_OK && CS_MV="git mv --sparse" CS_WHY="outside your sparse checkout"
+_ST_SPARSE_RULES_OK && CS_WHY="outside your sparse checkout"
+_ST_MV_SPARSE_OK && CS_MV="git mv --sparse"
 _ST_PZ_NEW cs2
 mkdir in out && print -l 1 2 3 4 5 > in/f.txt && print o > out/o.txt && git add -A && git commit -qm "CS2 base"
 _ST_PZ_C t.txt t "CS2 tip"
@@ -146,8 +147,8 @@ _ST_EQ "a second finds nothing to carry" "$RC" "0"
 _ST_OUT_HAS "saying so" 'Nothing to carry'
 _ST_OUT_LACKS "never refusing the carried edits, nor bringing the mode-only file again" 'the merge would alter the edits\|Brought to what landed'
 
-# A peer writing its own file where the landing adds one, as the sync runs, keeps it – offered, never
-# named as a stale file to take
+# A peer writing its own file where the landing adds one, as the sync runs, keeps it –
+# offered, never named as a stale file to take
 _ST_PZ_NEW cs4
 print c > c.txt && git add -A && git commit -qm "CS4 base"
 _CS_STAND_IN "$TMP/cs4-bin" "*\" update-ref -m \"*) : > ${(q)PWD}/.git/cs-armed ;; *\" ls-files -v -z \"*" "[ -e ${(q)PWD}/.git/cs-armed ] && [ ! -e ${(q)PWD}/.git/cs-fired ] && : > ${(q)PWD}/.git/cs-fired && echo PEER > ${(q)PWD}/n.txt"
@@ -171,8 +172,8 @@ CS_OLD=$(git rev-parse HEAD)
 _ST_RUN --exec -- sh -c 'printf "*.txt eol=crlf\n" > .gitattributes && printf "ONE\n2\n3\n4\n5\n6\n" > f.txt && git add -A && git commit -qm "CS6 attrs"'
 print -l 1 2 3 4 MINE 6 > f.txt
 _ST_RUN --carry="$CS_OLD"
-# A git before 2.40 reads attributes off no tree, so each side merges under the new ones, where `eol`
-# rewrites every line – the edits left as they were, named as a conflict
+# A git before 2.40 reads attributes off no tree, so each side merges under the new
+# ones, where `eol` rewrites every line – the edits left as they were, named as a conflict
 if _ST_ATTR_SOURCE_OK; then
 	_ST_EQ "the carry merges cleanly under the attributes the edits were made under" "$RC:$(tr -d '\r' < f.txt | tr '\n' ' ')" "0:ONE 2 3 4 MINE 6 "
 else

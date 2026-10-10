@@ -1,7 +1,8 @@
 # `--land` forks past all the target ever held, by its reflog – a land taken back set aside – so a
 # peer's rewrite or drop below the fork, a rebase or replant of the branch onto the target, or a
-# cherry-pick never shrinks or widens the span; `--base` overrides it; a branch landed already or
-# holding nothing ends `ok`, and a skip leaves the branch as the only holder of what it skipped
+# cherry-pick never shrinks or widens the span – `--base` overriding the fork
+# A branch landed already or holding nothing ends `ok`, and a skip leaves the branch
+# as the only holder of what it skipped
 _ST_SCENARIO "\e[1;96m[162] --land forks past what the target held, ends ok where nothing lands\e[0m"
 local LF_T LF_F LF_B LF_WT LF_N LF_C
 # A land taken back, then the target reworded below the fork and the branch grown – every commit
@@ -127,7 +128,8 @@ _ST_PZ_C m.txt m "LF6 main moved"
 _ST_RUN --land=nolog
 _ST_EQ "a branch without a reflog lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LF6 no reflog|LF6 main moved|LF6 base|"
 _ST_OUT_HAS "saying where its fork came from" "Fork point [0-9a-f]* LF6 base, from main's reflog – still on main"
-# A branch shares its name with a tag – the branch lands; a tag alone lands said as one, unmoved
+# A branch shares its name with a tag – the branch lands
+# A tag alone lands said as one, unmoved
 _ST_PZ_NEW lf7
 _ST_PZ_C a.txt a "LF7 base"
 git checkout -q -b feat && _ST_PZ_C f.txt f "LF7 feat one" && _ST_PZ_C g.txt g "LF7 feat two" && git checkout -q main

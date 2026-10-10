@@ -77,8 +77,8 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	_ST_EQ "a case-only rename taken back keeps the edits" "${RC}:$(tail -1 readme.md):$(git status --porcelain | tr '\n' '|')" "0:r5 mine: M README.md|"
 	_ST_OUT_HAS "as carried onto the new name" 'merged onto what landed: readme.md → README.md'
 fi
-# A reorder's step that last touches a file names its exact answer, every step its commit's subject –
-# abutting edits, each stop resolved to its own commit's change alone
+# A reorder's step that last touches a file names its exact answer, every step its commit's
+# subject – abutting edits, each stop resolved to its own commit's change alone
 _ST_PZ_NEW cg6
 _ST_PZ_C run.sh $'#!/bin/sh\necho run\necho end' "CG6 base" && _ST_PZ_C notes.txt n "CG6 notes"
 _ST_PZ_C run.sh $'#!/bin/sh\necho run X\necho end' "CG6 X" && _ST_PZ_C notes.txt $'n\nline 2' "CG6 notes 2"

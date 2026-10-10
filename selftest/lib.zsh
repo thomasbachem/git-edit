@@ -206,8 +206,14 @@ GIT_SELFTEST () {
 	_ST_SPARSE_RULES_OK () {
 		[[ "$(LC_ALL=C command git sparse-checkout -h 2>&1)" == *check-rules* ]]
 	}
-	# Answers whether this git takes `--attr-source` (2.40), so a merge reads the attributes the
-	# edits were made under
+	# Answers whether this git's `mv` takes `--sparse`, which it then needs to move a file out of the
+	# cone in a run's worktree, as that worktree is sparse too
+	_ST_MV_SPARSE_OK () {
+		# Newer gits list it as `--[no-]sparse`
+		[[ "$(LC_ALL=C command git mv -h 2>&1)" == *sparse* ]]
+	}
+	# Answers whether this git takes `--attr-source` (2.40), so a merge reads
+	# the attributes the edits were made under
 	_ST_ATTR_SOURCE_OK () {
 		LC_ALL=C command git --attr-source=HEAD version >/dev/null 2>&1
 	}

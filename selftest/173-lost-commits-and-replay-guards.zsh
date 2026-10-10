@@ -1,9 +1,11 @@
 # A commit lost by hand from a paused replay – taken out of its todo, or stepped over with a raw
 # `git rebase --skip` – refuses the resume, named, however it is finished, while one git emptied
-# itself or a stop resolved empty through git edit lands; the absorption guard reads a later edit of
-# one line and a file no stop conflicted on; tree rules compare trees, gitlinks too; a pick whose
-# signature failed resumes; a squash names its target's new commit; a swap's split remedy runs; an
-# undo finding its run taken back already moves nothing
+# itself or a stop resolved empty through git edit lands – and the guards around a replay:
+# • The absorption guard reads a later edit of one line and a file no stop conflicted on
+# • Tree rules compare trees, gitlinks too
+# • A pick whose signature failed resumes
+# • A squash names its target's new commit, a swap's split remedy runs
+# • An undo finding its run taken back already moves nothing
 _ST_SCENARIO "\e[1;96m[173] lost commits refuse a resume, replay guards read what they claim\e[0m"
 local LP_WT LP_T LP_C1 LP_A LP_B LP_R LP_N LP_S LP_G LP_WAY LP_SUB
 # Writes f: 14 lines, line 5 and 9 as given, <extra> after line 12 where given
@@ -101,8 +103,8 @@ _ST_RUN --continue
 _ST_EQ "a stop resolved empty through git edit, and a pick git emptied, land" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LP c4 NINE|LP g|LP base|"
 _ST_OUT_HAS "both named as emptied" '2 commit(s) left empty by the drop'
 
-# A replant's stop stepped over by `git edit --skip` lands without it, while a hand skip refuses,
-# naming that as the way
+# A replant's stop stepped over by `git edit --skip` lands without it,
+# while a hand skip refuses, naming that as the way
 for LP_WAY in edit hand; do
 	_ST_PZ_NEW "lp5-$LP_WAY"
 	_LP_C "LP5 base" 5 9 && git branch lp5-up
@@ -138,8 +140,8 @@ _ST_OUT_HAS "which names the file" 'no longer ends on the tree it began with'
 _ST_OUT_LACKS "no hand skip read" 'left out by hand'
 _ST_RUN --abort
 
-# A drop's stop resolved to the file as the tip holds it takes in a later commit's edit of a line the
-# dropped commit introduced – the edit's removed line counts with the line it put in its place
+# A drop's stop resolved to the file as the tip holds it takes in a later commit's edit of a line
+# the dropped commit introduced – the edit's removed line counts with the line it put in its place
 _ST_PZ_NEW lp7
 _LP_C "LP base" "line 5" "line 9" && _LP_C "LP c1 five+nine" five nine && LP_C1=$(git rev-parse HEAD)
 _LP_C "LP c2 FIVE" FIVE nine && _ST_PZ_C g g "LP c3 g" && _LP_C "LP c4 NINE" FIVE NINE
@@ -198,8 +200,7 @@ _ST_EQ "while a gitlink change moved past an unrelated commit lands" "$RC:$(git 
 
 # A replay whose later clean pick fails its signature resumes once signing works, its change made
 # again rather than refused over as staged – a drop's and a reorder's alike
-# Its status opening on another line, as gpg's does – a git before 2.36 finds `SIG_CREATED` only
-# after a newline
+# Its status on a later line, as gpg's – a git before 2.36 finds `SIG_CREATED` only after a newline
 print -r -- '#!/bin/sh
 IN=$(cat)
 if [ -e "$(git rev-parse --git-common-dir)/lpfail" ]; then case $IN in *FAILME*) echo "lp gpg: card removed" >&2; exit 2 ;; esac; fi
@@ -249,8 +250,8 @@ for LP_WAY in drop reorder; do
 	git config --unset commit.gpgSign && git config --unset gpg.program
 done
 
-# The path-by-path merge a git before 2.40 reads a left-out pick by builds the tree a rebase would – a
-# pick clean beside another change, one already there – and fails one conflicting
+# The path-by-path merge a git before 2.40 reads a left-out pick by builds the tree a rebase
+# would – a pick clean beside another change, one already there – and fails one conflicting
 _ST_PZ_NEW lp15
 _ST_PZ_C f $'1\n2\n3\n4\n5\n6' "LP15 base" && LP_A=$(git rev-parse HEAD)
 _ST_PZ_C f $'1\nTWO\n3\n4\n5\n6' "LP15 two" && LP_B=$(git rev-parse HEAD)
@@ -279,8 +280,8 @@ for LP_WAY in same distinct; do
 	_ST_OUT_HAS "naming the target's new commit" "squashed into: $(git rev-parse --short HEAD~1) LP11 C adds c and x again"
 done
 
-# A split by path of a directory turned file says which way it turned, its remedy dropping an exclude
-# that would leave the named side out again – and running as printed
+# A split by path of a directory turned file says which way it turned, its remedy dropping an
+# exclude that would leave the named side out again – and running as printed
 _ST_PZ_NEW lp12
 mkdir e && print ex > e/x && print base > base && git add -A && git commit -qm "LP12 base"
 git rm -rq e && print efile > e && print o > other && git add -A && git commit -qm "LP12 e: directory to file, plus other"

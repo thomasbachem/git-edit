@@ -36,7 +36,7 @@ _ST_EQ "edits conflicting with what landed stay as they were, unstaged" "$RC:$(g
 _ST_OUT_HAS "named as left" 'conflict with what landed – left as they were, as changes to it: a.txt'
 _ST_OUT_HAS "with the merge for when it is meant" "git merge-file -- a\.txt [^ ]*/\.git/git-edit-base [^ ]*/\.git/git-edit-landed"
 eval "$(print -r -- "$OUT" | sed -n 's/^  \(git cat-file --filters .*git-edit-landed\)$/\1/p')"
-_ST_EQ "which merges them, markers and all" "$(grep -c '^<<<<<<< a.txt$' a.txt):$(ls a.txt.git-edit-* 2>/dev/null | wc -l | tr -d ' ')" "1:0"
+_ST_EQ "which merges them, markers and all" "$(grep -c '^<<<<<<< a.txt$' a.txt):$(local -a G=(a.txt.git-edit-*(N)); print ${#G})" "1:0"
 git checkout -q -- a.txt
 # What stands where a file lands is kept – an untracked file, an ignored one – as a change to it
 _ST_PZ_NEW bc3
