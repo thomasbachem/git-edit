@@ -169,6 +169,16 @@ _ST_RUN -M --text "ZL6 b3" HEAD
 _ST_EQ "a git edit a landing's hook runs refuses its journal, the landing going through" "$(<"$TMP/zl6.urc" 2>/dev/null):$RC:$(git log -1 --format=%s)" "1:0:ZL6 b3"
 OUT=$(<"$TMP/zl6.u" 2>/dev/null)
 _ST_OUT_HAS "naming the run it runs under" 'locked by the run this one runs under (pid '
+# Where `/proc` names parents, as on Linux, a `ps` that fails – a minimal image's – changes nothing
+if [ -r "/proc/$$/stat" ]; then
+	mkdir -p "$TMP/zl6-nops" && print -l '#!/bin/sh' 'exit 1' > "$TMP/zl6-nops/ps" && chmod +x "$TMP/zl6-nops/ps"
+	: > "$TMP/zl6-arm"
+	PATH="$TMP/zl6-nops:$PATH" _ST_RUN -M --text "ZL6 b4" HEAD
+	_ST_EQ "with no working ps, the hook's run refuses at once all the same" \
+		"$(<"$TMP/zl6.urc" 2>/dev/null):$RC:$(git log -1 --format=%s)" "1:0:ZL6 b4"
+	OUT=$(<"$TMP/zl6.u" 2>/dev/null)
+	_ST_OUT_HAS "naming the run it runs under from /proc" 'locked by the run this one runs under (pid '
+fi
 mv .git/hooks/reference-transaction "$TMP/zl6-hook.off"
 unfunction _ZL_STAND_IN _ZL_WAIT
 cd "$TMP/repo"

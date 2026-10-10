@@ -1943,6 +1943,21 @@ _PID_START () {
 	REPLY=${(j: :)${=S}}
 }
 
+# Puts <pid>'s parent into `REPLY` – empty where no such process runs, or nothing can tell
+# Linux's `/proc` read first, as a minimal image has no `ps` and BusyBox's takes no `-p`
+_PID_PARENT () {
+	# Args: <pid>
+	local S=""
+	if [ -r "/proc/$1/stat" ]; then
+		{ S=$(<"/proc/$1/stat") } 2>/dev/null
+		# Its 4th field, counted past the command name, as `_PID_START` counts
+		S=${S##*\) }
+		REPLY=${${(s: :)S}[2]}
+		return 0
+	fi
+	REPLY=${$(ps -o ppid= -p "$1" 2>/dev/null)//[[:space:]]/}
+}
+
 # Tells whether lock <file> is stale – gone, its process gone or another started since under its
 # pid, or naming no pid yet 10 s old, as its holder may still be writing it
 _LOCK_STALE () {
@@ -1960,8 +1975,8 @@ _LOCK_STALE () {
 		return
 	fi
 	[[ "$HOLDER" != *' '* ]] || { _HOLDER_GONE "$HOLDER"; return; }
-	# Another user's process lives though signaling it fails – `ps` lists it all the same
-	kill -0 "$PID" 2>/dev/null || LC_ALL=C ps -p "$PID" >/dev/null 2>&1 || return 0
+	# Another user's process lives though signaling it fails – `/proc` or `ps` lists it all the same
+	kill -0 "$PID" 2>/dev/null || [ -e "/proc/$PID" ] || LC_ALL=C ps -p "$PID" >/dev/null 2>&1 || return 0
 	_PID_START "$PID"
 	# One naming its pid alone where start times can be told is an older version's, held past the
 	# journal's 60 s wait by no live run of it – its pid reused, say
@@ -1977,8 +1992,8 @@ _HOLDER_GONE () {
 	# Args: <holder>
 	local PID=${1%% *}
 	[[ "$PID" == <-> ]] || return 1
-	# Another user's process lives though signaling it fails – `ps` lists it all the same
-	kill -0 "$PID" 2>/dev/null || LC_ALL=C ps -p "$PID" >/dev/null 2>&1 || return 0
+	# Another user's process lives though signaling it fails – `/proc` or `ps` lists it all the same
+	kill -0 "$PID" 2>/dev/null || [ -e "/proc/$PID" ] || LC_ALL=C ps -p "$PID" >/dev/null 2>&1 || return 0
 	[[ "$1" == *' '* && "${1#* }" != - ]] || return 1
 	_PID_START "$PID"
 	[ -n "$REPLY" ] && [ "$REPLY" != "${1#* }" ]
@@ -2056,7 +2071,8 @@ _JOURNAL_LOCK () {
 					REPLY=$UP
 					return 3
 				fi
-				UP=${$(ps -o ppid= -p "$UP" 2>/dev/null)//[[:space:]]/}
+				_PID_PARENT "$UP"
+				UP=$REPLY
 			done
 		fi
 		if (( RC == 2 || ++W > 600 || EPOCHSECONDS > END )); then
@@ -19734,7 +19750,8 @@ _HOLD_RUN_WORKTREE () {
 		local -i K=0
 		while [ -n "$HOLDER" ] && [[ "$UP" == <2-> ]] && (( ++K < 64 )); do
 			[ "$UP" = "$HOLDER" ] && { UNDER=1; break; }
-			UP=${$(ps -o ppid= -p "$UP" 2>/dev/null)//[[:space:]]/}
+			_PID_PARENT "$UP"
+			UP=$REPLY
 		done
 		if [ -n "$UNDER" ]; then
 			PRINT_ERR "${${2:+The pause's worktree}:--C/--dir path} '$DIR' is held by the run this one runs under (pid $HOLDER) – a hook its landing ran, say – which holds it until this one ends – ${${2:+nothing was $2}:-nothing ran}"
