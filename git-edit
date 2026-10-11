@@ -6627,9 +6627,10 @@ _SYNC_TWO_TREE () {
 		REPLY="the index is locked"
 		return 2
 	fi
-	# Its own, as a stop meanwhile tells it
+	# Its own, as a stop meanwhile tells it – the copy named apart from the one that stop re-syncs
+	# through, which a `read-tree` here outliving the stop would write
 	_INDEX_LOCK_OWN=$IDX
-	TMP="$IDX.git-edit.$$" PRIV=$(MKTEMP_FILE git-edit-sync-index)
+	TMP="$IDX.git-edit-sync.$$" PRIV=$(MKTEMP_FILE git-edit-sync-index)
 	_TEMP_FILES+=("$TMP" "$PRIV")
 	{
 		# A copy that failed would leave the merge building an index of these paths alone

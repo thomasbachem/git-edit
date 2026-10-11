@@ -220,12 +220,16 @@ _ST_OUT_LACKS "printing no raw 'needs merge'" 'needs merge'
 git merge --abort 2>/dev/null
 
 # A run stopped twice inside its sync's own index lock re-syncs its entries, never naming the index
-# locked by another
+# locked by another – the sync's `read-tree`, outliving the stop, writing its copy only once the
+# stop's re-sync has read its own
 _BR216_REPO br17
 mkdir -p "$TMP/br17-git"
 {
 	print -r -- '#!/bin/sh'
-	print -r -- "case \"\$GIT_INDEX_FILE\" in *index.git-edit.*) case \" \$* \" in *' read-tree -m -u '*) if [ -e ${(q)TMP}/br17-arm ]; then rm -f ${(q)TMP}/br17-arm; : > ${(q)TMP}/br17-in; ${(q)TMP}/st-hold ${(q)TMP}/br17-go; fi ;; esac ;; esac"
+	print -r -- "case \"\$GIT_INDEX_FILE\" in"
+	print -r -- "*index.git-edit-sync.*) case \" \$* \" in *' read-tree -m -u '*) if [ -e ${(q)TMP}/br17-arm ]; then rm -f ${(q)TMP}/br17-arm; : > ${(q)TMP}/br17-in; ${(q)TMP}/st-hold ${(q)TMP}/br17-go; ${(q)commands[git]} \"\$@\"; RC=\$?; : > ${(q)TMP}/br17-wrote; exit \$RC; fi ;; esac ;;"
+	print -r -- "*index.git-edit.*) case \" \$* \" in *' ls-files '*) if [ -e ${(q)TMP}/br17-in ] && [ ! -e ${(q)TMP}/br17-go ]; then : > ${(q)TMP}/br17-go; ${(q)TMP}/st-hold ${(q)TMP}/br17-wrote; fi ;; esac ;;"
+	print -r -- "esac"
 	print -r -- "exec ${(q)commands[git]} \"\$@\""
 } > "$TMP/br17-git/git"
 chmod +x "$TMP/br17-git/git"
@@ -234,11 +238,13 @@ PATH="$TMP/br17-git:$PATH" GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "BR17
 BR_P=$!
 BR_K=0; until [ -e "$TMP/br17-in" ] || ! kill -0 $BR_P 2>/dev/null || (( ++BR_K > 1200 )); do sleep 0.1; done
 kill -TERM $BR_P; sleep 0.3; kill -TERM $BR_P
-: > "$TMP/br17-go"
 wait $BR_P
+# Let go here where the stop never read a copy
+: > "$TMP/br17-go"
 OUT=$(<"$TMP/br17.out")
 _ST_OUT_HAS "a run stopped twice inside its sync re-syncs its entries" 'stopped by SIGTERM after .* – index entries re-synced to it: f'
 _ST_OUT_LACKS "never calling its own lock another's" 'index locked'
+_ST_EQ "no revert of the landing left staged" "$(git diff --cached --name-only)" ""
 
 # The branch's other checkout records each file a landing leaves other than what landed, so a
 # commit there taking the landing back is refused
