@@ -109,7 +109,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
@@ -10358,6 +10358,50 @@ _MERGE_LANDING () {
 	return $RC
 }
 
+# The merges `_MERGE_LANDING` makes of each "<ours> <before> <after>" asked ahead, as
+# "<status> <blob>" – run side by side by `_MERGE_AHEAD`, read back by `_MERGED_INTO`
+typeset -gA _MERGES
+_MERGES=()
+# Set once a merge made ahead crashed – 2.53's do in a linked worktree – each merged as asked since
+_MERGE_AHEAD_OFF=""
+
+# Merges each <ours> <before> <after> not merged yet ahead of its asking, eight at a time – each a
+# spawn of its own, so a guard asking two of every landing waits on them together
+_MERGE_AHEAD () {
+	# Args: <ours blob> <before blob> <after blob>...
+	[ -n "$_MERGE_FILE_IDS" ] && [ -z "$_MERGE_AHEAD_OFF" ] || return 0
+	local L
+	local -a Q W
+	while (( $# >= 3 )); do
+		L="$1 $2 $3"
+		(( ${+_MERGES[$L]} )) || Q+=("$1" "$2" "$3")
+		shift 3
+	done
+	(( ${#Q} )) || return 0
+	for L in "${(@f)$(print -rl -- "${Q[@]}" | \
+		xargs -n 3 -P 8 sh -c 'I=$(git merge-file --object-id -q "$1" "$2" "$3" 2>/dev/null); echo "$1 $2 $3 $? $I"' sh 2>/dev/null)}"; do
+		W=(${=L})
+		[[ "${W[4]}" == <0-255> ]] || continue
+		# A crash is no answer – `_MERGE_LANDING` takes files there, and every later merge too
+		(( W[4] <= 127 )) || { _MERGE_AHEAD_OFF=1; continue; }
+		L="${W[1]} ${W[2]} ${W[3]}"
+		_MERGES[$L]="${W[4]} ${W[5]}"
+	done
+}
+
+# Puts into `REPLY` what `_MERGE_LANDING` prints for <ours> <before> <after>, returning its status –
+# read from `_MERGE_AHEAD`'s run where it has one, as a `$(…)` forks this whole shell
+_MERGED_INTO () {
+	# Args: <ours blob> <before blob> <after blob>
+	local K="$1 $2 $3"
+	if (( ${+_MERGES[$K]} )); then
+		REPLY=""
+		(( ${_MERGES[$K]%% *} )) || REPLY=${_MERGES[$K]#* }
+		return ${_MERGES[$K]%% *}
+	fi
+	REPLY=$(_MERGE_LANDING "$1" "$2" "$3")
+}
+
 # Succeeds where <ours> – a copy edited beside a landing – touches none of its changed lines, read
 # against its before, which edits made on the landed lines would overlap, and lacks the landing
 # by its lines – an edit on the line next to a landed one folds that line into its own hunk
@@ -10493,7 +10537,7 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS MQ
 	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
 	local -i FIRST_K=0
 	# The paths a run's sync left unbrought, read where a merge first conflicts
@@ -10629,6 +10673,18 @@ _GUARD_WHOLE_LANDINGS () {
 			# The name a carry from this landing's old tip reads
 			[ "$N" != "$P" ] && NAME_WAS[$K:$P]=$N
 		done
+		# Every landing's merges into the tip and into the file, made ahead side by side
+		MQ=()
+		for (( K = 1; K <= ${#MOVES}; K++ )); do
+			(( ${+LANDED[$K:$P]} )) || continue
+			LM=(${=LANDED[$K:$P]})
+			BEFORE=${LM[3]#-} AFTER=${LM[4]#-} O=$OURS
+			[ -n "$BEFORE" ] && [ -n "$AFTER" ] || continue
+			[ -z "$OURS" ] && [ -n "$DST" ] && O=$DSTBLOB
+			[ -n "$HEAD_BLOB" ] && MQ+=("$HEAD_BLOB" "$BEFORE" "$AFTER")
+			[ -n "$O" ] && MQ+=("$O" "$BEFORE" "$AFTER")
+		done
+		_MERGE_AHEAD "${MQ[@]}"
 		# Oldest first, so the carry named takes in every later landing the file lacks as well
 		for (( K = 1; K <= ${#MOVES}; K++ )); do
 			M=(${=MOVES[K]})
@@ -10694,8 +10750,8 @@ _GUARD_WHOLE_LANDINGS () {
 			LATER=""
 			if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ -n "$TIP" ] && [ -n "$O" ] && [ "$TIP" != "$AFTER" ] && \
 				[ "${MODE_OF[$P]}" != 120000 ]; then
-				MERGED=$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")
-				MRC=$?
+				_MERGED_INTO "$TIP" "$BEFORE" "$AFTER"
+				MRC=$? MERGED=$REPLY
 				(( MRC <= 127 )) && [ "$MERGED" != "$TIP" ] && _EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER" && \
 					AFTER=$TIP LATER=", changed again since"
 			fi
@@ -10729,12 +10785,12 @@ _GUARD_WHOLE_LANDINGS () {
 				# The landing's own before, which no merge need read – a binary or a link as much as
 				# text, and a later landing on top where the tip still carries this one, or where the
 				# merge conflicts, as a copy holding no edits loses nothing to the restore
-				elif [ "$O" = "$BEFORE" ] && { [ "$TIP" = "$AFTER" ] || ! MERGED=$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER") || [ "$MERGED" = "$TIP" ]; }; then
+				elif [ "$O" = "$BEFORE" ] && { [ "$TIP" = "$AFTER" ] || ! _MERGED_INTO "$TIP" "$BEFORE" "$AFTER" || [ "$REPLY" = "$TIP" ]; }; then
 					KIND=restore GONE=", the file still as before it"
 				else
 					[ "${MODE_OF[$P]}" != 120000 ] || continue
-					MERGED=$(_MERGE_LANDING "$O" "$BEFORE" "$AFTER")
-					MRC=$?
+					_MERGED_INTO "$O" "$BEFORE" "$AFTER"
+					MRC=$? MERGED=$REPLY
 					# A conflict lacks the landing only where the file's edits share none of its changed
 					# lines – edits on those lines, made after it, conflict as much – and the file
 					# lacks a line it added or holds one it removed
@@ -10760,7 +10816,8 @@ _GUARD_WHOLE_LANDINGS () {
 					else
 						continue
 					fi
-					[ "$(_MERGE_LANDING "$TIP" "$BEFORE" "$AFTER")" = "$TIP" ] || continue
+					_MERGED_INTO "$TIP" "$BEFORE" "$AFTER"
+					[ "$REPLY" = "$TIP" ] || continue
 				fi
 				HIT=1
 			done
