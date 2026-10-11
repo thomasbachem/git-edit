@@ -10364,8 +10364,13 @@ _MERGE_LANDING () {
 # • Given <kept>, the file's blob when a run's sync conflicting there left it unbrought (`-` where
 #   none was stored), an overlap tells only where <ours> changed since the lines of <kept> the
 #   landing conflicts with – edits elsewhere in the file leave those as they were
+typeset -gA _MISS_VERDICTS
+_MISS_VERDICTS=()
 _EDITS_MISS_LANDING () {
 	# Args: <ours blob> <before blob> <after blob> [<kept blob> or -]
+	# Kept for the run, as blobs never change – landings repeating one change ask it again
+	local KEY="$1 $2 $3 $4"
+	(( ${+_MISS_VERDICTS[$KEY]} )) && return ${_MISS_VERDICTS[$KEY]}
 	local O=$(MKTEMP_FILE git-edit-ours) B=$(MKTEMP_FILE git-edit-base) A=$(MKTEMP_FILE git-edit-theirs) SHARED
 	local D=$(MKTEMP_FILE git-edit-landed) KEPT=$(MKTEMP_FILE git-edit-kept)
 	local -x LANDED CONF
@@ -10405,6 +10410,8 @@ _EDITS_MISS_LANDING () {
 		SHARED=unknown
 	fi
 	rm -f "$O" "$B" "$A" "$D" "$KEPT"
+	# A blob left unread is no verdict to keep
+	[ "$SHARED" = unknown ] || _MISS_VERDICTS[$KEY]=$(( ${#SHARED} > 0 ))
 	[ -z "$SHARED" ]
 }
 
