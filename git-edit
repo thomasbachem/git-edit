@@ -619,7 +619,7 @@ _ON_TERMINATION () {
 		# left as they are, they read as a staged revert of the move a peer's plain commit takes in
 		# A further signal is ignored from here, as the exit trap ignores one
 		trap '' HUP INT TERM
-		# The index lock its own sync held goes first – stopped there, it writes nothing more
+		# The index lock a step of its own held goes first – stopped there, it writes nothing more
 		[ -n "$_INDEX_LOCK_OWN" ] && rm -f "$_INDEX_LOCK_OWN.lock" && _INDEX_LOCK_OWN=""
 		_RESYNC_STRANDED_NOTE "${_MOVING_REF[1]}" "${_MOVING_REF[2]}" "${_MOVING_REF[3]}"
 		RESYNC=$REPLY
@@ -4368,7 +4368,16 @@ _LOCK_INDEX () {
 		(( ++W > 50 )) && return 1
 		sleep 0.1
 	done
+	# The run's own, so a stop meanwhile lets go of it rather than wait on it
+	_INDEX_LOCK_OWN=$1
 	return 0
+}
+
+# Lets go of <index>'s lock unless a stop did already – a peer may hold it since
+_UNLOCK_INDEX () {
+	# Args: <index file>
+	[ "$_INDEX_LOCK_OWN" = "$1" ] && rm -f "$1.lock"
+	_INDEX_LOCK_OWN=""
 }
 
 # Resets each path's index entry to the checkout's `HEAD` where it still holds the entry this run
@@ -4457,7 +4466,8 @@ _RESET_IF_STAGED_AS () {
 			fi
 		fi
 	} always {
-		rm -f "$TMP" "$IDX.lock"
+		rm -f "$TMP"
+		_UNLOCK_INDEX "$IDX"
 	}
 }
 
@@ -6627,9 +6637,8 @@ _SYNC_TWO_TREE () {
 		REPLY="the index is locked"
 		return 2
 	fi
-	# Its own, as a stop meanwhile tells it – the copy named apart from the one that stop re-syncs
-	# through, which a `read-tree` here outliving the stop would write
-	_INDEX_LOCK_OWN=$IDX
+	# The copy named apart from the one a stop meanwhile re-syncs through, which a `read-tree` here
+	# outliving the stop would write
 	TMP="$IDX.git-edit-sync.$$" PRIV=$(MKTEMP_FILE git-edit-sync-index)
 	_TEMP_FILES+=("$TMP" "$PRIV")
 	{
@@ -6691,8 +6700,8 @@ _SYNC_TWO_TREE () {
 		REPLY=${${${OUT%%$'\n'*}##(error|fatal): }:-the two-tree merge failed}
 		return 1
 	} always {
-		rm -f "$TMP" "$PRIV" "$IDX.lock"
-		_INDEX_LOCK_OWN=""
+		rm -f "$TMP" "$PRIV"
+		_UNLOCK_INDEX "$IDX"
 	}
 }
 
@@ -6776,7 +6785,8 @@ _SYNC_WRITE_ENTRIES () {
 			Q_OUT=("${(@)Q_OUT/done/locked}")
 		fi
 	} always {
-		rm -f "$TMP" "$IDX.lock"
+		rm -f "$TMP"
+		_UNLOCK_INDEX "$IDX"
 	}
 }
 

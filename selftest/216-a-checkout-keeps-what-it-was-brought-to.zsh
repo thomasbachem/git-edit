@@ -11,7 +11,8 @@
 #   keeps its later edits, merged cleanly or not, taking in only a landing its checkout never had
 #   and what its commit's hooks made of it
 # • A rename's source is no file taken out, paths outside a sparse checkout are named apart, a
-#   peer's merge leaks no raw git line, and a run stopped inside its own index lock re-syncs
+#   peer's merge leaks no raw git line, and a run stopped inside its own index lock re-syncs – in
+#   its sync, its entry writes or an undo alike – keeping a peer's lock taken since
 # • The branch's other checkout records the files a landing leaves there, so a commit taking the
 #   landing back from there is refused
 _ST_SCENARIO "\e[1;96m[216] a checkout keeps what it was brought to\e[0m"
@@ -245,6 +246,53 @@ OUT=$(<"$TMP/br17.out")
 _ST_OUT_HAS "a run stopped twice inside its sync re-syncs its entries" 'stopped by SIGTERM after .* – index entries re-synced to it: f'
 _ST_OUT_LACKS "never calling its own lock another's" 'index locked'
 _ST_EQ "no revert of the landing left staged" "$(git diff --cached --name-only)" ""
+# So inside the step writing the entries it decided on, a peer's lock taken once the re-sync let go
+# kept – the step's own letting go, run as the stop exits, once took it
+_BR216_REPO br22
+print -l l1 l2 l3 E4 E5 E6 l{7..12} > f
+mkdir -p "$TMP/br22-git"
+{
+	print -r -- '#!/bin/sh'
+	print -r -- "case \" \$* \" in"
+	print -r -- "*' update-index -z --index-info '*) case \"\$GIT_INDEX_FILE\" in *index.git-edit.*) if [ -e ${(q)TMP}/br22-arm ]; then rm -f ${(q)TMP}/br22-arm; : > ${(q)TMP}/br22-in; ${(q)TMP}/st-hold ${(q)TMP}/br22-go; fi ;; esac ;;"
+	print -r -- "*' diff-tree -r -z --no-renames --name-only '*) if [ -e ${(q)TMP}/br22-in ] && [ ! -e ${(q)TMP}/br22-peer ]; then : > ${(q)TMP}/br22-peer; ( set -C; : > ${(q)PWD}/.git/index.lock ) 2>/dev/null; fi ;;"
+	print -r -- "esac"
+	print -r -- "exec ${(q)commands[git]} \"\$@\""
+} > "$TMP/br22-git/git"
+chmod +x "$TMP/br22-git/git"
+: > "$TMP/br22-arm"
+PATH="$TMP/br22-git:$PATH" GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "BR22 part" --edits='{"f": [["l5\n", "E5\n"]]}' </dev/null >"$TMP/br22.out" 2>&1 &
+BR_P=$!
+BR_K=0; until [ -e "$TMP/br22-in" ] || ! kill -0 $BR_P 2>/dev/null || (( ++BR_K > 1200 )); do sleep 0.1; done
+kill -TERM $BR_P; sleep 0.3; kill -TERM $BR_P
+: > "$TMP/br22-go"
+wait $BR_P
+OUT=$(<"$TMP/br22.out")
+_ST_OUT_HAS "a run stopped twice inside its entry writes re-syncs there too" 'stopped by SIGTERM after .* – index entries re-synced to it: f'
+_ST_OUT_LACKS "its own lock not waited on as another's" 'index locked'
+_ST_EQ "a peer's lock taken since stays, the file's edits kept" "$([ -e .git/index.lock ] && print held):$(sed -n '4,6p' f | tr '\n' ' ')" "held:E4 E5 E6 "
+rm -f .git/index.lock
+# And inside an undo's re-sync of the entries a commit landed, its file kept
+_BR216_REPO br23
+_ST_RUN --commit --text "BR23 C" --edits='{"f": [["l10\n", "C10\n"]]}'
+mkdir -p "$TMP/br23-git"
+{
+	print -r -- '#!/bin/sh'
+	print -r -- "case \"\$GIT_INDEX_FILE\" in *index.git-edit.*) case \" \$* \" in *' reset -q '*) if [ -e ${(q)TMP}/br23-arm ]; then rm -f ${(q)TMP}/br23-arm; : > ${(q)TMP}/br23-in; ${(q)TMP}/st-hold ${(q)TMP}/br23-go; fi ;; esac ;; esac"
+	print -r -- "exec ${(q)commands[git]} \"\$@\""
+} > "$TMP/br23-git/git"
+chmod +x "$TMP/br23-git/git"
+: > "$TMP/br23-arm"
+PATH="$TMP/br23-git:$PATH" GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --undo </dev/null >"$TMP/br23.out" 2>&1 &
+BR_P=$!
+BR_K=0; until [ -e "$TMP/br23-in" ] || ! kill -0 $BR_P 2>/dev/null || (( ++BR_K > 1200 )); do sleep 0.1; done
+kill -TERM $BR_P; sleep 0.3; kill -TERM $BR_P
+: > "$TMP/br23-go"
+wait $BR_P
+OUT=$(<"$TMP/br23.out")
+_ST_OUT_HAS "an undo stopped twice inside its re-sync re-syncs" 'stopped by SIGTERM after .* – index entries re-synced to it: f'
+_ST_OUT_LACKS "its own lock not named locked" 'index locked'
+_ST_EQ "the commit's file kept, its entry as the undo left it" "$(sed -n 10p f):$(git diff --cached --name-only)" "C10:"
 
 # The branch's other checkout records each file a landing leaves other than what landed, so a
 # commit there taking the landing back is refused
