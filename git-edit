@@ -10422,6 +10422,52 @@ _AGO () {
 	fi
 }
 
+# Tells whether landing <k> of `MOVES`, one commit on its old tip, had that commit dropped since –
+# matched by author date and email, which every rewrite keeps – one squashed away still landed
+_LANDING_DROPPED () {
+	# Args: <index into `MOVES`>
+	(( ${+DROPPED_OF[$1]} )) && return ${DROPPED_OF[$1]}
+	DROPPED_OF[$1]=1
+	local -a M DR KEYS
+	local KEY D OUT
+	M=(${=MOVES[$1]})
+	[ "$(git rev-parse -q --verify "${M[3]}^" 2>/dev/null)" = "${M[2]}" ] || return 1
+	KEY=$(git log -1 --format='%aI %ae' "${M[3]}" 2>/dev/null) && [ -n "$KEY" ] || return 1
+	# Only a commit made since its old tip can be it
+	OUT=$(git log --format='%aI %ae' "$WHOLE_HEAD" --not "${M[2]}" 2>/dev/null) || return 1
+	KEYS=("${(@f)OUT}")
+	(( ${KEYS[(Ie)$KEY]} )) && return 1
+	for D in "${DROPS[@]}"; do
+		DR=(${=D})
+		(( DR[1] >= $1 )) || continue
+		OUT=$(git log --format='%aI %ae' "${DR[2]}" --not "${M[2]}" 2>/dev/null) || continue
+		KEYS=("${(@f)OUT}")
+		(( ${KEYS[(Ie)$KEY]} )) || continue
+		OUT=$(git log --format='%aI %ae' "${DR[3]}" --not "${M[2]}" 2>/dev/null) || continue
+		KEYS=("${(@f)OUT}")
+		(( ${KEYS[(Ie)$KEY]} )) && continue
+		DROPPED_OF[$1]=0
+		return 0
+	done
+	return 1
+}
+
+# Tells whether a tip journaled after landing <k> held <path> as <blob> again – the landing taken
+# out there, what the path held since another landing's
+_LANDING_UNDONE () {
+	# Args: <index into `MOVES`> <path> <blob before the landing>
+	local -a Q A
+	local T
+	# A name `cat-file` reads as two lines
+	[[ "$2" != *$'\n'* ]] || return 1
+	for T in "${TIPS[@]}"; do
+		(( ${T%% *} >= $1 )) && Q+=("${T#* }:$2")
+	done
+	(( ${#Q} )) || return 1
+	A=("${(@f)$(print -rl -- "${Q[@]}" | git cat-file --batch-check='%(objectname)' 2>/dev/null)}")
+	(( ${A[(Ie)$3]} ))
+}
+
 # Refuses composed content taking back another caller's landing of the last 7 days, whatever route
 # composed it – a file lacking one the tip still carries, one a landing removed, or the removal of
 # one it added – where a conflict proves nothing, later edits on its lines conflicting too, but in
@@ -10435,11 +10481,13 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS
 	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
 	local -i FIRST_K=0
 	# The paths a run's sync left unbrought, read where a merge first conflicts
 	local -A UNBROUGHT UNB_AT
+	# Each landing's `_LANDING_DROPPED` answer, once asked
+	local -A DROPPED_OF
 	# Opens each printed merge – its sides kept in the step's own temp dir, as `_MERGE_CMD`'s are
 	local T='T=$(mktemp -d) && '
 	local -A MODE_OF RENAMED_TO RENAMES_OF IS_CHANGED LANDED AWAY NAME_THEN NAME_WAS ST_BASE ST_THEIRS ST_FROM ABOVE
@@ -10454,6 +10502,10 @@ _GUARD_WHOLE_LANDINGS () {
 	for LINE in "${(@f)$(<"$JF")}"; do
 		J=(${=${LINE%%$'\t'*}})
 		[[ "${J[1]}" == <1-9999999999> ]] && (( J[1] >= NOW - 604800 )) && [ "${J[2]}" = "$REF" ] || continue
+		# Every tip and drop, this caller's too, after the landings read so far – a tip only as a SHA,
+		# as `:<path>` would read the index
+		[[ "${J[4]}" =~ '^[0-9a-f]{40,64}$' ]] && TIPS+=("${#MOVES} ${J[4]}")
+		[ "${J[5]}" = drop ] && DROPS+=("${#MOVES} ${J[3]} ${J[4]}")
 		ACTOR=""
 		[[ "$LINE" == *$'\t'* ]] && ACTOR=${LINE##*$'\t'}
 		[ "$ACTOR" = "$_ACTOR_ID" ] && continue
@@ -10711,6 +10763,10 @@ _GUARD_WHOLE_LANDINGS () {
 				[ "$BMODE" = 000000 ] && GONE=", which added it executable"
 				[ "$AMODE" = 100644 ] && GONE=", which made it non-executable"
 			fi
+			# Nor one taken out since – its commit dropped, or the file as before it at a later tip where
+			# it changed content alone – whatever the tip holds on its lines, it no longer landed it
+			_LANDING_DROPPED $K && continue
+			[ -z "${NAME_THEN[$K:$P]}" ] && [ "${LM[1]}" = "${LM[2]}" ] && _LANDING_UNDONE $K "$P" "$BEFORE" && continue
 			# The old name restores nothing at the tip – a carry follows
 			# the rename, as for the rename's own landing
 			[ -n "$NAME_AT_TIP" ] && KIND=carry GONE=", a later run renaming it to $NAME_AT_TIP" AWAY[$P]=$NAME_AT_TIP

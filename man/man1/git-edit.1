@@ -1087,7 +1087,10 @@ edits predate it, and take it back until the file holds what landed or its
 owner changed the conflicting lines since. The refusal names the
 .B git merge\-file
 the sync named. It does the same for edits beside the landed lines there,
-which conflict as that sync did, so a carry would too.
+which conflict as that sync did, so a carry would too. Nor does a run taken
+out since: one commit a drop removed, matched by the author date and email
+every rewrite keeps, or a run changing a file's content alone where a later
+tip held the file as before it again.
 .IP
 Where a later rewrite replaced that run's tips (a fold below it, say), a
 carry from there reads the run as held. So the refusal names the

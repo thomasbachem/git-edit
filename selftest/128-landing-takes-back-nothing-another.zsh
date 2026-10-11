@@ -167,4 +167,62 @@ _ST_RUN -d -y HEAD
 _ST_EQ "a branch checked out twice re-syncs the index of the copy the run started in" "$RC:$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:0"
 cd "$TMP/pz-la4"
 git worktree remove --force "$TMP/la4-twin"
+# A landing whose commit a drop took out since is none to take back – a version cut again that a
+# dropped cut held, and the bump back after it – while one squashed away stays guarded
+_ST_PZ_NEW la5
+_ST_PZ_C v.txt dev "LA5 base"
+# The peer's author dates set apart from the caller's, which match a commit across rewrites
+print -r -- b1 > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000001 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 cut" -- v.txt </dev/null 2>&1)
+print -r -- dev > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000002 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 bump" -- v.txt </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD~1 </dev/null 2>&1)
+_ST_EQ "a dropped cut takes the bump it emptied along" "$(git log --format=%s | tr '\n' ' ')" "LA5 base "
+print -r -- b1 > v.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 cut again" -- v.txt </dev/null 2>&1)
+RC=$?
+_ST_EQ "a cut on a version the dropped one held lands" "$RC:$(git log -1 --format=%s)" "0:LA5 cut again"
+print -r -- dev > v.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 bump again" -- v.txt </dev/null 2>&1)
+RC=$?
+_ST_EQ "as does the bump back after it" "$RC:$(git log -1 --format=%s)" "0:LA5 bump again"
+print -r -- a > w.txt
+OUT=$(GIT_AUTHOR_DATE="1700000003 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 w" -- w.txt </dev/null 2>&1)
+print -r -- b > w.txt
+OUT=$(GIT_AUTHOR_DATE="1700000004 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 w fix" -- w.txt </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -s -y HEAD </dev/null 2>&1)
+LA_TIP=$(git rev-parse HEAD)
+print -r -- a > w.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 w stale" -- w.txt </dev/null 2>&1)
+RC=$?
+_ST_EQ "a file as before one squashed away still refuses" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD)" "1:LA5 w:$LA_TIP"
+_ST_OUT_HAS "naming that landing" "w\.txt – la-peer's commit run .*the file still as before it"
+git checkout -q -- w.txt
+# Nor is a drop run whose file a later tip held as before it again – its cut made anew, the
+# caller's own cut on top taken back
+print -r -- rc > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000005 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 rc" -- v.txt </dev/null 2>&1)
+OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD </dev/null 2>&1)
+print -r -- rc > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000006 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 rc again" -- v.txt </dev/null 2>&1)
+print -r -- final > v.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 final" -- v.txt </dev/null 2>&1)
+print -r -- rc > v.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 final back" -- v.txt </dev/null 2>&1)
+RC=$?
+_ST_EQ "the caller's own cut taken back lands" "$RC:$(git log -2 --format=%s | tr '\n' ' ')" "0:LA5 final back LA5 final "
+# Where a peer made it anew instead, that landing guards it in its place
+print -r -- p1 > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000007 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 p1" -- v.txt </dev/null 2>&1)
+print -r -- rc > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000008 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 p1 reverted" -- v.txt </dev/null 2>&1)
+print -r -- p1 > v.txt
+OUT=$(GIT_AUTHOR_DATE="1700000009 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 p1 again" -- v.txt </dev/null 2>&1)
+LA_TIP=$(git rev-parse HEAD) LA_T=$(git rev-parse HEAD~1)
+print -r -- rc > v.txt
+OUT=$(GIT_EDIT_ACTOR=la-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 stale" -- v.txt </dev/null 2>&1)
+RC=$?
+_ST_EQ "a file as before a landing made anew still refuses" "$RC:$(git rev-parse HEAD)" "1:$LA_TIP"
+_ST_OUT_HAS "naming the one made anew" "v\.txt – la-peer's commit run .*(${LA_T:0:7}\.\.${LA_TIP:0:7}), the file still as before it"
+git checkout -q -- v.txt
 cd "$TMP/repo"
