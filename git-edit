@@ -3685,7 +3685,8 @@ GIT_CARRY () {
 
 # Names what left the caller's checkout behind its branch – its mark below the tip, the landings
 # since on record, and each file a run's sync left unbrought that still lacks what landed – with
-# the carry bringing each along: the bare one from the mark, else one from the file's recorded base
+# the carry bringing each along: the bare one from the mark, else one from the file's recorded base,
+# or the file's own merge where no carry starts from that base
 _STATUS_UNBROUGHT () {
 	local CO REF TIP M P B OURS FROM
 	local -i KM KB
@@ -3719,10 +3720,19 @@ _STATUS_UNBROUGHT () {
 			PRINT_TEXT "Left unbrought by a run's sync, its edits conflicting with what landed: %s – merge that in, markers and all, once you mean to resolve it: %s" 33 "$(_ALL_PATHS "$P")" "$B$REPLY"
 			continue
 		fi
-		# A base at or past the mark on the way to the tip is one the bare carry starts below
+		# A base past the landings on record takes the file's own merge – a carry from there would read
+		# every edited file as sitting on it
 		KB=${STEP_FROM[(Ie)${R[1]}]}
+		if (( ! KB )); then
+			_AT_TOP "$CO"
+			B=$REPLY
+			_MERGE_CMD "${R[1]}" "$TIP" "$P" "$P" "$P"
+			PRINT_TEXT "Left unbrought by a run's sync, still lacking what landed past %s: %s – bring it along with: %s" 33 "${R[1]:0:7}" "$(_ALL_PATHS "$P")" "$B$REPLY"
+			continue
+		fi
+		# A base at or past the mark on the way to the tip is one the bare carry starts below
 		FROM=${R[1]}
-		(( KM && KB && KB <= KM )) && FROM=$M
+		(( KM && KB <= KM )) && FROM=$M
 		BY_FROM[$FROM]+="$P"$'\0'
 	done
 	if [ -n "$M" ]; then

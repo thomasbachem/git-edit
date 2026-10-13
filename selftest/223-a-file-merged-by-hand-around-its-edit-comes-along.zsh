@@ -6,6 +6,8 @@
 # • A file a commit took part of, its committed line edited again or undone, comes along as it is
 # • One left as it was keeps its record, as does one whose edit rewrote all the landing changed,
 #   which reads the same on either base
+# • A record's base past the landings on record takes the file's own merge, never a carry giving
+#   every edited file that base
 _ST_SCENARIO "\e[1;96m[223] a file merged by hand around its edit comes along\e[0m"
 local HM_X
 
@@ -110,3 +112,14 @@ GIT_EDIT_ACTOR=hm-b _ST_RUN --exec -- sh -c "git mv f h && git commit -qm 'HM re
 _ST_EQ "a rename's source merged by hand comes along to the new name, the record cleared" \
 	"$RC:$(tr '\n' ' ' < h 2>/dev/null):$([ -e f ] && echo f):$([ -s .git/git-edit-unbrought ] && echo recorded)" \
 	"0:1 2 3-L1-mine 4 5 6 7-L1 8 9 10 ::"
+
+# A base past the landings on record – a commit made outside git-edit since – takes the file's own
+# merge, as a carry from there would merge every edited file from it: `u` would conflict where it
+# holds that commit's line, edited
+_HM223_REPO hm5
+print -l u1 u2-P u3 u4 > u && git commit -qm "HM plain" -- u
+print -l u1 u2-P-mine u3 u4 > u
+_ST_RUN --status
+_ST_OUT_HAS "a base past the landings on record takes the file's own merge" \
+	"lacking what landed past ${HM_X:0:7}: f – bring it along with: T=.*--filters ${HM_X:0:12}:f > "
+_ST_OUT_LACKS "never a carry from that base" "--carry=${HM_X:0:12}"
