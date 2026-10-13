@@ -3702,14 +3702,13 @@ _STATUS_UNBROUGHT () {
 	_UNBROUGHT_READ "$CO"
 	for P in "${(@k)UNBROUGHT}"; do
 		R=(${=UNBROUGHT[$P]})
-		# One merged by hand since holds what the landing changed, as a merge of it would read
+		# One merged by hand since lacks nothing
 		if [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ]; then
 			_BLOB_AT "${R[1]}" "$P"
 			B=$REPLY
 			_BLOB_AT "${R[3]}" "$P"
 			if [ -n "$B" ] && [ -n "$REPLY" ] && OURS=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$OURS" ]; then
-				_LANDING_LACKED "$OURS" "$B" "$REPLY"
-				(( $? == 1 )) && continue
+				_HAND_MERGED "$OURS" "$B" "$REPLY" "${R[5]}" && continue
 			fi
 		fi
 		# What a fold read, no commit a carry starts from, takes the merge its sync named
@@ -5015,8 +5014,8 @@ _SYNC_CHECKOUT () {
 			done
 		fi
 	fi
-	# A rename's source a run left unbrought merges from its record's base too, while its file still
-	# lacks the landing that left it – read now, but where another rename lands on its name
+	# A rename's source a run left unbrought merges from its record's base too, unless its file was
+	# merged by hand since – read now, but where another rename lands on its name
 	if (( ${#RENAME_SRCS} )); then
 		local -A UNBROUGHT FB_BLOB
 		local -a REC
@@ -5027,9 +5026,9 @@ _SYNC_CHECKOUT () {
 			REC=(${=UNBROUGHT[$P]})
 			_BLOB_AT "${REC[1]}" "$P"; RB=$REPLY
 			_BLOB_AT "${REC[3]}" "$P"; RA=$REPLY
-			[ -n "$RB" ] && [ -n "$RA" ] && [ "$RA" != "$RB" ] && RW=$(git -C "$CO" hash-object -- "$P" 2>/dev/null) && [ -n "$RW" ] || continue
-			_LANDING_LACKED "$RW" "$RB" "$RA"
-			(( $? == 1 )) || _FILE_BASE_SET "$P" "${REC[1]}" "$P" "$RB"
+			# Stored, as the merges read it by its ID
+			[ -n "$RB" ] && [ -n "$RA" ] && [ "$RA" != "$RB" ] && RW=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$RW" ] || continue
+			_HAND_MERGED "$RW" "$RB" "$RA" "${REC[5]}" || _FILE_BASE_SET "$P" "${REC[1]}" "$P" "$RB"
 		done
 	fi
 	# A path taken back on the way stays only where its file has a base of its own
@@ -5635,20 +5634,20 @@ _SYNC_CHECKOUT () {
 			continue
 		fi
 		# A file this run composed from here – taken whole, folded as staged, removed, or put, edited or
-		# patched where it holds what was composed – holds what the caller composed, its edits past
-		# that the caller's later work, a stage of the file committed while it holds the rest: it takes
-		# its entry alone, merged cleanly or not – its record kept all the same, as a put rebuilt
-		# around a peer's lines leaves those in the file – but for what its commit's hooks made of
-		# it, merged in from what was composed, and where its base lies below <old>, a landing it never
-		# took, merged in up to <old> alone – one lacking it, a put composed in scratch, say, merges,
-		# where a put's lines the file changed further conflict, its later work all the same
+		# patched where `_HAND_MERGED` reads it holding what was composed – holds what the caller
+		# composed, its edits past that the caller's later work, a stage of the file committed while it
+		# holds the rest: it takes its entry alone, merged cleanly or not – its record kept all the same,
+		# as a put rebuilt around a peer's lines leaves those in the file – but for what its commit's
+		# hooks made of it, merged in from what was composed, and where its base lies below <old>, a
+		# landing it never took, merged in up to <old> alone – one lacking it, a put composed in scratch,
+		# say, merges, where a put's lines the file changed further conflict, its later work all the same
 		UPTO=$NEW OWN_HOOK=""
 		if [ "$SRC" = "$P" ] && [ -z "$HOOK_BASE" ] && [ "$OURS" != "${N#* }" ] && { [ "$I" = "$O" ] || [ "$I" = "$N" ]; } && \
 		   [ "$HOW" != carry ] && [ -f "$CO/$P" ] && [ ! -L "$CO/$P" ] && \
 		   [ -n "${_LANDED_OWN[1]}" ] && [ "${_LANDED_OWN[1]}" -ef "$CO" ] && (( ${_LANDED_OWN[(Ie)$P]} > 1 )); then
 			CB=""
 			[ -n "$WHOLE_TREE" ] && CB=$(git rev-parse -q --verify "$WHOLE_TREE:$P" 2>/dev/null)
-			if (( ! ${_LANDED_INPUTS[(Ie)$P]} )) || { _LANDING_LACKED "$OURS" "${O#* }" "${CB:-${N#* }}"; (( $? == 1 )); } || \
+			if (( ! ${_LANDED_INPUTS[(Ie)$P]} )) || _HAND_MERGED "$OURS" "${O#* }" "${CB:-${N#* }}" || \
 			   { (( ${_LANDED_PUTS[(Ie)$P]} )) && ! _MERGE_LANDING "$OURS" "${O#* }" "${CB:-${N#* }}" > /dev/null; }; then
 				# Below <old> only past a landing the checkout missed – an own stage's record is no such
 				BELOW=""
@@ -6206,6 +6205,29 @@ _LANDING_LACKED () {
 	return $RC
 }
 
+# Tells whether blob <ours>, left unbrought by a landing from blob <before> to blob <after>, was
+# merged by hand since – holding that change as `_LANDING_LACKED` reads it, or all of it bar lines
+# its edits rewrote: taken in, conflicts going to <ours>, the landing changes nothing, while taken
+# back it does, a part standing as it landed – one held before too, as a commit composed from the
+# file leaves it – but never where the edits rewrote all of it, which reads the same on either base
+_HAND_MERGED () {
+	# Args: <ours> <before> <after> [<then>] – reads the caller's `_MERGE_FILE_IDS`, `-` until asked
+	local ID
+	# Recorded as <then> holding it, as a commit of part of the file is, it changed only after – an
+	# edit or an undo of a committed line
+	if [ -n "$4" ]; then
+		_LANDING_LACKED "$4" "$2" "$3"
+		(( $? == 1 )) && return 0
+	fi
+	_LANDING_LACKED "$1" "$2" "$3"
+	case $? in
+		1) return 0 ;;
+		2) return 1 ;;
+	esac
+	ID=$(_MERGE_LANDING "$1" "$2" "$3" --ours) && [ "$ID" = "$1" ] || return 1
+	ID=$(_MERGE_LANDING "$1" "$3" "$2" --ours) && [ -n "$ID" ] && [ "$ID" != "$1" ]
+}
+
 # Fills `FB_ENT`, `FB_TIP` and `FB_NAME` with each <path>'s own base, where it is other than <old>'s
 # entry at its own name – the tip its file was last brought to, the old tip of the earliest landing
 # it lacks past the last it holds:
@@ -6262,16 +6284,13 @@ _FILE_BASES () {
 		P=${ASK[K]} W=${ANS[K]} NAME=${ASK[K]}
 		BT="" BN="" BB="" CT="" CN="" CB=""
 		SEEN=()
-		# Left unbrought by a run, its record tells – unless the file holds by now all that changed from
-		# its base to the landing that left it, merged by hand
+		# Left unbrought by a run, its record tells – unless the file was merged by hand since
 		if (( ${+UNBROUGHT[$P]} )); then
 			REC=(${=UNBROUGHT[$P]})
 			_BLOB_AT "${REC[3]}" "$P"; A=$REPLY
 			_BLOB_AT "${REC[1]}" "$P"; BB=$REPLY
 			if [ -n "$BB" ]; then
-				RC=0
-				[ -n "$A" ] && [ "$A" != "$BB" ] && { _LANDING_LACKED "$W" "$BB" "$A"; RC=$?; }
-				(( RC == 1 )) || BT=${REC[1]} BN=$P
+				[ -n "$A" ] && [ "$A" != "$BB" ] && _HAND_MERGED "$W" "$BB" "$A" "${REC[5]}" || BT=${REC[1]} BN=$P
 			fi
 		fi
 		# Else each landing, newest first
@@ -6303,6 +6322,8 @@ _FILE_BASES () {
 				else
 					_LANDING_LACKED "$W" "$B" "$A"
 					RC=$?
+					# Merged by hand, its edits kept on lines the landing changed, as a record's file reads
+					(( RC == 0 )) && _HAND_MERGED "$W" "$B" "$A" && RC=1
 				fi
 				if (( RC == 1 )); then BT=${STEP_TO[S]} BN=$NAME BB=$A; break; fi
 				(( RC == 2 )) && { CT="" CN=-; break; }
@@ -10334,14 +10355,14 @@ _TREE_HOLDING () {
 }
 
 # Merges a landing's change into <ours> – the result's blob on stdout, or a failure where it
-# conflicts or cannot run, a binary say
+# conflicts or cannot run, a binary say – each conflict resolved to <ours> under `--ours`
 _MERGE_LANDING () {
-	# Args: <ours blob> <before blob> <after blob>
+	# Args: <ours blob> <before blob> <after blob> [--ours]
 	local ID RC OURS BASE THEIRS
 	# One spawn where git merges blobs by ID (2.43), its result mostly in the object store already –
 	# a crash takes the files below instead, as 2.53 aborts there in a linked worktree
 	if [ -n "$_MERGE_FILE_IDS" ]; then
-		ID=$(git merge-file --object-id -q "$1" "$2" "$3" 2>/dev/null)
+		ID=$(git merge-file --object-id -q ${4:+"$4"} "$1" "$2" "$3" 2>/dev/null)
 		RC=$?
 		if (( RC <= 127 )); then
 			[ $RC -eq 0 ] && print -r -- "$ID"
@@ -10351,7 +10372,7 @@ _MERGE_LANDING () {
 	OURS=$(MKTEMP_FILE git-edit-ours) BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs)
 	_TEMP_FILES+=("$OURS" "$BASE" "$THEIRS")
 	git cat-file blob "$1" > "$OURS" && git cat-file blob "$2" > "$BASE" && git cat-file blob "$3" > "$THEIRS" && \
-		git merge-file -q "$OURS" "$BASE" "$THEIRS" 2>/dev/null
+		git merge-file -q ${4:+"$4"} "$OURS" "$BASE" "$THEIRS" 2>/dev/null
 	RC=$?
 	[ $RC -eq 0 ] && git hash-object --no-filters -- "$OURS"
 	rm -f "$OURS" "$BASE" "$THEIRS"
