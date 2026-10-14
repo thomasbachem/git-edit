@@ -10904,10 +10904,18 @@ _GUARD_WHOLE_LANDINGS () {
 			# Each kind takes its own remedy – a merge carries only edits made beside a landing (or
 			# across its rename), while a file still as before it or one it added is restored whole
 			GONE="" HIT="" FROM=$P MCLEAN=""
-			# A file this commit renames answers with its new name's content
-			# where the landing changed it under the old one
+			# A file this commit renames answers with its new name's content where the landing changed
+			# it under the old one, or added it there and the new name holds most of it – unless the
+			# landing took that name away, which renaming back to takes its rename back
 			O=$OURS
-			[ -z "$OURS" ] && [ -n "$DST" ] && [ -n "$BEFORE" ] && [ -n "$AFTER" ] && O=$DSTBLOB
+			if [ -z "$OURS" ] && [ -n "$DST" ] && [ -n "$AFTER" ]; then
+				if [ -n "$BEFORE" ]; then
+					O=$DSTBLOB
+				elif ! git cat-file -e "${M[2]}:$DST" 2>/dev/null && { [ "$DSTBLOB" = "$AFTER" ] || \
+					_HOLDS_MOST_OF "$DSTBLOB" "$AFTER" || { [ -n "$TIP" ] && _HOLDS_MOST_OF "$DSTBLOB" "$TIP"; }; }; then
+					O=$DSTBLOB
+				fi
+			fi
 			# A tip no longer carrying this landing, a later one rewriting its lines, is judged on the
 			# change from its old tip to the tip – each later landing with it, the caller's own too – where
 			# the file still holds what came before it on its lines, edits there being made since
