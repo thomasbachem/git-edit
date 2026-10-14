@@ -63,22 +63,23 @@ _ST_RUN --continue
 _ST_EQ "a replant onto an upstream holding part of a later change lands" "$RC:$(git log --format=%s | tr '\n' '|')" \
 	"0:AB4 W line 8, add h|AB4 Z line 2|AB4 U line 2, line 8 as W|AB4 base|"
 # A fold's stop taking in one hunk of a later commit, which still changes the file, refuses – while
-# one resolved to the target's own content lands
+# one resolved to the target's own content lands – the line the fold adds to h.txt keeping it from
+# resolving its stops itself, as scenario 226's do
 _ST_PZ_NEW ab5
-print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && git add f.txt && git commit -qm "AB5 base"
+print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "AB5 base"
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 T14 > f.txt && git commit -qam "AB5 target"
 AB_B=$(git rev-parse HEAD)
 print -l -- 1 2 3 4 5 6 7 a8 9 10 11 a12 13 T14 > f.txt && print g > g.txt && git add -A && git commit -qm "AB5 later"
 AB_T=$(git rev-parse HEAD)
-print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt
-_ST_RUN --amend-into="$AB_B" --whole -- f.txt
+print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt && print -l h h2 > h.txt
+_ST_RUN --amend-into="$AB_B" --whole -- f.txt h.txt
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 12 13 T14)"
 _ST_RUN --continue
 _ST_EQ "a fold's stop taking in a later commit's hunk refuses" "$RC:$(git rev-parse HEAD)" "1:$AB_T"
 _ST_OUT_HAS "naming that commit, though it still changes the file" 'AB5 later – f.txt'
 _ST_RUN --abort
 git checkout -q -- f.txt && print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt
-_ST_RUN --amend-into="$AB_B" --whole -- f.txt
+_ST_RUN --amend-into="$AB_B" --whole -- f.txt h.txt
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 8 E9 10 11 12 13 T14)"
 _ST_RUN --continue
 _ST_EQ "one resolved to the target's own content lands, the later commit whole" \

@@ -183,15 +183,16 @@ _ST_OUT_HAS "the refusal told before it" 'Nothing to amend'
 _ST_RUN --abort
 # A fold whose stop at its target is resolved to the file as the tip holds it absorbs what later
 # commits change there – refused, naming them – while one resolved to the target's own content lands
+# The line it adds to h.txt keeps it from resolving its stops itself, as scenario 226's do
 _ST_PZ_NEW hf10
-print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 > f.txt && git add f.txt && git commit -qm "HF10 base"
+print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 > f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "HF10 base"
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 T12 > f.txt && git commit -qam "HF10 target"
 HF_R=$(git rev-parse HEAD)
 print -l -- 1 a2 a3 a4 5 6 7 8 9 10 11 T12 > f.txt && print g1 > g1.txt && git add -A && git commit -qm "HF10 later one"
 print -l -- 1 a2 a3 a4 5 b6 b7 b8 9 10 11 T12 > f.txt && print g2 > g2.txt && git add -A && git commit -qm "HF10 later two"
 HF_T=$(git rev-parse HEAD)
-print -l -- 1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12 > f.txt
-_ST_RUN --amend-into="$HF_R" --whole -- f.txt
+print -l -- 1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12 > f.txt && print -l h h2 > h.txt
+_ST_RUN --amend-into="$HF_R" --whole -- f.txt h.txt
 _ST_OUT_HAS "the fold's stop says it builds the target itself" 'This stop folds into .* HF10 target itself'
 HF_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${HF_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12)"
@@ -200,7 +201,7 @@ _ST_EQ "a fold resolved to the tip's content refuses" "$RC:$(git rev-parse HEAD)
 _ST_OUT_HAS "naming the later commit it absorbed" 'HF10 later one – f.txt'
 _ST_RUN --abort
 git checkout -q -- f.txt && print -l -- 1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12 > f.txt
-_ST_RUN --amend-into="$HF_R" --whole -- f.txt
+_ST_RUN --amend-into="$HF_R" --whole -- f.txt h.txt
 HF_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${HF_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 8 E9 10 11 T12)"
 _ST_RUN --continue

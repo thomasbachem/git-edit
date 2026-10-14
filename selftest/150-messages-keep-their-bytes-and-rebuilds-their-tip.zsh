@@ -87,12 +87,13 @@ _ST_EQ "and rebuilds the commit above it as it was" "$REPLY" "$MB_X"
 # C3-1 – a fixup chain resumed after a conflict keeps its target's own `#` line
 _ST_PZ_NEW mb2
 # The fold's line abuts the later commit's, so it conflicts on the target, resolved to the target's
-# own content plus the fold – the later commit keeping its change
-print -l a b c d > f && git add f && git commit -qm "MB2 base"
+# own content plus the fold – the later commit keeping its change – the line the fold adds to h
+# keeping it from resolving its stops itself, as scenario 226's do
+print -l a b c d > f && print h > h && git add f h && git commit -qm "MB2 base"
 print -l A b c d > f && git add f && printf 'MB2 target\n\n#123 issue ref\n' > "$TMP/mb-msg" && git commit -q --cleanup=verbatim -F "$TMP/mb-msg"
 print -l A b C d > f && print l > g && git add f g && git commit -qm "MB2 later"
-print -l A b C D > f && git add f
-_ST_RUN --amend-into="$(git rev-parse HEAD~1)" -- f
+print -l A b C D > f && print -l h h2 > h && git add f h
+_ST_RUN --amend-into="$(git rev-parse HEAD~1)" -- f h
 MB_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "$MB_WT" f $'A\nb\nc\nD'
 _ST_RUN --continue

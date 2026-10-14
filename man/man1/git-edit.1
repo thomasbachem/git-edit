@@ -1036,6 +1036,13 @@ or
 .B \-\-abort
 as any fold does, and stops after it are left to the resolver too. A replay
 running clean is the one it always was.
+A fold of staged changes or of files taken whole
+.RB ( \-\-whole ),
+given no input, resolves its stops the same way where it only replaces lines:
+each hunk from the tip's file to the fold's is an edit, its old lines the old
+text, matched as whole lines. One inserting a line anywhere, or changing more than a text file's lines
+\(em a file added, removed, renamed or given another mode \(em pauses at its
+stops as before.
 .IP
 In a checkout other callers share, a rewrite one of them lands (a drop, a
 fold built elsewhere) changes a file at the tip. The run brings the checkout

@@ -49,11 +49,13 @@ _ST_OUT_HAS "naming it" 'LP c3 adds z – taken out of its todo by hand'
 _ST_OUT_HAS "and the way on" "Cancel with 'git edit --abort', then run it again"
 _ST_RUN --abort
 # And a fold's, its fixup stopping on the line beside a later commit's, which stops too
+# The line the fold adds to h keeps it from resolving its stops itself, as scenario 226's do
 _ST_PZ_NEW lp2
+_ST_PZ_C h h "LP2 h"
 _ST_PZ_C f $'1\n2\n3\n4\n5\n6\n7\n8' "LP2 base" && _ST_PZ_C f $'1\n2\n3\n4\nfive\n6\n7\n8' "LP2 A five" && LP_A=$(git rev-parse HEAD)
 _ST_PZ_C z.txt z "LP2 Z adds z" && _ST_PZ_C f $'1\n2\n3\n4\nfive\nsix\n7\n8' "LP2 B six" && _ST_PZ_C t.txt t "LP2 top"
 LP_T=$(git rev-parse HEAD)
-print -l 1 2 3 4 fiVe six 7 8 > f && git add f
+print -l 1 2 3 4 fiVe six 7 8 > f && print -l h h2 > h && git add f h
 _ST_RUN --amend-into="$LP_A"
 LP_WT=$(_ST_PZ_WT)
 GIT_SEQUENCE_EDITOR="lp() { grep -v 'LP2 Z adds z' \"\$1\" > \"\$1.lp\"; mv \"\$1.lp\" \"\$1\"; }; lp" git -C "${LP_WT:-$ST_NO_WT}" rebase --edit-todo

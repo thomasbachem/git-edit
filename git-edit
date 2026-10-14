@@ -11808,9 +11808,9 @@ SEQEOF
 	_RERERE_SCOPE_BEGIN
 	_REBASE_FIRST_RUN "$REBASE_CMD"
 	local RC=$?
-	# An `--edits` fold's stop resolves itself where each conflicted file holds every old text once in
-	# the commit the stop builds – that commit's own content plus the fold's change, what a rebuild of
-	# it holds – the replay going on, until one doesn't, which pauses as before
+	# A stop of an `--edits` fold, or of a whole or staged one only replacing lines, resolves itself
+	# where each conflicted file holds every old text once in the commit the stop builds – its own
+	# content plus the fold's change – the replay going on, until one doesn't, which pauses as before
 	local -i EDIT_STOPS=0
 	local EDITS_TIP_OK="" EDITS_CONTINUE=""
 	while (( RC == 2 )) && _EDITS_RESOLVE_STOP "$WT"; do
@@ -11823,7 +11823,11 @@ SEQEOF
 		_REBASE_FIRST_RUN "$EDITS_CONTINUE"
 		RC=$?
 	done
-	(( EDIT_STOPS )) && PRINT_TEXT "Made the edits in the %s commit(s) the replay stopped at, each holding every old text once." 90 "$EDIT_STOPS"
+	if (( EDIT_STOPS && ${#OPT_EDITS} )); then
+		PRINT_TEXT "Made the edits in the %s commit(s) the replay stopped at, each holding every old text once." 90 "$EDIT_STOPS"
+	elif (( EDIT_STOPS )); then
+		PRINT_TEXT "Made the fold's line replacements in the %s commit(s) the replay stopped at, each holding every replaced hunk once." 90 "$EDIT_STOPS"
+	fi
 	(( RC == 1 )) && _REFUSE_REBASE_FAILED "fold again – $(_FOLD_SOURCE) untouched."
 	if (( RC != 0 )) && \
 	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$STAGED_TREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$WT" "staged" }; then
@@ -11944,22 +11948,69 @@ _FOLD_TREE () {
 _EDITS_REPLACED () {
 	# Args: <path from the top> <text>
 	setopt local_options no_multibyte
-	local TEXT=$2 OLD
+	local TEXT=$2 OLD NEW
 	local -i K
+	# Edits a fold derived from its own change replace whole lines – each old text read with the line
+	# end before it, and with the text's end where it has none of its own
+	(( ${#OPT_EDITS} )) || TEXT=$'\n'$TEXT$'\0'
 	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 		[ "${EDITS_PATH[K]}" = "$1" ] || continue
-		OLD=${EDITS_OLD[K]}
+		OLD=${EDITS_OLD[K]} NEW=${EDITS_NEW[K]}
 		[ -n "$OLD" ] || return 1
+		if (( ! ${#OPT_EDITS} )); then
+			OLD=$'\n'$OLD NEW=$'\n'$NEW
+			[[ "$OLD" == *$'\n' ]] || OLD+=$'\0' NEW+=$'\0'
+		fi
 		_EDIT_MATCHES "$TEXT" "$OLD"
 		(( REPLY == 1 )) || return 1
-		TEXT=${TEXT/$OLD/${EDITS_NEW[K]}}
+		TEXT=${TEXT/$OLD/$NEW}
 	done
+	(( ${#OPT_EDITS} )) || TEXT=${${TEXT#$'\n'}%$'\0'}
 	REPLY=$TEXT
+}
+
+# Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it, each
+# hunk from tip to fold one edit, line ends as stored – failing, those left empty, unless each path
+# is a file changed in place, mode kept, every hunk replacing lines, as an insertion has no old text
+_EDITS_DERIVE () {
+	# Args: <tip> <fold's tree>
+	setopt local_options no_multibyte
+	local H O N
+	local -a R M OL NL
+	local -i I A B C D
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
+	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"})
+	(( ${#R} && ${#R} % 2 == 0 )) || return 1
+	for (( I = 1; I < ${#R}; I += 2 )); do
+		M=(${=R[I]})
+		[[ "${M[1]}" == :100(644|755) && "${M[2]}" = "${M[1]#:}" && "${M[5]}" = M ]] || { EDITS_PATH=() EDITS_OLD=() EDITS_NEW=(); return 1; }
+		O=$(git cat-file blob "${M[3]}" 2>/dev/null; print -n x)
+		N=$(git cat-file blob "${M[4]}" 2>/dev/null; print -n x)
+		# Line k at element k, its line end there unless it is the last – stored without one
+		OL=("${(@ps:\n:)${O%x}}") NL=("${(@ps:\n:)${N%x}}")
+		B=0
+		# Blobs apart from any path, so no textconv or driver reads them – a binary one has no hunk
+		for H in ${(M)${(f)"$(git diff -U0 --inter-hunk-context=0 --no-ext-diff --no-textconv --no-color "${M[3]}" "${M[4]}" 2>/dev/null)"}:#@@ -*}; do
+			H=${${H#@@ -}%% @@*}
+			A=${${H%% *}%%,*} B=1 C=${${H#* +}%%,*} D=1
+			[[ "${H%% *}" == *,* ]] && B=${${H%% *}#*,}
+			[[ "$H" == *+*,* ]] && D=${H##*,}
+			(( B )) || break
+			O=${(pj:\n:)OL[A,A+B-1]} N=${(pj:\n:)NL[C,C+D-1]}
+			(( A + B - 1 < ${#OL} )) && O+=$'\n'
+			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
+			EDITS_PATH+=("${R[I+1]}") EDITS_OLD+=("$O") EDITS_NEW+=("$N")
+		done
+		(( B )) || { EDITS_PATH=() EDITS_OLD=() EDITS_NEW=(); return 1; }
+	done
 }
 
 # Resolves the stop the replay in <worktree> is at by making the `--edits` in the content of the
 # commit the stop builds – stage 3 at a pick, the target's own, stage 2, at the fold's fixup – that
 # commit's original content plus the fold's change, what rebuilding it by replacement gives
+# • A whole or staged fold given no input makes the edits its own change derives
 # • Returns 1, touching nothing, unless each conflicted file is an edited one in a conflict over its
 #   content, holding every old text exactly once there, and the edits made in the tip's text are
 #   what the fold composed, as a cleaning filter can make them otherwise
@@ -11970,9 +12021,15 @@ _EDITS_RESOLVE_STOP () {
 	local -i I STAGE
 	local -a U F INFO
 	local -A AT
-	(( ${#OPT_EDITS} && ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} && ! ${#OPT_WHOLE} )) || return 1
+	if (( ${#OPT_EDITS} )); then
+		(( ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} && ! ${#OPT_WHOLE} )) || return 1
+	elif _INPUTS_GIVEN || { (( ! ${#OPT_WHOLE} )) && [ -n "$AMEND_TREE" ]; }; then
+		return 1
+	fi
 	if [ -z "$EDITS_TIP_OK" ]; then
 		EDITS_TIP_OK=1
+		# A whole or staged fold takes its edits from its own change, once a stop asks for them
+		(( ${#OPT_EDITS} )) || _EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$ORIG_HEAD:$P" 2>/dev/null; print -n x)
 			_EDITS_REPLACED "$P" "${TEXT%x}" && \
