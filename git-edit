@@ -10436,6 +10436,67 @@ _MERGED_INTO () {
 	REPLY=$(_MERGE_LANDING "$1" "$2" "$3")
 }
 
+# Prints "overlap" where <ours> changed lines a landing changed, both read against its before – an
+# insertion only where the hunk reaching its gap holds each of its lines, as they are or edited in
+# one place, in order, as a stale file can hold lines of its own there or rewrite the line beside
+_LANDING_TOUCHED () {
+	# Args: <landing's -U0 diff file> <before file> <ours file> [<on the tip>, a hunk inside the gap
+	# counting at once as an input writing over landed lines – one beside it still holds them each]
+	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$2" "$3" 2>/dev/null | \
+		LC_ALL=C awk -v before="$2" -v tip="$4" '
+			# Tells whether <b> is landed line <a> edited in one place – a shared start and end keeping
+			# two thirds of it, three characters at least
+			function alike(a, b,   la, lb, m, p, q) {
+				if (a == b) return 1
+				la = length(a); lb = length(b); m = la < lb ? la : lb
+				for (p = 0; p < m && substr(a, p + 1, 1) == substr(b, p + 1, 1); p++);
+				for (q = 0; q < m - p && substr(a, la - q, 1) == substr(b, lb - q, 1); q++);
+				return p + q >= 3 && 3 * (p + q) >= 2 * la
+			}
+			{ f = FILENAME == ARGV[1] ? 1 : 2 }
+			/^@@ -/ {
+				n = split(substr($2, 2), o, ","); h = ++H[f]
+				S[f, h] = o[1] + 0; C[f, h] = n < 2 ? 1 : o[2] + 0
+				next
+			}
+			H[f] && /^[+]/ { X[f, H[f], ++K[f, H[f]]] = substr($0, 2) }
+			# In half-lines, as `_CHANGED_SPANS` reads them
+			END {
+				for (i = 1; i <= H[1]; i++) {
+					c = C[1, i]; a1 = c ? 2 * S[1, i] : 2 * S[1, i] + 1; a2 = c ? 2 * (S[1, i] + c - 1) : a1
+					n = 0
+					for (j = 1; j <= H[2]; j++) {
+						d = C[2, j]; b1 = d ? 2 * S[2, j] : 2 * S[2, j] + 1; b2 = d ? 2 * (S[2, j] + d - 1) : b1
+						if (c) {
+							if (b1 <= a2 && a1 <= b2) { print "overlap"; exit }
+							continue
+						}
+						# A rewrite reaches the gap on either side of its lines
+						if (d) { b1--; b2++ }
+						if (b1 > a1 || a1 > b2) continue
+						if (tip && !d) { print "overlap"; exit }
+						for (k = 1; k <= K[2, j]; k++) N[++n] = X[2, j, k]
+					}
+					if (!n) continue
+					if (!rb) { rb = 1; while ((getline l < before) > 0) HELD[l] = 1; close(before) }
+					# Lines the before held count only in a block of nothing else, a stale file holding them too
+					for (all = 0; all < 2; all++) {
+						t = m = 0; p = 1
+						for (k = 1; k <= K[1, i]; k++) {
+							l = X[1, i, k]
+							if (!all && (l in HELD)) continue
+							t++
+							for (q = p; q <= n && N[q] != l; q++);
+							if (q > n) for (q = p; q <= n && !alike(l, N[q]); q++);
+							if (q <= n) { m++; p = q + 1 }
+						}
+						if (t) break
+					}
+					if (m == t) { print "overlap"; exit }
+				}
+			}' "$1" -
+}
+
 # Succeeds where <ours> – a copy edited beside a landing – touches none of its changed lines, read
 # against its before, which edits made on the landed lines would overlap, and lacks the landing
 # by its lines – an edit on the line next to a landed one folds that line into its own hunk
@@ -10447,9 +10508,12 @@ _MISS_VERDICTS=()
 typeset -ga _MISS_FILES
 _MISS_FILES=()
 _EDITS_MISS_LANDING () {
-	# Args: <ours blob> <before blob> <after blob> [<kept blob> or -]
+	# Args: <ours blob> <before blob> <after blob> [<kept blob> or -] – reads `_WHOLE_WHAT`
+	# Inputs compose on the tip's text, every other route from a file
+	local TIP=""
+	[[ "$_WHOLE_WHAT" == "Changed by "* ]] && TIP=1
 	# Kept for the run, as blobs never change – landings repeating one change ask it again
-	local KEY="$1 $2 $3 $4"
+	local KEY="$1 $2 $3 $4 $TIP"
 	(( ${+_MISS_VERDICTS[$KEY]} )) && return ${_MISS_VERDICTS[$KEY]}
 	# Its temp files made once for the run, each check writing its blobs over them
 	if (( ${#_MISS_FILES} != 5 )); then
@@ -10457,7 +10521,8 @@ _EDITS_MISS_LANDING () {
 			$(MKTEMP_FILE git-edit-landed) $(MKTEMP_FILE git-edit-kept))
 		_TEMP_FILES+=("${_MISS_FILES[@]}")
 	fi
-	local O=${_MISS_FILES[1]} B=${_MISS_FILES[2]} A=${_MISS_FILES[3]} D=${_MISS_FILES[4]} KEPT=${_MISS_FILES[5]} SHARED
+	local O=${_MISS_FILES[1]} B=${_MISS_FILES[2]} A=${_MISS_FILES[3]} D=${_MISS_FILES[4]} KEPT=${_MISS_FILES[5]} SHARED=""
+	local -i DRC
 	local -x LANDED CONF
 	# Prints "overlap" where a span on stdin meets one in the env var `v` names – with `p` set, the
 	# third and fourth column of each such line instead
@@ -10465,13 +10530,15 @@ _EDITS_MISS_LANDING () {
 		BEGIN { n = split(ENVIRON[v], F, /[ \n]+/); for (i = 1; i < n; i += 2) { S[++k] = F[i] + 0; E[k] = F[i + 1] + 0 } }
 		NF { for (i = 1; i <= k; i++) if (S[i] <= $2 + 0 && $1 + 0 <= E[i]) { if (p) { print $3, $4; next } print "overlap"; exit } }'
 	if git cat-file blob "$1" > "$O" && git cat-file blob "$2" > "$B" && git cat-file blob "$3" > "$A"; then
-		LANDED=$(_CHANGED_SPANS "$B" "$A")
-		SHARED=$(_CHANGED_SPANS "$B" "$O" | awk -v v=LANDED "$OVERLAP")
+		git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$B" "$A" > "$D" 2>/dev/null
+		DRC=$?
+		(( DRC <= 1 )) && SHARED=$(_LANDING_TOUCHED "$D" "$B" "$O" "$TIP")
 		# The kept file's spans whose before the landing changed too, read in its own lines
 		if [ -n "$SHARED" ] && [ -n "$4" ]; then
 			if [ "$4" = - ] || ! git cat-file blob "$4" > "$KEPT" 2>/dev/null; then
 				SHARED=""
 			else
+				LANDED=$(_CHANGED_SPANS "$B" "$A")
 				CONF=$(_CHANGED_SPANS -t "$B" "$KEPT" | awk -v v=LANDED -v p=1 "$OVERLAP")
 				[ -n "$CONF" ] && SHARED=$(_CHANGED_SPANS "$KEPT" "$O" | awk -v v=CONF "$OVERLAP")
 			fi
@@ -10480,8 +10547,7 @@ _EDITS_MISS_LANDING () {
 		# as the landing did against its before – a line it both removes and adds (a move) tells
 		# nothing, so the miss stands
 		if [ -z "$SHARED" ]; then
-			git diff --no-index --no-color --no-ext-diff --no-textconv -U0 -- "$B" "$A" > "$D" 2>/dev/null
-			(( $? <= 1 )) && SHARED=$(LC_ALL=C awk '
+			(( DRC <= 1 )) && SHARED=$(LC_ALL=C awk '
 				FILENAME == ARGV[1] { if (f && /^[-+]/) { L = substr($0, 2); N[L] += /^[+]/ ? 1 : -1; SEEN[L] = 1 } if (/^@@/) f = 1; next }
 				FILENAME == ARGV[2] { CB[$0]++; next }
 				{ CO[$0]++ }

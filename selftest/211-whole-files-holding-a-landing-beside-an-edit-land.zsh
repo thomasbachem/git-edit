@@ -1,7 +1,6 @@
-# A whole file, a put or a staged fold holding a peer's landed lines word for word lands where
-# the caller's edit sits on the line beside them – the merge conflicting there, and `diff -U0`
-# folding the landed line into the caller's hunk – while one lacking a landed line, or holding
-# one it removed, still refuses – each line counted as often as it occurs
+# A whole file, a put or a staged fold holding a peer's landed lines, word for word or edited in
+# one place, lands where the caller's edit sits on the line beside them – while one lacking a
+# landed line, or holding one it removed, still refuses – each line counted as often as it occurs
 _ST_SCENARIO "\e[1;96m[211] whole files holding a landing beside an edit land, ones lacking it refuse\e[0m"
 local W211_TIP W211_OWN W211_PUT=$TMP/w211-put
 
@@ -34,17 +33,20 @@ printf 'CEE\npeer c\n' > w211-c.txt && git add w211-c.txt
 _ST_RUN --amend-into="$W211_OWN" -- w211-c.txt
 _ST_EQ "and a staged fold" "$RC:$(git show HEAD:w211-c.txt | tr '\n' ' ')" "0:CEE peer c "
 
-# An edit inside the landed line itself takes it back
+# The landed line edited in one place, beside an edit of the line above, is an edit on its lines –
+# while one written over takes it back
 _W211_LAND w211-d.txt 'dee\n' 'dee\npeer d\n'
 printf 'DEE\npeer D!\n' > w211-d.txt
 W211_TIP=$(git rev-parse HEAD)
-_ST_RUN --commit --text "x" -- w211-d.txt
-_ST_OUT_HAS "a whole file holding the landed line edited still refuses" 'would take back what another caller landed: w211-d.txt'
-printf 'DEE\npeer D!\n' > "$W211_PUT"
-git checkout -q -- w211-d.txt
-_ST_RUN --commit --text "x" --put="w211-d.txt=$W211_PUT"
-_ST_OUT_HAS "as does such a put" 'would take back what another caller landed: w211-d.txt'
-_ST_EQ "neither moving the branch" "$(git rev-parse HEAD)" "$W211_TIP"
+_ST_RUN --commit --text "W211 the landed line edited" -- w211-d.txt
+_ST_EQ "a whole file holding the landed line edited in one place lands" \
+	"$RC:$(git show HEAD:w211-d.txt | tr '\n' ' '):$(git rev-parse HEAD~1)" "0:DEE peer D! :$W211_TIP"
+_W211_LAND w211-d2.txt 'dee\n' 'dee\npeer d\n'
+printf 'DEE\nmine\n' > "$W211_PUT"
+W211_TIP=$(git rev-parse HEAD)
+_ST_RUN --commit --text "x" --put="w211-d2.txt=$W211_PUT"
+_ST_OUT_HAS "while a put writing over it still refuses" 'would take back what another caller landed: w211-d2.txt'
+_ST_EQ "not moving the branch" "$(git rev-parse HEAD)" "$W211_TIP"
 
 # A multi-line landing kept in part
 _W211_LAND w211-e.txt 'ee\n' 'ee\np1\np2\np3\n'
