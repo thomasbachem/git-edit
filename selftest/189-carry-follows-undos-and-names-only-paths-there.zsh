@@ -116,7 +116,7 @@ CU_C=$(grep -o -e '--carry=[0-9a-f]*' <<<"$OUT" | head -1)
 GIT_EDIT_ACTOR=cu-self _ST_RUN "$CU_C"
 git add -- h.txt
 GIT_EDIT_ACTOR=cu-self _ST_RUN --amend-into="$CU_TIP" -- f.txt
-_ST_OUT_HAS "the old name then finds nothing staged, naming the files to stage and name" "Stage them with 'git add -- <files>', then run this again naming those files\.$"
+_ST_OUT_HAS "the old name then finds nothing staged, naming the files to stage and name" "Fold them whole with --whole -- <files> – or stage them with 'git add -- <files>', then run this again naming those files\.$"
 _ST_OUT_LACKS "never folding everything staged" "drop the pathspec"
 GIT_EDIT_ACTOR=cu-self _ST_RUN --amend-into="$CU_TIP" -- h.txt
 _ST_EQ "and the new name folds, both edits kept" "$RC:$(git show HEAD:h.txt | sed -n '2p;5p' | tr '\n' ' ')" "0:2-A 5-L1 "

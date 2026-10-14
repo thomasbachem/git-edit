@@ -165,7 +165,7 @@ Where the sync can't run – a checkout halfway through a merge or a rebase, its
 
 ## Many sessions at once
 
-Where many sessions rewrite one branch, some lose the race. A run stops with nothing applied as soon as it can no longer land – its branch moved off the tip it read, or another run paused on that branch – rather than pause, run its gate or replay for nothing, and names who moved the branch. A pause wins over a run already in flight, which reruns with `--wait=600`; a resume refused keeps its resolution for `git edit --abort` and a redo, as `--status` names.
+Where many sessions rewrite one branch, some lose the race. A run stops with nothing applied as soon as it can no longer land – its branch moved off the tip it read, or another run paused on that branch – rather than pause, run its gate or replay for nothing, and names who moved the branch. A pause wins over a run already in flight, which reruns with `--wait=540`; a resume refused keeps its resolution for `git edit --abort` and a redo, as `--status` names.
 
 When many sessions fold fixes into the same deep history at once, each fold replays everything above its target and collides with the next. Land each fix at the tip as its own commit instead, then have each owner squash its fixes into their target, one session at a time, and run the suite once on the result:
 

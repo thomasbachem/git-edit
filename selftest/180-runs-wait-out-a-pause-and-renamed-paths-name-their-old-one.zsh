@@ -66,7 +66,7 @@ _W180_END w1
 _ST_EQ "a run another caller's pause blocks waits out --wait, then refuses, nothing moved" "$RC:$(( EPOCHSECONDS - WT_T >= 2 )):$(git rev-parse HEAD)" "1:1:$WT_HEAD"
 _ST_OUT_HAS "saying whose pause it waits on, its operation and how long it has stood" "^Waiting up to 2s for w-peer's paused edit [0-9a-f]\{7\} on main (paused [0-9]*s ago) to clear – re-checking every 2s, then running"
 _ST_OUT_HAS "its refusal naming the owner and how long it waited" "still in flight on main after waiting [2-9]s, paused for its resolution – w-peer's – nothing ran"
-_ST_OUT_HAS "and the longer form" "Wait longer with --wait=600 – run in the background, or in the foreground with a 10-minute call timeout"
+_ST_OUT_HAS "and the longer form" "Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run"
 _ST_OUT_LACKS "never saying it cleared" 'The pause cleared'
 _ST_EQ "taking no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$WT_N"
 

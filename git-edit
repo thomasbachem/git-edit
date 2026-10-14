@@ -785,11 +785,12 @@ USAGE () {
 	ECHO_E ""
 	ECHO_E "\e[0;94m       Recipes – for an agent sharing a checkout, GIT_EDIT_ACTOR set to its session's id:\e[0m"
 	ECHO_E "\e[0;94m         commit files wholly yours      git edit --commit --text \"<subject>\" -- <path>...\e[0m"
-	ECHO_E "\e[0;94m         commit amid another's edits    git edit --commit --text \"<subject>\" --edits=<json> [-- <path>...]\e[0m"
+	ECHO_E "\e[0;94m         commit amid another's edits    git edit --commit --text \"<subject>\" --edits=<json> [-- <other file, taken whole>...]\e[0m"
 	ECHO_E "\e[0;94m                                        (the replacements you made, each old text matching once – never\e[0m"
 	ECHO_E "\e[0;94m                                        pairs generated from a diff of the checkout file)\e[0m"
 	ECHO_E "\e[0;94m         fold into a past commit        git edit --amend-into=<sha> --whole -- <path>...  (or --edits, --put)\e[0m"
 	ECHO_E "\e[0;94m         reword one                     git edit -M --subject=\"<line>\" <sha>\e[0m"
+	ECHO_E "\e[0;94m         reword many                    git edit -M --text - < <file>  (records as git log --format='--- %h%n%B' writes them)\e[0m"
 	ECHO_E "\e[0;94m         on a pause                     resolve in the worktree the trailer names, git -C <worktree> add <file>,\e[0m"
 	ECHO_E "\e[0;94m                                        then git edit --continue – or --abort; --status reprints the pause\e[0m"
 	ECHO_E "\e[0;94m         look flags up                  git edit -h <flag>...\e[0m"
@@ -6105,7 +6106,7 @@ _SYNC_CHECKOUT () {
 		if _IS_NON_INTERACTIVE; then
 			PRINT_TEXT "Uncommitted edits conflict with what landed – left as they were, as changes to it: %s" 33 "$(_ALL_PATHS "${CONFLICTED[@]}")"
 			_TODO_ADD "the merge of $(_ALL_PATHS "${CONFLICTED[@]}"), if those edits are yours" "%s" 33 \
-				"If those edits are yours, merge them, markers and all, once you mean to resolve them – if another session's, leave them: its next commit of the file that would take it back is refused, naming this merge:"
+				"Until merged, the file lacks what landed, as does anything run from the checkout – if those edits are yours, merge them, markers and all, once you mean to resolve them, and if another session's, leave them: its next commit of the file that would take it back is refused, naming this merge:"
 		else
 			PRINT_TEXT "Your uncommitted edits conflict with what landed – left as they were, as changes to it: %s" 33 "$(_ALL_PATHS "${CONFLICTED[@]}")"
 			_TODO_ADD "the merge of $(_ALL_PATHS "${CONFLICTED[@]}")" "%s" 33 "Merge them, markers and all, once you mean to resolve them:"
@@ -7692,7 +7693,7 @@ _REQUIRE_NO_INFLIGHT () {
 	_PAUSE_OWNER "$SF"
 	if [ -n "$WAITED" ]; then
 		PRINT_ERR "Another git-edit operation is still in flight${SB:+ on $SB} after waiting ${WAITED}s, paused for its resolution${REPLY:+ – $REPLY} – nothing ran"
-		ECHO_E "\e[0;31m  Wait longer with --wait=600 – run in the background, or in the foreground with a 10-minute call timeout ('git edit --status' shows the pause).\e[0m" >&2
+		ECHO_E "\e[0;31m  Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run ('git edit --status' shows the pause).\e[0m" >&2
 		[ -n "$SB" ] && _RACE_LOST=("refs/heads/$SB" "$(_JOURNAL_FILE_PATH)")
 		exit 1
 	fi
@@ -7910,9 +7911,9 @@ _REFUSE_PEER_PAUSE () {
 	fi
 	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this one ran, so nothing was applied"
 	if [ "$WHOSE" = other ]; then
-		ECHO_E "\e[0;31m  Its resolution lands only on the tip it read – rerun with --wait=600: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+		ECHO_E "\e[0;31m  Its resolution lands only on the tip it read – rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
 	else
-		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=600: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
 	fi
 	_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 	exit 1
@@ -10104,7 +10105,7 @@ _COMPOSE_INPUTS () {
 			_AT_TOP "$(git rev-parse --show-toplevel)"
 			PRINT_ERR "$P: changed between --base ${EXEC_BASE:0:9} and the tip ${WHOLE_HEAD:0:9} (${REPLY}git log --oneline ${EXEC_BASE:0:9}..${WHOLE_HEAD:0:9} -- $(_QUOTE_PATHS "$P"))"
 			if [ $SPEC = --put ]; then
-				ECHO_E "\e[0;31m  Rebuild it from the tip and put it again, or replay your change with --edits, resting on the tip as --base=${WHOLE_HEAD:0:12} – as where taking it back is the point.\e[0m" >&2
+				ECHO_E "\e[0;31m  Rebuild it from the tip – git show ${WHOLE_HEAD:0:12}:<path> plus your change – and put it again with --base=${WHOLE_HEAD:0:12}, or replay your change with --edits – or put it as it stands with that --base where taking it back is the point.\e[0m" >&2
 			else
 				ECHO_E "\e[0;31m  See whether it still goes, then remove it with the tip as --base.\e[0m" >&2
 			fi
@@ -11586,10 +11587,10 @@ _REQUIRE_FOLD_CHANGES () {
 		elif [ ${#AMEND_PATHSPECS[@]} -gt 0 ]; then
 			PRINT_ERR "No staged changes under ${AMEND_PATHSPECS[*]}"
 			# Never "fold everything staged" – the index is shared, a peer's staging in it too
-			ECHO_E "\e[0;31m  Stage them with 'git add -- <files>', then run this again naming those files.\e[0m" >&2
+			ECHO_E "\e[0;31m  Fold them whole with --whole -- <files> – or stage them with 'git add -- <files>', then run this again naming those files.\e[0m" >&2
 		else
 			PRINT_ERR "No staged changes to amend"
-			ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+			ECHO_E "\e[0;31m  Fold files whole with --whole -- <files> – or stage them with 'git add -- <files>' first.\e[0m" >&2
 		fi
 		exit 1
 	fi
@@ -12625,7 +12626,7 @@ _RESOLVE_AMEND_TARGET () {
 			PRINT_ERR "--tree $AMEND_TREE_GIVEN differs from HEAD in nothing – nothing to fold"
 		else
 			PRINT_ERR "No staged changes to amend"
-			ECHO_E "\e[0;31m  Stage files with 'git add <files>' before running --amend-into.\e[0m" >&2
+			ECHO_E "\e[0;31m  Fold files whole with --whole -- <files> – or stage them with 'git add -- <files>' first.\e[0m" >&2
 		fi
 		exit 1
 	fi
@@ -18680,15 +18681,8 @@ GIT_REWORD () {
 	else
 		PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
 	fi
-	# The message is the entire point of the mode, so show the one that landed, or the caller
-	# reads it back with `git log` to be sure it took – `$NEW_TARGET` is the rebuilt commit
-	# itself, since deriving it by offset walks first parents and a merge names the wrong one
+	# `$NEW_TARGET` is the rebuilt commit itself, as an offset walks first parents – wrong past a merge
 	if [ -n "$NEW_TARGET" ]; then
-		_PRINT_COMMIT_LINE "$NEW_TARGET" '  %h %s'
-		local BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | grep -c .)
-		if [ "$BODY_LINES" -gt 0 ]; then
-			git log -1 --format='%b' "$NEW_TARGET" | LC_ALL=C grep -a . | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
-		fi
 		# Name the subject that was replaced – a symbolic target resolves once at invocation, so a
 		# commit landing between the caller's read and this call is silently reworded instead,
 		# which the CAS cannot catch, and the old subject puts that in the output they read back
@@ -18697,12 +18691,18 @@ GIT_REWORD () {
 			_PRINT_COMMIT_LINE "$TARGET" '  replaced: %s'
 		fi
 		# `--text` replaces the whole message, not just the subject, so a body
-		# line the caller did not restate is gone – both lines above are
+		# line the caller did not restate is gone – both commit lines are
 		# subjects, so a caller comparing those reads the reword as clean
 		_PRINT_LOST_BODY "The replaced message" "$TARGET" "$(git log -1 --format='%B' "$NEW_TARGET")" "$NEW_TARGET"
 		if [ -n "$SUBJECT_VALUE" ]; then
 			_PRINT_SUBJECT_LINES "$TARGET" "git edit -M --text=\"…\" ${NEW_TARGET:0:12}"
 		fi
+		# The message that landed last, right above the trailer, so a `tail -3` reads it – its body by
+		# length, as lines printed there would read as the dropped ones above
+		local -i BODY_LINES=$(git log -1 --format='%b' "$NEW_TARGET" | LC_ALL=C grep -ac .)
+		local WITH=""
+		(( BODY_LINES )) && WITH=" (with a ${BODY_LINES}-line body)"
+		_PRINT_COMMIT_LINE "$NEW_TARGET" "  %h %s$WITH"
 	fi
 }
 
@@ -18893,14 +18893,15 @@ GIT_REWORD_BATCH () {
 	_MOVE_REF "$CMD" || _REFUSE_MOVED_DURING "$REF" "$ORIG_HEAD" reword
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reword ${#TARGETS[@]} commits"
 	PRINT_TEXT "%s – no file content changed, though the affected commits are rebuilt as new objects." 32 "Trees unchanged by construction ✓"
-	PRINT_TEXT "Reworded %s commits:" 32 "${#TARGETS[@]}"
 	local sha
-	for sha in "${TARGETS[@]}"; do
-		_PRINT_COMMIT_LINE "${REWRITTEN[$sha]}" '  %h %s'
-	done
-	# A record replaces its commit's message whole, as the single form's `--text` does
+	# A record replaces its commit's message whole, as the single form's `--text` does – named above
+	# the commits that landed, which the trailer follows
 	for sha in "${TARGETS[@]}"; do
 		_PRINT_LOST_BODY "A replaced message" "$sha" "${MSG_MAP[$sha]}"
+	done
+	PRINT_TEXT "Reworded %s commits:" 32 "${#TARGETS[@]}"
+	for sha in "${TARGETS[@]}"; do
+		_PRINT_COMMIT_LINE "${REWRITTEN[$sha]}" '  %h %s'
 	done
 }
 
@@ -18918,14 +18919,15 @@ _PRINT_LOST_BODY () {
 	[ -n "$LOST" ] || return 0
 	local OLD_LINES=$(print -r -- "$OLD_BODY" | grep -c .)
 	local LOST_LINES=$(print -r -- "$LOST" | grep -c .)
+	# The lines first and what they are below them, so a `tail` keeping one keeps that too
+	print -r -- "$LOST" | head -8 | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
+	if [ "$LOST_LINES" -gt 8 ]; then
+		print -r -- "${_DIM}    … and $((LOST_LINES - 8)) more${_OFF}"
+	fi
 	if [ "$LOST_LINES" -eq "$OLD_LINES" ]; then
 		PRINT_TEXT "%s carried a %s-line body the new one drops – it is still readable at %s" 33 "$NOUN" "$OLD_LINES" "${C:0:12}"
 	else
 		PRINT_TEXT "%s carried a %s-line body – the new one lacks %s of its lines, still readable at %s" 33 "$NOUN" "$OLD_LINES" "$LOST_LINES" "${C:0:12}"
-	fi
-	print -r -- "$LOST" | head -8 | _CARET_LINES | LC_ALL=C sed "s/^/${_DIM}    /;s/\$/${_OFF}/"
-	if [ "$LOST_LINES" -gt 8 ]; then
-		print -r -- "${_DIM}    … and $((LOST_LINES - 8)) more${_OFF}"
 	fi
 	# A body dropped whole most likely went with a subject-only change, which need not restate it –
 	# the way back gives the landed commit its new subject over the old body, each read from its

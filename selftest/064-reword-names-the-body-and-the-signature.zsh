@@ -31,7 +31,8 @@ _ST_RUN -M --text="$(printf 'NB cut\n\n• added body line')" HEAD
 _ST_EQ "a body-cutting reword applies" "$RC" "0"
 _ST_OUT_HAS "names the lines the new body lacks" 'carried a 2-line body – the new one lacks 1 of its lines, still readable at [0-9a-f]\{12\}'
 _ST_EQ "and prints the missing line, once" "$(print -r -- "$OUT" | grep -c '    • first body line')" "1"
-_ST_EQ "not the kept one" "$(print -r -- "$OUT" | grep -c '    • added body line')" "1"
+_ST_EQ "not the kept one, the new body named by its length" \
+	"$(print -r -- "$OUT" | grep -c '    • added body line'):$(print -r -- "$OUT" | grep -c 'NB cut (with a 1-line body)$')" "0:1"
 # Negative: a subject-only message has no body to lose
 printf 'nb2\n' > nb2.txt && git add nb2.txt && git commit -qm "NB plain"
 _ST_RUN -M --text="NB plain reworded" HEAD

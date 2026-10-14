@@ -1762,7 +1762,7 @@ asked again later, a pause recorded while the run went on, refuses as
 before. Ctrl\-C or
 .B SIGTERM
 while waiting stops the run with nothing taken. For a longer wait, say
-.BR \-\-wait=600 ,
+.BR \-\-wait=540 ,
 run git\-edit in the background, or in the foreground under a 10\-minute call
 timeout. Refused beside
 .BR \-\-continue ,
@@ -2669,7 +2669,7 @@ branch: a git\-edit run by its operation and
 .B GIT_EDIT_ACTOR
 label, or a commit outside git\-edit. A pause wins over a run in flight, which
 reruns with
-.B \-\-wait=600
+.B \-\-wait=540
 to run on the tip the pause's landing leaves; a resume refused keeps its
 resolution for
 .B git edit \-\-abort

@@ -54,10 +54,11 @@ _ST_EQ "a conflicting file is left as it was, as changes to what landed" \
 _ST_EQ "nothing else differs from the tip" "$(git status --short | LC_ALL=C sort | tr '\n' '|')" " M c.txt| M e.txt|"
 _ST_OUT_HAS "naming what came along" 'Your checkout came along – now as they landed: a.txt, r.txt, u.txt'
 _ST_OUT_HAS "and what it took out, with the way back" 'Taken out of your checkout with the landing: r.txt – back with git edit --undo while that is the last run'
-_ST_OUT_HAS "an agent's conflict says whose call the merge is" '^If those edits are yours, merge them, markers and all.* – if another session.s, leave them'
+_ST_OUT_HAS "an agent's conflict says the file lacks what landed, and whose call the merge is" \
+	'^Until merged, the file lacks what landed, as does anything run from the checkout – if those edits are yours, merge them, markers and all.* and if another session.s, leave them'
 _ST_OUT_LACKS "never the caller's own edits" 'Your uncommitted edits conflict'
 _ST_EQ "the merge prints after the landed-commit list, then the trailer" \
-	"$(print -r -- "$OUT" | tail -5 | cut -c1-12 | tr '\n' '|')" "Landed 1 of |  ${$(git rev-parse HEAD):0:7} SY|If those edi|  T=\$(mktemp|git-edit: ok|"
+	"$(print -r -- "$OUT" | tail -5 | cut -c1-12 | tr '\n' '|')" "Landed 1 of |  ${$(git rev-parse HEAD):0:7} SY|Until merged|  T=\$(mktemp|git-edit: ok|"
 _ST_OUT_LACKS "no restore of a file or clean is printed" 'git restore \(--source\|--worktree\|-- \)\|git clean'
 # Undone, the land takes the checkout back the same way, the edits kept on top
 _ST_RUN --undo
