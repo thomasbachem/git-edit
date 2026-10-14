@@ -10975,7 +10975,14 @@ _GUARD_WHOLE_LANDINGS () {
 					elif (( MRC <= 127 )); then
 						[ -n "$UB_READ" ] || { UB_READ=1; _UNBROUGHT_READ "$TOPDIR"; }
 						R=(${=UNBROUGHT[$P]}) UB=""
-						(( ${#R} >= 4 )) && [ "${R[2]}" = "${M[2]}" ] && [ "${R[3]}" = "${M[3]}" ] && UB=${R[5]:--}
+						# A record speaks for the checkout file – content whole or staged from it, or an
+						# input holding it as it stands – until merged by hand, as the sync reads it
+						if (( ${#R} >= 4 )) && [ "${R[2]}" = "${M[2]}" ] && [ "${R[3]}" = "${M[3]}" ] && \
+							{ [[ "${_WHOLE_WHAT:-Committed whole}" == (*" whole"|"Folded as staged") ]] || \
+							[ "$(_WORKTREE_HASH "$TOPDIR" "$P" 2>/dev/null)" = "$O" ]; } && \
+							! _HAND_MERGED "$O" "$BEFORE" "$AFTER" "${R[5]}"; then
+							UB=${R[5]:--}
+						fi
 						# The record's own merge wherever it matches – a carry conflicts as that sync did,
 						# edits beside the landing's lines too – but for staging apart from the checkout
 						# file, which the staging's own remedies rebuild
