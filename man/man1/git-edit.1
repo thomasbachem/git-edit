@@ -1023,8 +1023,8 @@ takes the same inputs, files taken whole beside them after
 lands a commit composed on the tip by anything else, no paths beside it.
 .IP
 A fold given as
-.B \-\-edits
-alone resolves its replay's stops itself: where the commit a stop builds holds
+.BR \-\-edits ,
+alone or beside files taken whole, resolves its replay's stops itself: where the commit a stop builds holds
 each old text exactly once in every conflicted file \(em an edited one, under
 the name it had there, a rename followed \(em that file takes the edits in the
 commit's own content, which is what that commit holds with the fold made in it,
@@ -1038,7 +1038,9 @@ as any fold does, and stops after it are left to the resolver too. A replay
 running clean is the one it always was.
 A fold of staged changes or of files taken whole
 .RB ( \-\-whole ),
-given no input, resolves its stops the same way where it only replaces lines:
+given no input or beside
+.BR \-\-edits ,
+resolves its stops the same way where it only replaces lines:
 each hunk from the tip's file to the fold's is an edit, its old lines the old
 text, matched as whole lines. One inserting a line anywhere, or changing more than a text file's lines
 \(em a file added, removed, renamed or given another mode \(em pauses at its
@@ -1427,7 +1429,8 @@ replay
 onto the tip's text, given as a file or inline, each old text matching exactly
 once, in order \(em one an earlier edit of the same file took its match from
 refuses, naming that edit, as the two overlap and want merging into one, and a
-fold of edits alone makes them itself at each stop of its replay whose commit
+fold of edits, alone or beside files taken whole, makes them itself at each
+stop of its replay whose commit
 holds every old text once, pausing at the first that doesn't; see
 .BR MODES .
 It is for replacements made by hand \(em pairs generated from a diff of the

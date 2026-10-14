@@ -77,7 +77,7 @@ _UNSET_OWN () {
 _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_KIND ARG_SCAN ARG_SHA C CHAIN COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
-	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_NEW EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
+	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
 	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
@@ -12030,15 +12030,15 @@ _EDITS_REPLACED () {
 	# Args: <path from the top> <text>
 	setopt local_options no_multibyte
 	local TEXT=$2 OLD NEW
-	local -i K
+	local -i K ANCHOR=${EDITS_DERIVED[(Ie)$1]}
 	# Edits a fold derived from its own change replace whole lines – each old text read with the line
 	# end before it, and with the text's end where it has none of its own
-	(( ${#OPT_EDITS} )) || TEXT=$'\n'$TEXT$'\0'
+	(( ANCHOR )) && TEXT=$'\n'$TEXT$'\0'
 	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 		[ "${EDITS_PATH[K]}" = "$1" ] || continue
 		OLD=${EDITS_OLD[K]} NEW=${EDITS_NEW[K]}
 		[ -n "$OLD" ] || return 1
-		if (( ! ${#OPT_EDITS} )); then
+		if (( ANCHOR )); then
 			OLD=$'\n'$OLD NEW=$'\n'$NEW
 			[[ "$OLD" == *$'\n' ]] || OLD+=$'\0' NEW+=$'\0'
 		fi
@@ -12046,27 +12046,30 @@ _EDITS_REPLACED () {
 		(( REPLY == 1 )) || return 1
 		TEXT=${TEXT/$OLD/$NEW}
 	done
-	(( ${#OPT_EDITS} )) || TEXT=${${TEXT#$'\n'}%$'\0'}
+	(( ANCHOR )) && TEXT=${${TEXT#$'\n'}%$'\0'}
 	REPLY=$TEXT
 }
 
-# Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it, each
-# hunk from tip to fold one edit, line ends as stored – failing, those left empty, unless each path
-# is a file changed in place, mode kept, every hunk replacing lines, as an insertion has no old text
+# Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it – each
+# hunk one edit, line ends as stored, bar paths `--edits` gave – and `EDITS_DERIVED` with its paths,
+# failing, none added, unless each is a file changed in place, mode kept, every hunk replacing lines
 _EDITS_DERIVE () {
 	# Args: <tip> <fold's tree>
 	setopt local_options no_multibyte
 	local H O N
-	local -a R M OL NL
-	local -i I A B C D
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
-	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	local -a R M OL NL GIVEN
+	local -i I A B C D KEEP
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED
+	(( ${#OPT_EDITS} )) || EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	GIVEN=("${(@u)EDITS_PATH}") KEEP=${#EDITS_PATH} EDITS_DERIVED=()
 	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
 	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"})
 	(( ${#R} && ${#R} % 2 == 0 )) || return 1
 	for (( I = 1; I < ${#R}; I += 2 )); do
+		(( ${GIVEN[(Ie)${R[I+1]}]} )) && continue
 		M=(${=R[I]})
-		[[ "${M[1]}" == :100(644|755) && "${M[2]}" = "${M[1]#:}" && "${M[5]}" = M ]] || { EDITS_PATH=() EDITS_OLD=() EDITS_NEW=(); return 1; }
+		[[ "${M[1]}" == :100(644|755) && "${M[2]}" = "${M[1]#:}" && "${M[5]}" = M ]] || break
+		EDITS_DERIVED+=("${R[I+1]}")
 		O=$(git cat-file blob "${M[3]}" 2>/dev/null; print -n x)
 		N=$(git cat-file blob "${M[4]}" 2>/dev/null; print -n x)
 		# Line k at element k, its line end there unless it is the last – stored without one
@@ -12084,14 +12087,18 @@ _EDITS_DERIVE () {
 			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
 			EDITS_PATH+=("${R[I+1]}") EDITS_OLD+=("$O") EDITS_NEW+=("$N")
 		done
-		(( B )) || { EDITS_PATH=() EDITS_OLD=() EDITS_NEW=(); return 1; }
+		(( B )) || break
 	done
+	(( I >= ${#R} )) && return 0
+	EDITS_PATH=("${(@)EDITS_PATH[1,KEEP]}") EDITS_OLD=("${(@)EDITS_OLD[1,KEEP]}") EDITS_NEW=("${(@)EDITS_NEW[1,KEEP]}")
+	EDITS_DERIVED=()
+	return 1
 }
 
 # Resolves the stop the replay in <worktree> is at by making the `--edits` in the content of the
 # commit the stop builds – stage 3 at a pick, the target's own, stage 2, at the fold's fixup – that
 # commit's original content plus the fold's change, what rebuilding it by replacement gives
-# • A whole or staged fold given no input makes the edits its own change derives
+# • A whole or staged fold derives its edits from its own change, as do whole files beside them
 # • Returns 1, touching nothing, unless each conflicted file is an edited one in a conflict over its
 #   content, holding every old text exactly once there, and the edits made in the tip's text are
 #   what the fold composed, as a cleaning filter can make them otherwise
@@ -12103,14 +12110,15 @@ _EDITS_RESOLVE_STOP () {
 	local -a U F INFO
 	local -A AT
 	if (( ${#OPT_EDITS} )); then
-		(( ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} && ! ${#OPT_WHOLE} )) || return 1
+		(( ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} )) || return 1
 	elif _INPUTS_GIVEN || { (( ! ${#OPT_WHOLE} )) && [ -n "$AMEND_TREE" ]; }; then
 		return 1
 	fi
 	if [ -z "$EDITS_TIP_OK" ]; then
 		EDITS_TIP_OK=1
-		# A whole or staged fold takes its edits from its own change, once a stop asks for them
-		(( ${#OPT_EDITS} )) || _EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
+		# A whole or staged fold takes its edits from its own change, once a stop asks for them – one
+		# with `--edits` too, for the files it took whole
+		(( ${#OPT_EDITS} && ! _INPUT_WHOLE )) || _EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$ORIG_HEAD:$P" 2>/dev/null; print -n x)
 			_EDITS_REPLACED "$P" "${TEXT%x}" && \
