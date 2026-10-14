@@ -4648,13 +4648,15 @@ _EDITS_LACK_REWRITE () {
 	# Args: <worktree file> <old blob> <new blob> – false where it cannot tell, a binary say
 	local BASE=$(MKTEMP_FILE git-edit-base) THEIRS=$(MKTEMP_FILE git-edit-theirs) MERGED=$(MKTEMP_FILE git-edit-merged)
 	_TEMP_FILES+=("$BASE" "$THEIRS" "$MERGED")
-	local RC=255
+	local RC=255 OURS
 	if git cat-file blob "$2" > "$BASE" 2>/dev/null && git cat-file blob "$3" > "$THEIRS" 2>/dev/null; then
 		git merge-file -p -q "$1" "$BASE" "$THEIRS" > "$MERGED" 2>/dev/null
 		RC=$?
 	fi
 	if [ $RC -eq 0 ]; then
-		! cmp -s "$MERGED" "$1"
+		# One the merge only adds a rewritten block to a second time holds it all the same
+		! cmp -s "$MERGED" "$1" && \
+			! { OURS=$(git hash-object -w --no-filters -- "$1" 2>/dev/null) && _MERGE_DOUBLES_LANDING "$OURS" "$2" "$3"; }
 	elif [ $RC -le 127 ]; then
 		# Edits beside the rewrite's own lines conflict too, made on the new content as much as on
 		# the old – the file holds the rewrite where its changed lines take in all of the rewrite's
@@ -6200,7 +6202,8 @@ _LANDING_LACKED () {
 	ID=$(_MERGE_LANDING "$1" "$2" "$3")
 	RC=$?
 	if (( RC == 0 )); then
-		[ "$ID" = "$1" ] && return 1
+		# One the merge only adds a landed block to a second time holds it all the same
+		[ "$ID" = "$1" ] || _MERGE_DOUBLES_LANDING "$1" "$2" "$3" && return 1
 		return 0
 	fi
 	(( RC > 127 )) && return 2
