@@ -17628,8 +17628,8 @@ _VERIFY_NOTE_LITTER () {
 }
 
 # Says who broke the check and where it heals, the two questions a failure raises – the
-# counterpart run attributes it, since a check already failing at the commit this one
-# replaces was failing before the rewrite, and otherwise the walk climbs the span
+# counterpart run attributes it, since a check already failing at the commit this one replaces,
+# or below a new one, was failing before the rewrite, and otherwise the walk climbs the span
 _VERIFY_DIAGNOSE () {
 	# Args: <worktree> <cmd> <failed> <orig_head> <new_head> <secs> `--` [<path>...]
 	local WT=$1
@@ -17643,6 +17643,16 @@ _VERIFY_DIAGNOSE () {
 	local -a PATHS=("$@")
 
 	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
+	# A new commit replaces none – its parent answers where the operation left that unchanged
+	local BELOW=""
+	if [ -z "$CP" ]; then
+		BELOW=$(git rev-parse -q --verify "$FAILED^" 2>/dev/null)
+		if [ -n "$BELOW" ] && git merge-base --is-ancestor "$BELOW" "$ORIG" 2>/dev/null; then
+			CP=$BELOW
+		else
+			BELOW=""
+		fi
+	fi
 	local P
 	# A counterpart lacking a path the command names fails on that alone – the walk then answers
 	for P in "${PATHS[@]}"; do
@@ -17653,8 +17663,13 @@ _VERIFY_DIAGNOSE () {
 		local CP_RC=$?
 		_VERIFY_CLEAN "$WT"
 		if [ $CP_RC -ne 0 ]; then
-			PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
-			_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
+			if [ -n "$BELOW" ]; then
+				PRINT_TEXT "The commit below it fails the same check – not this commit's doing (pre-existing, or the check cannot run in this worktree):" 33
+				_PRINT_COMMIT_LINE "$CP" '  parent: %h %s'
+			else
+				PRINT_TEXT "The commit it replaces fails the same check – not this operation's doing (pre-existing, or the check cannot run in this worktree):" 33
+				_PRINT_COMMIT_LINE "$CP" '  counterpart: %h %s'
+			fi
 			# Naming the cause without the remedy leaves the reader to find it in the page – the
 			# commonest one is what a fresh worktree does not have, said only where nothing is
 			# linked at all, so a repo that configured it hears nothing

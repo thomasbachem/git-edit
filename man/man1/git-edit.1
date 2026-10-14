@@ -1602,9 +1602,11 @@ target predating the test runner thus verifies what exists, and the tip
 always runs.
 .IP
 A failure pauses the operation unapplied, reporting what it can establish
-about it. The commit the failing one replaces runs the same check. Where that
-fails too, the operation is cleared: the failure predates the rewrite, or the
-check cannot run in that worktree at all. Where it does not, the check climbs
+about it. The commit the failing one replaces runs the same check, or for a
+new commit its parent, where the operation left that unchanged. Where that
+fails too, the failure predates the rewrite, or the check cannot run in that
+worktree at all, so it is not blamed on the operation, which pauses all the
+same. Where it does not, the check climbs
 the commits above the failure to the first one that passes. For a fold, that
 is the commit carrying what the folded code now needs earlier. The climb is
 budgeted off the failing run's own duration, which
