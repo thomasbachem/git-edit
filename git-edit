@@ -20940,6 +20940,13 @@ _SELFTEST_JOBS () {
 
 # ---------------------------------------- ARGUMENT PARSING ----------------------------------------
 
+# `-h <topic>...`, the manual's entries for flags or sections, ahead of the scan and the parser,
+# which would read a topic spelled as a flag as that flag, or as a missing value after one
+if [[ $1 == (-h|help) && $# -ge 2 ]]; then
+	_HELP_TOPICS "${@:2}"
+	exit 0
+fi
+
 # Only `--text=`, `--subject=`, `--verify=` and the inputs' glued forms leave the `=` zparseopts
 # keeps – a value given apart keeps its own – and no value, nor a word past `--`, is a flag
 TEXT_APART=false
@@ -20990,13 +20997,6 @@ zmodload zsh/zutil
 # • `-E` allows flags, args and positionals to be mixed
 # • `-F` fails on a flag that was not defined
 # The first dash is handled automatically, so long options are `-opt`, not `--opt`
-
-# `-h <topic>...`, the manual's entries for flags or sections, ahead of the parser, which would read
-# a topic spelled as a flag as that flag
-if [[ $1 == (-h|help) && $# -ge 2 ]]; then
-	_HELP_TOPICS "${@:2}"
-	exit 0
-fi
 
 # Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
 # where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer

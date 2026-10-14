@@ -75,6 +75,7 @@ if [ -f "$MANPAGE" ]; then
 	_ST_EQ "a topic spelled as the flag reads the same" "$("$SELF" -h --edits 2>&1)" "$HTOPIC"
 	_ST_EQ "as does one with a value" "$("$SELF" -h --edits=x.json 2>&1)" "$HTOPIC"
 	_ST_EQ "several topics print each entry" "$("$SELF" -h edits put 2>&1 | grep -cE -- '^(--edits=<file>\|<json>|--put=<path>=<file>)$')" "2"
+	_ST_EQ "as do several spelled as flags, one taking a value first" "$("$SELF" -h --edits --put 2>&1 | grep -cE -- '^(--edits=<file>\|<json>|--put=<path>=<file>)$')" "2"
 	_ST_CHECK "an empty topic names nothing, the usage printed" grep -qE '^usage: git edit' <<<"$("$SELF" -h '' 2>&1)"
 	_ST_CHECK "-h M is the reword, by case" grep -qE '^-M, --reword$' <<<"$("$SELF" -h M 2>&1)"
 	_ST_CHECK "-h m the message flag" grep -qE '^-m, --message$' <<<"$("$SELF" -h m 2>&1)"
