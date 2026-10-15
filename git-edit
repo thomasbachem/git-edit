@@ -10441,8 +10441,7 @@ _MERGED_INTO () {
 # insertion only where the hunk reaching its gap holds each of its lines, as they are or edited in
 # one place, in order, as a stale file can hold lines of its own there or rewrite the line beside
 _LANDING_TOUCHED () {
-	# Args: <landing's -U0 diff file> <before file> <ours file> [<on the tip>, a hunk inside the gap
-	# counting at once as an input writing over landed lines – one beside it still holds them each]
+	# Args: <landing's -U0 diff file> <before file> <ours file> [<on the tip>]
 	git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$2" "$3" 2>/dev/null | \
 		LC_ALL=C awk -v before="$2" -v tip="$4" '
 			# Tells whether <b> is landed line <a> edited in one place – a shared start and end keeping
@@ -10475,25 +10474,27 @@ _LANDING_TOUCHED () {
 						# A rewrite reaches the gap on either side of its lines
 						if (d) { b1--; b2++ }
 						if (b1 > a1 || a1 > b2) continue
-						if (tip && !d) { print "overlap"; exit }
-						for (k = 1; k <= K[2, j]; k++) N[++n] = X[2, j, k]
+						for (k = 1; k <= K[2, j]; k++) { N[++n] = X[2, j, k]; NS[X[2, j, k]] = i }
 					}
 					if (!n) continue
 					if (!rb) { rb = 1; while ((getline l < before) > 0) HELD[l] = 1; close(before) }
 					# Lines the before held count only in a block of nothing else, a stale file holding them too
 					for (all = 0; all < 2; all++) {
-						t = m = 0; p = 1
+						t = m = e = 0; p = 1
 						for (k = 1; k <= K[1, i]; k++) {
 							l = X[1, i, k]
 							if (!all && (l in HELD)) continue
 							t++
+							if (NS[l] == i) e++
 							for (q = p; q <= n && N[q] != l; q++);
 							if (q > n) for (q = p; q <= n && !alike(l, N[q]); q++);
 							if (q <= n) { m++; p = q + 1 }
 						}
 						if (t) break
 					}
-					if (m == t) { print "overlap"; exit }
+					# On the tip most landed lines as they landed are enough – an input holds those it left
+					# alone, while one built from a stale file shares a separator like `},` at most
+					if (m == t || (tip && 2 * e > t && !all)) { print "overlap"; exit }
 				}
 			}' "$1" -
 }

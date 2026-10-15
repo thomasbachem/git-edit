@@ -1,9 +1,8 @@
-# A whole file editing a peer's inserted block with the line above or below it lands, holding each
-# landed line as landed or edited in one place – while one lacking the block still refuses, its
-# edits beside, in or across the block's gap, as does one dropping one of the block's lines – an
-# input writing over a landed line lands, but beside the gap needs the block's lines too
+# A whole file editing a peer's inserted block with the line above or below it lands, each landed
+# line as landed or edited in one place – one lacking the block or dropping a line of it refuses,
+# and an input lands holding most of the block's lines as landed, which a stale one lacks
 _ST_SCENARIO "\e[1;96m[228] a whole file editing a landed block with the line beside it lands, stale ones refuse\e[0m"
-local SE_TIP
+local SE_TIP SE_EDITS
 local -i SE_K=0
 
 # Commits a fresh file unjournaled and lands a peer's three lines after its line 2 – sets `SE_TIP`
@@ -69,5 +68,24 @@ _SE_LAND
 print -l a 'size (95 MB)' c d e > "se$SE_K.txt" && git diff -- "se$SE_K.txt" > "$TMP/se-stale.patch" && git checkout -q -- "se$SE_K.txt"
 _ST_RUN --commit --text "SE caller $SE_K" --patch "$TMP/se-stale.patch"
 _SE_REFUSED "--patch of a stale file rewriting the line above the gap refuses"
+_SE_LAND
+print -l a 'size (95 nb MB)' 'mine (12 MB)' c d e > "se$SE_K.txt" && git diff -- "se$SE_K.txt" > "$TMP/se-stale.patch" && git checkout -q -- "se$SE_K.txt"
+_ST_RUN --commit --text "SE caller $SE_K" --patch "$TMP/se-stale.patch"
+_SE_REFUSED "as does one putting its own line in the block's place"
+_SE_LAND
+SE_EDITS='{"se'"$SE_K"'.txt": [["case1 (95 nb MB)\ncase2 plain\ncase3 (95 nb MB)\n", "one\ntwo\nthree\n"]]}'
+_ST_RUN --commit --text "SE caller $SE_K" --edits "$SE_EDITS"
+_SE_REFUSED "and --edits rewriting each of the block's lines whole"
+_ST_RUN --commit --text "SE caller $SE_K" --edits "$SE_EDITS" --base="$SE_TIP"
+_ST_EQ "which the tip as --base lands" "$RC:$(git show HEAD:se$SE_K.txt | sed -n 3p):$(git rev-parse HEAD~1)" "0:one:$SE_TIP"
+# A list's separator, which any append adds, is no majority
+SE_K+=1
+print -l '[' '  {' '    "id": "base",' '    "steps": 3' '  }' ']' > "se$SE_K.txt" && git add "se$SE_K.txt" && git commit -qm "SE base $SE_K"
+print -l '[' '  {' '    "id": "base",' '    "steps": 3' '  },' '  {' '    "id": "peer",' '    "steps": 5' '  }' ']' > "se$SE_K.txt"
+GIT_EDIT_ACTOR=se-peer _ST_RUN --commit --text "SE peer appends $SE_K" -- "se$SE_K.txt"
+SE_TIP=$(git rev-parse HEAD)
+print -l '[' '  {' '    "id": "base",' '    "steps": 3' '  },' '  "mine"' ']' > "se$SE_K.txt" && git diff -- "se$SE_K.txt" > "$TMP/se-stale.patch" && git checkout -q -- "se$SE_K.txt"
+_ST_RUN --commit --text "SE caller $SE_K" --patch "$TMP/se-stale.patch"
+_SE_REFUSED "a patch of a stale file appending to a list refuses, the separator all it shares"
 export GIT_EDIT_ACTOR=
 cd "$TMP/repo"

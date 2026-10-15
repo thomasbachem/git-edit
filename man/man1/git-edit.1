@@ -1092,8 +1092,9 @@ left out.
 Runs under the caller's own label never count; for an unlabeled caller, that
 is every unlabeled one. Nor do edits made on the landed lines themselves
 afterwards \(em a block it inserted read as edited where the file holds each of
-its lines, as landed or changed in one place \(em except in a file that run's
-sync left on a conflict. There the
+its lines, as landed or changed in one place, or most as they landed where the
+inputs composed it \(em except in a file that run's sync left on a conflict.
+There the
 edits predate it, and take it back until the file holds what landed or its
 owner changed the conflicting lines since. The refusal names the
 .B git merge\-file
