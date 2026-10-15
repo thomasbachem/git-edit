@@ -79,7 +79,8 @@ print -r -- b2 > "${WT_WTD:-$ST_NO_WT}/b.txt"
 export GIT_EDIT_ACTOR=w-peer
 _ST_RUN --continue
 export GIT_EDIT_ACTOR=
-WT_TIP=$(git rev-parse HEAD)
+# Off the peer's own trailer, as the waiting run can land before a read of the branch
+WT_TIP=${${OUT##* → }%%$'\n'*}
 _ST_EQ "the peer lands meanwhile" "$RC:$(git show HEAD~1:b.txt)" "0:b2"
 _W180_END w2
 _ST_EQ "and the run lands once the pause clears, on the tip that landing left" "$RC:$(git log -1 --format=%s HEAD):$(git rev-parse HEAD~1)" "0:WT c reworded:$(git rev-parse "$WT_TIP~1")"
