@@ -83,19 +83,24 @@ rm -f te-s.txt
 # A gate's CRLF line prints without its `\r`, a long colored one without a pass per character,
 # and a byte no UTF-8 holds in a UTF-8 locale where one is installed, as BSD sed died on it there
 local TE_U8=$(locale -a 2>/dev/null | grep -m1 -E '^(en_US\.UTF-8|en_US\.utf8|C\.UTF-8|C\.utf8)$')
-git config edit.verifyCmd "printf 'TE gate CRLF\r\n'; printf 'TE gate \377\nTE gate past the byte\n'; awk 'BEGIN { for (i = 0; i < 8000; i++) printf \"\033[31mred\033[0m te \"; print \"\" }'; exit 1"
 printf 'tg\n' > te-g.txt
-# CPU seconds, as a loaded machine stretches the clock's tenfold – a pass per character takes
-# 30 here, where this run takes under one
+# CPU seconds over a run whose gate prints one short line, as load stretches the clock tenfold and
+# a slow machine the whole run – a pass per character costs 30 here, the long line about one
+git config edit.verifyCmd "printf 'TE gate short\n'; exit 1"
 times > "$TMP/te-cpu"
+LC_ALL=${TE_U8:-C} _ST_RUN --commit --text "x" -- te-g.txt
+times >> "$TMP/te-cpu"
+_ST_OUT_HAS "the run measured against reaching its gate too" '| TE gate short'
+git config edit.verifyCmd "printf 'TE gate CRLF\r\n'; printf 'TE gate \377\nTE gate past the byte\n'; awk 'BEGIN { for (i = 0; i < 8000; i++) printf \"\033[31mred\033[0m te \"; print \"\" }'; exit 1"
+times >> "$TMP/te-cpu"
 LC_ALL=${TE_U8:-C} _ST_RUN --commit --text "x" -- te-g.txt
 times >> "$TMP/te-cpu"
 git config --unset edit.verifyCmd
 _ST_OUT_HAS "a gate's CRLF line prints" '| TE gate CRLF'
 _ST_OUT_LACKS "with no caret for the line's own ending" 'TE gate CRLF\^M'
 _ST_OUT_HAS "as does the line past a byte no UTF-8 holds" '| TE gate past the byte'
-_ST_CHECK "and a 128 KB colored line in under 10 CPU seconds" test "$(awk 'function s(t, a) { split(t, a, /[ms]/); return a[1] * 60 + a[2] }
-	NR == 2 { b = s($1) + s($2) } NR == 4 { print int(s($1) + s($2) - b) }' "$TMP/te-cpu")" -lt 10
+_ST_CHECK "and a 128 KB colored line in under 10 CPU seconds more than a short one" test "$(awk 'function s(t, a) { split(t, a, /[ms]/); return a[1] * 60 + a[2] }
+	NR % 2 == 0 { c[NR / 2] = s($1) + s($2) } END { print int(c[4] - c[3] - c[2] + c[1]) }' "$TMP/te-cpu")" -lt 10
 rm -f te-g.txt
 # A byte above 0x7f prints as itself – as the stand-in for a data backslash, it came back as one
 local TE_LC
