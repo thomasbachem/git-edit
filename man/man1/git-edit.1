@@ -1112,12 +1112,24 @@ refuses a file lacking what another
 .B GIT_EDIT_ACTOR
 caller's run of the last 7 days landed on it while the tip still carries it.
 The test is that merging the landing in would change the file and nothing at
-the tip. Where later runs rewrote its lines since, it refuses a file lacking
+the tip. A merge that only adds a landed block a second time, beside an exact
+copy, finds it held. Beside the file's own version of the block, edited or
+stale, which content can't tell apart, it refuses all the same, but names no
+carry or merge, as either would double the block: it names the
+.B git diff
+against the tip to read before passing
+.BR \-\-base ,
+or for inputs the pairs, hunks or file that rewrite the landed lines.
+A carry or sync leaves such a file as it is, recorded as lacking the block.
+Where later runs rewrote its lines since, it refuses a file lacking
 the change from that run's old tip to the tip, the caller's own runs among
 them. It also refuses a file such a run removed, the removal of one it added
 or edited, and a file written whole in place of one it added. So too one
 still under the mode before a flip of its executable bit, or without the bit
-of one it added executable. The refusal names the run and the remedy.
+of one it added executable. The refusal names the run and the remedy, its
+closing line each run's label and range, the
+.B \-\-base
+opt\-out above the remedy.
 .IP
 For edits, the remedy is
 .B "git edit \-\-carry=<old tip>"

@@ -3711,6 +3711,13 @@ _STATUS_UNBROUGHT () {
 			_BLOB_AT "${R[3]}" "$P"
 			if [ -n "$B" ] && [ -n "$REPLY" ] && OURS=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$OURS" ]; then
 				_HAND_MERGED "$OURS" "$B" "$REPLY" "${R[5]}" && continue
+				# One holding its own version of a block that landed takes no carry, which doubles it
+				_BLOB_AT "$TIP" "$P"
+				if [ -n "$REPLY" ] && { _MERGE_DOUBLES_LANDING "$OURS" "$B" "$REPLY"; (( $? == 2 )); }; then
+					PRINT_TEXT "Left unbrought by a run's sync, holding its own version of a block that landed, which a carry or merge would add a second time: %s – look at %s: commit it with --base=%s only where that shows nothing but your own edits, else take the block in from the tip (%s)" 33 \
+						"$(_ALL_PATHS "$P")" "'git diff ${TIP:0:12} -- <path>'" "${TIP:0:12}" "git show ${TIP:0:12}:<path>"
+					continue
+				fi
 			fi
 		fi
 		# What a fold read, no commit a carry starts from, takes the merge its sync named
@@ -4780,7 +4787,8 @@ _SYNC_CHECKOUT () {
 	local HOOK_BASE FBE FBT FBN UNEDITED LINE Q HASHED UPTO OWN_HOOK CB BELOW _MERGE_FILE_IDS=-
 	local -i RC K
 	local -x GIT_LITERAL_PATHSPECS=1
-	local -a CHANGED CLEAN CARRIED CONFLICTED MERGE_CMDS KEPT KEPT_EDITS GONE_EDITED LEFT DELETED FAILED STALE LOCKED IDX_LOCKED
+	local -a CHANGED CLEAN CARRIED CONFLICTED MERGE_CMDS KEPT KEPT_EDITS GONE_EDITED LEFT DELETED FAILED STALE LOCKED IDX_LOCKED DBL DBL_KEPT
+	local DBL_HELD
 	local -a OWN_LATER
 	local -a DIFF_PATHS MODE_ONLY HOOKED PARTIAL BROUGHT RESYNCED BLOCKED REAPPLY ASK REBASE ORDER RF
 	local -a Q_PATH Q_NEW Q_ON Q_OUT Q_BY
@@ -5745,6 +5753,17 @@ _SYNC_CHECKOUT () {
 			git merge-file -p -L "landed (HEAD)" -L "before the rewrite" -L "your edits" "$THEIRS" "$BASEF" "$CO/$SRC" > "$OUTF" 2>/dev/null
 			RC=$?
 			(( RC > 127 )) && WHY="no text merge"
+			# A clean merge adding a block that landed where the edits hold it already leaves them as they
+			# are – one beside their own version of it is left as a conflict is, as merging doubles it
+			DBL_HELD=""
+			if (( RC == 0 )) && ! cmp -s "$OUTF" "$CO/$SRC" && \
+			   DBL=("${(@f)$(git -C "$CO" hash-object -w --no-filters -- "$CO/$SRC" "$BASEF" "$THEIRS" 2>/dev/null)}") && (( ${#DBL} == 3 )); then
+				_MERGE_DOUBLES_LANDING "${DBL[@]}"
+				case $? in
+					0) cat "$CO/$SRC" > "$OUTF" 2>/dev/null || WHY="not writable" ;;
+					2) if [ "$SRC" = "$P" ] && [ -z "$OWN_HOOK" ]; then DBL_HELD=1; else WHY="their own version of a block that landed beside, which a merge would add a second time"; fi ;;
+				esac
+			fi
 		fi
 		# What no text merge takes stays as it is – a sync's entry still as before taking what landed, so
 		# the edits read as changes to that, never as a staged revert
@@ -5761,7 +5780,21 @@ _SYNC_CHECKOUT () {
 		# A conflict writes nothing – no markers in a file a peer session may be editing, no unmerged
 		# entry in an index it shares – the edits staying as changes to what landed, with the command
 		# that merges them, markers and all, once someone means to resolve it
-		if (( RC > 0 )); then
+		if (( RC > 0 )) || [ -n "$DBL_HELD" ]; then
+			# No merge to name for edits holding their own version of a landed block – its record kept, so
+			# the guard refuses committing them whole until someone takes the block in
+			if [ -n "$DBL_HELD" ]; then
+				NOT_BROUGHT[$P]=${HOOK_BASE:-$FBT}
+				if [ "$HOW" = carry ]; then
+					ITEM+=" – its own version of a block that landed, which a merge would add a second time"
+					_CARRY_QUEUE "$SRC" "$P" LEFT "$ITEM"
+					LEFT+=("$ITEM")
+				else
+					_CARRY_QUEUE "$SRC" "$P"
+					DBL_KEPT+=("$ITEM")
+				fi
+				continue
+			fi
 			# A file this run composed, its hooks' change conflicting with the caller's later edits, takes
 			# its entry alone all the same
 			if [ -n "$OWN_HOOK" ]; then
@@ -6116,6 +6149,7 @@ _SYNC_CHECKOUT () {
 	# Whose they are no sync can tell, so nothing is offered that takes them
 	(( ${#KEPT} )) && PRINT_TEXT "Files stood where the $NOUN put its own – they stay, as changes to what landed: %s" 33 "$(_SOME_PATHS "${KEPT[@]}")"
 	(( ${#KEPT_EDITS} )) && PRINT_TEXT "Uncommitted edits stay as they were, now changes to what landed, which no merge could take them onto: %s" 33 "$(_ALL_PATHS "${KEPT_EDITS[@]}")"
+	(( ${#DBL_KEPT} )) && PRINT_TEXT "Uncommitted edits hold their own version of a block that landed, which a merge would add a second time – left as they were, as changes to it: %s" 33 "$(_ALL_PATHS "${DBL_KEPT[@]}")"
 	(( ${#OWN_LATER} )) && PRINT_TEXT "Files you committed keep your later edits, now changes to what landed: %s" 32 "$(_SOME_PATHS "${OWN_LATER[@]}")"
 	_PRINT_MODE_ONLY "$CO" "$NEW" "${MODE_ONLY[@]}"
 	# What git refused or a locked index kept back takes the carry, which writes only a file and an
@@ -10572,26 +10606,30 @@ _EDITS_MISS_LANDING () {
 # landing added, each beside a copy of itself, which <ours> holds as often as <after> does – edits
 # next to a landed block can diff as rewriting its lines, so the merge adds it a second time
 _MERGE_DOUBLES_LANDING () {
-	# Args: <ours blob> <before blob> <after blob>
-	local O B A M LANDING ADDED OUT=""
+	# Args: <ours blob> <before blob> <after blob> – 2 where <ours> holds its own version of any block
+	#       the merge adds instead, edited or stale alike, which merging doubles, whatever else it adds
+	local O B A M LANDING ADDED KEPT OUT=""
+	local -i DRC
 	O=$(MKTEMP_FILE git-edit-ours) B=$(MKTEMP_FILE git-edit-base) A=$(MKTEMP_FILE git-edit-theirs)
 	M=$(MKTEMP_FILE git-edit-merged) LANDING=$(MKTEMP_FILE git-edit-landing) ADDED=$(MKTEMP_FILE git-edit-added)
-	_TEMP_FILES+=("$O" "$B" "$A" "$M" "$LANDING" "$ADDED")
+	KEPT=$(MKTEMP_FILE git-edit-kept)
+	_TEMP_FILES+=("$O" "$B" "$A" "$M" "$LANDING" "$ADDED" "$KEPT")
 	if git cat-file blob "$1" > "$O" && git cat-file blob "$1" > "$M" && git cat-file blob "$2" > "$B" && \
 		git cat-file blob "$3" > "$A" && git merge-file -q "$M" "$B" "$A" 2>/dev/null; then
 		git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$B" "$A" > "$LANDING" 2>/dev/null
-		if (( $? <= 1 )); then
+		DRC=$?
+		(( DRC <= 1 )) && { git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$A" "$O" > "$KEPT" 2>/dev/null; DRC=$?; }
+		if (( DRC <= 1 )); then
 			git diff --no-index --no-color --no-ext-diff --no-textconv -U0 --inter-hunk-context=0 -- "$O" "$M" > "$ADDED" 2>/dev/null
 			# Each block the merge added, matched against the landing's, in a window as long again on
-			# either side – a run of repeats lets the diff place the added copy anywhere in it
+			# either side – a run of repeats lets the diff place the added copy anywhere in it – else
+			# looked for in <ours>, through the diff from <after> to <ours>
 			(( $? <= 1 )) && OUT=$(LC_ALL=C awk '
 				FILENAME == ARGV[1] || FILENAME == ARGV[2] {
 					if (/^@@ -/) {
 						split(substr($2, 2), x, ","); split(substr($3, 2), y, ",")
 						if (FILENAME == ARGV[1]) { h++; next }
-						# A line the merge changed or removed is no copy added
-						if (x[2] != "0") bad = 1
-						g++; Q[g] = y[1] + 0; N[g] = y[2] == "" ? 1 : y[2] + 0
+						g++; Q[g] = y[1] + 0; N[g] = y[2] == "" ? 1 : y[2] + 0; IX[g] = x[1] + 0; PURE[g] = x[2] == "0"
 					} else if (FILENAME == ARGV[1] && h && /^[-+]/) {
 						if (/^[+]/) X[h, ++XK[h]] = substr($0, 2); else R[h, ++RK[h]] = substr($0, 2)
 					}
@@ -10601,7 +10639,15 @@ _MERGE_DOUBLES_LANDING () {
 				FILENAME == ARGV[3] { o[++no] = $0 ""; next }
 				FILENAME == ARGV[4] { m[++nm] = $0 ""; next }
 				FILENAME == ARGV[5] { before[$0 ""] = 1; next }
-				{ a[++na] = $0 "" }
+				FILENAME == ARGV[6] { a[++na] = $0 ""; next }
+				# The hunks from <after> to <ours>, each its lines on both sides and those it writes
+				/^@@ -/ {
+					split(substr($2, 2), x, ","); split(substr($3, 2), y, ",")
+					nk++; AS[nk] = x[1] + 0; AC[nk] = x[2] == "" ? 1 : x[2] + 0
+					OS[nk] = y[1] + 0; OC[nk] = y[2] == "" ? 1 : y[2] + 0
+					next
+				}
+				nk && /^[+]/ { Y[nk, ++YK[nk]] = substr($0, 2) }
 				# Tells whether line <t> of <F> starts block <b> of <L>, <k> lines long
 				function at(F, n, L, b, k, t,   i) {
 					if (t < 1 || t + k - 1 > n) return 0
@@ -10612,24 +10658,109 @@ _MERGE_DOUBLES_LANDING () {
 					for (t = 1; t + k - 1 <= n; t++) c += at(F, n, L, b, k, t)
 					return c + 0
 				}
+				# Tells whether <b> is landed line <a> edited in one place, as `_LANDING_TOUCHED` reads it
+				function alike(a, b,   la, lb, m, p, q) {
+					if (a == b) return 1
+					la = length(a); lb = length(b); m = la < lb ? la : lb
+					for (p = 0; p < m && substr(a, p + 1, 1) == substr(b, p + 1, 1); p++);
+					for (q = 0; q < m - p && substr(a, la - q, 1) == substr(b, lb - q, 1); q++);
+					return p + q >= 3 && 3 * (p + q) >= 2 * la
+				}
+				# Moves `P` for hunk <n> past its next written line equal to <l> – a reordered one reads as gone
+				function anchor(n, l, P, MC,   q) {
+					for (q = P[n]; q <= YK[n] && Y[n, q] != l; q++);
+					if (q <= YK[n]) { P[n] = q + 1; MC[n]++ }
+				}
+				# Tells whether hunk <n> rewrites its lines one for one, their text edited in one place as a
+				# whole – a reflowed comment, which no line of it does alone
+				function whole(n,   i, x, y) {
+					if (AC[n] < 2 || AC[n] != YK[n]) return 0
+					for (i = 0; i < AC[n]; i++) { x = x (i ? "\n" : "") a[AS[n] + i]; y = y (i ? "\n" : "") Y[n, i + 1] }
+					return alike(x, y)
+				}
+				# Tells whether <ours> holds, within a block of its line <x>, its own version of every copy
+				# <after> has of the <k> lines the merge added at its line <j> – most lines the before lacked
+				# kept or edited in one place, a line or a reflowed run
+				function inplace(j, x, k,   s, i, l, t, hd, p, q, r, n, op, lo, hi, near, P, U, NU, MC) {
+					for (s = 1; s + k - 1 <= na; s++) {
+						for (i = 0; i < k && a[s + i] == m[j + i]; i++);
+						if (i < k) continue
+						t = hd = 0; lo = no + 1; hi = 0
+						split("", P); split("", U); split("", NU); split("", MC)
+						for (i = s; i < s + k; i++) {
+							l = a[i]
+							n = (i in DH) ? DH[i] : 0
+							# The lines a hunk takes out ahead of the copy, kept in order
+							if (n && !(n in P)) {
+								P[n] = 1
+								for (r = AS[n]; r < i; r++) anchor(n, a[r], P, MC)
+							}
+							if (!(l in before)) t++
+							if (!n) {
+								op = OP[i]
+								if (!(l in before)) hd++
+							} else {
+								p = P[n]; op = OS[n]
+								for (q = p; q <= YK[n] && Y[n, q] != l; q++);
+								if (q > YK[n]) for (q = p; q <= YK[n] && !alike(l, Y[n, q]); q++);
+								if (q > YK[n]) {
+									U[n]++
+									if (!(l in before)) NU[n]++
+								} else {
+									if (!(l in before)) hd++
+									P[n] = q + 1; MC[n]++; op = OS[n] + q - 1
+								}
+							}
+							if (op < lo) lo = op
+							if (op > hi) hi = op
+						}
+						for (n in U) if (whole(n)) hd += NU[n]
+						# Lines the before held tell nothing – a stale file holds them too – and a copy mostly
+						# gone is no version of it, which the merge brings in rightly
+						if (!t || 2 * hd <= t) return 0
+						if (lo - k - 1 <= x && x <= hi + k) near = 1
+					}
+					return near
+				}
 				END {
-					if (bad || !g) exit
+					if (!g) exit
+					# Each line of <after> where <ours> keeps it, else the hunk taking it out
+					n = 1; s = 0
+					for (i = 1; i <= na; i++) {
+						while (n <= nk && (AC[n] ? AS[n] + AC[n] - 1 : AS[n]) < i) { s += OC[n] - AC[n]; n++ }
+						if (n <= nk && AC[n] && AS[n] <= i) DH[i] = n
+						else OP[i] = i + s
+					}
 					for (e = 1; e <= g; e++) {
+						# A line the merge changed or removed is no copy added – another block may still be one
+						if (!PURE[e]) { lacks = 1; continue }
 						k = N[e]; d = 0
 						for (j = Q[e] - k; j <= Q[e] && !d; j++)
 							for (b = 1; b <= h && !d; b++)
 								if (XK[b] == k && at(m, nm, X, b, k, j) && at(m, nm, X, b, k, j + k)) d = b
 						# A block of lines <before> held tells nothing – the copy beside it may be one of them
 						for (i = 1; d && i <= k && (X[d, i] in before); i++);
-						if (!d || i > k || count(o, no, X, d, k) < count(a, na, X, d, k)) exit
-						if (RK[d] && count(o, no, R, d, RK[d]) > count(a, na, R, d, RK[d])) exit
+						if (d && i <= k && count(o, no, X, d, k) >= count(a, na, X, d, k) && \
+							!(RK[d] && count(o, no, R, d, RK[d]) > count(a, na, R, d, RK[d]))) continue
+						# Read at each place the added lines slide to, a copy of them repeating there – the
+						# diff picks one, while the copy <after> holds may start anywhere in it
+						for (lo = Q[e]; lo > 1 && m[lo - 1] == m[lo + k - 1]; lo--);
+						for (hi = Q[e]; hi + k <= nm && m[hi] == m[hi + k]; hi++);
+						v = 0
+						for (j = lo; j <= hi && !v; j++) v = inplace(j, IX[e] + j - Q[e], k)
+						if (v) copy = 1; else lacks = 1
 					}
-					print "held"
-				}' "$LANDING" "$ADDED" "$O" "$M" "$B" "$A")
+					# One block added beside the version <ours> holds of it decides, whatever else the merge
+					# adds – a carry would double it, while taking the block in from the tip brings the rest along
+					if (copy) print "copy"
+					else if (!lacks) print "held"
+				}' "$LANDING" "$ADDED" "$O" "$M" "$B" "$A" "$KEPT")
 		fi
 	fi
-	rm -f "$O" "$B" "$A" "$M" "$LANDING" "$ADDED"
-	[ "$OUT" = held ]
+	rm -f "$O" "$B" "$A" "$M" "$LANDING" "$ADDED" "$KEPT"
+	[ "$OUT" = held ] && return 0
+	[ "$OUT" = copy ] && return 2
+	return 1
 }
 
 # Renders seconds as their largest whole unit – 3d, 5h, 12m, 40s
@@ -10705,7 +10836,7 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS MQ
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS MQ DOUBLED
 	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
 	local -i FIRST_K=0
 	# The paths a run's sync left unbrought, read where a merge first conflicts
@@ -10717,6 +10848,9 @@ _GUARD_WHOLE_LANDINGS () {
 	local -A MODE_OF RENAMED_TO RENAMES_OF IS_CHANGED LANDED AWAY NAME_THEN NAME_WAS ST_BASE ST_THEIRS ST_FROM ABOVE
 	# Each carried path whose merge of what landed came out clean – the carry's would too
 	local -A CLEAN
+	# Each landing a hit takes back, by the label and range the trailer names, and its paths
+	local -a LANDS
+	local -A LAND_PATHS
 	local MCLEAN
 	# The commit a fold lands in, once known – `auto` picks it only after the inputs are guarded
 	local INTO=""
@@ -10973,8 +11107,14 @@ _GUARD_WHOLE_LANDINGS () {
 					# • Where this landing's sync conflicted, its record tells the edits predate it – they
 					#   take it back until changed on its lines since, or holding all of it
 					if (( MRC == 0 )); then
-						# A clean one lacks it unless all it adds is a landed block a second time
-						[ "$MERGED" != "$O" ] && ! _MERGE_DOUBLES_LANDING "$O" "$BEFORE" "$AFTER" || continue
+						# A clean one lacks it unless all it adds is a landed block a second time – one beside
+						# the file's own version of it takes a remedy of its own, as a carry or merge doubles it
+						[ "$MERGED" != "$O" ] || continue
+						_MERGE_DOUBLES_LANDING "$O" "$BEFORE" "$AFTER"
+						case $? in
+							0) continue ;;
+							2) KIND=doubled GONE=", a merge adding its block a second time beside your own version of it" ;;
+						esac
 						MCLEAN=1
 					elif (( MRC <= 127 )); then
 						[ -n "$UB_READ" ] || { UB_READ=1; _UNBROUGHT_READ "$TOPDIR"; }
@@ -11023,8 +11163,11 @@ _GUARD_WHOLE_LANDINGS () {
 			# The old name restores nothing at the tip – a carry follows
 			# the rename, as for the rename's own landing
 			[ -n "$NAME_AT_TIP" ] && KIND=carry GONE=", a later run renaming it to $NAME_AT_TIP" AWAY[$P]=$NAME_AT_TIP
-			# A file this commit renames takes what landed under its old name, whatever its kind
-			[ "$O" != "$OURS" ] && KIND=renamed GONE=", which this commit renames to $DST"
+			# A file this commit renames takes what landed under its old name, whatever its kind – bar one
+			# its merge may double the block in
+			if [ "$O" != "$OURS" ]; then
+				[ "$KIND" = doubled ] && GONE+=", which this commit renames to $DST" || KIND=renamed GONE=", which this commit renames to $DST"
+			fi
 			# An addition or removal that is one side of a rename takes the carry, which follows it –
 			# where the old side holds edits, as untouched the two sides restore and leave as they are
 			if [ "$KIND" != carry ] && [ -z "$BEFORE$OURS" -o -z "$AFTER" ]; then
@@ -11081,6 +11224,9 @@ _GUARD_WHOLE_LANDINGS () {
 			[ "$KIND" = unbrought ] && GONE+=", its sync conflicting with the edits in your checkout"
 			HITS+=("$P – $WHO ${M[4]} run $(_AGO $(( NOW - M[1] ))) ago (${M[2]:0:7}..${M[3]:0:7})$GONE")
 			HIT_PATHS+=("$P")
+			Q="$WHO ${M[4]} run ${M[2]:0:7}..${M[3]:0:7}"
+			(( ${+LAND_PATHS[$Q]} )) || LANDS+=("$Q")
+			LAND_PATHS[$Q]+="${LAND_PATHS[$Q]:+, }$P"
 			# The carry a change built from a stale file takes first, every later landing with it
 			if [ -z "$FIRST_OLD" ] || (( K < FIRST_K )); then
 				FIRST_K=$K
@@ -11104,6 +11250,8 @@ _GUARD_WHOLE_LANDINGS () {
 				unbrought) UNB+=("$P") ;;
 				rewritten) REWRITTEN+=("$P") ;;
 				own) OWN+=("$P") ;;
+				# Named as the caller has it, a rename's new name
+				doubled) if [ "$O" != "$OURS" ]; then DOUBLED+=("$DST"); else DOUBLED+=("$P"); fi ;;
 				mode) [ "$AMODE" = 100755 ] && CHMOD_X+=("$P") || CHMOD_NX+=("$P") ;;
 				leave) REMOVED+=("$P") ;;
 				removed) EDITED+=("$P") ;;
@@ -11136,6 +11284,12 @@ _GUARD_WHOLE_LANDINGS () {
 	[ ${#HITS} -gt 0 ] || return 0
 	PRINT_ERR "${_WHOLE_WHAT:-Committed whole}, ${#HITS} file(s) would take back what another caller landed: ${(j:, :)HIT_PATHS}"
 	print -rl -- "${HITS[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
+	# The trailer names each landing it keeps, as output cut to its last lines shows that alone – the
+	# opt-out next, so the way that keeps the landing comes last
+	local TRAIL=""
+	for Q in "${LANDS[@]}"; do TRAIL+="${TRAIL:+, }${LAND_PATHS[$Q]} ($Q)"; done
+	_LAST_ERROR="${_WHOLE_WHAT:-Committed whole}, ${#HITS} file(s) would take back what another caller landed: $TRAIL"
+	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
 	# The `cd` each printed command needs first – read once, as `ECHO_E` leaves `REPLY` its own
 	_AT_TOP "$TOPDIR"
 	local AT=$REPLY FROM=""
@@ -11251,7 +11405,7 @@ _GUARD_WHOLE_LANDINGS () {
 			# removed is left out below, and a removal is looked at first, whatever the landing did
 			local -a PUT_STALE
 			for P in "${HIT_PATHS[@]}"; do
-				(( ${PUTS[(Ie)$P]} )) && ! (( ${REMOVED[(Ie)$P]} + ${UNB[(Ie)$P]} )) || continue
+				(( ${PUTS[(Ie)$P]} )) && ! (( ${REMOVED[(Ie)$P]} + ${UNB[(Ie)$P]} + ${DOUBLED[(Ie)$P]} )) || continue
 				if (( ! ${+AWAY[$P]} )); then
 					PUT_STALE+=("$P")
 					continue
@@ -11316,17 +11470,31 @@ _GUARD_WHOLE_LANDINGS () {
 	done
 	[ ${#RESTORE} -gt 0 ] && ECHO_E "\e[0;31m  Take what landed with: $(_LIT "${AT}$(_PATHS_CMD "git restore --source=HEAD --worktree" "${RESTORE[@]}")") – or leave it out.\e[0m" >&2
 	# A restore would overwrite the caller's own file for good
-	[ ${#OWN} -gt 0 ] && ECHO_E "\e[0;31m  Your own $(_LIT "$(_ALL_PATHS -q "${OWN[@]}")") stands where another caller added one – move yours aside or merge the two by hand, then run this again, or pass --base as below where yours is meant to replace it.\e[0m" >&2
+	[ ${#OWN} -gt 0 ] && ECHO_E "\e[0;31m  Your own $(_LIT "$(_ALL_PATHS -q "${OWN[@]}")") stands where another caller added one – move yours aside or merge the two by hand, then run this again, or pass --base as above where yours is meant to replace it.\e[0m" >&2
 	[ ${#CHMOD_X} -gt 0 ] && ECHO_E "\e[0;31m  Take the bit that landed with: $(_LIT "${AT}$(_PATHS_CMD --plain "chmod -- +x" "${CHMOD_X[@]}")")\e[0m" >&2
 	[ ${#CHMOD_NX} -gt 0 ] && ECHO_E "\e[0;31m  Take the bit that landed with: $(_LIT "${AT}$(_PATHS_CMD --plain "chmod -- -x" "${CHMOD_NX[@]}")")\e[0m" >&2
 	_MARK_LITERAL "${REMOVED[@]}"
 	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_LIT "$(_ALL_PATHS -q "${reply[@]}")")\e[0m" >&2
 	_MARK_LITERAL "${EDITED[@]}"
-	[ ${#EDITED} -gt 0 ] && ECHO_E "\e[0;31m  Look at what landed on $(_LIT "$(_ALL_PATHS -q "${reply[@]}")") first – keep the file, or remove it with --base as below.\e[0m" >&2
+	[ ${#EDITED} -gt 0 ] && ECHO_E "\e[0;31m  Look at what landed on $(_LIT "$(_ALL_PATHS -q "${reply[@]}")") first – keep the file, or remove it with --base as above.\e[0m" >&2
 	for Q in "${RENAMED[@]}"; do
 		ECHO_E "\e[0;31m  Merge what landed into the new name with: $(_LIT "${AT}$Q")\e[0m" >&2
 	done
-	ECHO_E "\e[0;31m  Pass --base=${WHOLE_HEAD:0:12} where taking it back is the point.\e[0m" >&2
+	# No carry or merge, which add the block again – read before --base what the route composed
+	if [ ${#DOUBLED} -gt 0 ]; then
+		Q=$(_LIT "$(_ALL_PATHS -q "${DOUBLED[@]}")")
+		case "$_WHOLE_WHAT" in
+			"Changed by "*)
+				ECHO_E "\e[0;31m  What ${_WHOLE_WHAT#Changed by } compose in $Q holds its own version of what landed, beside which a merge would add it a second time – pass --base as above only where the pairs or hunks rewriting the landed lines are your own edits of the block, else leave those out, which keeps the block as the tip has it, then run this again.\e[0m" >&2 ;;
+			'Put or removed')
+				ECHO_E "\e[0;31m  What you put as $Q holds its own version of what landed, beside which a merge would add it a second time – pass --base as above only where it is the tip with your own edits of the block, else rebuild it from the tip (git show ${WHOLE_HEAD:0:12}:<path>), then run this again.\e[0m" >&2 ;;
+			*)
+				L="git diff ${WHOLE_HEAD:0:12} -- <path>"
+				[ "$_WHOLE_WHAT" = "Folded as staged" ] && L="git diff --cached ${WHOLE_HEAD:0:12} -- <path>"
+				[ "$_WHOLE_WHAT" = "Folded from --tree" ] && L="git diff ${WHOLE_HEAD:0:12} ${WHOLE_TREE:0:12} -- <path>"
+				ECHO_E "\e[0;31m  Your $Q holds its own version of what landed, beside which a carry or merge would add it a second time – look at '$L': pass --base as above only where it shows nothing but your own edits, else take the block in from the tip (git show ${WHOLE_HEAD:0:12}:<path>), then run this again.\e[0m" >&2 ;;
+		esac
+	fi
 	exit 1
 }
 

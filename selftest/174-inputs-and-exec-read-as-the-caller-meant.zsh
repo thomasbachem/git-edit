@@ -169,7 +169,7 @@ _IX_PEER_LANDS ix6-feat "IX6 B" f.txt "line "{1..3} "line 4 B" "line "{5..10}
 IX_T=$(git rev-parse HEAD)
 GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX6 rm" --rm f.txt
 _ST_EQ "a removal taking back a landing refuses" "$RC:$(git rev-parse HEAD)" "1:$IX_T"
-_ST_OUT_HAS "naming what landed to look at" 'Look at what landed on f\.txt first – keep the file, or remove it with --base as below'
+_ST_OUT_HAS "naming what landed to look at" 'Look at what landed on f\.txt first – keep the file, or remove it with --base as above'
 _ST_OUT_LACKS "never a put's remedy" 'What you put predates'
 cp f.txt "$TMP/ix6-put"
 GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX6 put" --put f.txt="$TMP/ix6-put"

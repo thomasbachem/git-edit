@@ -20,7 +20,7 @@ _ST_OUT_HAS "as does an old binary" 'wc.bin – wc-peer'
 _ST_OUT_HAS "and an old link" 'wc-ln – wc-peer'
 _ST_OUT_HAS "offering to restore the addition and the old copies" "Take what landed with: git restore --source=HEAD --worktree -- wc-ln wc-peer-new.txt wc.bin – or leave it out"
 _ST_OUT_LACKS "rather than a carry, which takes nothing from a file still as before it" '--carry='
-_ST_OUT_HAS "and the status line names them" '^git-edit: error – .*landed: wc-ln, wc-peer-new.txt, wc.bin$'
+_ST_OUT_HAS "and the status line names them with the landing" '^git-edit: error – .*landed: wc-ln, wc-peer-new.txt, wc.bin (wc-peer.s exec run [0-9a-f]\{7\}\.\.[0-9a-f]\{7\})$'
 git restore --source=HEAD --worktree -- wc-peer-new.txt wc.bin wc-ln
 # A file lacking two landings is pointed at a carry from the older, which takes in both
 printf 'o1\no2\no3\no4\no5\no6\no7\no8\n' > wc-two.txt
