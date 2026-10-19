@@ -203,6 +203,11 @@ both orphaned, each commit of the range as named resolves alone, as the span
 between their current identities can hold a commit moved in since.
 .TP
 .B \-e, \-\-edit
+.nf
+\fBgit edit\fR \fIcommit\fR                                      # pause with a worktree at it, to edit files there
+\fBgit edit \-\-continue\fR [\fB\-\-text\fR \fImsg\fR | \fB\-\-subject\fR \fIline\fR]  # amend, replay and land it \(em or \fB\-\-abort\fR
+.fi
+.IP
 Edit \fIcommit\fR (default). Pauses to let you change files, then amends and
 replays the descendants. Naming the mode refuses a second \fIcommit\fR, which
 the bare form reads as a squash.
@@ -270,6 +275,12 @@ and then
 to drop it instead.
 .TP
 .B \-M, \-\-reword
+.nf
+\fBgit edit \-M \-\-subject=\fR\fIline\fR \fIcommit\fR  # replace the subject, the body kept
+\fBgit edit \-M \-\-text=\fR\fImsg\fR \fIcommit\fR      # replace the whole message
+\fBgit edit \-M \-\-text \-\fR < \fIfile\fR          # many at once, from \fB\-\-\- \fR\fIcommit\fR records
+.fi
+.IP
 Alter only \fIcommit\fR's message, via plumbing \(em no checkout, stash, rebase,
 or worktree; the working tree is untouched and the tip tree is unchanged.
 Descendants of a linear history are rebuilt in one \fBgit replay\fR pass (git
@@ -321,6 +332,14 @@ contiguous, merge\-free range whose target is the oldest commit.
 Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
 .B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
+.nf
+\fBgit add\fR \fIpath\fR... \fB&& git edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-\fR \fIpath\fR...      # fold what you staged, scoped to it
+\fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-whole \-\-\fR \fIpath\fR...                   # fold these files whole from the checkout
+\fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-edits=\fR\fIjson\fR [\fB\-\-whole \-\-\fR \fIpath\fR...]  # amid another's edits in the same files
+\fBgit edit \-\-amend\-into=auto\fR ...                                     # into the unpushed commit owning the lines
+\fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR ...                       # reword it in the same run
+.fi
+.IP
 Fold the currently\-staged changes into \fIsha\fR in an isolated worktree, as a
 fixup placed beside it. Only staged changes are folded; unstaged edits are
 left untouched.
@@ -481,6 +500,11 @@ semantics. The reword is plumbing and runs before the fixup, so both land
 under one ref update and neither can be left applied without the other.
 .TP
 .B \-\-split=\fIsha\fR [\fB\-\-\fR \fIpathspec\fR...]
+.nf
+\fBgit edit \-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR \fB\-\-\fR \fIpathspec\fR...  # those changes into their own commit beneath \fIsha\fR
+\fBgit edit \-\-split=\fR\fIsha\fR [\fB\-\-text\fR \fImsg\fR]                 # pause to author the split point, for halves sharing a file
+.fi
+.IP
 Split \fIsha\fR into two commits: the \fIpathspec\fR\-matched changes are
 extracted into their own commit (message from
 .BR \-\-text ),
@@ -597,6 +621,11 @@ resolve as a positional range's do: one alone as a single \fIcommit\fR, both
 by resolving each commit of the run as named.
 .TP
 .B \-\-onto=\fIupstream\fR
+.nf
+\fBgit edit \-\-onto=\fR\fIupstream\fR              # the fork point read from \fIupstream\fR's reflog
+\fBgit edit \-\-continue\fR | \fB\-\-skip\fR | \fB\-\-abort\fR  # after a pause
+.fi
+.IP
 Replant the current branch onto \fIupstream\fR, deriving the fork point rather
 than taking it as an argument. Where
 .B "git rebase \-\-onto"
@@ -641,6 +670,13 @@ rewrote what the branch holds. Only a branch already on top of
 \fIupstream\fR ends unchanged.
 .TP
 .B \-\-land=\fIbranch\fR
+.nf
+\fBgit edit \-\-land=\fR\fIbranch\fR \fB\-\-dry\-run\fR      # say what would land, applying nothing
+\fBgit edit \-\-land=\fR\fIbranch\fR                # land its commits here, a fast\-forward or a replay
+\fBgit edit \-\-land=\fR\fIbranch\fR \fB\-\-base=\fR\fIsha\fR   # from the commit \fIbranch\fR forked from, named
+\fBgit edit \-\-continue\fR | \fB\-\-skip\fR | \fB\-\-abort\fR  # after a pause
+.fi
+.IP
 Land \fIbranch\fR's commits on the checked\-out branch. This is how sessions
 sharing one checkout finish a branch into its dirty
 .BR main ,
@@ -910,6 +946,14 @@ known as held, and a branch still carrying it can bring it back \(em
 lists what would land.
 .TP
 .B \-\-commit \-\-text \fImsg\fR \fB\-\-\fR \fIpath\fR...
+.nf
+\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-\fR \fIpath\fR...                      # files wholly yours, at the tip
+\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-edits=\fR\fIjson\fR [\fB\-\-\fR \fIpath\fR...]     # amid another's edits in the same files
+\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-after=\fR\fIsha\fR \fB\-\-\fR \fIpath\fR...        # right after \fIsha\fR instead (or \fB\-\-before\fR)
+\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR \fB\-\-base=\fR\fIsha\fR  # a file rebuilt from \fBgit show\fR \fIsha\fR\fB:\fR\fIpath\fR
+\fBgit edit \-\-commit \-\-text \-\fR ... < \fImsg\-file\fR                      # the message from stdin
+.fi
+.IP
 Commit each \fIpath\fR as it stands in the checkout on top of the tip, as
 .B "git commit \-\- <paths>"
 does, though only files named one by one, no directory or glob. A new file
@@ -1129,6 +1173,12 @@ judges every landing, as its target is known only once the content is
 composed.
 .TP
 .B \-\-exec \fB\-\-\fR \fIcommand\fR...
+.nf
+\fBgit edit \-\-exec \-\-\fR \fIcommand\fR...                           # run it at the tip, landing what it commits
+\fBgit edit \-\-exec \-\-after=\fR\fIsha\fR \fB\-\-\fR \fIcommand\fR...             # its new commits placed right after \fIsha\fR
+\fBgit edit \-\-exec \-\-base=\fR\fIsha\fR [\fB\-\-dry\-run\fR] \fB\-\-\fR \fIcommand\fR...  # a history built on tip \fIsha\fR, refused if the branch moved
+.fi
+.IP
 Run any \fIcommand\fR (e.g. a raw
 .BR "git rebase" )
 inside a fresh temporary worktree; the branch ref is CAS\-updated only if
@@ -1789,7 +1839,9 @@ value (\fBgit edit \-h edits put\fR, \fB\-h M\fR), \fBfold\fR for
 or a section's title (\fB\-h checkout\fR). Every entry naming a flag
 as its own prints, else every one mentioning it, else the first section
 whose title holds a topic of three letters or more; an unknown topic
-refuses once the rest printed, naming the sections. Prefer it to
+refuses once the rest printed, naming the sections. A longer entry opens
+with its usage lines, the forms it is run in, so its first few lines answer
+how to call it and the paragraphs after say what it does. Prefer it to
 .B \-\-help
 in scripts and agent runs:
 .BR git (1)
@@ -1885,6 +1937,11 @@ printed: the run says the raw form moves the ref alone and names
 which re\-syncs them, their flags kept.
 .TP
 .BR \-\-carry [ =\fIold\-tip\fR ]
+.nf
+\fBgit edit \-\-carry\fR            # bring the checkout along to every landing it missed
+\fBgit edit \-\-carry=\fR\fIold\-tip\fR  # from the rewrite off \fIold\-tip\fR, as a refusal names it
+.fi
+.IP
 Merge the checkout's uncommitted edits onto what a rewrite landed, for each
 path it changed whose file holds edits on the pre\-rewrite content. These
 are the files a landing that could not bring the checkout along names, or a

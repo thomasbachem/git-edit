@@ -793,7 +793,7 @@ USAGE () {
 	ECHO_E "\e[0;94m         reword many                    git edit -M --text - < <file>  (records as git log --format='--- %h%n%B' writes them)\e[0m"
 	ECHO_E "\e[0;94m         on a pause                     resolve in the worktree the trailer names, git -C <worktree> add <file>,\e[0m"
 	ECHO_E "\e[0;94m                                        then git edit --continue – or --abort; --status reprints the pause\e[0m"
-	ECHO_E "\e[0;94m         look flags up                  git edit -h <flag>...\e[0m"
+	ECHO_E "\e[0;94m         look flags up                  git edit -h <flag>...  (a long entry opens with its usage lines)\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       Modes:\e[0m"
 	ECHO_E "\e[0;94m       -e, --edit                      Name the default mode – a second <commit> refuses rather than squash\e[0m"
