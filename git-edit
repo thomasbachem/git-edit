@@ -109,7 +109,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
@@ -778,7 +778,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit --reorder <commit>...                       # reorder a contiguous span (args = new order, oldest-first)\e[0m"
 	ECHO_E "\e[0;94m       git edit --move=<sha> --after=<sha>|--before=<sha>   # reposition one commit relative to an anchor\e[0m"
 	ECHO_E "\e[0;94m       git edit --move=<a> --move=<b>... --after|--before=<sha> # several as one block, in one replay\e[0m"
-	ECHO_E "\e[0;94m       git edit --onto=<upstream>                           # replant this branch onto <upstream> (fork point derived)\e[0m"
+	ECHO_E "\e[0;94m       git edit --onto=<upstream> [--base=<sha>]            # replant this branch onto <upstream> (fork point derived, or named)\e[0m"
 	ECHO_E "\e[0;94m       git edit --land=<branch> [--base=<sha>] [--dry-run]  # land <branch>'s commits on this branch – fast-forward or replay\e[0m"
 	ECHO_E "\e[0;94m       git edit --continue | --skip | --abort               # resume / step past the commit / cancel after a pause\e[0m"
 	ECHO_E "\e[0;94m       git edit --undo | --status | --carry[=<sha>] | --selftest[=<ids>] [--jobs[=<n>]] | --version\e[0m"
@@ -808,7 +808,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --reorder <commit>...           Reorder a contiguous span, the arguments oldest-first\e[0m"
 	ECHO_E "\e[0;94m       --move=<sha>                    Move it to an anchor – repeated, or <oldest>..<newest>, several as one block\e[0m"
 	ECHO_E "\e[0;94m       --after|--before=<sha>          Where --move, --commit or --exec puts its commits: right after or before <sha>\e[0m"
-	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, the fork point derived\e[0m"
+	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, the fork point derived or named by --base\e[0m"
 	ECHO_E "\e[0;94m       --land=<branch>                 Land <branch>'s commits on this branch – a fast-forward or a replay\e[0m"
 	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated worktree, landing what it commits\e[0m"
 	ECHO_E ""
@@ -821,7 +821,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       -- <path>...                    And take these files whole beside them (--whole with --amend-into)\e[0m"
 	ECHO_E "\e[0;94m       --whole                         With --amend-into: fold the named files whole from the checkout\e[0m"
 	ECHO_E "\e[0;94m       --tree=<tree-ish>               Fold or commit a tree composed apart from the shared index\e[0m"
-	ECHO_E "\e[0;94m       --base=<sha>                    The commit your files rest on, in place of the landings check (-h base: --exec, --land)\e[0m"
+	ECHO_E "\e[0;94m       --base=<sha>                    The commit your files rest on, in place of the landings check (-h base: --exec, --land, --onto)\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94m       Runs:\e[0m"
 	ECHO_E "\e[0;94m       -C, --dir[=<path>]              Run an edit, drop, squash or a land's replay in a kept worktree, <repo>.git-edit\e[0m"
@@ -13772,7 +13772,18 @@ GIT_ONTO () {
 		exit 0
 	fi
 
-	_ONTO_FORK_POINT "$ORIG_HEAD" "$ONTO_UPSTREAM"
+	# A `--base` names the fork where the reflog can't – below the tip, so a replay of nothing never
+	# moves the branch to <upstream> without its own commits
+	if [ -n "$EXEC_BASE" ]; then
+		if [ "$EXEC_BASE" = "$ORIG_HEAD" ] || ! git merge-base --is-ancestor "$EXEC_BASE" "$ORIG_HEAD" 2>/dev/null; then
+			PRINT_ERR "--base ${EXEC_BASE:0:7} is not below $ORIG_BRANCH's tip – nothing replanted"
+			ECHO_E "\e[0;31m  Name the commit its own work starts above ('git log --oneline $(_LIT "$(_SHQ "$ONTO_UPSTREAM")")..$(_LIT "$(_SHQ "$ORIG_BRANCH")")' lists them), or leave --base out for the fork the reflog names.\e[0m" >&2
+			exit 1
+		fi
+		_ONTO_FORK=$EXEC_BASE _ONTO_FORK_GUESSED=base
+	else
+		_ONTO_FORK_POINT "$ORIG_HEAD" "$ONTO_UPSTREAM"
+	fi
 	local FORK=$_ONTO_FORK
 	if [ -z "$FORK" ]; then
 		PRINT_ERR "No common ancestor between '$ORIG_BRANCH' and '$ONTO_UPSTREAM' – nothing to replay from"
@@ -13817,7 +13828,7 @@ GIT_ONTO () {
 	_GUARD_ONTO_CHECKOUT_CLEAN "$MAIN_DIR" "$FORK" "$UPSTREAM_FULL" "$REF"
 
 	PRINT_ACTION "Replanting %s onto %s..." "$ORIG_BRANCH" "$ONTO_UPSTREAM"
-	_PRINT_ONTO_FORK "$FORK" "$UPSTREAM_FULL"
+	_PRINT_ONTO_FORK "$FORK" "$UPSTREAM_FULL" "$ORIG_HEAD"
 	local GAINED=$(git rev-list --count "$FORK..$UPSTREAM_FULL" 2>/dev/null)
 	PRINT_TEXT "%s gained %s commit(s); replaying %s from '%s' on top:" 32 \
 		"$ONTO_UPSTREAM" "${GAINED:-0}" "${#SPAN[@]}" "$ORIG_BRANCH"
@@ -13846,7 +13857,10 @@ GIT_ONTO () {
 # Says where a replay's fork point came from – whether the old base still sits on what it replays
 # onto decides how surprising the run is, an orphaned one meaning that was rewritten underneath
 _PRINT_ONTO_FORK () {
-	# Args: <fork> <commit replayed onto> – named by `ONTO_UPSTREAM`, `_ONTO_FORK_GUESSED` read
+	# Args: <fork> <commit replayed onto> <branch tip> – named by `ONTO_UPSTREAM`,
+	# `_ONTO_FORK_GUESSED` read
+	local AGAIN="git edit --onto=$(_SHQ "$ONTO_UPSTREAM")" COPY
+	_ONTO_FORK_HINT=""
 	if [ "$_ONTO_FORK_GUESSED" = "true" ]; then
 		# The reflog is what makes the fork point exact – without it this is the last common
 		# ancestor, which after a content-changing rewrite of the upstream sits well below the
@@ -13854,12 +13868,57 @@ _PRINT_ONTO_FORK () {
 		PRINT_TEXT "%s could not answer from %s's reflog – using the merge base %s." 33 \
 			"Fork point" "$ONTO_UPSTREAM" "$(git log -1 --format='%h %s' "$1")"
 		PRINT_TEXT "If %s was rewritten, this span may be too wide – check the list below before continuing." 33 "$ONTO_UPSTREAM"
+		# A rewrite keeps a commit's author, date and subject, so the newest such copy is where the
+		# branch's own work likely starts – named, not taken, as only the caller knows
+		if COPY=$(_ONTO_COPY_FORK "$1" "$3" "$2"); then
+			_ONTO_FORK_HINT="$AGAIN --base=${COPY:0:12}"
+			PRINT_TEXT "Where it is, take this run back (git edit --abort, or --undo once landed) and name the fork: %s – %s, the newest commit here %s holds a copy of (same author, date and subject)." 33 \
+				"$_ONTO_FORK_HINT" "$(git log -1 --format='%h %s' "$COPY")" "$ONTO_UPSTREAM"
+		else
+			_ONTO_FORK_HINT="$AGAIN --base=<sha>"
+			PRINT_TEXT "Where it is, take this run back (git edit --abort, or --undo once landed) and name the fork, the commit the branch's own work starts above: %s" 33 \
+				"$_ONTO_FORK_HINT"
+		fi
+	elif [ "$_ONTO_FORK_GUESSED" = "base" ]; then
+		if git merge-base --is-ancestor "$1" "$2" 2>/dev/null; then
+			PRINT_TEXT "Fork point %s, as --base names it – still on %s." 32 "$(git log -1 --format='%h %s' "$1")" "$ONTO_UPSTREAM"
+			return 0
+		fi
+		PRINT_TEXT "Fork point %s, as --base names it – not on %s, so the commits up to it stay out." 33 \
+			"$(git log -1 --format='%h %s' "$1")" "$ONTO_UPSTREAM"
+		# What the branch loses – those the upstream holds by patch id go as surely without it
+		local -a GONE
+		GONE=(${${(M)${(f)"$(git cherry "$2" "$1" 2>/dev/null)"}:#+ *}#+ })
+		if (( ${#GONE} )); then
+			PRINT_TEXT "%s of them %s holds in no form by patch id:" 33 "${#GONE}" "$ONTO_UPSTREAM"
+			git log --no-walk=unsorted --format='  %h %s' "${(@)GONE[1,12]}" 2>/dev/null | _CARET_LINES | \
+				LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+			(( ${#GONE} > 12 )) && PRINT_TEXT "  … and %s more" 90 "$(( ${#GONE} - 12 ))"
+		fi
 	elif git merge-base --is-ancestor "$1" "$2" 2>/dev/null; then
 		PRINT_TEXT "Fork point %s is still on %s." 32 "$(git log -1 --format='%h %s' "$1")" "$ONTO_UPSTREAM"
 	else
 		PRINT_TEXT "Fork point %s was orphaned by a rewrite – recovered from the reflog." 33 \
 			"$(git log -1 --format='%h %s' "$1")"
 	fi
+}
+
+# Prints the newest commit past <fork> on <branch tip> whose author, date and subject one past
+# <fork> on <upstream tip> repeats, as a rewrite of the upstream copies it – 1 where none does
+_ONTO_COPY_FORK () {
+	# Args: <fork> <branch tip> <upstream tip>
+	local LINE F=$'\x01'
+	local -A HELD
+	for LINE in ${(f)"$(git log --format="%an$F%ae$F%ad$F%s" --date=raw "$1..$3" 2>/dev/null)"}; do
+		HELD[k:$LINE]=1
+	done
+	# Newest first, so the first one held is the newest
+	for LINE in ${(f)"$(git log --format="%H %an$F%ae$F%ad$F%s" --date=raw "$1..$2" 2>/dev/null)"}; do
+		(( ${+HELD[k:${LINE#* }]} )) || continue
+		print -r -- "${LINE%% *}"
+		return 0
+	done
+	return 1
 }
 
 # Replays the span from <fork> up to the worktree's `HEAD` onto <base> there, gates the result and
@@ -13895,6 +13954,8 @@ _ONTO_REPLAY () {
 		PRINT_TEXT "Worktree: %s" 33 "$WT"
 		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
 		_PRINT_ONTO_SKIP_HINT "$WT" "$BASE"
+		# Repeated where a tail reads it – the fork guessed, this stop may be the upstream's own
+		[ -n "$_ONTO_FORK_HINT" ] && PRINT_TEXT "Or, the fork guessed as above, abort and name it: %s" 33 "git edit --abort && $_ONTO_FORK_HINT"
 		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
 		EMIT_CONFLICT "$WT" "$UNMERGED_LIST"
 		_PAUSE_EXIT 2 conflict
@@ -21231,9 +21292,9 @@ EXEC_BASE=""
 # Set by `--commit` alone – one in the caller's environment would rename every exec run
 EXEC_LABEL=""
 if [ ${#OPT_BASE} -gt 0 ]; then
-	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ] && [ ${#OPT_LAND} -eq 0 ]; then
+	if [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_AMEND_INTO} -eq 0 ] && [ ${#OPT_LAND} -eq 0 ] && [ ${#OPT_ONTO} -eq 0 ]; then
 		_USAGE_POINT=1
-		PRINT_ERR "--base only applies to --exec, --commit, --amend-into and --land"
+		PRINT_ERR "--base only applies to --exec, --commit, --amend-into, --land and --onto"
 		exit 1
 	fi
 	# A tree composed on the tip applies to the tip itself – a base would check nothing, where a bare
@@ -21249,6 +21310,11 @@ if [ ${#OPT_BASE} -gt 0 ]; then
 	if [[ ! "$EXEC_BASE" =~ '^[0-9a-fA-F]{7,64}$' ]] && [ ${#OPT_LAND} -gt 0 ]; then
 		PRINT_ERR "--base takes the SHA of the commit the landed branch forked from (--land=<branch> --base=<sha>)"
 		ECHO_E "\e[0;31m  A name resolves to wherever that branch is now, which may have moved past the fork – 'git rev-parse <name>' prints its SHA.\e[0m" >&2
+		exit 1
+	fi
+	if [[ ! "$EXEC_BASE" =~ '^[0-9a-fA-F]{7,64}$' ]] && [ ${#OPT_ONTO} -gt 0 ]; then
+		PRINT_ERR "--base takes the SHA of the commit this branch's own work starts above (--onto=<upstream> --base=<sha>)"
+		ECHO_E "\e[0;31m  A name like HEAD~2 resolves to wherever the branch is now, which a landing may move – 'git rev-parse <name>' prints its SHA.\e[0m" >&2
 		exit 1
 	fi
 	if [[ ! "$EXEC_BASE" =~ '^[0-9a-fA-F]{7,64}$' ]]; then

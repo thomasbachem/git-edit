@@ -22,7 +22,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
 \fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
-\fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR                    # replant this branch onto \fIupstream\fR
+\fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR [\fB\-\-base=\fR\fIsha\fR]    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-land=\fR\fIbranch\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR]   # land \fIbranch\fR's commits on this branch
 \fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIcommand\fR...
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
@@ -622,8 +622,9 @@ by resolving each commit of the run as named.
 .TP
 .B \-\-onto=\fIupstream\fR
 .nf
-\fBgit edit \-\-onto=\fR\fIupstream\fR              # the fork point read from \fIupstream\fR's reflog
-\fBgit edit \-\-continue\fR | \fB\-\-skip\fR | \fB\-\-abort\fR  # after a pause
+\fBgit edit \-\-onto=\fR\fIupstream\fR               # the fork point read from \fIupstream\fR's reflog
+\fBgit edit \-\-onto=\fR\fIupstream\fR \fB\-\-base=\fR\fIsha\fR  # the fork named: replay only what follows \fIsha\fR
+\fBgit edit \-\-continue\fR | \fB\-\-skip\fR | \fB\-\-abort\fR   # after a pause
 .fi
 .IP
 Replant the current branch onto \fIupstream\fR, deriving the fork point rather
@@ -636,7 +637,15 @@ so a rewrite that orphaned the branch's base is handled without the caller
 tracking the pre\-rewrite SHA. Where the reflog cannot answer (a fresh clone,
 an expired reflog), it falls back to a plain merge base and says so. After a
 content\-changing rewrite, that base sits below the real fork, so the span can
-take in commits \fIupstream\fR already has.
+take in commits \fIupstream\fR already has. So the fallback names the run
+that states the fork,
+.BR "git edit \-\-onto=" \fIupstream\fR " \-\-base=" \fIsha\fR,
+with the newest commit of the span that \fIupstream\fR holds a copy of (same
+author, date and subject) as \fIsha\fR where there is one.
+.B \-\-base
+names the commit the branch's own work starts above, a SHA below its tip:
+the replay takes what follows it, and the commits up to it stay out, those
+\fIupstream\fR holds in no form by patch id listed.
 .IP
 Before replaying it reports what \fIupstream\fR gained and which of the
 branch's commits it already carries (by patch id). Those are dropped by the
@@ -1602,7 +1611,10 @@ beside it refuses. With
 .BR \-\-land ,
 the commit \fIbranch\fR forked from, as a SHA in its history, over the fork
 the reflogs name \(em the span is what \fIbranch\fR holds past it and the
-target lacks.
+target lacks. With
+.BR \-\-onto ,
+the commit the branch's own work starts above, as a SHA below its tip, over
+the fork \fIupstream\fR's reflog names or the merge base it falls back to.
 .TP
 .B \-\-dry\-run
 With

@@ -128,7 +128,7 @@ Either form inserts the new commit **beneath** the target, which keeps its own t
 git edit --onto=main
 ```
 
-The point of the mode is that it derives the fork point instead of asking for it. `git rebase --onto main <old-base> <branch>` needs `<old-base>` spelled out, and after a rewrite of `main` that commit is orphaned – so the caller has to have tracked the pre-rewrite SHA. `--onto` recovers it from `main`'s reflog, and says so when it has to fall back to a plain merge base.
+The point of the mode is that it derives the fork point instead of asking for it. `git rebase --onto main <old-base> <branch>` needs `<old-base>` spelled out, and after a rewrite of `main` that commit is orphaned – so the caller has to have tracked the pre-rewrite SHA. `--onto` recovers it from `main`'s reflog, and says so when it has to fall back to a plain merge base – after a rewrite of `main`, a base below the real fork. There it names the run that states the fork, `git edit --onto=main --base=<sha>`, with the newest of your commits `main` holds a copy of as `<sha>` where there is one: only what follows it replays, and the commits up to it `main` holds in no form are listed as staying out.
 
 It reports the triage up front: what the upstream gained, and which of your commits it already carries by patch id – those are dropped and counted in the summary, since a shorter branch that isn't accounted for reads as lost work. A commit the upstream took a *different* way conflicts, and `git edit --skip` steps over it rather than duplicating the change. Your checkout comes along as after any landing, uncommitted edits merged onto the replanted files, so no stash is needed first – only a checkout halfway through a merge, rebase, cherry-pick or revert refuses up front. A branch with no commits of its own past the fork simply moves to the upstream.
 
@@ -238,7 +238,7 @@ Worth putting in an agent's own instructions verbatim: *with `GIT_EDIT_ACTOR` se
 | `--text <msg>`, `--subject <line>`, `-m`, `--message` | The new message – inline (`-` reads stdin), the subject alone with the body kept, or in an editor at a terminal |
 | `--edits=<file\|json>`, `--patch=<file>`, `--put=<path>=<file>`, `--rm=<path>`, `--chmod=<path>=+x\|-x` | The inputs of `--commit` and `--amend-into`, composing your own changes on the tip – see *Committing from a shared checkout* |
 | `--whole`, `--tree=<tree-ish>`, `--snapshot` | How `--amend-into` folds – named files whole, a tree composed apart, or merged into each commit from its target up |
-| `--base=<sha>` | The commit your files rest on, in place of the landings check – with `--exec`, the tip its result was built on. With `--land`, the commit `<branch>` forked from |
+| `--base=<sha>` | The commit your files rest on, in place of the landings check – with `--exec`, the tip its result was built on. With `--land`, the commit `<branch>` forked from, and with `--onto`, the commit the branch's own work starts above |
 | `--allow-pushed`, `--allow-new-path`, `--allow-mode-change`, `--allow-other-actor` | Overrides – rewrite pushed commits, fold a path into a commit that predates it, take a file-mode change, take on another caller's run or pause |
 | `--verify=<cmd>`, `--verify-span`, `--no-verify-span`, `--no-verify` | The gate – see *Verifying what a rewrite built* |
 | `-C`, `--dir[=<path>]` | Run an edit, drop, squash or a land's replay in a kept worktree, `<repo>.git-edit` by default |
