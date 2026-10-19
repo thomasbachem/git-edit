@@ -173,7 +173,8 @@ export GIT_EDIT_ACTOR=s-me
 _ST_RUN --amend-into="$S_G" --verify="$TMP/s222-race.sh" -- g.txt
 export GIT_EDIT_ACTOR=
 _ST_EQ "a fold whose branch moves under its gate loses the race at its CAS" "$RC" "1"
-_ST_OUT_HAS "as moved during it" "moved during autosquash"
+_ST_OUT_HAS "as moved during it, named as the fold the caller ran" "Branch 'main' moved from ${S_OLD:0:7} to ${S_PEER:0:7} during the fold – refusing"
+_ST_OUT_LACKS "never by the autosquash that builds it" 'during autosquash'
 _ST_OUT_LACKS "with 3 own and 2 other callers' landings, no busy hint" "is busy"
 git update-ref refs/heads/main "$S_OLD"
 print -r -- l6 > l6.txt

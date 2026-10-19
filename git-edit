@@ -11937,7 +11937,7 @@ SEQEOF
 		# Don't auto-cleanup the worktree – it holds the in-progress rebase
 		_CLEANUP_HOOK=""
 
-		PRINT_ERR "Conflict during autosquash – resolve in worktree, then 'git edit --continue'"
+		PRINT_ERR "Conflict during the fold – resolve in worktree, then 'git edit --continue'"
 		PRINT_TEXT "Worktree: %s" 33 "$WT"
 		local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$WT")
 		PRINT_TEXT "Or abort the operation: %s" 33 "git edit --abort"
@@ -11989,11 +11989,13 @@ SEQEOF
 	fi
 
 	# Step 4 – atomic CAS-update of the branch ref, guarded on the pre-op tip, refusing where
-	# the branch moved during autosquash, since nothing was consumed and the staging stands
+	# the branch moved during the fold, since nothing was consumed and the staging stands
 	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: amend-into ${TARGET_FULL:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD"; then
-		PRINT_ERR "Branch '$REF' moved during autosquash – refusing to overwrite"
+		# Named as the caller ran it – the autosquash only builds the fold
+		local NOW=$(git rev-parse -q --verify "$REF" 2>/dev/null)
+		PRINT_ERR "Branch '${REF#refs/heads/}' moved${NOW:+ from ${ORIG_HEAD:0:7} to ${NOW:0:7}} during the fold – refusing to overwrite"
 		PRINT_TEXT "Nothing was applied; %s untouched – retry when ready." 33 "$(_FOLD_SOURCE)"
 		exit 1
 	fi
@@ -16216,7 +16218,7 @@ _CONTINUE_EDIT () {
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		_CLEANUP_HOOK=""
-		PRINT_ERR "Branch '$STATE_BRANCH' moved during apply – run 'git edit --continue' to replay onto the new tip"
+		PRINT_ERR "Branch '${STATE_BRANCH#refs/heads/}' moved during the edit – run 'git edit --continue' to replay onto the new tip"
 		_PAUSE_EXIT 1 retry
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$BASE" "$NEW_HEAD" "edit ${STATE_TARGET:0:7}"
