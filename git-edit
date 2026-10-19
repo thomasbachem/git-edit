@@ -815,7 +815,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       Inputs, with --commit or --amend-into – your own changes, on the tip in a private index:\e[0m"
 	ECHO_E "\e[0;94m       --edits=<file|json>             Replay the replacements you made, each old text matching once – never diffed from the checkout\e[0m"
 	ECHO_E "\e[0;94m       --patch=<file>                  Apply hunks you split, their context kept\e[0m"
-	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with a file rebuilt from git show <sha>:<path>\e[0m"
+	ECHO_E "\e[0;94m       --put=<path>=<file>             Replace <path> with a file rebuilt from git show <tip>:<path>\e[0m"
 	ECHO_E "\e[0;94m       --rm=<path>                     Remove <path>\e[0m"
 	ECHO_E "\e[0;94m       --chmod=<path>=+x|-x            Set <path>'s executable bit\e[0m"
 	ECHO_E "\e[0;94m       -- <path>...                    And take these files whole beside them (--whole with --amend-into)\e[0m"
@@ -13810,7 +13810,7 @@ GIT_ONTO () {
 		local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: onto ${UPSTREAM_FULL:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)UPSTREAM_FULL} ${(q-)ORIG_HEAD}"
 		PRINT_CMD "$UPDATE_CMD" 90
 		if ! _MOVE_REF "$UPDATE_CMD"; then
-			PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
+			PRINT_ERR "Branch '${REF#refs/heads/}' moved during replant – refusing to overwrite"
 			exit 1
 		fi
 		_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$UPSTREAM_FULL" "onto ${UPSTREAM_FULL:0:7}"
@@ -13982,7 +13982,7 @@ _ONTO_REPLAY () {
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		[ -n "$LAND_FROM" ] && _REFUSE_LAND_MOVED "$REF" "$OLD"
-		PRINT_ERR "Branch '$REF' moved during replant – refusing to overwrite"
+		PRINT_ERR "Branch '${REF#refs/heads/}' moved during replant – refusing to overwrite"
 		PRINT_TEXT "Replanted history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
 	fi

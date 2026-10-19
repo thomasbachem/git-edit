@@ -333,9 +333,9 @@ Strict squash: plumbing only; errors instead of falling back to a rebase.
 .TP
 .B \-\-amend\-into=\fR{\fIsha\fR|\fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 .nf
-\fBgit add\fR \fIpath\fR... \fB&& git edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-\fR \fIpath\fR...      # fold what you staged, scoped to it
 \fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-whole \-\-\fR \fIpath\fR...                   # fold these files whole from the checkout
 \fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-edits=\fR\fIjson\fR [\fB\-\-whole \-\-\fR \fIpath\fR...]  # amid another's edits in the same files
+\fBgit add\fR \fIpath\fR... \fB&& git edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-\fR \fIpath\fR...      # fold what you staged, scoped to it
 \fBgit edit \-\-amend\-into=auto\fR ...                                     # into the unpushed commit owning the lines
 \fBgit edit \-\-amend\-into=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR ...                       # reword it in the same run
 .fi
@@ -959,7 +959,7 @@ lists what would land.
 \fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-\fR \fIpath\fR...                      # files wholly yours, at the tip
 \fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-edits=\fR\fIjson\fR [\fB\-\-\fR \fIpath\fR...]     # amid another's edits in the same files
 \fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-after=\fR\fIsha\fR \fB\-\-\fR \fIpath\fR...        # right after \fIsha\fR instead (or \fB\-\-before\fR)
-\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR \fB\-\-base=\fR\fIsha\fR  # a file rebuilt from \fBgit show\fR \fIsha\fR\fB:\fR\fIpath\fR
+\fBgit edit \-\-commit \-\-text\fR \fImsg\fR \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR \fB\-\-base=\fR\fItip\fR  # a file rebuilt from \fBgit show\fR \fItip\fR\fB:\fR\fIpath\fR
 \fBgit edit \-\-commit \-\-text \-\fR ... < \fImsg\-file\fR                      # the message from stdin
 .fi
 .IP
@@ -1496,8 +1496,8 @@ holds every old text once, pausing at the first that doesn't; see
 It is for replacements made by hand \(em pairs generated from a diff of the
 checkout file take its other lines too, a peer's lines landing in a
 \fInew\fR text where the one\-match rule can't see them, while a file rebuilt
-from a commit
-.RB ( "git show \fIsha\fB:\fIpath\fR"
+from the tip
+.RB ( "git show \fItip\fB:\fIpath\fR"
 plus your changes) goes in as
 .BR \-\-put ;
 either way the paths are checked against other callers' landings as whole
