@@ -107,7 +107,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
+	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
 	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
@@ -341,9 +341,158 @@ ECHO_E () {
 	fi
 }
 
+# The run's answers to repo facts it asks again and again – a checkout's top, git dir and common
+# dir, a `--git-path` there, `edit.verifyCmd` – asked once per directory and question, as none
+# moves while that directory stands, one remade asking again – kept by this process alone
+typeset -gA _FACTS
+_FACTS_OFF=""
+zmodload -F zsh/stat b:zstat 2>/dev/null || _FACTS_OFF=1
+
+# Sets `_FACT_KEY` for `git [-C <dir>] <args>` – the directory git runs in, the args, a config
+# read's `git -c` pins – and `_FACT_ID`, that directory's inode, failing where it is gone or the
+# environment names a git dir, work tree or index
+_FACT_AT () {
+	# Args: [-C <dir>] <git args>...
+	local D=$PWD G
+	local -A H
+	[ -z "$_FACTS_OFF" ] || return 1
+	(( ${+GIT_DIR} + ${+GIT_WORK_TREE} + ${+GIT_INDEX_FILE} + ${+GIT_COMMON_DIR} + ${+GIT_OBJECT_DIRECTORY} + ${+GIT_ALTERNATE_OBJECT_DIRECTORIES} )) && return 1
+	if [ "$1" = -C ]; then
+		[[ "$2" == /* ]] && D=$2 || D=$PWD/$2
+		shift 2
+	fi
+	zstat -H H -- "$D" 2>/dev/null || return 1
+	_FACT_ID="${H[device]}:${H[inode]}"
+	# And a linked worktree's `.git` file, naming its git dir – one made anew can reuse the inode
+	[ -f "$D/.git" ] && { IFS= read -r G < "$D/.git"; } 2>/dev/null && _FACT_ID+=":$G"
+	_FACT_KEY="$D"$'\0'"${(pj:\0:)@}"
+	[ "$1" = config ] && _FACT_KEY+=$'\0'"$GIT_CONFIG_PARAMETERS"
+	return 0
+}
+
+# Tells whether the run holds an answer to `git [-C <dir>] <args>`
+_FACT_HELD () {
+	# Args: [-C <dir>] <git args>...
+	_FACT_AT "$@" && [[ "${${_FACTS[$_FACT_KEY]}%%$'\0'*}" == "$_FACT_ID" ]]
+}
+
+# Keeps <out> as the answer to `git [-C <dir>] <args>`, with its exit status
+_FACT_PUT () {
+	# Args: <status> <out> [-C <dir>] <git args>...
+	local R=$1 O=$2
+	shift 2
+	_FACT_AT "$@" && _FACTS[$_FACT_KEY]="$_FACT_ID"$'\0'"$R"$'\0'"$O"
+}
+
+# Asks git once for the top, git dir and common dir, raw and absolute, of the cwd's or <dir>'s
+# checkout, kept as the answers to each of those asks there – the absolute ones at the top too –
+# by the run's own process alone, as nothing a subshell keeps reaches it
+_FACTS_PRIME () {
+	# Args: [-C <dir>]
+	local OUT
+	local -a L
+	(( ! ZSH_SUBSHELL )) && [ -z "$_FACTS_OFF" ] || return 1
+	_FACT_HELD "$@" rev-parse --git-common-dir && return 0
+	OUT=$(git "$@" rev-parse --git-common-dir --show-toplevel --absolute-git-dir --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+	L=("${(@f)OUT}")
+	(( ${#L} == 4 )) && [[ -n "${L[1]}" && -n "${L[2]}" && -n "${L[3]}" && -n "${L[4]}" ]] || return 1
+	_FACT_PUT 0 "${L[1]}" "$@" rev-parse --git-common-dir
+	_FACT_PUT 0 "${L[2]}" "$@" rev-parse --show-toplevel
+	_FACT_PUT 0 "${L[3]}" "$@" rev-parse --absolute-git-dir
+	_FACT_PUT 0 "${L[4]}" "$@" rev-parse --path-format=absolute --git-common-dir
+	_FACT_PUT 0 "${L[2]}" -C "${L[2]}" rev-parse --show-toplevel
+	_FACT_PUT 0 "${L[3]}" -C "${L[2]}" rev-parse --absolute-git-dir
+	_FACT_PUT 0 "${L[4]}" -C "${L[2]}" rev-parse --path-format=absolute --git-common-dir
+	return 0
+}
+# Primed on each cd, as most asks there run inside `$(…)`, which keeps nothing
+chpwd_functions+=(_FACTS_PRIME)
+
+# Puts into <var> what `git [-C <dir>] <args>` prints, returning its status – the run's answer
+# where it holds one, else git's, kept where it succeeded or found a config key unset – and
+# `symbolic-ref -q HEAD` as `_HEAD_REF` reads it
+_FACT () {
+	# Args: <var> [-C <dir>] <git args>...
+	local _FV=$1 _FK _FI _FA _FO _FR _FS
+	local -a _FC
+	shift
+	[ "$1" = -C ] && _FC=(-C "$2")
+	_FS=${@[${#_FC} + 1]}
+	if [ "${(j: :)@[${#_FC} + 1,-1]}" = "symbolic-ref -q HEAD" ]; then
+		_HEAD_REF "$_FV" "${_FC[@]}"
+		return
+	fi
+	if _FACT_AT "$@"; then
+		_FK=$_FACT_KEY _FI=$_FACT_ID
+		_FA=${_FACTS[$_FK]}
+		# A checkout's top, git dir or common dir comes with the other three
+		if [[ "${_FA%%$'\0'*}" != "$_FI" ]]; then
+			case "${(j: :)@[${#_FC} + 1,-1]}" in
+				"rev-parse --git-common-dir"|"rev-parse --show-toplevel"|"rev-parse --absolute-git-dir"|"rev-parse --path-format=absolute --git-common-dir")
+					_FACTS_PRIME "${_FC[@]}" && _FA=${_FACTS[$_FK]} ;;
+			esac
+		fi
+		if [[ -n "$_FA" && "${_FA%%$'\0'*}" == "$_FI" ]]; then
+			_FA=${_FA#*$'\0'}
+			typeset -g "$_FV=${_FA#*$'\0'}"
+			return ${_FA%%$'\0'*}
+		fi
+	fi
+	_FO=$(git "$@")
+	_FR=$?
+	typeset -g "$_FV=$_FO"
+	if [ -n "$_FK" ] && (( ! ZSH_SUBSHELL )) && { (( _FR == 0 )) || [[ "$_FS" == config && _FR -eq 1 ]]; }; then
+		_FACTS[$_FK]="$_FI"$'\0'"$_FR"$'\0'"$_FO"
+	fi
+	return $_FR
+}
+
+# Prints what `git [-C <dir>] <args>` prints, as `_FACT` answers it – for an ask inside `$(…)`
+_GIT_FACT () {
+	# Args: [-C <dir>] <git args>...
+	local _GO _GR
+	_FACT _GO "$@"
+	_GR=$?
+	[ -n "$_GO" ] && print -r -- "$_GO"
+	return $_GR
+}
+
+# Puts into <var> what `git [-C <dir>] symbolic-ref -q HEAD` prints, returning its status – read
+# from the `HEAD` file each time, as a run moves it, where the run knows the checkout's git dir
+# and the file holds a branch link or a commit – git's own answer otherwise
+_HEAD_REF () {
+	# Args: <var> [-C <dir>]
+	local _HV=$1 _HG _HC _HL _HR _HF _HT _HS="" _HE
+	shift
+	if { _FACT_HELD "$@" rev-parse --absolute-git-dir || { _FACTS_PRIME "$@" && _FACT_HELD "$@" rev-parse --absolute-git-dir; }; } && \
+	   _FACT _HG "$@" rev-parse --absolute-git-dir && _FACT _HC "$@" rev-parse --path-format=absolute --git-common-dir && \
+	   [[ -f "$_HG/HEAD" && ! -L "$_HG/HEAD" ]] && { IFS= read -r _HL < "$_HG/HEAD" || [ -n "$_HL" ]; } 2>/dev/null; then
+		if [[ "$_HL" == "ref: refs/"* ]]; then
+			_HR=${_HL#ref: }
+			# A link to a link git follows, and reftable's placeholder or a name git refuses, go to git
+			for _HF in "$_HG/$_HR" "$_HC/$_HR"; do
+				_HT=""
+				[ -f "$_HF" ] && { IFS= read -r _HT < "$_HF"; } 2>/dev/null
+				[[ "$_HT" == ref:* ]] && _HS=1
+			done
+			if [ -z "$_HS" ] && [[ "$_HR" != (*[[:space:][:cntrl:]\\~^:?*\[]*|*..*|*/.*|*//*|*/|*.|*.lock|*.lock/*|*@\{*) ]]; then
+				typeset -g "$_HV=$_HR"
+				return 0
+			fi
+		elif (( ${#_HL} == 40 || ${#_HL} == 64 )) && [[ "$_HL" != *[^0-9a-f]* ]]; then
+			typeset -g "$_HV="
+			return 1
+		fi
+	fi
+	_HR=$(git "$@" symbolic-ref -q HEAD)
+	_HE=$?
+	typeset -g "$_HV=$_HR"
+	return $_HE
+}
+
 # Name the repo every run acts on – it is the cwd's, never an argument, so a caller working
 # across repos has no other signal that a rewrite is aimed where they meant
-_BANNER_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+_FACT _BANNER_REPO rev-parse --show-toplevel 2>/dev/null
 ECHO_E "\e[1;94mgit edit – Edit, reword, drop, squash, reorder, split, or fold past commits\e[0m${_BANNER_REPO:+\e[0;90m  ${_BANNER_REPO//\\/$_LITB}\e[0m}"
 
 # Global cleanup hook – a shell command any sub-operation can set, run once on script exit
@@ -1184,7 +1333,7 @@ _ADOPT_CHECKOUT_CONFIG () {
 		git config -f "$INC" core.hooksPath "${${:-$CO/$HP}:A}" && N+=1
 	fi
 	(( N )) || return 0
-	GCD=$(git -C "$CO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+	_FACT GCD -C "$CO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null
 	[ -n "$GCD" ] || return 0
 	# A glob, so the path's own `[`, `*`, `?` or `\` escaped – and the worktrees one level deep, as
 	# a submodule's git dir sits below a linked worktree's – single-quoted as git reads that list,
@@ -1204,7 +1353,7 @@ _LINK_WORKTREE_EXTRAS () {
 	local FROM=$2
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
 	_RENORM_SETTLE "$WT"
-	[ -z "$FROM" ] && FROM=$(git rev-parse --show-toplevel 2>/dev/null)
+	[ -z "$FROM" ] && _FACT FROM rev-parse --show-toplevel 2>/dev/null
 	[ -z "$FROM" ] || [ ! -d "$FROM" ] && return 0
 	_ADOPT_CHECKOUT_CONFIG "$WT" "$FROM"
 
@@ -1682,7 +1831,7 @@ _CURRENT_REF () {
 		echo "refs/heads/$ORIG_BRANCH"
 		return
 	fi
-	local B=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local B=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -n "$B" ]; then
 		echo "refs/heads/$B"
 	else
@@ -1877,7 +2026,8 @@ _GUARD_NO_MERGE_SPAN () {
 # tab and the caller's label closing a labeled run's), in the common git dir so worktrees share
 # it – powers `--undo` and `--status`'s last-operation report
 _JOURNAL_FILE_PATH () {
-	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+	local DIR
+	_FACT DIR rev-parse --git-common-dir 2>/dev/null
 	[ -z "$DIR" ] && return 1
 	case "$DIR" in
 		/*) ;;
@@ -2437,7 +2587,7 @@ _ADOPT_KILLED_MOVE () {
 	local -a T
 	local -A WHOLE_IDX
 	[ -z "$_JOURNAL_HELD" ] || return 0
-	REF=$(git symbolic-ref -q HEAD 2>/dev/null) && JF=$(_JOURNAL_FILE_PATH) || return 0
+	_FACT REF symbolic-ref -q HEAD 2>/dev/null && JF=$(_JOURNAL_FILE_PATH) || return 0
 	LINE=$(git log -g -1 --date=unix --format='%H %gd %gs' "$REF" -- 2>/dev/null)
 	NEW=${LINE%% *} SUBJ=${LINE#* * }
 	WHEN=${${${LINE#* }%% *}##*@\{}
@@ -3332,7 +3482,7 @@ _PICK_IN_PROGRESS () {
 _HALFWAY_THROUGH () {
 	# Args: <checkout>
 	# Read again where a signal cut it short – read empty, it would say none is going on
-	_LANDED_OUT git -C "$1" rev-parse --absolute-git-dir 2>/dev/null
+	_LANDED_OUT _GIT_FACT -C "$1" rev-parse --absolute-git-dir 2>/dev/null
 	local GD=$REPLY PICK=""
 	_PICK_IN_PROGRESS "$1" "$GD" && PICK=$REPLY
 	REPLY=""
@@ -3609,13 +3759,13 @@ GIT_CARRY () {
 	#       journaled rewrite of its branch
 	local CO REF OLD NEW LINE GD WHAT OF AT
 	local -a J
-	CO=$(git rev-parse --show-toplevel 2>/dev/null)
-	if ! REF=$(git symbolic-ref -q HEAD); then
+	_FACT CO rev-parse --show-toplevel 2>/dev/null
+	if ! _FACT REF symbolic-ref -q HEAD; then
 		# Detached by an operation stopped partway – a rebase's branch and step named, with the way on
 		if _HALFWAY_THROUGH "$CO"; then
 			WHAT=$REPLY
 			if [ "$WHAT" = "a rebase" ]; then
-				GD=$(git rev-parse --absolute-git-dir 2>/dev/null)
+				_FACT GD rev-parse --absolute-git-dir 2>/dev/null
 				for LINE in rebase-merge/head-name rebase-apply/head-name; do { OF=$(<"$GD/$LINE") } 2>/dev/null && break; done
 				if { AT=$(<"$GD/rebase-merge/msgnum") && J=("$AT" "$(<"$GD/rebase-merge/end")"); } 2>/dev/null || \
 				   { AT=$(<"$GD/rebase-apply/next") && J=("$AT" "$(<"$GD/rebase-apply/last")"); } 2>/dev/null; then
@@ -3694,7 +3844,7 @@ _STATUS_UNBROUGHT () {
 	local -a R STEP_FROM STEP_TO
 	local -A UNBROUGHT FB_BLOB BY_FROM
 	local _MERGE_FILE_IDS=-
-	CO=$(git rev-parse --show-toplevel 2>/dev/null) && REF=$(git symbolic-ref -q HEAD 2>/dev/null) && \
+	_FACT CO rev-parse --show-toplevel 2>/dev/null && _FACT REF symbolic-ref -q HEAD 2>/dev/null && \
 		TIP=$(git rev-parse -q --verify HEAD 2>/dev/null) || return 0
 	_BROUGHT_UPTO "$CO" "$REF" "$TIP"
 	M=$REPLY
@@ -3924,7 +4074,7 @@ GIT_STATUS_REPORT () {
 # worktree, and the index that needs reconciling is the branch's own, wherever that sits
 _BRANCH_CHECKOUT () {
 	# Args: <refname>
-	local LINE WT="" HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+	local LINE WT="" HERE=$(cd "$_START_DIR" 2>/dev/null && _GIT_FACT rev-parse --show-toplevel 2>/dev/null)
 	local -a FOUND
 	for LINE in "${(@f)$(git worktree list --porcelain 2>/dev/null)}"; do
 		case $LINE in
@@ -4270,7 +4420,7 @@ _FLAGGED_STALE () {
 	shift
 	reply=("$@")
 	(( $# )) || return 0
-	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)
+	_FACT IDX -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null
 	[ -n "$IDX" ] && [ -e "$IDX" ] || return 0
 	TMP="$IDX.git-edit-flags.$$"
 	_TEMP_FILES+=("$TMP")
@@ -4375,7 +4525,8 @@ _RENORM_UNFLAG () {
 # passes where the stop's step is retried or done
 _RENORM_STOPPED () {
 	# Args: <worktree> <its output, in C>
-	local GD=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)
+	local GD
+	_FACT GD -C "$1" rev-parse --absolute-git-dir 2>/dev/null
 	[ -d "$GD/rebase-merge" ] && [ -z "$(_UNMERGED_IN "$1")" ] || return 1
 	[[ "$2" == *"would be overwritten by "* || "$2" == *"left changes to the index and/or the working tree"* || \
 	   "$2" == *"mark them as resolved using git add"* ]] && [[ "$2" != *"untracked working tree files would be"* ]] || return 1
@@ -4444,7 +4595,7 @@ _RESET_IF_STAGED_AS () {
 	PAIRS=("$@")
 	RESET_DONE=(); RESET_KEPT=(); RESET_LOCKED=(); RESET_SPARSE=()
 	(( ${#PAIRS} )) || return 0
-	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null) || return 1
+	_FACT IDX -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null || return 1
 	TMP="$IDX.git-edit.$$"
 	_TEMP_FILES+=("$TMP")
 	if ! _LOCK_INDEX "$IDX"; then
@@ -4495,7 +4646,7 @@ _RESET_IF_STAGED_AS () {
 			_INDEX_FLAGS "$CO" "$TMP" "${CAND[@]}"
 			# A git before 2.35 adds an entry outside a sparse checkout unflagged, reading as deleted
 			# there – flagged as a later one flags it, each one absent where this git can't ask
-			if [[ "$(git --version 2>/dev/null)" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 35 )); then
+			if [[ "$_GIT_VERSION" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 35 )); then
 				for P in "${(@)ADDS:*CAND}"; do [ -e "$CO/$P" ] || [ -L "$CO/$P" ] || ABSENT+=("$P"); done
 				_SPARSE_OUT "$CO" "${ABSENT[@]}" || RESET_SPARSE=("${reply[@]}")
 				FLAG_SW+=("${reply[@]}")
@@ -4733,7 +4884,7 @@ _SYNCS_CHECKOUT () {
 	[[ "$_SYNC_VERDICT" == *:"$1" ]] && { [[ "$_SYNC_VERDICT" == yes:* ]]; return; }
 	_SYNC_VERDICT="no:$1"
 	# Read again where a signal cut it short, as this runs once the branch moved
-	_LANDED_OUT eval 'cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null'
+	_LANDED_OUT eval 'cd "$_START_DIR" 2>/dev/null && _GIT_FACT rev-parse --show-toplevel 2>/dev/null'
 	local HERE=$REPLY
 	if [ -z "$HERE" ] || [ "${HERE:A}" != "${1:A}" ]; then
 		_SYNC_WHY="it is checked out at $1, not where this run started"
@@ -4750,7 +4901,8 @@ _SYNCS_CHECKOUT () {
 	fi
 	# An index held past the wait takes none of the sync's writes – waited out as
 	# `_WAIT_INDEX_UNLOCKED` does, its path asked once
-	local LOCK=$(git -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)
+	local LOCK
+	_FACT LOCK -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null
 	local -i W=0 N=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} > 0 ? 20 : 50 ))
 	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= N )); do sleep 0.1; done
 	if [ -n "$LOCK" ] && [ -e "$LOCK" ]; then
@@ -4845,7 +4997,7 @@ _SYNC_CHECKOUT () {
 	local BROUGHT_AT="" BROUGHT_END="" CO_REF
 	local -a WIDENED ON_MARK
 	local -A WIDE
-	if CO_REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null); then
+	if _FACT CO_REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null; then
 		if [ "$HOW" = carry ]; then _BROUGHT_READ "$CO" "$CO_REF"; else _BROUGHT_UPTO "$CO" "$CO_REF" "$OLD"; fi
 		BROUGHT_AT=$REPLY
 		(( ${#reply} )) || BROUGHT_END=$REPLY
@@ -4904,7 +5056,7 @@ _SYNC_CHECKOUT () {
 	# A carry's paths too that a landing on the way changed and a later one took back, none changed
 	# from <old> to <new> – a file brought along in between holds the first, as its own base tells
 	local -A EXTRA
-	if [ "$HOW" = carry ] && P=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null); then
+	if [ "$HOW" = carry ] && _FACT P -C "$CO" symbolic-ref -q HEAD 2>/dev/null; then
 		# None from a carry at the tip – one for the files its record names
 		[ "$OLD" != "$NEW" ] && _LANDING_STEPS "$P" "$OLD" "$NEW"
 		for (( K = 1; K <= ${#STEP_FROM}; K++ )); do
@@ -5057,7 +5209,7 @@ _SYNC_CHECKOUT () {
 		local UF UTEXT ULINE
 		local -a UR
 		local -A FB_BLOB
-		UF=$(git -C "$CO" rev-parse --path-format=absolute --git-path git-edit-unbrought 2>/dev/null)
+		_FACT UF -C "$CO" rev-parse --path-format=absolute --git-path git-edit-unbrought 2>/dev/null
 		if [ -n "$UF" ] && [ -s "$UF" ] && { UTEXT=$(<"$UF") } 2>/dev/null; then
 			for ULINE in "${(@f)UTEXT}"; do
 				UR=(${=${ULINE%%$'\t'*}})
@@ -5336,7 +5488,7 @@ _SYNC_CHECKOUT () {
 		fi
 	done
 	ADDS+=("${DIR_TO[@]}")
-	(( ${#ADDS} )) && _ENTRIES_IN_THE_WAY "$CO" "$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)" "${ADDS[@]}"
+	(( ${#ADDS} )) && _ENTRIES_IN_THE_WAY "$CO" "$(_GIT_FACT -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)" "${ADDS[@]}"
 	for (( K = ${#DIR_TO}; K >= 1; K-- )); do
 		(( ${+IN_WAY[${DIR_TO[K]}]} )) || continue
 		_IN_WAY_WHY "${DIR_TO[K]}" "${IN_WAY[${DIR_TO[K]}]}" "$NOUN"
@@ -5369,7 +5521,8 @@ _SYNC_CHECKOUT () {
 	# needs, where no `git add -A` of a peer's meanwhile picks it up, under a short name, as a name
 	# near the length limit leaves no room – a carry's read copied out too, as `git diff --no-index`
 	# cleans one inside the checkout
-	local GD=$(git -C "$CO" rev-parse --absolute-git-dir 2>/dev/null) SYMLINKS="" OUTF="" BASEF="" THEIRS="" OURSF="" ATTR_SRC=""
+	local GD SYMLINKS="" OUTF="" BASEF="" THEIRS="" OURSF="" ATTR_SRC=""
+	_FACT GD -C "$CO" rev-parse --absolute-git-dir 2>/dev/null
 	local CARRY_TMP="$GD/git-edit-$HOW.$$"
 	if (( ${#IS_DIRTY} )); then
 		SYMLINKS=$(git -C "$CO" config --bool core.symlinks 2>/dev/null)
@@ -6381,7 +6534,7 @@ _FILE_BASES () {
 	(( ${#ANS} == ${#ASK} )) || return 0
 	# Whether git merges blobs by ID (2.43), asked once a merge is due
 	_MERGE_FILE_IDS=-
-	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null)
+	_FACT REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null
 	_UNBROUGHT_READ "$CO"
 	(( ${#STEP_FROM} )) || [ -z "$REF" ] || _LANDING_STEPS "$REF" "$OLD" "$NEW"
 	# A landing at or below the checkout's mark was brought – a file holding what came before it holds
@@ -6500,10 +6653,10 @@ _UNBROUGHT_READ () {
 	local CO=$1 F JF REF TEXT LINE JT=""
 	local -a R
 	UNBROUGHT=()
-	F=$(git -C "$CO" rev-parse --path-format=absolute --git-path git-edit-unbrought 2>/dev/null)
+	_FACT F -C "$CO" rev-parse --path-format=absolute --git-path git-edit-unbrought 2>/dev/null
 	REPLY=$F
 	[ -n "$F" ] && [ -s "$F" ] && { TEXT=$(<"$F") } 2>/dev/null || return 0
-	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null)
+	_FACT REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null
 	JF=$(_JOURNAL_FILE_PATH) && { JT=$(<"$JF") } 2>/dev/null
 	for LINE in "${(@f)TEXT}"; do
 		R=(${=${LINE%%$'\t'*}})
@@ -6546,7 +6699,7 @@ _UNBROUGHT_NOTE () {
 	local -a RAW
 	[ -n "$F" ] && { RAW=("${(@f)$(<"$F")}") } 2>/dev/null
 	[ -n "$F" ] && (( ${#NOT_BROUGHT} || ${#KEEP} < ${#UNBROUGHT} || ${#RAW} > ${#UNBROUGHT} )) || return 0
-	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null) || return 0
+	_FACT REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null || return 0
 	for P in "${(@k)KEEP}"; do
 		OUT+=("${${KEEP[$P]}[(w)4]} $REF ${${KEEP[$P]}[(w)2]} ${${KEEP[$P]}[(w)3]} ${${KEEP[$P]}[(w)1]}${${KEEP[$P]}[(w)5]:+ ${${KEEP[$P]}[(w)5]}}"$'\t'"$P")
 	done
@@ -6666,7 +6819,7 @@ _BROUGHT_READ () {
 	local F=$3 TEXT L G A
 	local -a T E
 	REPLY="" reply=()
-	[ -n "$F" ] || F=$(git -C "$1" rev-parse --path-format=absolute --git-path git-edit-brought 2>/dev/null) && [ -n "$F" ] || return 0
+	[ -n "$F" ] || _FACT F -C "$1" rev-parse --path-format=absolute --git-path git-edit-brought 2>/dev/null && [ -n "$F" ] || return 0
 	{ TEXT=$(<"$F") } 2>/dev/null || return 0
 	T=(${=${TEXT%%$'\n'*}})
 	[ "${T[1]}" = "$2" ] && [[ ${#T[2]} == (40|64) && "${T[2]}" != *[^0-9a-f]* ]] || return 0
@@ -6704,8 +6857,8 @@ _BROUGHT_HEADS () {
 _BROUGHT_PUT () {
 	# Args: <checkout> <tip> [<ref> <file> [held]]
 	local REF=$3 F=$4
-	{ [ -n "$REF" ] || REF=$(git -C "$1" symbolic-ref -q HEAD 2>/dev/null); } && \
-		{ [ -n "$F" ] || F=$(git -C "$1" rev-parse --path-format=absolute --git-path git-edit-brought 2>/dev/null); } && [ -n "$F" ] || return 0
+	{ [ -n "$REF" ] || _FACT REF -C "$1" symbolic-ref -q HEAD 2>/dev/null; } && \
+		{ [ -n "$F" ] || _FACT F -C "$1" rev-parse --path-format=absolute --git-path git-edit-brought 2>/dev/null; } && [ -n "$F" ] || return 0
 	_BROUGHT_HEADS "${F%/*}" 1
 	print -r -- "$REF $2${5:+ $5}"$'\n'"${reply[1]}" > "$F.$$" 2>/dev/null || return 0
 	if (( ${+builtins[zf_mv]} )); then zf_mv -f "$F.$$" "$F" 2>/dev/null; else mv -f "$F.$$" "$F" 2>/dev/null; fi
@@ -6732,7 +6885,7 @@ _BROUGHT_UPTO () {
 _BROUGHT_HOLD () {
 	# Args: <checkout> <old> [<ref> <file>]
 	local REF=$3
-	[ -n "$REF" ] || REF=$(git -C "$1" symbolic-ref -q HEAD 2>/dev/null) || return 0
+	[ -n "$REF" ] || _FACT REF -C "$1" symbolic-ref -q HEAD 2>/dev/null || return 0
 	_BROUGHT_UPTO "$1" "$REF" "$2" "$4"
 	[ -n "$REPLY" ] || _BROUGHT_PUT "$1" "$2" "$REF" "$4" held
 	return 0
@@ -6744,7 +6897,7 @@ _BROUGHT_CARRIED () {
 	# Args: <checkout> <old> <new>
 	local REF M
 	local -a STEP_FROM STEP_TO
-	REF=$(git -C "$1" symbolic-ref -q HEAD 2>/dev/null) || return 0
+	_FACT REF -C "$1" symbolic-ref -q HEAD 2>/dev/null || return 0
 	_BROUGHT_UPTO "$1" "$REF" "$3"
 	M=$REPLY
 	if [ -n "$M" ] && [ "$M" != "$2" ]; then
@@ -6774,7 +6927,7 @@ _SYNC_TWO_TREE () {
 	local -A IDX_ENT GOES IN_WAY
 	shift 3
 	REPLY="" TT_MOVED=() TT_IN_WAY=() FROM=$OLD
-	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)
+	_FACT IDX -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null
 	if [ -z "$IDX" ] || ! _LOCK_INDEX "$IDX"; then
 		REPLY="the index is locked"
 		return 2
@@ -6851,7 +7004,8 @@ _SYNC_TWO_TREE () {
 # it – ~2 s under the suite, as `_LOCK_INDEX` does
 _WAIT_INDEX_UNLOCKED () {
 	# Args: <checkout>
-	local LOCK=$(git -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)
+	local LOCK
+	_FACT LOCK -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null
 	local -i W=0 N=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} > 0 ? 20 : 50 ))
 	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= N )); do sleep 0.1; done
 	return 0
@@ -6878,7 +7032,7 @@ _SYNC_WRITE_ENTRIES () {
 	local -a WRITE ADDS
 	Q_OUT=() Q_BY=()
 	(( ${#Q_PATH} )) || return 0
-	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)
+	_FACT IDX -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null
 	if [ -z "$IDX" ] || ! _LOCK_INDEX "$IDX"; then
 		Q_OUT=("${(@)Q_PATH/*/locked}")
 		return 0
@@ -6995,7 +7149,7 @@ _CARRY_BASE () {
 	local -a J PATHS NAMES RF BACK
 	shift 2
 	REPLY=$OLD reply=()
-	REF=$(git -C "$CO" symbolic-ref -q HEAD) && [ -n "$JF" ] && [ -s "$JF" ] || return 0
+	_FACT REF -C "$CO" symbolic-ref -q HEAD && [ -n "$JF" ] && [ -s "$JF" ] || return 0
 	# Down to the landing from the checkout's mark, below which every landing was brought – one a sync
 	# or carry made
 	_BROUGHT_READ "$CO" "$REF"
@@ -7075,7 +7229,7 @@ _CARRY_TODO () {
 	else
 		# A bare carry from the checkout's mark at or below <old>, as it brings every landing missed
 		# since – the next run's printed carry the same – else from that one tip
-		if REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null) && _BROUGHT_UPTO "$CO" "$REF" "$OLD" && [ -n "$REPLY" ]; then
+		if _FACT REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null && _BROUGHT_UPTO "$CO" "$REF" "$OLD" && [ -n "$REPLY" ]; then
 			FROM=""
 		fi
 		_CARRY_CMD "$CO" "$FROM"
@@ -7090,7 +7244,7 @@ _CARRY_TODO () {
 # mark, without <old> – run there where the caller stands in another checkout
 _CARRY_CMD () {
 	# Args: <checkout> [<old>]
-	local HERE=$(cd "$_START_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+	local HERE=$(cd "$_START_DIR" 2>/dev/null && _GIT_FACT rev-parse --show-toplevel 2>/dev/null)
 	if [ -n "$HERE" ] && [ "${HERE:A}" = "${1:A}" ]; then
 		REPLY="git edit --carry${2:+=${2:0:12}}"
 	else
@@ -7454,7 +7608,7 @@ _RECONCILE_KEEP () {
 	# Its files stay as they are – no carry to name, a second signal stopping the run included – a
 	# checkout brought to the undone tip now on <new>, what that run landed its edits
 	_SYNC_DONE=1
-	REF=$(git -C "$CO" symbolic-ref -q HEAD 2>/dev/null) && _BROUGHT_READ "$CO" "$REF" && [ "$REPLY" = "$OLD" ] && (( ! ${#reply} )) && \
+	_FACT REF -C "$CO" symbolic-ref -q HEAD 2>/dev/null && _BROUGHT_READ "$CO" "$REF" && [ "$REPLY" = "$OLD" ] && (( ! ${#reply} )) && \
 		_BROUGHT_PUT "$CO" "$NEW"
 	_RESYNC_STRANDED_ENTRIES "$CO" "$OLD" "$NEW"
 	(( ${#RESYNCED} )) && PRINT_TEXT "Index entries re-synced to the new tip: %s" 32 "$(_SOME_PATHS -q "${RESYNCED[@]}")"
@@ -7696,7 +7850,8 @@ _NAME_ORPHANED_WORKTREES () {
 # some reads come back empty instead of failing (rerere scoping first, then `config --type` and
 # `--exec`'s pushed guard), so the run would go on with them quietly off
 _REQUIRE_GIT_VERSION () {
-	local LINE=$(git --version 2>/dev/null)
+	_GIT_VERSION=$(git --version 2>/dev/null)
+	local LINE=$_GIT_VERSION
 	# Only a line that parses is judged (`2.50.1 (Apple Git-155)`, `2.39.5.windows.1`) – an
 	# unfamiliar format says nothing about age
 	[[ "$LINE" =~ '^git version ([0-9]+)\.([0-9]+)' ]] || return 0
@@ -7856,7 +8011,7 @@ _PAUSE_IN_WAY () {
 	REPLY=""
 	_STATE_EXISTS || return 1
 	local SF=$(_STATE_FILE_PATH)
-	local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1) HERE=$(git symbolic-ref -q HEAD)
+	local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1) HERE=$(_GIT_FACT symbolic-ref -q HEAD)
 	SB=${SB#refs/heads/}
 	REPLY=$SB
 	# Neither mode pauses unplaced, so neither needs the slot – only a pause on its own branch is in
@@ -8177,7 +8332,7 @@ _KEEP_TYPED_MESSAGE () {
 	# Args: <message> <command rerunning the run, its message left out>
 	[ -n "$1" ] || return 0
 	local KEPT
-	KEPT=$(mktemp "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/git-edit-message.XXXXXX" 2>/dev/null) || return 0
+	KEPT=$(mktemp "$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/git-edit-message.XXXXXX" 2>/dev/null) || return 0
 	print -r -- "$1" > "$KEPT" || return 0
 	PRINT_TEXT "The message you typed is kept in %s – reuse it: %s" 33 "$KEPT" "$2 --text - < $(_SHQ "$KEPT")"
 }
@@ -8320,7 +8475,8 @@ _REBASE_FIRST_RUN () {
 # left unstaged – rather than on an error no pause can resolve
 _REBASE_RESOLVABLE () {
 	# Args: <worktree> <its output, in C>
-	local GITDIR=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)
+	local GITDIR
+	_FACT GITDIR -C "$1" rev-parse --absolute-git-dir 2>/dev/null
 	[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] || return 1
 	[ -n "$(_UNMERGED_IN "$1")" ] && return 0
 	[[ "$2" == *"mark them as resolved using git add"* ]] && \
@@ -8774,7 +8930,7 @@ _EXEC_BUILT_BELOW () {
 	# A rebase's entries, oldest first, by subject – `rebase` in any form, a `pull` running one, a
 	# commit made at its stop – and before git 2.38 a fast-forward, logged in the caller's language:
 	# an untagged step within a rebase to a child of the commit before, one the rebase was given
-	[[ "$(git --version 2>/dev/null)" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 38 )) && OLD_FF=1
+	[[ "$_GIT_VERSION" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 38 )) && OLD_FF=1
 	for (( I = N; I >= 1; I-- )); do
 		PREV=${HASH[I + 1]:-$ORIG}
 		if [[ "${SUBJ[I]}" == ((#i)rebase*|"commit (rebase)"*|pull*\ \([a-z-]##\)*) ]] || \
@@ -9053,7 +9209,7 @@ _EXEC_PLACE () {
 # if the branch moved, so raw rewriting commands never touch the main checkout
 GIT_EXEC () {
 	local ORIG_HEAD=$(git rev-parse HEAD)
-	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	# The CAS runs in the temp worktree, where `HEAD` names that worktree's own, never the checkout's
 	if [ -z "$BRANCH" ]; then
 		PRINT_ERR "--exec requires being on a branch (got detached HEAD)"
@@ -9174,7 +9330,8 @@ GIT_EXEC () {
 	fi
 	# A rebase, merge, cherry-pick or revert the command left stopped is no result – its `HEAD`
 	# sits partway, and landing it drops whatever the operation had still to replay
-	local WT_GD=$(git rev-parse --absolute-git-dir 2>/dev/null) OP=""
+	local WT_GD OP=""
+	_FACT WT_GD rev-parse --absolute-git-dir 2>/dev/null
 	if [ -e "$WT_GD/rebase-merge" ]; then OP=rebase-merge
 	elif [ -e "$WT_GD/rebase-apply" ]; then OP=rebase-apply
 	elif _PICK_IN_PROGRESS "$WT" "$WT_GD"; then OP=$REPLY
@@ -9487,7 +9644,8 @@ _CHECKOUT_CONTEXT () {
 	local L PICK=""
 	local -a AT
 	local -A CFG
-	AT=("${(@f)$(git rev-parse --show-toplevel --show-prefix --absolute-git-dir 2>/dev/null)}")
+	_FACT L rev-parse --show-toplevel --show-prefix --absolute-git-dir 2>/dev/null
+	AT=("${(@f)L}")
 	# A name holding a newline splits into more lines, a failed lookup into fewer – asked apart then
 	(( ${#AT} == 3 )) || AT=("$(git rev-parse --show-toplevel)" "$(git rev-parse --show-prefix)" \
 		"$(git rev-parse --absolute-git-dir)")
@@ -9675,7 +9833,8 @@ _COMPOSE_WHOLE () {
 		PRINT_ERR "No commit to build on – the branch has none yet"
 		exit 1
 	fi
-	local TOP=$(git rev-parse --show-toplevel) IDX=$(MKTEMP_FILE git-edit-index) ERR P
+	local TOP IDX=$(MKTEMP_FILE git-edit-index) ERR P
+	_FACT TOP rev-parse --show-toplevel
 	_TEMP_FILES+=("$IDX")
 	_RECORD_WHOLE_IDX "$TOP"
 	# An empty file is no index – read-tree writes its own
@@ -10210,7 +10369,7 @@ _COMPOSE_INPUTS () {
 		TIP_AT=$(git rev-parse -q --verify "$WHOLE_HEAD:$P" 2>/dev/null)
 		BASE_AT=$(git rev-parse -q --verify "$EXEC_BASE:$P" 2>/dev/null)
 		if [ "$BASE_AT" != "$TIP_AT" ]; then
-			_AT_TOP "$(git rev-parse --show-toplevel)"
+			_AT_TOP "$(_GIT_FACT rev-parse --show-toplevel)"
 			PRINT_ERR "$P: changed between --base ${EXEC_BASE:0:9} and the tip ${WHOLE_HEAD:0:9} (${REPLY}git log --oneline ${EXEC_BASE:0:9}..${WHOLE_HEAD:0:9} -- $(_QUOTE_PATHS "$P"))"
 			if [ $SPEC = --put ]; then
 				ECHO_E "\e[0;31m  Rebuild it from the tip – git show ${WHOLE_HEAD:0:12}:<path> plus your change – and put it again with --base=${WHOLE_HEAD:0:12}, or replay your change with --edits – or put it as it stands with that --base where taking it back is the point.\e[0m" >&2
@@ -10958,8 +11117,9 @@ _LANDING_UNDONE () {
 _GUARD_WHOLE_LANDINGS () {
 	local REF JF=$(_JOURNAL_FILE_PATH) LINE ACTOR MOVE P OURS TIP BEFORE AFTER MERGED WHO GONE MODE Q QOURS DST DSTBLOB O
 	local HEAD_BLOB NAME_AT_TIP AT_TIP N LATER
-	local TOPDIR=$(git rev-parse --show-toplevel)
-	REF=$(git symbolic-ref -q HEAD) || return 0
+	local TOPDIR
+	_FACT TOPDIR rev-parse --show-toplevel
+	_FACT REF symbolic-ref -q HEAD || return 0
 	[ -n "$JF" ] && [ -s "$JF" ] || return 0
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
@@ -11652,7 +11812,8 @@ _HOLDS_MOST_OF () {
 # line at the file's own `conflict-marker-size`, as a merge leaves them, whoever left them there
 _GUARD_WHOLE_MARKERS () {
 	# Args: [<how the files were taken, "taken whole" by default>]
-	local TOP=$(git rev-parse --show-toplevel) P N RE NEW E OUT ALL=""
+	local TOP P N RE NEW E OUT ALL=""
+	_FACT TOP rev-parse --show-toplevel
 	local -a BAD FILES ATTR
 	local -A TREE_ENT SIZE OF_SIZE MAYBE
 	local -i K
@@ -11792,7 +11953,7 @@ _COMMIT_WHOLE_TREE () {
 # through `--exec` with its hooks, gate, CAS, journal and reconcile, pinned to the tip they read
 GIT_COMMIT_WHOLE () {
 	# Args: <path>...
-	if ! git symbolic-ref -q HEAD >/dev/null; then
+	if ! _GIT_FACT symbolic-ref -q HEAD >/dev/null; then
 		PRINT_ERR "--commit requires being on a branch (got detached HEAD)"
 		exit 1
 	fi
@@ -11833,7 +11994,7 @@ GIT_COMMIT_WHOLE () {
 	else
 		PRINT_ACTION "Committing ${#WHOLE_PATHS} file(s) on %s..." "$WHOLE_HEAD"
 	fi
-	[ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN && _LANDED_OWN=("$(git rev-parse --show-toplevel)" "${WHOLE_PATHS[@]}")
+	[ -z "$AMEND_TREE" ] && ! _INPUTS_GIVEN && _LANDED_OWN=("$(_GIT_FACT rev-parse --show-toplevel)" "${WHOLE_PATHS[@]}")
 	EXEC_BASE=$WHOLE_HEAD
 	EXEC_LABEL=commit
 	GIT_EXEC _COMMIT_WHOLE_TREE "$WHOLE_TREE" "$MSG"
@@ -11876,7 +12037,7 @@ _STAGED_TREE_FOR () {
 		DSTSHA=${F[4]}
 		if [ "$DSTMODE" = "000000" ]; then
 			# From the top, as `update-index` reads a path from where it runs, unlike a `--cacheinfo`
-			GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
+			GIT_INDEX_FILE=$TMPIDX git -C "$(_GIT_FACT rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		else
 			GIT_INDEX_FILE=$TMPIDX git update-index --add --cacheinfo "$DSTMODE,$DSTSHA,$PATHNAME" || { rm -f "$TMPIDX"; return 1; }
 		fi
@@ -11942,7 +12103,7 @@ GIT_AMEND_INTO () {
 	TARGET=$_RESOLVED_SHA
 
 	# Pre-flight: must be on a branch
-	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local ORIG_BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "--amend-into requires being on a branch (got detached HEAD)"
 		exit 1
@@ -11960,7 +12121,8 @@ GIT_AMEND_INTO () {
 	[ -n "$TREE_BASE" ] && [ "$TREE_BASE" != "$ORIG_HEAD" ] && _TREE_MOVED "$ORIG_HEAD"
 	# Repo root, not `pwd` – pathspecs in the success sync below must resolve
 	# from the root even when the script was invoked from a subdirectory
-	local MAIN_DIR=$(git rev-parse --show-toplevel)
+	local MAIN_DIR
+	_FACT MAIN_DIR rev-parse --show-toplevel
 	# Commits above the target pre-op – locates the amended commit in the
 	# rebased chain afterwards (`NEW_HEAD~DEPTH`), for the completion summary
 	local DEPTH=$(git rev-list --count "$TARGET_FULL..HEAD")
@@ -12438,7 +12600,7 @@ _EDITS_RESOLVE_STOP () {
 		done
 	fi
 	(( EDITS_TIP_OK )) || return 1
-	GD=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null) && [ -f "$GD/rebase-merge/done" ] || return 1
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null && [ -f "$GD/rebase-merge/done" ] || return 1
 	U=(${(f)"$(<"$GD/rebase-merge/done")"})
 	U=(${U:#\#*})
 	STEP=${U[-1]} U=()
@@ -12616,7 +12778,7 @@ _SNAPSHOT_BUILD () {
 					P=${LINE%$'\t'*}
 					LINE=${LINE##*$'\t'}
 					if [ "$LINE" = "-" ]; then
-						GIT_INDEX_FILE=$IDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$P" || { rm -f "$IDX"; return 1; }
+						GIT_INDEX_FILE=$IDX git -C "$(_GIT_FACT rev-parse --show-toplevel)" update-index --force-remove -- "$P" || { rm -f "$IDX"; return 1; }
 					else
 						GIT_INDEX_FILE=$IDX git update-index --add --cacheinfo "${LINE%% *},${LINE#* },$P" || { rm -f "$IDX"; return 1; }
 					fi
@@ -12714,7 +12876,8 @@ _SNAPSHOT_SAVE_STATE () {
 # run and every `--continue` alike, the build being quick and the map carrying what was resolved
 _SNAPSHOT_RUN () {
 	local WT=$STATE_WORKTREE LINE
-	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
+	local GD
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir
 	local -a _SNAPSHOT_STAGES _SNAPSHOT_RESOLVED_TREES EMPTIED
 	local _SNAPSHOT_TIP _SNAPSHOT_ERA _SNAPSHOT_TREE
 	_SNAPSHOT_BUILD "$GD/git-edit-snapshot-map"
@@ -12795,7 +12958,8 @@ _CONTINUE_SNAPSHOT () {
 	_CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 	PRINT_ACTION "Continuing the snapshot fold into %s..." "$STATE_TARGET"
 	local WT=$STATE_WORKTREE P BLOB ENTRY
-	local GD=$(git -C "$WT" rev-parse --absolute-git-dir)
+	local GD
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir
 	if [ -s "$GD/git-edit-snapshot-pending" ]; then
 		local -a UNMERGED
 		UNMERGED=(${(0)"$(_UNMERGED_IN "$WT")"})
@@ -12868,7 +13032,8 @@ _ABORT_SNAPSHOT () {
 # wrote the line, not the newest commit to touch the file – pure additions carry none, and a
 # failed blame prints the path and git's reason and returns 1, as no evidence is no guess
 _BLAME_AMEND_TARGETS () {
-	local TOPLEVEL=$(git rev-parse --show-toplevel)
+	local TOPLEVEL
+	_FACT TOPLEVEL rev-parse --show-toplevel
 	local P HUNK START COUNT OUT
 	local -a LARGS FOUND
 	for P in "$@"; do
@@ -12958,7 +13123,8 @@ _RESOLVE_AMEND_TARGET () {
 
 	# Staged paths are root-relative, so anchor the per-path lookups at the repo root and they
 	# resolve from a subdirectory too
-	local TOPLEVEL=$(git rev-parse --show-toplevel)
+	local TOPLEVEL
+	_FACT TOPLEVEL rev-parse --show-toplevel
 	local P C
 
 	# Line-level evidence wins where it exists – it is the difference between
@@ -13442,7 +13608,7 @@ GIT_SPLIT () {
 	# Capture the ref to update
 	local ORIG_HEAD=$(git rev-parse HEAD)
 	_REQUIRE_IN_TIP "$ORIG_HEAD" "$X"
-	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -13470,7 +13636,7 @@ GIT_SPLIT () {
 			FIELDS=(${=META})
 			if [ "${FIELDS[2]}" = "000000" ]; then
 				(( PASS == 1 )) || continue
-				GIT_INDEX_FILE=$TMPIDX git -C "$(git rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
+				GIT_INDEX_FILE=$TMPIDX git -C "$(_GIT_FACT rev-parse --show-toplevel)" update-index --force-remove -- "$PATHNAME" || { rm -f "$TMPIDX"; exit 1; }
 				continue
 			fi
 			(( PASS == 2 )) || continue
@@ -13514,7 +13680,7 @@ GIT_SPLIT () {
 GIT_SPLIT_PAUSE () {
 	_REQUIRE_NO_INFLIGHT
 
-	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$BRANCH" ]; then
 		PRINT_ERR "Splitting by content requires being on a branch (got detached HEAD)"
 		exit 1
@@ -13532,7 +13698,7 @@ GIT_SPLIT_PAUSE () {
 	_LINK_WORKTREE_EXTRAS "$WT"
 
 	_SAVE_STATE "operation=split" "worktree=$WT" "branch=refs/heads/$BRANCH" \
-		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(git rev-parse --show-toplevel)"
+		"orig_head=$(git rev-parse HEAD)" "target=$X" "maindir=$(_GIT_FACT rev-parse --show-toplevel)"
 	_CLEANUP_HOOK=""
 	# A message given up front survives the pause in the sidecar
 	if [ -n "$TEXT_VALUE" ]; then
@@ -13766,7 +13932,7 @@ GIT_REORDER () {
 	_REQUIRE_NO_INFLIGHT
 
 	# Pre-flight: must be on a branch
-	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local ORIG_BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "${${OPT_MOVE:+--move}:---reorder} requires being on a branch (got detached HEAD)"
 		exit 1
@@ -13945,7 +14111,8 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	local GUARD_EMPTY=$3
 	local -x GIT_LITERAL_PATHSPECS=1
 	[ -z "$SOURCE" ] && return 1
-	local GITDIR=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
+	local GITDIR
+	_FACT GITDIR -C "$WT" rev-parse --absolute-git-dir 2>/dev/null
 	[ -z "$GITDIR" ] && return 1
 	local -a STEPS=(${=$(_REBASE_STEP "$GITDIR")})
 	if [ "${STEPS[1]:-0}" -eq 0 ] || [ "${STEPS[1]}" != "${STEPS[2]}" ]; then
@@ -14054,7 +14221,7 @@ _ONTO_FORK_POINT () {
 GIT_ONTO () {
 	_REQUIRE_NO_INFLIGHT
 
-	local ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local ORIG_BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$ORIG_BRANCH" ]; then
 		PRINT_ERR "--onto requires being on a branch (got detached HEAD)"
 		exit 1
@@ -14063,7 +14230,8 @@ GIT_ONTO () {
 	local ORIG_HEAD=$(git rev-parse HEAD)
 	# Captured before the cd into the temp worktree – the replant changes what
 	# this checkout should hold, so it has to be brought along afterwards
-	local MAIN_DIR=$(git rev-parse --show-toplevel)
+	local MAIN_DIR
+	_FACT MAIN_DIR rev-parse --show-toplevel
 
 	local UPSTREAM_FULL
 	if ! UPSTREAM_FULL=$(_PEEL_SHA "$ONTO_UPSTREAM" commit); then
@@ -14328,7 +14496,7 @@ _BRANCH_CMD () {
 # branch, as one checked out there cannot be switched to here – or after a switch here
 _PRINT_LAND_ELSEWHERE () {
 	# Args: <branch as named>
-	local HERE=$(git rev-parse --show-toplevel 2>/dev/null) OWN=$(_LAND_REF_OF "$1") LINE WT="" C
+	local HERE=$(_GIT_FACT rev-parse --show-toplevel 2>/dev/null) OWN=$(_LAND_REF_OF "$1") LINE WT="" C
 	local AGAIN="git edit --land=$(_SHQ "$1")"
 	local -a CMDS
 	for LINE in "${(@f)$(git worktree list --porcelain 2>/dev/null)}"; do
@@ -14981,7 +15149,7 @@ _REFUSE_LAND_DROPPED () {
 # the change the same or on <tip> already, and (1) where a step does not apply, or for a root commit
 _LAND_CHANGE_ON_TIP () {
 	# Args: <own> <lookalike> <tip>
-	local OP LP T1 T2 TOP=$(git rev-parse --show-toplevel 2>/dev/null) IDX PATCH
+	local OP LP T1 T2 TOP=$(_GIT_FACT rev-parse --show-toplevel 2>/dev/null) IDX PATCH
 	OP=$(git rev-parse -q --verify "$1^" 2>/dev/null) && LP=$(git rev-parse -q --verify "$2^" 2>/dev/null) || return 1
 	IDX=$(MKTEMP_FILE git-edit-land-idx) || return 1
 	_TEMP_FILES+=("$IDX")
@@ -15181,13 +15349,13 @@ _REFUSE_LAND_COPIES () {
 # their fork, a fast-forward by compare-and-swap, else their replay from the fork onto the tip in an
 # isolated worktree, as a replant replays – <branch> itself never moving
 GIT_LAND () {
-	local TARGET=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local TARGET=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	if [ -z "$TARGET" ]; then
 		PRINT_ERR "--land lands into the checked-out branch, and HEAD is detached – nothing landed"
 		_PRINT_LAND_ELSEWHERE "$LAND_BRANCH"
 		exit 1
 	fi
-	local REF=refs/heads/$TARGET TIP=$(git rev-parse HEAD) MAIN_DIR=$(git rev-parse --show-toplevel)
+	local REF=refs/heads/$TARGET TIP=$(git rev-parse HEAD) MAIN_DIR=$(_GIT_FACT rev-parse --show-toplevel)
 	local LAND_FULL=$(_LAND_REF_OF "$LAND_BRANCH") LAND_TIP="" LAND_NAME=$LAND_BRANCH
 	# A branch first – anything else said as what it resolved to, and a relative name such as `@{-1}`
 	# taken as the branch it names now, so the resume and every hint name that one
@@ -15735,7 +15903,7 @@ _GUARD_ONTO_CHECKOUT_CLEAN () {
 	local UPSTREAM=$3
 	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
 	# A checkout on another branch is not the replant's to update
-	[ -n "$4" ] && [ "$(git -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ] && return 0
+	[ -n "$4" ] && [ "$(_GIT_FACT -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ] && return 0
 
 	local -a AFFECTED UNSTAGED STAGED UNTRACKED DIRTY BLOCKED
 	# What the upstream changed since the fork, the paths the replant rewrites – the branch's own
@@ -15788,7 +15956,7 @@ _SYNC_ONTO_CHECKOUT () {
 	local FROM=$2
 	local TO=$3
 	[ -z "$DIR" ] || [ ! -d "$DIR" ] && return 0
-	if [ -n "$4" ] && [ "$(git -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ]; then
+	if [ -n "$4" ] && [ "$(_GIT_FACT -C "$DIR" symbolic-ref -q HEAD 2>/dev/null)" != "$4" ]; then
 		PRINT_TEXT "%s – left as it is." 32 "The checkout holds another branch"
 		return 0
 	fi
@@ -16748,7 +16916,8 @@ _ABORT_REORDER () {
 # Names the state file for in-flight operations, currently `--amend-into` when an autosquash
 # hits a conflict the caller must resolve – the file lives in the common git dir, shared
 _STATE_FILE_PATH () {
-	local DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+	local DIR
+	_FACT DIR rev-parse --git-common-dir 2>/dev/null
 	[ -z "$DIR" ] && return 1
 	case "$DIR" in
 		/*) ;;
@@ -17041,7 +17210,7 @@ _NOTE_RESUME_VERIFY () {
 		_STATE_NOTE "verify_span=0"
 		STATE_VERIFY_SPAN=0
 	elif [ ${#OPT_VERIFY_SPAN} -gt 0 ] && [ "$STATE_VERIFY_SPAN" != "1" ]; then
-		if [ -z "$STATE_VERIFY_CMD" ] && [ -z "$(git config --get edit.verifyCmd 2>/dev/null)" ]; then
+		if [ -z "$STATE_VERIFY_CMD" ] && [ -z "$(_GIT_FACT config --get edit.verifyCmd 2>/dev/null)" ]; then
 			PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
 			exit 1
 		fi
@@ -17143,7 +17312,7 @@ _UNREGISTER_GONE_WORKTREE () {
 	# Args: <worktree path>
 	local WT=$1 GCD A G
 	[ -n "$WT" ] && [ ! -e "$WT" ] || return 0
-	_LANDED_OUT git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || return 0
+	_LANDED_OUT _GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null || return 0
 	GCD=$REPLY
 	for A in "$GCD"/worktrees/*(N/); do
 		[ -f "$A/gitdir" ] && [ ! -e "$A/locked" ] || continue
@@ -17429,7 +17598,7 @@ _PAIR_REPLAYED () {
 	# The record is this replay's where it ends on a commit the replay rebuilt – git's own as it goes
 	# where the replay is still in progress
 	for REC in git-edit-replayed rebase-merge/rewritten-list; do
-		REC=$(git -C "$1" rev-parse --path-format=absolute --git-path "$REC" 2>/dev/null)
+		_FACT REC -C "$1" rev-parse --path-format=absolute --git-path "$REC" 2>/dev/null
 		RECS=()
 		[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
 		(( ${#RECS} )) && (( ${REBUILT[(Ie)${${RECS[-1]#* }%% *}]} )) && break
@@ -17780,7 +17949,7 @@ _GUARD_HAND_FINISH () {
 	(( ${#BAD} )) || return 0
 	_CLEANUP_HOOK=""
 	# One still in progress takes no `rebase -i` over those commits
-	if [ -d "$(git -C "$WT" rev-parse --path-format=absolute --git-path rebase-merge 2>/dev/null)" ]; then
+	if [ -d "$(_GIT_FACT -C "$WT" rev-parse --path-format=absolute --git-path rebase-merge 2>/dev/null)" ]; then
 		PRINT_ERR "The rebase continued by hand in $WT committed conflict markers – nothing was applied"
 		printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again.\e[0m" >&2
@@ -18001,7 +18170,7 @@ _VERIFY_NOTE_BYPASS () {
 	[ ${#OPT_NO_VERIFY} -gt 0 ] || return 0
 	local CMD=$VERIFY_VALUE
 	[ -z "$CMD" ] && CMD=$STATE_VERIFY_CMD
-	[ -z "$CMD" ] && CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -z "$CMD" ] && _FACT CMD config --get edit.verifyCmd 2>/dev/null
 	[ -n "$CMD" ] && _VERIFY_BYPASSED=${CMD%%$'\n'*}
 	return 0
 }
@@ -18012,7 +18181,7 @@ _VERIFY_CONFIGURED () {
 	[ ${#OPT_NO_VERIFY} -gt 0 ] && return 1
 	REPLY=$VERIFY_VALUE
 	[ -z "$REPLY" ] && REPLY=$STATE_VERIFY_CMD
-	[ -z "$REPLY" ] && REPLY=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -z "$REPLY" ] && _FACT REPLY config --get edit.verifyCmd 2>/dev/null
 	[ -n "$REPLY" ]
 }
 
@@ -18213,7 +18382,7 @@ _VERIFY_REWRITE () {
 	# original run asked for – then the standing config
 	local VERIFY_CMD=$VERIFY_VALUE
 	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$STATE_VERIFY_CMD
-	[ -z "$VERIFY_CMD" ] && VERIFY_CMD=$(git config --get edit.verifyCmd 2>/dev/null)
+	[ -z "$VERIFY_CMD" ] && _FACT VERIFY_CMD config --get edit.verifyCmd 2>/dev/null
 	# A pause persists the command as one `key=value` line, and a resume would
 	# read back only its first line – a truncated check that can still exit 0
 	if [ "$VERIFY_CMD" != "${VERIFY_CMD%%$'\n'*}" ]; then
@@ -18949,7 +19118,7 @@ GIT_REWORD () {
 	# Capture the ref to update (branch if attached, `HEAD` if detached)
 	local ORIG_HEAD=$(git rev-parse HEAD)
 	_REQUIRE_IN_TIP "$ORIG_HEAD" "$TARGET"
-	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -19360,7 +19529,7 @@ GIT_RESQUASH () {
 	# Capture the ref to update
 	local ORIG_HEAD=$(git rev-parse HEAD)
 	_REQUIRE_IN_TIP "$ORIG_HEAD" "${COMMITS[@]}"
-	local BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+	local BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 	local REF
 	if [ -n "$BRANCH" ]; then
 		REF="refs/heads/$BRANCH"
@@ -19508,7 +19677,8 @@ _FOLD_EDITOR_CMD () {
 	# [strip: the fold's message comes from a template git seeded with comments], [tty: the command
 	# is the editor a person types in, its help and cleanup set by `_MSG_STYLE`]
 	local RUN=$1
-	local GITDIR=$(git -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null)
+	local GITDIR
+	_FACT GITDIR -C "${2:-.}" rev-parse --absolute-git-dir 2>/dev/null
 	if [ -z "$GITDIR" ]; then
 		# Unresolved, the guard matches nothing and the message goes silently –
 		# the very loss it exists to prevent, so refuse instead
@@ -19683,7 +19853,7 @@ _RESUME_EXEC () {
 		git worktree remove --force "$W" >/dev/null 2>&1
 		rm -rf "$W"
 	done
-	cd "$_START_DIR" 2>/dev/null || cd "${$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null):h}"
+	cd "$_START_DIR" 2>/dev/null || cd "${$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null):h}"
 	local -a ENV=(-u GIT_CONFIG_PARAMETERS "GIT_EDIT_EXPECT_PAUSE=$2") RUN=("$_SELF")
 	[ -n "$_CALLER_GCP_SET" ] && ENV+=("GIT_CONFIG_PARAMETERS=$_CALLER_GCP")
 	# A copy run as `zsh git-edit` need not be executable itself
@@ -19803,7 +19973,8 @@ _PAUSE_EXIT () {
 # Prints the commits the todo of <worktree>'s rebase still picks, full SHAs on one line
 _TODO_PICKS () {
 	# Args: <worktree>
-	local TODO=$(git -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/git-rebase-todo 2>/dev/null) LINE C
+	local TODO LINE C
+	_FACT TODO -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/git-rebase-todo 2>/dev/null
 	local -a W PICKS
 	[ -f "$TODO" ] || return 0
 	while IFS= read -r LINE; do
@@ -19820,8 +19991,10 @@ _TODO_PICKS () {
 # before the hold-back's trailing step, which must come last to tell who delivers
 _RECORD_REPLAY_PAIRS () {
 	# Args: <worktree>
-	local TODO=$(git -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/git-rebase-todo 2>/dev/null)
-	local REC=$(git -C "$1" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null) STEP LINE
+	local TODO
+	_FACT TODO -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/git-rebase-todo 2>/dev/null
+	local REC STEP LINE
+	_FACT REC -C "$1" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
 	local -a STEPS
 	local -i I AT
 	STEP='exec cat "$(git rev-parse --git-path rebase-merge/rewritten-list)" >"$(git rev-parse --git-path git-edit-replayed)" 2>/dev/null; :'
@@ -19846,7 +20019,8 @@ _RECORD_REPLAY_PAIRS () {
 # none where the stop is no such step
 _STOP_BUILDS () {
 	# Args: <worktree>
-	local DONE=$(git -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/done 2>/dev/null)
+	local DONE
+	_FACT DONE -C "$1" rev-parse --path-format=absolute --git-path rebase-merge/done 2>/dev/null
 	local -a W STEPS
 	[ -f "$DONE" ] || return 0
 	STEPS=(${(f)"$(LC_ALL=C grep -v '^#' "$DONE")"})
@@ -19895,7 +20069,7 @@ _NOTE_STOP () {
 	# And the picks still to come, which a rebase quit there never makes – the stopped one first
 	# where it is a pick, a fixup's own commit going into the one before it, and a replant's or a
 	# land's being one `--skip` may step over
-	DONE=$(git -C "$SWT" rev-parse --path-format=absolute --git-path rebase-merge/done 2>/dev/null)
+	_FACT DONE -C "$SWT" rev-parse --path-format=absolute --git-path rebase-merge/done 2>/dev/null
 	[ -f "$DONE" ] && LAST=$(LC_ALL=C grep -v '^#' "$DONE" | tail -1)
 	[[ "${LAST%% *}" == (p|pick|r|reword|e|edit) ]] || STOP=
 	LC_ALL=C grep -qxE 'operation=(onto|land)' "$_STATE_OWNED" 2>/dev/null && STOP=
@@ -19951,7 +20125,7 @@ _NOTE_UNRECORDED_STOP () {
 	local WT=$STATE_WORKTREE GD STOP TIP=""
 	local -a FILES
 	[ -z "$STATE_STOPS" ] && [ -n "$WT" ] && [ -d "$WT" ] || return 0
-	GD=$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null
 	[ -n "$GD" ] && [ -d "$GD/rebase-merge" ] || return 0
 	STOP=$(git -C "$WT" rev-parse -q --verify REBASE_HEAD 2>/dev/null) || return 0
 	FILES=(${(0)"$(git -C "$WT" diff-tree -r -z --root --no-commit-id --name-only --no-renames "$STOP" 2>/dev/null)"}
@@ -19983,7 +20157,7 @@ _REQUIRE_REPLAY_DONE () {
 		exit 1
 	fi
 	[ -n "$STATE_TODO_LEFT" ] || return 0
-	REC=$(git -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null)
+	_FACT REC -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
 	[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
 	# This replay's where it ends on a commit built on the stop that the worktree's tip holds
 	(( ${#RECS} )) && NEW=${${RECS[-1]#* }%% *}
@@ -20116,7 +20290,7 @@ _REQUIRE_PICKS_KEPT () {
 		done
 		REC=$GD/rebase-merge/rewritten-list
 	else
-		REC=$(git -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null)
+		_FACT REC -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
 	fi
 	[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
 	# A finished replay's record is this one's only where it ends on a commit the tip holds
@@ -20542,7 +20716,7 @@ _HOLD_RUN_WORKTREE () {
 _HOLD_PAUSE_WORKTREE () {
 	# Args: <"applied" or "cancelled" – what a refusal says was not>
 	[ -d "$STATE_WORKTREE" ] || return 0
-	[ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] || return 0
+	[ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] || return 0
 	_HOLD_RUN_WORKTREE "$STATE_WORKTREE" "$1"
 }
 
@@ -20551,7 +20725,7 @@ _HOLD_PAUSE_WORKTREE () {
 _PAUSE_WT_HERE () {
 	# Args: [quiet – naming nothing]
 	[ -n "$STATE_WORKTREE" ] && [ -d "$STATE_WORKTREE" ] || return 1
-	[ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] && return 0
+	[ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] && return 0
 	[ -n "$1" ] || PRINT_TEXT "%s is no longer a checkout of this repository – left as it is." 33 "$STATE_WORKTREE"
 	return 1
 }
@@ -20602,7 +20776,7 @@ _REMOVE_FRESH_WORKTREE () {
 _PREPARE_RUN_WORKTREE () {
 	# Args: <commit> <temp dir prefix>
 	local AT=$1 TOP THEIRS ABS STRAY GD
-	TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+	_FACT TOP rev-parse --show-toplevel 2>/dev/null
 	if [ ${#OPT_DIR} -eq 0 ]; then
 		# Asked again past the prompt – a landing strands a pause recorded since the first look
 		_REQUIRE_NO_INFLIGHT
@@ -20626,7 +20800,7 @@ _PREPARE_RUN_WORKTREE () {
 		local UP=$WORKTREE_DIR HOST
 		while [ ! -d "$UP" ] && [ "$UP" != / ]; do UP=${UP:h}; done
 		HOST=$(git -C "$UP" rev-parse --show-toplevel 2>/dev/null)
-		if [ -n "$HOST" ] && [ "${$(git -C "$UP" rev-parse --path-format=absolute --git-common-dir 2>/dev/null):A}" = "${$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null):A}" ] \
+		if [ -n "$HOST" ] && [ "${$(git -C "$UP" rev-parse --path-format=absolute --git-common-dir 2>/dev/null):A}" = "${$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null):A}" ] \
 			&& ! git -C "$UP" check-ignore -q -- "${WORKTREE_DIR#"$UP"/}/" 2>/dev/null; then
 			PRINT_ERR "-C/--dir path '$WORKTREE_DIR' is new and inside the working tree $HOST – a worktree made there is an embedded repository its next 'git add -A' stages"
 			ECHO_E "\e[0;31m  Name a path outside it, one its .gitignore covers, or none for a temp one.\e[0m" >&2
@@ -20662,7 +20836,8 @@ _PREPARE_RUN_WORKTREE () {
 	fi
 	# Another repository's would take the whole run there – its branch rewritten, its journal written
 	local CD_THEIRS=$(git -C "$WORKTREE_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-	local CD_OURS=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+	local CD_OURS
+	_FACT CD_OURS rev-parse --path-format=absolute --git-common-dir 2>/dev/null
 	if [ -z "$CD_THEIRS" ] || [ "${CD_THEIRS:A}" != "${CD_OURS:A}" ]; then
 		PRINT_ERR "-C/--dir path '$WORKTREE_DIR' is a working tree of another repository – name a scratch path, or none for a temp one"
 		exit 1
@@ -21436,8 +21611,13 @@ done
 # Past the usage and version answers, which an outdated git should still get
 _REQUIRE_GIT_VERSION
 _REQUIRE_PLAIN_GIT_ENV
-# The suite makes repositories of its own
-[ ${#OPT_SELFTEST} -gt 0 ] || _REQUIRE_REPOSITORY
+# The suite makes repositories of its own – and remakes them between asks, so it keeps no answers
+if [ ${#OPT_SELFTEST} -gt 0 ]; then
+	_FACTS_OFF=1
+	_FACTS=()
+else
+	_REQUIRE_REPOSITORY
+fi
 
 # Capture `HEAD` before any change, for the status trailer's `old_head` – empty in an empty repo,
 # where the script fails later on commit resolution, so the trailer is never reached
@@ -21759,7 +21939,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ]; then
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again on the branch as it is now.\e[0m" >&2
 		exit 1
 	fi
-	if [ -d "$STATE_WORKTREE" ] && [ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]; then
+	if [ -d "$STATE_WORKTREE" ] && [ "$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]; then
 		_STATE_OWNED=""
 		PRINT_ERR "The pause's worktree $STATE_WORKTREE is no longer a checkout of this repository – pruned, say – so nothing can resume there"
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again.\e[0m" >&2
@@ -22720,7 +22900,7 @@ fi
 
 # A drop, edit or squash runs in its own worktree, so a session sharing the checkout never finds
 # files moving or a rebase halfway, and lands on a branch, which a detached `HEAD` lacks
-ORIG_BRANCH=${$(git symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
+ORIG_BRANCH=${$(_GIT_FACT symbolic-ref -q HEAD 2>/dev/null)#refs/heads/}
 if [ -z "$ORIG_BRANCH" ]; then
 	PRINT_ERR "$ACTION requires being on a branch (got detached HEAD)"
 	ECHO_E "\e[0;31m  Make one where you are first: git switch -c <name>\e[0m" >&2
@@ -22738,7 +22918,7 @@ if [[ "$ACTION" == "edit" ]]; then
 	# The cleanup hook holds the worktree until the pause is recorded,
 	# as a parallel run's may take the slot first
 	_SAVE_STATE "operation=edit" "worktree=$WORKTREE_DIR" "wt_ours=$WT_OURS" "branch=refs/heads/$ORIG_BRANCH" \
-		"orig_head=$ORIG_HEAD" "target=$EDIT_TARGET" "maindir=$(git rev-parse --show-toplevel)" \
+		"orig_head=$ORIG_HEAD" "target=$EDIT_TARGET" "maindir=$(_GIT_FACT rev-parse --show-toplevel)" \
 		"message=${OPT_MESSAGE:+editor}"
 	_CLEANUP_HOOK=""
 	PRINT_TEXT "Worktree at the commit: %s" 33 "$WORKTREE_DIR"
