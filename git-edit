@@ -10499,16 +10499,18 @@ _LANDING_TOUCHED () {
 			}' "$1" -
 }
 
+# `_EDITS_MISS_LANDING`'s verdicts for the run, keyed by blobs, and the five temp files it reuses
+typeset -gA _MISS_VERDICTS
+_MISS_VERDICTS=()
+typeset -ga _MISS_FILES
+_MISS_FILES=()
+
 # Succeeds where <ours> – a copy edited beside a landing – touches none of its changed lines, read
 # against its before, which edits made on the landed lines would overlap, and lacks the landing
 # by its lines – an edit on the line next to a landed one folds that line into its own hunk
 # • Given <kept>, the file's blob when a run's sync conflicting there left it unbrought (`-` where
 #   none was stored), an overlap tells only where <ours> changed since the lines of <kept> the
 #   landing conflicts with – edits elsewhere in the file leave those as they were
-typeset -gA _MISS_VERDICTS
-_MISS_VERDICTS=()
-typeset -ga _MISS_FILES
-_MISS_FILES=()
 _EDITS_MISS_LANDING () {
 	# Args: <ours blob> <before blob> <after blob> [<kept blob> or -] – reads `_WHOLE_WHAT`
 	# Inputs compose on the tip's text, every other route from a file
