@@ -39,6 +39,15 @@ _ST_EQ "a landing whose sync conflicts with the edit records the file" "$(sed -n
 _ST_RUN --commit --text "SR3 whole" -- f
 _ST_EQ "that file taken whole still refuses" "$RC:$(git rev-parse HEAD)" "1:$SR_T"
 _ST_OUT_HAS "naming the record's merge" "still sits on ${SR_X:0:7}"
+_ST_RUN --commit --text "SR3 edits back" --edits '{"f": [["3P\n", "3-mine\n"], ["7P\n", "7\n"]]}'
+_ST_EQ "as do --edits composing that file" "$RC:$(git rev-parse HEAD)" "1:$SR_T"
+_ST_OUT_HAS "naming the pairs, --base first" "Your change takes back what landed on f – what --edits compose there rewrites the landed lines: where that is meant pass --base as above, else merge what landed into the checkout file as below and build the change from it again, or leave out the part undoing them"
+_ST_EQ "ahead of the checkout file's merge" "$(print -r -- "$OUT" | awk '/rewrites the landed lines: where/ { a = NR } /still sits on/ { b = NR } END { print (a && b > a ? "above" : "no") }')" above
+cp f "$TMP/sr3-put"
+_ST_RUN --commit --text "SR3 put back" --put "f=$TMP/sr3-put"
+_ST_EQ "and that file put" "$RC:$(git rev-parse HEAD)" "1:$SR_T"
+_ST_OUT_HAS "naming what was put" "What you put as f takes back what landed, rewriting the landed lines – where that is meant pass --base as above, else merge what landed into the checkout file as below and put it again"
+_ST_EQ "ahead of the merge too" "$(print -r -- "$OUT" | awk '/rewriting the landed lines – where/ { a = NR } /still sits on/ { b = NR } END { print (a && b > a ? "above" : "no") }')" above
 _ST_RUN --commit --text "SR3 edits" --edits '{"f": [["7P\n", "7P-C\n"]]}'
 _ST_EQ "while --edits of a landed line, composed on the tip, lands" "$RC:$(git show HEAD:f | sed -n 3p):$(git show HEAD:f | sed -n 7p)" "0:3P:7P-C"
 

@@ -11460,6 +11460,16 @@ _GUARD_WHOLE_LANDINGS () {
 		"Changed by "*) Q="build your change from it again and run this again" ;;
 		*) Q="run this again$FROM" ;;
 	esac
+	# An input rewrites the landed lines itself, the same again after the merge – `--base` first where
+	# that is meant, then the merge to rebuild it from
+	if [[ "$_WHOLE_WHAT" == ("Changed by "*|'Put or removed') ]] && (( ${#UNB} + ${#REWRITTEN} )); then
+		L=$(_LIT "$(_ALL_PATHS -q "${UNB[@]}" "${REWRITTEN[@]}")")
+		if [ "$_WHOLE_WHAT" = 'Put or removed' ]; then
+			ECHO_E "\e[0;31m  What you put as $L takes back what landed, rewriting the landed lines – where that is meant pass --base as above, else merge what landed into the checkout file as below and put it again, or leave out the part undoing them.\e[0m" >&2
+		else
+			ECHO_E "\e[0;31m  Your change takes back what landed on $L – what ${_WHOLE_WHAT#Changed by } compose there rewrites the landed lines: where that is meant pass --base as above, else merge what landed into the checkout file as below and build the change from it again, or leave out the part undoing them.\e[0m" >&2
+		fi
+	fi
 	for P in "${UNB[@]}"; do
 		_MERGE_CMD "${UNB_AT[$P]}" "$WHOLE_HEAD" "$P" "$P" "$P"
 		ECHO_E "\e[0;31m  Your checkout's $(_LIT "$(_SHQ "$P")") still sits on ${UNB_AT[$P]:0:7}, where the sync of what landed conflicted with its edits – merge that in, markers and all, with: $(_LIT "${AT}$REPLY") – resolve the conflict, then $Q.\e[0m" >&2
