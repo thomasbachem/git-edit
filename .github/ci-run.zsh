@@ -35,11 +35,16 @@ while (( FAILS < 10 )); do
 	fi
 	sleep 30
 done
-for I in {1..5}; do
-	gh run view "$ID" --repo "$REPO" --json jobs --jq '.jobs[] |
-		"\(.conclusion // .status)\t\((((.completedAt | fromdate) - (.startedAt | fromdate)) / 60) | floor) min\t\(.name)"' 2>/dev/null && break
+# Each leg once, after every job reads completed – the run can before its jobs do, a job still
+# running carrying `0001-01-01T00:00:00Z` as its end, which `fromdate` refuses partway through
+JOBS=""
+for I in {1..12}; do
+	JOBS=$(gh run view "$ID" --repo "$REPO" --json jobs --jq 'select(all(.jobs[]; .status == "completed")) | .jobs[] |
+		"\(.conclusion)\t\(try ((((.completedAt | fromdate) - (.startedAt | fromdate)) / 60) | floor | "\(.) min") catch "–")\t\(.name)"' 2>/dev/null) && [ -n "$JOBS" ] && break
+	JOBS=""
 	sleep 10
 done
+print -r -- "${JOBS:-ci-run: no settled job list from GitHub after 2 min – each leg's verdict is at ${URL}/actions/runs/${ID}}"
 git push -q "$URL" --delete "$B"
 # A fetch while the run ran leaves a tracking ref, which makes `git edit` read the commit as pushed
 git branch -r -d "origin/$B" >/dev/null 2>&1
