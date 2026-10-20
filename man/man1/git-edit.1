@@ -1113,8 +1113,15 @@ refuses a file lacking what another
 caller's run of the last 7 days landed on it while the tip still carries it.
 The test is that merging the landing in would change the file and nothing at
 the tip. A merge that only adds a landed block a second time, beside an exact
-copy, finds it held. Beside the file's own version of the block, edited or
-stale, which content can't tell apart, it refuses all the same, but names no
+copy, finds it held \(em unless the file lacks, beside that copy, a line the
+block may slide over, as a stale copy one line higher does where it borrows
+the closing
+.B },
+of the entry above. Blank lines lacked
+there alone count as the caller's spacing, and lines taken out beyond the
+block's reach as the caller's own removal. Beside the file's own version of
+the block, edited or stale (that stale copy among them), which content can't
+tell apart, it refuses all the same, but names no
 carry or merge, as either would double the block: it names the
 .B git diff
 against the tip to read before passing
