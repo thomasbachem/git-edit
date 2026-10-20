@@ -4412,9 +4412,10 @@ _RENORM_RESUME_CMD () {
 # refreshing it for a moment, waited out for ~5 s, failing past that
 _LOCK_INDEX () {
 	# Args: <index file>
-	local -i W=0
+	# ~2 s under the suite, past the 1 s its scenarios hold the lock for
+	local -i W=0 N=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} > 0 ? 20 : 50 ))
 	until ( setopt noclobber; : > "$1.lock" ) 2>/dev/null; do
-		(( ++W > 50 )) && return 1
+		(( ++W > N )) && return 1
 		sleep 0.1
 	done
 	# The run's own, so a stop meanwhile lets go of it rather than wait on it
@@ -4750,8 +4751,8 @@ _SYNCS_CHECKOUT () {
 	# An index held past the wait takes none of the sync's writes – waited out as
 	# `_WAIT_INDEX_UNLOCKED` does, its path asked once
 	local LOCK=$(git -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)
-	local -i W=0
-	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= 50 )); do sleep 0.1; done
+	local -i W=0 N=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} > 0 ? 20 : 50 ))
+	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= N )); do sleep 0.1; done
 	if [ -n "$LOCK" ] && [ -e "$LOCK" ]; then
 		_SYNC_WHY="its index was locked by another run past the wait"
 		return 1
@@ -6846,12 +6847,13 @@ _SYNC_TWO_TREE () {
 	}
 }
 
-# Waits ~5 s for <checkout>'s index lock to go – a peer's `git add`, or a `git status` refreshing it
+# Waits ~5 s for <checkout>'s index lock to go – a peer's `git add`, or a `git status` refreshing
+# it – ~2 s under the suite, as `_LOCK_INDEX` does
 _WAIT_INDEX_UNLOCKED () {
 	# Args: <checkout>
 	local LOCK=$(git -C "$1" rev-parse --path-format=absolute --git-path index.lock 2>/dev/null)
-	local -i W=0
-	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= 50 )); do sleep 0.1; done
+	local -i W=0 N=$(( ${GIT_EDIT_SELFTEST_DEPTH:-0} > 0 ? 20 : 50 ))
+	while [ -n "$LOCK" ] && [ -e "$LOCK" ] && (( ++W <= N )); do sleep 0.1; done
 	return 0
 }
 
