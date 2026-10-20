@@ -4258,6 +4258,38 @@ _INDEX_FLAGS_BACK () {
 	fi 2>/dev/null
 }
 
+# Fills `reply` with each flagged <path> whose file a two-tree merge would find not up to date –
+# its stat off its entry's, the flag aside, as `read-tree -m -u` judges it – asked of a copy of the
+# index with the flags off, every <path> where that fails
+_FLAGGED_STALE () {
+	# Args: <checkout> <path>...
+	local CO=$1 IDX TMP OUT P
+	local -x GIT_LITERAL_PATHSPECS=1
+	local -a SPEC
+	local -A WANT
+	shift
+	reply=("$@")
+	(( $# )) || return 0
+	IDX=$(git -C "$CO" rev-parse --path-format=absolute --git-path index 2>/dev/null)
+	[ -n "$IDX" ] && [ -e "$IDX" ] || return 0
+	TMP="$IDX.git-edit-flags.$$"
+	_TEMP_FILES+=("$TMP")
+	_ARGV_FITS "$@" && SPEC=(-- "$@")
+	{
+		# One mark option a call, as `update-index` sets only the first it is given
+		cp -p "$IDX" "$TMP" 2>/dev/null && \
+		print -rN -- "$@" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-assume-unchanged -z --stdin 2>/dev/null && \
+		print -rN -- "$@" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-skip-worktree -z --stdin 2>/dev/null && \
+		OUT=$(GIT_INDEX_FILE=$TMP git -C "$CO" diff-files -z --name-only --ignore-submodules "${SPEC[@]}" 2>/dev/null) || return 0
+	} always {
+		rm -f "$TMP"
+	}
+	for P in "$@"; do WANT[$P]=1; done
+	reply=()
+	for P in ${(0)OUT}; do (( ${+WANT[$P]} )) && reply+=("$P"); done
+	return 0
+}
+
 # Puts into `reply` the files <checkout> reads as modified only through their attributes – each byte
 # for byte the blob its index holds, which `eol` or `text` would store otherwise, so nobody's edit:
 # a file committed with CRLF under `eol=lf` reads so wherever git wrote it in its index's second
@@ -5131,9 +5163,9 @@ _SYNC_CHECKOUT () {
 
 	# The clean ones in one two-tree merge from <old> to <old> with just them taken from <new> – git
 	# checks each is as <old> had it before writing anything, and keeps the rest of the index as is
-	# An entry flagged assume-unchanged or skip-worktree hides edits git then won't overwrite, which
-	# go to the merge below instead – taken path by path, as is everything where git refused the lot
-	local -a FLAGGED PER SPEC
+	# An entry flagged assume-unchanged or skip-worktree hides edits git then won't overwrite – one
+	# whose file git finds stale goes path by path below, as does everything where git refused the lot
+	local -a FLAGGED PER SPEC FLAG_ONE
 	local -A WANT
 	if (( ${#CLEAN} )); then
 		# Many paths are read from the whole index instead, as `_INDEX_FLAGS` does – a failed read
@@ -5181,6 +5213,33 @@ _SYNC_CHECKOUT () {
 			CLEAN=()
 		fi
 	fi
+	# The flagged ones git finds up to date, with their sources' new paths, in a merge of their own
+	# first – each outcome taken in its turn below as its own merge's would be, but where git refused
+	# the lot – a path whose source goes path by path, or was refused, waiting with it
+	local -A ONE_OUT ONE_BY ON_ITS_OWN
+	if (( ${#FLAGGED} + ${#DSTS} > 1 )); then
+		_FLAGGED_STALE "$CO" "${FLAGGED[@]}"
+		for P in "${reply[@]}" "${FAILED[@]}" "${(@)${(@)PER:|FLAGGED}:|DSTS}"; do ON_ITS_OWN[$P]=1; done
+		# Down a chain of renames too
+		K=1
+		while (( K )); do
+			K=0
+			for P in "${PER[@]}"; do
+				(( ! ${+ON_ITS_OWN[$P]} )) && [ -n "${RENAMED_FROM[$P]}" ] && (( ${+ON_ITS_OWN[${RENAMED_FROM[$P]}]} )) && ON_ITS_OWN[$P]=1 K=1
+			done
+		done
+		for P in "${PER[@]}"; do (( ${+ON_ITS_OWN[$P]} )) || FLAG_ONE+=("$P"); done
+	fi
+	if (( ${#FLAG_ONE} > 1 )); then
+		_SYNC_TWO_TREE "$CO" "$OLD" "$NEW" "${FLAG_ONE[@]}"
+		RC=$?
+		for P in "${TT_MOVED[@]}"; do ONE_OUT[$P]=moved; done
+		for P in "${(@k)TT_IN_WAY}"; do ONE_OUT[$P]=held ONE_BY[$P]=${TT_IN_WAY[$P]}; done
+		for P in "${FLAG_ONE[@]}"; do
+			(( ${+ONE_OUT[$P]} )) && continue
+			if (( ! RC )); then ONE_OUT[$P]=done; elif (( RC == 2 )); then ONE_OUT[$P]=locked; fi
+		done
+	fi
 	# What the move takes out first, so a file replacing its directory finds it gone, and a rename's
 	# new path after its source – one whose source git refused waits with it, as its edits may go there
 	local -a GOING
@@ -5192,12 +5251,25 @@ _SYNC_CHECKOUT () {
 	done
 	PER=("${GOING[@]}" "${(@)${(@)PER:|GOING}:|DSTS}" "${DSTS[@]}")
 	for P in "${PER[@]}"; do
+		# Written already by the merge above
+		if [ "${ONE_OUT[$P]}" = done ]; then
+			CLEAN+=("$P")
+			continue
+		fi
 		if [ -n "${RENAMED_FROM[$P]}" ] && (( ${FAILED[(Ie)${RENAMED_FROM[$P]}]} )); then
 			IS_DIRTY[$P]=1
 			continue
 		fi
-		_SYNC_TWO_TREE "$CO" "$OLD" "$NEW" "$P"
-		RC=$?
+		TT_MOVED=() TT_IN_WAY=()
+		case ${ONE_OUT[$P]} in
+			moved) RC=0 TT_MOVED=("$P") ;;
+			held) RC=0 TT_IN_WAY=("$P" "${ONE_BY[$P]}") ;;
+			locked) RC=2 ;;
+			*)
+				_SYNC_TWO_TREE "$CO" "$OLD" "$NEW" "$P"
+				RC=$?
+				;;
+		esac
 		if (( ! RC )); then
 			(( ${#TT_MOVED} )) && FAILED+=("$P")
 			(( ${#TT_IN_WAY} )) && HELD_UP+=("${(@kv)TT_IN_WAY}")
