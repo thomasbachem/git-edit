@@ -6100,7 +6100,9 @@ _SYNC_CHECKOUT () {
 			# named apart, as "edits" there invite committing "the rest", which lands the loss
 			[ "$WTM" != "${N% *}" ] && git -C "$CO" cat-file --filters "$NEW:$P" 2>/dev/null | cmp -s - "$CO/$P" && \
 				MODE_ONLY+=("$P")
-			if [ "$I" != "$O" ]; then
+			# Staged off <old>, the file is staged as `git add` would hash it – unless edits are unstaged, as
+			# past an entry taken ahead, which stays as it is
+			if [ "$I" != "$O" ] && (( ! ${+UNSTAGED[$SRC]} )); then
 				if BLOB=$(git -C "$CO" hash-object -w -- "$P" 2>/dev/null) && [ -n "$BLOB" ]; then _SYNC_QUEUE "$P" "$MODE $BLOB"
 				else IDX_LOCKED+=("$P"); fi
 			else
