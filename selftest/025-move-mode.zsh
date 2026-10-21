@@ -17,9 +17,9 @@ _ST_EQ "in-position move is a no-op" "$RC" "0"
 _ST_OUT_HAS "no-op reports unchanged" 'unchanged'
 _ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~2)" --before="$(git rev-parse HEAD~3)"
 _ST_EQ "both anchors refused" "$RC" "1"
-# Swapping two commits whose hunks abut conflicts on both steps – the first rebuilds an
-# intermediate that never existed and is authored, while the last is fully determined,
-# so the hint must name it there and only there
+# Swapping two commits whose hunks abut conflicts on both steps – the first
+# rebuilds an intermediate that never existed and is authored, while
+# the last is fully determined, so the hint must name it there and only there
 printf 'mv-base\n' > mv.txt && git add mv.txt && git commit -qm "MV base"
 printf 'mv-base\nmv-A\n' > mv.txt && git add mv.txt && git commit -qm "MV A"
 local MV_A=$(git rev-parse HEAD)

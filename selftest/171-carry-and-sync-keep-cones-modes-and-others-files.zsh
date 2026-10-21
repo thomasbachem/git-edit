@@ -1,9 +1,9 @@
 # `--carry` and a terminal run's sync bring a file swapped for a directory either way,
 # keep what lies outside a sparse checkout, take a mode from the index where git reads
-# no executable bit, merge under the attributes the edits were made under, respell a
-# directory renamed by case alone, keep their temporaries out of the checkout, a peer's
-# file and a peer's late edit whole, and supersede an intent-to-add entry an empty
-# landed file matches – each path named once with a step that works
+# no executable bit, merge under the attributes the edits were made under, respell
+# a directory renamed by case alone, keep their temporaries out of the checkout,
+# a peer's file and a peer's late edit whole, and supersede an intent-to-add
+# entry an empty landed file matches – each path named once with a step that works
 _ST_SCENARIO "\e[1;96m[171] --carry and a terminal sync keep cones, modes, attributes and others' files\e[0m"
 local CS_OLD CS_REAL=${commands[git]} CS_CMD CS_GOT
 
@@ -11,8 +11,8 @@ local CS_OLD CS_REAL=${commands[git]} CS_CMD CS_GOT
 _CS_RAW () {
 	git update-ref refs/heads/main topic "$CS_OLD"
 }
-# Writes `<dir>/git` standing in for the real one, running <script> first where
-# <case pattern> takes the call's arguments
+# Writes `<dir>/git` standing in for the real one, running
+# <script> first where <case pattern> takes the call's arguments
 _CS_STAND_IN () {
 	# Args: <dir> <case pattern> <script>
 	mkdir -p "$1"
@@ -24,8 +24,8 @@ _CS_STAND_IN () {
 	chmod +x "$1/git"
 }
 
-# A terminal drop of a commit that turned file `d` into `d/x` – the file goes, the directory's file
-# comes, in one two-tree merge, none of it read as staging in the way
+# A terminal drop of a commit that turned file `d` into `d/x` – the file goes,
+# the directory's file comes, in one two-tree merge, none of it read as staging in the way
 _ST_PZ_NEW cs1
 print a > a.txt && print dfile > d && git add -A && git commit -qm "CS1 base"
 git rm -q d && mkdir d && print x > d/x && git add d/x && git commit -qm "CS1 d to dir"
@@ -92,8 +92,8 @@ else
 	_ST_EQ "the widening run as printed carries the edits along" "$CS_GOT:$(cat in/notes.txt)" "1:1 2 3 4 5 EDIT ::there:mine"
 fi
 PATH=${PATH#"$TMP/cs2-bin:"}
-# A raw landing renaming one file edited, one not: the unedited one goes, the edited one's old entry
-# too, never left reading as a staged re-add
+# A raw landing renaming one file edited, one not: the unedited one goes,
+# the edited one's old entry too, never left reading as a staged re-add
 _ST_PZ_NEW cs2b
 mkdir in out && print -l 1 2 3 > in/f.txt && print -l a b > in/u.txt && print o > out/o.txt && git add -A && git commit -qm "CS2B base"
 CS_OLD=$(git rev-parse HEAD)
@@ -147,8 +147,8 @@ _ST_EQ "a second finds nothing to carry" "$RC" "0"
 _ST_OUT_HAS "saying so" 'Nothing to carry'
 _ST_OUT_LACKS "never refusing the carried edits, nor bringing the mode-only file again" 'the merge would alter the edits\|Brought to what landed'
 
-# A peer writing its own file where the landing adds one, as the sync runs, keeps it –
-# offered, never named as a stale file to take
+# A peer writing its own file where the landing adds one, as the sync
+# runs, keeps it – offered, never named as a stale file to take
 _ST_PZ_NEW cs4
 print c > c.txt && git add -A && git commit -qm "CS4 base"
 _CS_STAND_IN "$TMP/cs4-bin" "*\" update-ref -m \"*) : > ${(q)PWD}/.git/cs-armed ;; *\" ls-files -v -z \"*" "[ -e ${(q)PWD}/.git/cs-armed ] && [ ! -e ${(q)PWD}/.git/cs-fired ] && : > ${(q)PWD}/.git/cs-fired && echo PEER > ${(q)PWD}/n.txt"
@@ -238,8 +238,8 @@ _CS_STAND_IN "$TMP/cs9b-bin" "*\" update-ref -m \"*) : > ${(q)PWD}/.git/cs-armed
 _ST_TTY PATH="$TMP/cs9b-bin:$PATH" -- --exec -y -- sh -c "sed 's/^1\$/ONE/' u.txt > t && mv t u.txt && git commit -qam 'CS9B landed'"
 _ST_EQ "nor the sync's, written in the git dir" "$RC:$([ -e .git/cs-fired ] && print fired):$(git ls-files | grep -c git-edit):$(tr '\n' ' ' < u.txt)" "0:fired:0:ONE 2 3 4 5 MINE "
 
-# An intent-to-add entry an empty landed file matches is superseded – by an agent's landing, a raw
-# one's carry, and a terminal sync – never left reading as a staged removal
+# An intent-to-add entry an empty landed file matches is superseded – by an agent's landing,
+# a raw one's carry, and a terminal sync – never left reading as a staged removal
 _ST_PZ_NEW cs10
 print base > base.txt && git add -A && git commit -qm "CS10 base"
 mkdir pkg && : > pkg/__init__.py && git add -N pkg/__init__.py

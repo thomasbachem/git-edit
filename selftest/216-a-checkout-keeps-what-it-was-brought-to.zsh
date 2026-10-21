@@ -1,11 +1,13 @@
 # Each checkout keeps the tip its last sync or carry finished at, which tells an edit from a file a
 # landing never brought:
 # • An uncommitted edit putting a brought landing's file, or a line of it, back as before stays,
-#   unstaged or staged, the next landing merged onto it – a file no landing brought still comes along
+#   unstaged or staged, the next landing merged onto it
+#   – a file no landing brought still comes along
 # • A landing whose sync can't run names the bare carry, which brings every landing the checkout
 #   missed since, in it and in the branch's other checkout alike
-# • A run stopped past its move leaves the mark, so the next landing's sync brings its file along –
-#   a composed commit names the carry, stopped or killed, a plain one of the files as they stand none
+# • A run stopped past its move leaves the mark, so the next landing's sync
+#   brings its file along – a composed commit names the carry,
+#   stopped or killed, a plain one of the files as they stand none
 # • A path left unbrought that a later landing renames merges from its record's base, an undo of a
 #   landing whose sync conflicted finds no conflict, and a file the run put, edited or patched
 #   keeps its later edits, merged cleanly or not, taking in only a landing its checkout never had
@@ -27,8 +29,8 @@ _BR216_REPO () {
 	BR_X=$(git rev-parse HEAD)
 }
 
-# A hand revert of a brought landing's line stays as an edit, the next landing merged onto it – once,
-# the walk read it as a file left at the tip before and put the landing back
+# A hand revert of a brought landing's line stays as an edit, the next landing merged onto it
+# – once, the walk read it as a file left at the tip before and put the landing back
 _BR216_REPO br1
 print -l l1 A2 l{3..12} > f
 _ST_RUN --commit --text "BR1 A" -- f
@@ -51,8 +53,8 @@ print -l l{1..10} W11 l12 > f
 _ST_RUN --commit --text "BR3 C" --edits='{"f": [["l6\n", "C6\n"]]}'
 _ST_EQ "a line taken out of a brought landing stays out, the file's own edit kept" \
 	"$RC:$(grep -c A-new f):$(sed -n 6p f):$(sed -n 11p f)" "0:0:C6:W11"
-# A file a landing's sync left as it was still comes along with the next landing, though that one
-# changes another file
+# A file a landing's sync left as it was still comes along
+# with the next landing, though that one changes another file
 _BR216_REPO br4
 _ST_RUN --commit --text "BR4 A" --edits='{"g": [["g3\n", "A3\n"]]}'
 _ST_RUN_UNSYNCED --commit --text "BR4 L1" --edits='{"f": [["l10\n", "L10\n"]]}'
@@ -60,8 +62,8 @@ _ST_EQ "a landing whose sync can't run leaves the file as it was" "$(sed -n 10p 
 _ST_OUT_HAS "naming the bare carry" "edits merged onto it: git edit --carry$"
 _ST_RUN --commit --text "BR4 L2" --edits='{"g": [["g1\n", "D1\n"]]}'
 _ST_EQ "the next landing brings it along, the checkout clean" "$RC:$(sed -n 10p f):$(git status --porcelain)" "0:L10:"
-# A file edited on the content before, with no mark, as an older build left the checkout, is
-# brought along from where its walk tells
+# A file edited on the content before, with no mark, as an older
+# build left the checkout, is brought along from where its walk tells
 _BR216_REPO br5
 _ST_RUN_UNSYNCED --commit --text "BR5 L1" --edits='{"f": [["l10\n", "L10\n"]]}'
 rm -f .git/git-edit-brought
@@ -116,8 +118,8 @@ _ST_EQ "a run stopped twice past its move leaves the file as it was" "$(sed -n 1
 _ST_RUN --commit --text "BR8 L2" --edits='{"g": [["g1\n", "D1\n"]]}'
 _ST_EQ "the next landing brings it along" "$RC:$(sed -n 10p f):$(git status --porcelain)" "0:S10:"
 
-# A commit composed from inputs, stopped twice past its move or killed there, names the carry – it
-# never took the checkout's files – while a plain one of the files as they stand names none
+# A commit composed from inputs, stopped twice past its move or killed there, names the carry
+# – it never took the checkout's files – while a plain one of the files as they stand names none
 _BR216_HOOK () {
 	# Args: <name> – holds the first committed move of `main` till `$TMP/<name>-go`
 	printf '#!/bin/sh\n[ "$1" = committed ] || exit 0\n[ -e "%s/%s-arm" ] || exit 0\ngrep -q " refs/heads/main$" || exit 0\nrm -f "%s/%s-arm"\n: > "%s/%s-in"\n"%s/st-hold" "%s/%s-go"\n' \
@@ -125,8 +127,8 @@ _BR216_HOOK () {
 	chmod +x .git/hooks/reference-transaction
 	: > "$TMP/$1-arm"
 }
-# Runs `git edit <arg>...` held at its move by `_BR216_HOOK <name>`, sends it <signal>s, and lets it
-# go, its output in `OUT`
+# Runs `git edit <arg>...` held at its move by `_BR216_HOOK <name>`,
+# sends it <signal>s and lets it go, its output in `OUT`
 _BR216_STOPPED () {
 	# Args: <name> <signals> <arg>...
 	local N=$1 S
@@ -165,8 +167,8 @@ _ST_OUT_HAS "the rename's merge conflicts again" 'conflict with what landed.*f �
 _ST_EQ "the new name as landed, the edits at the old, the record moved there" \
 	"$(sed -n 5p h):$(sed -n 5p f):$(cut -f2 .git/git-edit-unbrought 2>/dev/null)" "A5:W5:h"
 
-# An undo of a landing whose sync conflicted finds the file on its own target already – no conflict,
-# and the edits' owner commits it after
+# An undo of a landing whose sync conflicted finds the file on its own target already
+# – no conflict, and the edits' owner commits it after
 _BR216_REPO br12
 git branch -q br12-side
 git worktree add -q "$TMP/br12-side" br12-side
@@ -181,8 +183,8 @@ _ST_RUN --commit --text "BR12 W" -- f
 _ST_EQ "which their owner commits" "$RC:$(git show HEAD:f | sed -n 5p)" "0:W5"
 git worktree remove --force "$TMP/br12-side"
 
-# A file the run put, holding what was put and later edits, takes its entry alone – one lacking a
-# line the put brought merges it in, as any edit's file
+# A file the run put, holding what was put and later edits, takes its entry alone
+# – one lacking a line the put brought merges it in, as any edit's file
 _BR216_REPO br13
 print -l l1 S2 l{3..9} S10 l11 l12 > f
 print -l l1 S2 l3 l4 l5 l6 l7 l8 l9 l10 l11 l12 > "$TMP/br13-stage"
@@ -220,9 +222,9 @@ _ST_EQ "a landing beside a peer's unmerged file lands" "$RC:$(git ls-files -u | 
 _ST_OUT_LACKS "printing no raw 'needs merge'" 'needs merge'
 git merge --abort 2>/dev/null
 
-# A run stopped twice inside its sync's own index lock re-syncs its entries, never naming the index
-# locked by another – the sync's `read-tree`, outliving the stop, writing its copy only once the
-# stop's re-sync has read its own
+# A run stopped twice inside its sync's own index lock re-syncs its entries,
+# never naming the index locked by another – the sync's `read-tree`, outliving
+# the stop, writing its copy only once the stop's re-sync has read its own
 _BR216_REPO br17
 mkdir -p "$TMP/br17-git"
 {
@@ -294,8 +296,8 @@ _ST_OUT_HAS "an undo stopped twice inside its re-sync re-syncs" 'stopped by SIGT
 _ST_OUT_LACKS "its own lock not named locked" 'index locked'
 _ST_EQ "the commit's file kept, its entry as the undo left it" "$(sed -n 10p f):$(git diff --cached --name-only)" "C10:"
 
-# The branch's other checkout records each file a landing leaves other than what landed, so a
-# commit there taking the landing back is refused
+# The branch's other checkout records each file a landing leaves other
+# than what landed, so a commit there taking the landing back is refused
 _BR216_REPO br18
 git worktree add -q -f "$TMP/br18-x" main
 print -l l1 l2 B3 l{4..12} > "$TMP/br18-x/f"
@@ -315,8 +317,8 @@ _ST_EQ "an edited path's file keeps the edits left uncommitted, its entry as lan
 	"$RC:$(sed -n '4,6p' f | tr '\n' ' '):$(git show :f | sed -n '4,6p' | tr '\n' ' ')" "0:E4 E5 E6 :l4 E5 l6 "
 _ST_OUT_HAS "named as the caller's" '^Files you committed keep your later edits'
 _ST_OUT_LACKS "no conflict and no merge left to do" 'conflict with what landed\|Still to do'
-# One whose file predates a landing its checkout never took brings that one in, up to the tip
-# before the run alone, the run's own change held already
+# One whose file predates a landing its checkout never took brings that one in,
+# up to the tip before the run alone, the run's own change held already
 _BR216_REPO br20
 _ST_RUN --commit --text "BR20 A" --edits='{"g": [["g3\n", "A3\n"]]}'
 _ST_RUN_UNSYNCED --commit --text "BR20 L1" --edits='{"f": [["l10\n", "L10\n"]]}'
@@ -325,8 +327,8 @@ _ST_RUN --commit --text "BR20 part" --edits='{"f": [["l5\n", "E5\n"]]}'
 _ST_EQ "an edited path predating a landing it lacks takes that landing in, its own edits kept" \
 	"$RC:$(sed -n '4,6p;10p' f | tr '\n' ' '):$(git show :f | sed -n '4,6p;10p' | tr '\n' ' ')" "0:E4 E5 E6 L10 :l4 E5 l6 L10 "
 _ST_OUT_LACKS "no conflict there either" 'conflict with what landed\|Still to do'
-# A put whose commit's hook changed it brings the hook's change alone into the later stage the
-# checkout holds
+# A put whose commit's hook changed it brings the hook's
+# change alone into the later stage the checkout holds
 _BR216_REPO br21
 printf '#!/bin/sh\nprintf "hooked\\n" >> f && git add f\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 print -l l1 S2 l{3..9} S10 l11 l12 > f

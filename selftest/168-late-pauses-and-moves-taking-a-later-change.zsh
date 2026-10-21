@@ -1,12 +1,12 @@
-# A drop, edit or squash asks again for a pause on the repository once it holds its `-C` path, or
-# before it makes its temp worktree – one recorded meanwhile refuses it, never stranded by its
-# landing – and a move whose stop took in what a later commit changes refuses, as a fold's does,
-# a commit emptied whole too, lines the stop's own change undoes counting for neither side
+# A drop, edit or squash asks again for a pause on the repository once it holds its `-C` path,
+# or before it makes its temp worktree – one recorded meanwhile refuses it, never stranded
+# by its landing – and a move whose stop took in what a later commit changes refuses, as a fold's
+# does, a commit emptied whole too, lines the stop's own change undoes counting for neither side
 _ST_SCENARIO "\e[1;96m[168] late pauses and moves taking a later change refuse\e[0m"
 local ZK_P ZK_T ZK_A ZK_B ZK_PID ZK_WT
 local -i ZK_I
-# Writes `<dir>/<command>` standing in for the real one, running <script> first where <dir>/arm is
-# there and <case pattern> takes the call's arguments
+# Writes `<dir>/<command>` standing in for the real one, running <script>
+# first where <dir>/arm is there and <case pattern> takes the call's arguments
 _ZK_STAND_IN () {
 	# Args: <dir> <command> <case pattern> <script>
 	mkdir -p "$1"
@@ -96,8 +96,8 @@ _ST_RUN --abort
 _ST_RUN -s="$ZK_A" "$ZK_B"
 _ST_EQ "the squash it offers lands" "$RC:$(git rev-list --count HEAD):$(git show HEAD:f.txt | sed -n 4p)" "0:2:4b"
 
-# A partial take counts too – the later commit keeping a change elsewhere, its change to the stop's
-# file gone into the stop's commit
+# A partial take counts too – the later commit keeping a change elsewhere,
+# its change to the stop's file gone into the stop's commit
 _ST_PZ_NEW zk4
 git config rerere.enabled false
 _ZK_C "ZK4 base" 1 2 3 4 5 6 7 8
@@ -111,8 +111,8 @@ _ST_EQ "a move whose stop took part of a later commit's change refuses" "$RC:$(g
 _ST_OUT_HAS "naming that commit and file" 'ZK4 A edit 4 – f\.txt$'
 _ST_RUN --abort
 
-# Its neighbor: abutting edits that build on nothing of each other, the stop resolved
-# to its own change alone, land in the new order
+# Its neighbor: abutting edits that build on nothing of each other,
+# the stop resolved to its own change alone, land in the new order
 _ST_PZ_NEW zk5
 git config rerere.enabled false
 _ZK_C "ZK5 base" 1 2 3 4 5 6 7 8

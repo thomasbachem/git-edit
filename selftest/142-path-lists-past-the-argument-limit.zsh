@@ -1,6 +1,6 @@
-# A landing over more paths than one command line holds re-syncs them all – its flags, an
-# intent-to-add entry and a flagged file's hidden edits included – where a git call fed the
-# list failed silently and left every entry on the dropped content
+# A landing over more paths than one command line holds re-syncs them all
+# – its flags, an intent-to-add entry and a flagged file's hidden edits included – where
+# a git call fed the list failed silently and left every entry on the dropped content
 _ST_SCENARIO "\e[1;96m[142] a landing past the argument limit re-syncs every path\e[0m"
 local AL_D AL_I AL_N=3000 AL_H AL_O AL_PADS
 # Paths of ~800 bytes, 3,000 of them – past both macOS's 1 MB and Linux's 2 MB for one exec
@@ -38,9 +38,9 @@ _ST_TTY -- -d -y HEAD~1
 _ST_EQ "a terminal drop over them lands" "${RC}:$(git log -1 --format=%s HEAD~1)" "0:AL tip"
 _ST_EQ "the flagged file's hidden edit merged onto what landed" "$(cat "$AL_D/f7.txt")" $'1\n2\n3\nmine'
 _ST_EQ "the rest brought along" "$(cat "$AL_D/f8.txt")" $'1\n2\n3'
-# A stop staging 1,000 paths of ~930 bytes reads them from the whole index, counted in bytes – an
-# environment padded to the limit's rest makes their one command line too long – so a resolution
-# staged without the bit the replay carries is still refused
+# A stop staging 1,000 paths of ~930 bytes reads them from the whole index, counted in bytes
+# – an environment padded to the limit's rest makes their one command line too long –
+# so a resolution staged without the bit the replay carries is still refused
 _ST_PZ_NEW al2
 AL_O="${(l:230::o:)}/${(l:230::p:)}/${(l:230::q:)}/${(l:230::r:)}"
 printf '#!/bin/sh\necho al1\n' > al.sh && chmod +x al.sh && mkdir -p "$AL_O"

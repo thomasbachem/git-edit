@@ -16,8 +16,8 @@ git worktree remove --force "$TMP/rh-side"
 printf '1\n2\n3\n4\n5\n6\n' > rh-a.txt && printf 'x\ny\nz\nw\n' > rh-c.txt
 # A change made in the checkout first and edited on there holds the rewrite already
 printf 'KAY\nl\nm\nn\n' > rh-f.txt
-# Edits on the line beside the rewrite's conflict whichever content they sit on – on the new one
-# they hold the rewrite, on the old one they take it back
+# Edits on the line beside the rewrite's conflict whichever content they sit on
+# – on the new one they hold the rewrite, on the old one they take it back
 printf 'G1\nG2 beside\ng3\n' > rh-g.txt && printf 'h1\nH2 beside\nh3\n' > rh-h.txt
 # A checkout the landing can't bring along, as one halfway through a cherry-pick sequence
 _ST_RUN_UNSYNCED --exec --base="$RH_OLD" --no-verify -- git reset -q --hard "$RH_NEW"

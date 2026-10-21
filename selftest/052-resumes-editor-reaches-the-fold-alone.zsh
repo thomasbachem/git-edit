@@ -50,9 +50,9 @@ _ST_EQ "-m's editor opens on the fold" "$(grep -c . "$FE_LOG")" "1"
 _ST_CHECK "and the -m branch routes through the guard" \
 	sh -c "command grep -q '_FOLD_EDITOR_CMD \"\${(qq)_REAL_EDITOR}\"' \"\$1\"" _ "$SELF"
 
-# `sh` parses the emitted command, so a repo living under an apostrophe used
-# to close the quote and leave a syntax error – which surfaces only as a
-# failed editor, git abandoning the commit and the operation wedging
+# `sh` parses the emitted command, so a repo living under an apostrophe
+# used to close the quote and leave a syntax error – which surfaces only
+# as a failed editor, git abandoning the commit and the operation wedging
 local FE2="$TMP/it's a \$repo"
 rm -rf "$FE2" && mkdir -p "$FE2" && git -C "$FE2" init -q
 local FE2_REB=$(git -C "$FE2" rev-parse --absolute-git-dir)/rebase-merge
@@ -71,8 +71,8 @@ _ST_EQ "and parses cleanly rather than failing the editor" "$FE2_RC" "0"
 rm -rf "$FE" "$FE2"
 rm -f "$FE_CMD" "$FE_ED" "$FE2_ED"
 
-# The case above quotes the message path itself, so it pins the helper alone –
-# drive a real resume for the caller, which has to quote it just the same
+# The case above quotes the message path itself, so it pins the helper alone
+# – drive a real resume for the caller, which has to quote it just the same
 local QR="$TMP/quote'd repo"
 rm -rf "$QR"
 mkdir -p "$QR"

@@ -1,5 +1,5 @@
-# A reorder step resolved to empty must not vanish under an `ok` – refused where a stop's commit
-# took its change in, named as dropped where the new order cancels it
+# A reorder step resolved to empty must not vanish under an `ok` – refused where
+# a stop's commit took its change in, named as dropped where the new order cancels it
 _ST_SCENARIO "\e[1;96m[33] dropped-commit reporting\e[0m"
 git reset -q --hard
 printf 'd1\nd2\nd3\n' > dr.txt && git add dr.txt && git commit -qm "DR base"
@@ -10,8 +10,8 @@ _ST_RUN --reorder "$DR_TIP" "$(git rev-parse HEAD~1)"
 _ST_EQ "reordering abutting edits conflicts" "$RC" "2"
 local DR_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 printf 'd1\nDY\nd3\n' > "${DR_WT:-$ST_NO_WT}/dr.txt" && git -C "$DR_WT" add dr.txt
-# The final step restores the pre-op blobs by itself, which leaves the replayed commit empty and
-# the rebase drops it – its change taken into the stop's commit, which the landing refuses
+# The final step restores the pre-op blobs by itself, which leaves the replayed commit empty
+# and the rebase drops it – its change taken into the stop's commit, which the landing refuses
 _ST_RUN --continue
 _ST_EQ "a resolution emptying the later commit into the stop's refuses" "$RC:$(git rev-parse HEAD)" "1:$DR_TIP"
 _ST_OUT_HAS "naming the commit it emptied" 'DR one – dr\.txt (left out as emptied)'
@@ -80,8 +80,8 @@ _ST_OUT_HAS "the drop is still counted" 'resolved to empty and were dropped'
 _ST_OUT_HAS "and, the edited commit counted on neither side, the husk is named" 'dropped: [0-9a-f]* RW husk$'
 git reset -q --hard
 
-# Subjects are shell text, and this repo's own are full of backticks – an
-# arithmetic subscript would execute them while counting
+# Subjects are shell text, and this repo's own are full of backticks
+# – an arithmetic subscript would execute them while counting
 printf 'b1\n' > bt.txt && git add bt.txt && git commit -qm 'BT origin'
 printf 'b1\nb2\n' > bt.txt && git add bt.txt && git commit -qm 'BT `rules` husk $(echo PWNED)'
 _ST_RUN "$(git rev-parse HEAD~1)"

@@ -1,5 +1,5 @@
-# The journal's lock and a `-C` path's are broken only once their holder is gone –
-# its process ended, or another started since under its pid, while another user's
+# The journal's lock and a `-C` path's are broken only once their holder is gone
+# – its process ended, or another started since under its pid, while another user's
 # counts as live – and waited on while it lives
 # A landing ends its pause in that same hold of the lock, a resume holds its pause's worktree, a
 # note never makes a pause anew, and a second signal waits for the `update-ref`
@@ -7,8 +7,8 @@ _ST_SCENARIO "\e[1;96m[158] locks wait for a live holder, a landing ends its pau
 local JL_WT JL_P JL_GD JL_PID JL_B JL_C JL_REAL JL_SF JL_N
 local -i JL_I
 local -a JL_PIDS
-# Writes `<dir>/<command>` standing in for the real one, running <script> first where <dir>/arm is
-# there and <case pattern> takes the call's arguments
+# Writes `<dir>/<command>` standing in for the real one, running <script>
+# first where <dir>/arm is there and <case pattern> takes the call's arguments
 _JL_STAND_IN () {
 	# Args: <dir> <command> <case pattern> <script>
 	mkdir -p "$1"
@@ -22,8 +22,8 @@ _JL_STAND_IN () {
 mkdir -p "$TMP/jl-nap" && print -l '#!/bin/sh' 'exit 0' > "$TMP/jl-nap/sleep" && chmod +x "$TMP/jl-nap/sleep"
 
 # An abort meeting a resume of a temporary worktree's pause – its landing held by a slow hook here –
-# refuses at once, naming that run, and the resume lands whole, its lock going with its worktree –
-# once, an abort went ahead without the journal's lock after 5 s
+# refuses at once, naming that run, and the resume lands whole, its lock going with its worktree
+# – once, an abort went ahead without the journal's lock after 5 s
 _ST_PZ_NEW jl1
 _ST_PZ_C a.txt a1 "JL1 a" && _ST_PZ_C b.txt b1 "JL1 b" && _ST_PZ_C c.txt c1 "JL1 c"
 _ST_RUN HEAD~1
@@ -188,8 +188,8 @@ _ST_EQ "nor does a new run take that path" "$RC" "1"
 : > "$TMP/jl5-go"
 wait $JL_PID
 _ST_EQ "while the resume lands" "$(<"$TMP/jl5.crc"):$(git show HEAD~1:b.txt)" "0:b2"
-# Its exit clears no pause another run took in that path once it landed – its lock taken away here,
-# as nothing else lets a run in there
+# Its exit clears no pause another run took in that path once it landed
+# – its lock taken away here, as nothing else lets a run in there
 _ST_PZ_NEW jl6
 _ST_PZ_C a.txt a1 "JL6 a" && _ST_PZ_C b.txt b1 "JL6 b" && _ST_PZ_C c.txt c1 "JL6 c"
 JL_P="$TMP/jl6-wt"
@@ -234,8 +234,8 @@ _ST_RUN -C "$JL_P" HEAD~1
 _ST_EQ "until it ends" "$RC:$([ -e "$JL_GD/git-edit-run.lock" ] && echo lock)" "2:"
 _ST_RUN --abort
 
-# A terminal's prompt holds no `-C` path, so an abort from elsewhere ends its pause, while Enter's
-# resume holds it again through its gate
+# A terminal's prompt holds no `-C` path, so an abort from elsewhere
+# ends its pause, while Enter's resume holds it again through its gate
 _ST_PZ_NEW jl8
 _ST_PZ_C a.txt a1 "JL8 a" && _ST_PZ_C b.txt b1 "JL8 b" && _ST_PZ_C c.txt c1 "JL8 c"
 JL_P="$TMP/jl8-wt"
@@ -285,9 +285,9 @@ _JL_NOTE_RACE () {
 		print -r -- 'exit $rc'
 	} > "$TMP/$1-bin/grep"
 	chmod +x "$TMP/$1-bin/grep"
-	# The abort's wait for the journal's lock seen as it happens – a retry's `sleep` while another
-	# process holds it, as "Aborting" prints a few forks before the lock is tried, and a slow abort
-	# let the resume land past its last check
+	# The abort's wait for the journal's lock seen as it happens – a retry's `sleep`
+	# while another process holds it, as "Aborting" prints a few forks before
+	# the lock is tried, and a slow abort let the resume land past its last check
 	mkdir -p "$TMP/$1-abin"
 	{
 		print -r -- '#!/bin/sh'
@@ -310,9 +310,9 @@ _JL_NOTE_RACE () {
 	wait $JL_PID "${JL_PIDS[1]}"
 	OUT=$(<"$TMP/$1.c")
 }
-# A note goes into its pause under the journal's lock and onto the file there only – an abort
-# ending the pause around one leaves the slot free, the resume refusing rather than leave a
-# conflict for a pause gone, or a stub holding no operation where it was
+# A note goes into its pause under the journal's lock and onto the file there only
+# – an abort ending the pause around one leaves the slot free, the resume refusing
+# rather than leave a conflict for a pause gone, or a stub holding no operation where it was
 _JL_NOTE_RACE jl9 1
 _ST_EQ "a resume whose pause an abort ended as it named it refuses" "$([ -e "$TMP/jl9-in" ] && echo stalled):$(<"$TMP/jl9.crc"):$([ -e "$JL_SF" ] && echo slot)" "stalled:1:"
 _ST_OUT_HAS "saying the pause was ended" 'ended by another run meanwhile'

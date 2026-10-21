@@ -20,8 +20,8 @@ echo cp > wc-cp.txt
 _ST_RUN --commit --text "WC beside a branch named CHERRY_PICK_HEAD" -- wc-cp.txt
 _ST_EQ "a branch named as a cherry-pick's state file blocks nothing" "$RC" "0"
 git update-ref -d refs/heads/CHERRY_PICK_HEAD
-# Where case tells no names apart: a spelling the tip holds exactly passes beside another, and
-# two new names whose directories differ only in case refuse
+# Where case tells no names apart: a spelling the tip holds exactly passes
+# beside another, and two new names whose directories differ only in case refuse
 git config core.ignorecase true
 local WC_EA=$(echo a | git hash-object -w --stdin)
 printf '100644 %s\twc-CS/a.txt\n100644 %s\twc-cs/b.txt\n' "$WC_EA" "$WC_EA" | git update-index --index-info
@@ -119,8 +119,8 @@ sh -c "$(print -r -- "$OUT" | sed -n "s/.*Merge what landed into the new name wi
 _ST_EQ "which merges it in" "$(sed -n '3p;7p' wc-rnm2.txt | tr '\n' ' '):$(local -a G=(wc-rnm2.txt.git-edit-*(N)); print ${#G})" "P3 C7 :0"
 _ST_RUN --commit --text "WC own rename" -- wc-rnm.txt wc-rnm2.txt
 _ST_EQ "while one made on the landed content lands" "$RC:$(git show HEAD:wc-rnm2.txt | sed -n '3p;7p' | tr '\n' ' ')" "0:P3 C7 "
-# What a peer stages of a file while it is taken whole or folded keeps its staging – only the entry
-# the file had when read is the run's to re-sync
+# What a peer stages of a file while it is taken whole or folded keeps its staging
+# – only the entry the file had when read is the run's to re-sync
 printf 'ps1\n' > wc-pst.txt
 _ST_RUN --commit --text "WC peer staging base" -- wc-pst.txt
 local WC_PB=$(printf 'peer staged\n' | git hash-object -w --stdin)
@@ -136,8 +136,8 @@ git config --unset edit.verifyCmd
 _ST_EQ "as does one staged while a fold runs" "$RC:$(git ls-files -s -- wc-pst.txt | awk '{print $2}')" "0:$WC_PB"
 _ST_OUT_HAS "named there too" 'Left staged, changed since the fold read it: wc-pst.txt'
 git restore --staged --worktree -- wc-pst.txt
-# A pause elsewhere blocks neither `--commit` nor `--exec` – one on their
-# own branch does, saying whose call it is
+# A pause elsewhere blocks neither `--commit` nor `--exec`
+# – one on their own branch does, saying whose call it is
 git checkout -q -b wc-paused
 printf '1\n2\n3\n' > wc-pz.txt
 _ST_RUN --commit --text "WC pz base" -- wc-pz.txt
@@ -167,8 +167,8 @@ rm -f wc-pz2.txt
 _ST_RUN --abort
 git checkout -q "$WC_BR"
 git branch -q -D wc-paused
-# Bare --carry with no mark, as an older build leaves the checkout, takes the last rewrite past a
-# --commit since, which took the checkout's own files
+# Bare --carry with no mark, as an older build leaves the checkout, takes
+# the last rewrite past a --commit since, which took the checkout's own files
 printf 'c1\nc2\nc3\n' > wc-bc.txt
 _ST_RUN --commit --text "WC carry base" -- wc-bc.txt
 _ST_RUN --exec -- sh -c "printf 'C1\nc2\nc3\n' > wc-bc.txt && git commit -qam 'WC carry rewrite'"

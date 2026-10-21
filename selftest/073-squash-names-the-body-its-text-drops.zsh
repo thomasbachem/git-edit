@@ -38,8 +38,8 @@ SBMSG
 printf 'sb7\n' > sb7.txt && git add sb7.txt && git commit -qm "SB seventh"
 _ST_RUN -s --text="$(printf 'SB sixth and seventh\n\n• sixth body line')" HEAD~1 HEAD
 _ST_OUT_LACKS "a message restating the body draws no notice" 'carried a .*-line body'
-# A `--text` with a body of its own that restates only part of a squashed one – the missing
-# lines print, as they do for a reword
+# A `--text` with a body of its own that restates only part of a squashed one
+# – the missing lines print, as they do for a reword
 printf 'sb10\n' > sb10.txt && git add sb10.txt
 git commit -q -F - <<-'SBMSG'
 	SB tenth

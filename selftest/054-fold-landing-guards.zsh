@@ -2,7 +2,7 @@
 
 # The fold's correct tip is knowable up front, the pre-op tip plus the staged changes, so
 # a run falling short of it must not read as ok – nothing landed is refused with staging
-# intact, a dissolved hunk lands with a note, and an emptied replay gets its drop counted
+# intact, a dissolved hunk lands with a note and an emptied replay gets its drop counted
 _ST_SCENARIO "\e[1;96m[54] fold landing guards\e[0m"
 local R54="$TMP/fold54"
 git init -q -b main "$R54"
@@ -16,8 +16,8 @@ printf 'x2\n' > fb.txt && git commit -qam "F advance"
 local F_BASE=$(git rev-parse HEAD~1)
 local F_TIP=$(git rev-parse HEAD)
 
-# Total dissolve: stage a revert of the later commit and fold it into base –
-# base already carries that content, so the fixup neutralizes cleanly
+# Total dissolve: stage a revert of the later commit and fold it into base
+# – base already carries that content, so the fixup neutralizes cleanly
 printf 'x1\n' > fb.txt && git add fb.txt
 _ST_RUN --amend-into="$F_BASE"
 _ST_EQ "a fold landing nothing is refused" "$RC" "1"
@@ -34,17 +34,17 @@ _ST_RUN --amend-into="$F_BASE"
 _ST_EQ "a partial fold still exits 0" "$RC" "0"
 _ST_OUT_HAS "emits ok trailer" '^git-edit: ok'
 _ST_OUT_HAS "notes the dissolved hunk" 'tip tree differs from the staged result'
-# The note grows the block above the identity line, which must still land
-# where a `tail -3` reader looks for it
+# The note grows the block above the identity line,
+# which must still land where a `tail -3` reader looks for it
 _ST_EQ "and the identity line still lands within a 'tail -3'" \
 	"$(echo "$OUT" | tail -3 | grep -c 'amended: ')" "1"
 _ST_EQ "the real hunk landed in base" "$(git show HEAD~1:fa.txt)" "a2"
 _ST_EQ "the later commit's content survives" "$(git show HEAD:fb.txt)" "x2"
 git reset -q --hard
 
-# A resolution keeping the fold's content over the next commit's change leaves that pick empty –
-# blind continues then drop it, and the summary must count the loss (resolving to the next commit's
-# content instead takes its change in early, which the absorption guard refuses)
+# A resolution keeping the fold's content over the next commit's change leaves that pick empty
+# – blind continues then drop it, and the summary must count the loss (resolving to the next
+# commit's content instead takes its change in early, which the absorption guard refuses)
 printf 'v1\n' > fc.txt && git add fc.txt && git commit -qm "F pick a"
 printf 'v2\n' > fc.txt && git commit -qam "F pick b"
 local F_COUNT=$(git rev-list --count HEAD)
@@ -71,8 +71,8 @@ _ST_EQ "blind resolution completes" "$RC" "0"
 _ST_OUT_HAS "and the dropped commit is counted" 'resolved to empty and were dropped'
 _ST_EQ "history is one commit shorter" "$(git rev-list --count HEAD)" "$((F_COUNT-1))"
 
-# And an ordinary clean fold must trip neither guard (the partial fold
-# above rewrote F_BASE, so re-derive the target from the root)
+# And an ordinary clean fold must trip neither guard
+# (the partial fold above rewrote `F_BASE`, so re-derive the target from the root)
 printf 'a3\n' > fa.txt && git add fa.txt
 _ST_RUN --amend-into="$(git rev-list --max-parents=0 HEAD)"
 _ST_EQ "clean fold exits 0" "$RC" "0"

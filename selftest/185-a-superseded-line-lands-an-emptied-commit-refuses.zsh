@@ -3,7 +3,7 @@
 _ST_SCENARIO "\e[1;96m[185] a superseded line lands, a commit losing all its change to a file refuses\e[0m"
 local SU_A SU_L
 
-# Writes c.md's lines and commits them
+# Writes `c.md`'s lines and commits them
 _SU_C () {
 	# Args: <subject> <line>...
 	print -l -- "${@:2}" > c.md && git add c.md && git commit -qm "$1"

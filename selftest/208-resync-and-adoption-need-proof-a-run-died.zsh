@@ -61,8 +61,8 @@ git checkout HEAD~1 -- F
 _ST_RUN --status
 _ST_OUT_LACKS "an older build's move after a landing's mark is no killed run" 'stopped before re-syncing'
 _ST_EQ "a revert staged by hand after the marked landing and that move stays staged" "$RC:$(git diff --cached --name-only):$(git show :F)" "0:F:b"
-# Unmarked where the run that journaled it died holding the journal's lock – killed between its
-# line and its mark – it is re-synced
+# Unmarked where the run that journaled it died holding the journal's lock
+# – killed between its line and its mark – it is re-synced
 _ST_PZ_NEW p8c2
 print -r -- a > F && git add -A && git commit -qm "P208 base"
 print -r -- b > F

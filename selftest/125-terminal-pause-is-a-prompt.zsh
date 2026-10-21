@@ -79,8 +79,8 @@ _ST_TTY_END
 _ST_EQ "Escape at a drop's confirm cancels" "$RC:$(git rev-parse HEAD)" "1:$PP_TIP"
 _ST_OUT_HAS "saying nothing changed" 'Cancelled – nothing was changed'
 _ST_EQ "leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" "1"
-# The resume runs as a caller's own would – its environment as the caller had it, git -c and all,
-# the tool's own config pins added once
+# The resume runs as a caller's own would – its environment as the caller
+# had it, git -c and all, the tool's own config pins added once
 _ST_PZ_NEW pp3
 _ST_PZ_C a.txt a "PP3 a"
 _ST_PZ_C b.txt b "PP3 b"

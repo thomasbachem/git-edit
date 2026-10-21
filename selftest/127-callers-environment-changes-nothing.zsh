@@ -1,6 +1,6 @@
 _ST_SCENARIO "\e[1;96m[127] a caller's environment changes nothing the tool reads\e[0m"
 local CE_N CE_T CE_TIP CE_WT
-# GIT_DIFF_OPTS widens git's diffs past the -U0 a line-level guard reads – an edit beside another
+# `GIT_DIFF_OPTS` widens git's diffs past the -U0 a line-level guard reads – an edit beside another
 # caller's landing then looked like one on its lines, which hid the landing it lacked
 _ST_PZ_NEW ce1
 print -l {1..20} > f.txt && git add f.txt && git commit -qm "CE base"
@@ -12,8 +12,8 @@ RC=$?
 _ST_EQ "GIT_DIFF_OPTS leaves the landing guard reading -U0" "$RC:$(git log -1 --format=%s)" "1:CE peer"
 _ST_OUT_HAS "naming the landing it would take back" "f.txt – ce-peer's"
 git checkout -q -- f.txt
-# As it leaves the auto-target's blame on the staged lines alone – a pure insertion folds into the
-# newest commit touching the file, never into the one owning the lines around it
+# As it leaves the auto-target's blame on the staged lines alone – a pure insertion folds
+# into the newest commit touching the file, never into the one owning the lines around it
 _ST_PZ_C g.txt g "CE other"
 print -l new {1..9} 10p {11..20} > f.txt && git add f.txt
 GIT_DIFF_OPTS=--unified=3 _ST_RUN --amend-into=auto -- f.txt
@@ -67,8 +67,8 @@ git mv 'q"old.txt' 'q"new.txt' && git commit -qm "CE5 rename"
 sed 's/^q line 3$/q line 3 fixed/' 'q"new.txt' > q.tmp && mv q.tmp 'q"new.txt' && git add 'q"new.txt'
 _ST_RUN --amend-into="$CE_T" -- 'q"new.txt'
 _ST_EQ "a fold follows a rename of a name holding a quote, into its old path" "$RC:$(git show 'HEAD~1:q"old.txt' | sed -n 3p)" "0:q line 3 fixed"
-# A name a printed step pastes back holds its `!` single-quoted, which an interactive shell would
-# expand – a conflict's merge here
+# A name a printed step pastes back holds its `!` single-quoted,
+# which an interactive shell would expand – a conflict's merge here
 _ST_PZ_NEW ce6
 _ST_PZ_C a.txt a "CE6 base"
 print -r -- x > 'x!y.txt' && git add 'x!y.txt' && git commit -qm "CE6 adds"

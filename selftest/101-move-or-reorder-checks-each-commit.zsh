@@ -18,8 +18,8 @@ _ST_RUN --continue
 _ST_EQ "a resume stops there again" "$RC" "2"
 _ST_OUT_HAS "at the same commit" '^  failing: [0-9a-f]* MV needs$'
 _ST_RUN --abort
-# Moved up past what needs it, a commit leaves the first one rebuilt short – set up by a move
-# that passes, then undone by the one under test
+# Moved up past what needs it, a commit leaves the first one rebuilt short
+# – set up by a move that passes, then undone by the one under test
 _ST_RUN --move="$(git rev-parse ':/MV one')" --after="$(git rev-parse ':/MV needs')"
 _ST_EQ "a move that breaks nothing lands" "$RC" "0"
 MV_TIP=$(git rev-parse HEAD)

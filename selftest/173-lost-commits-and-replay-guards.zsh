@@ -65,8 +65,8 @@ _ST_RUN --continue
 _ST_EQ "as does one taken out of a fold's" "$RC:$(git rev-parse HEAD)" "1:$LP_T"
 _ST_OUT_HAS "naming it" 'LP2 Z adds z – taken out of its todo by hand'
 _ST_RUN --abort
-# A fold's later stop skipped by hand refuses where the result lacks that commit's change – the
-# tree the fold staged no longer reached – while one the fold overrides lands, scenario 120's
+# A fold's later stop skipped by hand refuses where the result lacks that commit's change
+# – the tree the fold staged no longer reached – while one the fold overrides lands, scenario 120's
 _ST_RUN --amend-into="$LP_A"
 LP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${LP_WT:-$ST_NO_WT}" f $'1\n2\n3\n4\nfiVe\n6\n7\n8'
@@ -89,8 +89,8 @@ for LP_WAY in edit hand; do
 	_ST_OUT_HAS "naming it as left out by hand" 'LP c2 FIVE – left out by hand, its change not already there'
 	_ST_RUN --abort
 done
-# While its stop resolved empty and continued through git edit drops it, as the caller's call, and a
-# pick git empties itself past a stop – its change already there – goes as emptied
+# While its stop resolved empty and continued through git edit drops it, as the caller's call,
+# and a pick git empties itself past a stop – its change already there – goes as emptied
 _ST_PZ_NEW lp4
 _LP_C "LP base" "line 5" "line 9" && print g1 > g && git add g && git commit -qm "LP g"
 _LP_F five nine > f && print -l g1 zzz > g && git add f g && git commit -qm "LP c1 five+nine, zzz"
@@ -127,8 +127,8 @@ for LP_WAY in edit hand; do
 	fi
 done
 
-# An empty step's pause names git edit's own continue, never a hand skip, which loses the change and
-# rewrites later messages under the caller's cleanup – and that continue is no hand skip
+# An empty step's pause names git edit's own continue, never a hand skip, which loses the change
+# and rewrites later messages under the caller's cleanup – and that continue is no hand skip
 _ST_PZ_NEW lp6
 _ST_PZ_C f.txt v1 "LP6 base" && _ST_PZ_C f.txt v2 "LP6 commit" && _ST_PZ_C f.txt v1 "LP6 revert"
 LP_T=$(git rev-parse HEAD)
@@ -178,8 +178,8 @@ _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f "$(_LP_F FIVE "line 9")"
 _ST_RUN --continue
 _ST_EQ "while one staging the stop's own change alone lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LP top|LP c3 G1|LP c2 FIVE|LP g|LP base|"
 
-# A reorder whose replay changes a gitlink refuses whatever the caller's config hides of submodules,
-# a moved gitlink change keeping the tree landing
+# A reorder whose replay changes a gitlink refuses whatever the caller's config
+# hides of submodules, a moved gitlink change keeping the tree landing
 for LP_WAY in cfg gitmodules; do
 	_ST_PZ_NEW "lp9-$LP_WAY"
 	_ST_PZ_C a a "LP9 base" && LP_S=$(git rev-parse HEAD)
@@ -266,8 +266,8 @@ _ST_EQ "and finds one already there" "$(_PICK_PATHS_ONTO . "$LP_B" "$LP_G" "$LP_
 _PICK_PATHS_ONTO . "$LP_B" "$LP_R" "$LP_A" >/dev/null 2>&1
 _ST_EQ "while one conflicting fails" "$?" "1"
 
-# A squash names the commit its target became, where one before it went empty – at one author date,
-# as a scripted session makes them, and at distinct ones
+# A squash names the commit its target became, where one before it went empty
+# – at one author date, as a scripted session makes them, and at distinct ones
 for LP_WAY in same distinct; do
 	_ST_PZ_NEW "lp11-$LP_WAY"
 	LP_N=1700000000
@@ -282,8 +282,8 @@ for LP_WAY in same distinct; do
 	_ST_OUT_HAS "naming the target's new commit" "squashed into: $(git rev-parse --short HEAD~1) LP11 C adds c and x again"
 done
 
-# A split by path of a directory turned file says which way it turned, its remedy dropping an
-# exclude that would leave the named side out again – and running as printed
+# A split by path of a directory turned file says which way it turned, its remedy
+# dropping an exclude that would leave the named side out again – and running as printed
 _ST_PZ_NEW lp12
 mkdir e && print ex > e/x && print base > base && git add -A && git commit -qm "LP12 base"
 git rm -rq e && print efile > e && print o > other && git add -A && git commit -qm "LP12 e: directory to file, plus other"
@@ -301,8 +301,8 @@ _ST_RUN --split=HEAD --text "LP12b e dir" -- e/x
 _ST_OUT_HAS "while a file turned directory says so" 'turns a file into a directory at one path'
 _ST_OUT_HAS "its remedy naming both sides as given" 'Name both sides: git edit --split=[0-9a-f]* --text <msg> -- e/x e'
 
-# An undo whose run was taken back outside git-edit – the raw update-ref a refusal names – moves
-# nothing, says so, and journals it undone, so a further undo passes over it
+# An undo whose run was taken back outside git-edit – the raw update-ref a refusal names –
+# moves nothing, says so and journals it undone, so a further undo passes over it
 _ST_PZ_NEW lp13
 _ST_PZ_C a a "LP13 base" && _ST_PZ_C c c "LP13 C"
 git branch side && git worktree add -q "$TMP/lp13-side" side

@@ -34,7 +34,7 @@ PH_RESOLVE () {
 _ST_PZ_NEW ph1
 PH_SETUP "$PH_TB" plain.txt
 _ST_RUN --amend-into="$PH_T"
-# The quoted list last, so it wins – the tab-joined one ahead of it for an older copy resuming the pause
+# The quoted list last, so it wins – the tab-joined one before it for an older copy resuming a pause
 _ST_EQ "a fold over a tab name pauses, its state listing the names quoted" \
 	"$RC:$(grep -c '^files_q=' .git/git-edit-state):$(grep '^files\(_q\)\{0,1\}=' .git/git-edit-state | cut -d= -f1 | tr '\n' ' ')" \
 	"2:1:files files_q "

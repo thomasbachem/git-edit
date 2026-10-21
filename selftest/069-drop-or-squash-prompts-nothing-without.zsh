@@ -1,5 +1,5 @@
-# Nobody can confirm one with no TTY, on either squash route, so each proceeds without
-# printing a prompt its read could never take
+# Nobody can confirm one with no TTY, on either squash route,
+# so each proceeds without printing a prompt its read could never take
 _ST_SCENARIO "\e[1;96m[69] a drop or squash prompts nothing without a TTY\e[0m"
 cd "$TMP/repo"
 git checkout -q main 2>/dev/null

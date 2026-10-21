@@ -15,8 +15,8 @@ _P209_REPO () {
 	# Args: <name>
 	_ST_PZ_NEW "$1" && git config diff.doc.textconv "$TMP/h209-tc" && print -r -- '*.doc diff=doc' > .gitattributes
 }
-# Lands branch `feat`, rewording `r.doc`, onto a moved `main` – `H9_U` the raw undo, `H9_S` the
-# re-sync step `--status` names beside it
+# Lands branch `feat`, rewording `r.doc`, onto a moved `main`
+# – `H9_U` the raw undo, `H9_S` the re-sync step `--status` names beside it
 _P209_LANDED () {
 	# Args: <repo name>
 	_P209_REPO "$1"
@@ -80,7 +80,7 @@ git update-index --cacheinfo "100644,$(git rev-parse "${H9_B}:r.doc"),r.doc"
 eval "${H9_S:-false}" >/dev/null
 _ST_EQ "and re-syncs one still as before the move" "$?:$(git rev-parse :r.doc)" "0:$(git rev-parse HEAD:r.doc)"
 
-# A fold of a change only a textconv view hides folds – its paths named, whole, or all staged
+# A fold of a change only a textconv view hides folds – its paths named, whole or all staged
 _P209_REPO h209d
 printf '#style plain\nHello\n' > r.doc && git add -A && git commit -qm "H9D base"
 _ST_PZ_C o.txt o "H9D other"
@@ -93,8 +93,8 @@ _ST_RUN --amend-into=HEAD~1 -- r.doc
 _ST_EQ "while one with nothing staged still refuses" "$RC:$(git log -1 --format=%s)" "1:H9D other"
 _ST_OUT_HAS "as nothing to fold" 'No staged changes under'
 
-# A `TMPDIR` holding a space or a command substitution – git runs an editor value holding either
-# through `sh` – moves, folds and resumes, running nothing it holds
+# A `TMPDIR` holding a space or a command substitution – git runs an editor value
+# holding either through `sh` – moves, folds and resumes, running nothing it holds
 for H9_T in "$TMP/h209 tmp/" "$TMP/h209x\$(touch\${IFS}$TMP/h209-pwned)/"; do
 	mkdir -p "$H9_T"
 	_ST_PZ_NEW h209e
@@ -123,8 +123,8 @@ _ST_RUN --exec -- sh -c 'git config --get i18n.logOutputEncoding >&2; git config
 _ST_OUT_HAS "a quote in the commit encoding stays in its value" "^UTF-8' 'safe.directory=\\*\$"
 _ST_OUT_LACKS "adding no entry beside it" $'^command\t'
 
-# A link value below a symlink the commit tracks is named for that, nothing written through it,
-# while one a directory pattern misses keeps its own remedy
+# A link value below a symlink the commit tracks is named for that, nothing
+# written through it, while one a directory pattern misses keeps its own remedy
 _ST_PZ_NEW h209g
 mkdir -p "$TMP/h209-outside"
 printf 'cache/\nvendor/\n' > .gitignore && git add .gitignore && git commit -qm "H9G ignore"
@@ -140,11 +140,11 @@ _ST_OUT_LACKS "never the one below the link" 'cache/data.*its ignore pattern'
 _ST_EQ "nothing written through the link" "$(command ls -A "$TMP/h209-outside")" ""
 _ST_RUN --abort
 
-# A land's catch-up copies, read by patch where author and message leave them open, read alike
-# under `color.ui=always` – main's copy of the branch's own change, under another date and
-# subject, leaves a commit made at the catch-up's stop under that subject the branch's own –
-# and no `git log -p` feeding `patch-id` is colored, nor a guard's porcelain exit code read
-# through a textconv or an external diff
+# A land's catch-up copies, read by patch where author and message leave them open,
+# read alike under `color.ui=always` – main's copy of the branch's own change,
+# under another date and subject, leaves a commit made at the catch-up's stop under
+# that subject the branch's own – and no `git log -p` feeding `patch-id` is colored,
+# nor a guard's porcelain exit code read through a textconv or an external diff
 _ST_PZ_NEW h209l
 print -l l1 l2 l3 > f.txt && git add f.txt && git commit -qm "H9L base"
 git worktree add -q -b feat "$TMP/h209l-wt" main 2>/dev/null

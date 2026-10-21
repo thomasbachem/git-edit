@@ -1,7 +1,7 @@
 # A split leaves the message, body included, on the second commit
 
-# `--text` names the extracted commit alone and the remainder keeps the original whole – a
-# caller reading the pause as "--text is the first commit's subject" rewords the remainder
+# `--text` names the extracted commit alone and the remainder keeps the original whole
+# – a caller reading the pause as "--text is the first commit's subject" rewords the remainder
 # next with `-M --text` and cuts the body, so the pause names it, and `--status` again
 _ST_SCENARIO "\e[1;96m[75] a split leaves the body on the second commit, and says so\e[0m"
 printf 'first\nsecond\n' > sp.txt && git add sp.txt && git commit -qm "SP base"

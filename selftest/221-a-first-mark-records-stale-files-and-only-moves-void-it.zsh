@@ -1,6 +1,6 @@
 # A checkout's first mark ends the walk for every file, each file a landing left stale recorded:
-# • A sync starting with no mark writes it final, recording each other file a landing left stale with
-#   its base – uncommitted work no landing touched records nothing, so a hand revert stays
+# • A sync starting with no mark writes it final, recording each other file a landing left stale
+#   with its base – uncommitted work no landing touched records nothing, so a hand revert stays
 _ST_SCENARIO "\e[1;96m[221] a first mark records stale files, and only a move voids it\e[0m"
 local RT_X RT_T RT_O
 
@@ -12,8 +12,8 @@ _RT221_REPO () {
 	RT_X=$(git rev-parse HEAD)
 }
 
-# RC2-1: a first sync beside another session's uncommitted file wrote the mark held for good, so the
-# walk went on past it and read a hand revert of the newest landing's line as a file lacking it
+# RC2-1: a first sync beside another session's uncommitted file wrote the mark held for good, so
+# the walk went on past it and read a hand revert of the newest landing's line as a file lacking it
 _RT221_REPO rt1
 print -l u1 u2 W3 u{4..6} > u
 _ST_RUN --commit --text "RT1 A2" --edits='{"f": [["l2\n", "A2\n"]]}'
@@ -24,8 +24,8 @@ print -l l1 A2 l{3..12} > f
 _ST_RUN --commit --text "RT1 C10" --edits='{"f": [["l10\n", "C10\n"]]}'
 _ST_EQ "so a hand revert of the newest landing's line stays past the next landing" \
 	"$RC:$(tr -d '\n' < f):$(git status --porcelain | tr '\n' ' ')" "0:l1A2l3l4l5l6l7l8l9C10l11l12: M f  M u "
-# A file a landing before the mark left stale – an older git-edit's, which kept neither – is recorded
-# with that landing, its edits kept, and the bare carry brings it along
+# A file a landing before the mark left stale – an older git-edit's, which kept neither –
+# is recorded with that landing, its edits kept, and the bare carry brings it along
 _RT221_REPO rt2
 print -l W1 u{2..6} > u
 _ST_RUN_UNSYNCED --commit --text "RT2 old" --edits='{"u": [["u5\n", "O5\n"]]}'
@@ -41,9 +41,9 @@ _ST_RUN --carry
 _ST_EQ "the bare carry brings the recorded file along, its edits kept, the record cleared" \
 	"$RC:$(tr -d '\n' < u):$([ -s .git/git-edit-unbrought ] && echo recorded)" "0:W1u2u3u4O5u6:"
 
-# RC2-2: a `HEAD` reflog entry that moves nothing – an unstaging reset, a stash and its pop, a checkout
-# of the branch it is on – voided the mark, so the bare carry the missed landings named brought only
-# the last one, and `--status` named none
+# RC2-2: a `HEAD` reflog entry that moves nothing – an unstaging reset, a stash and its pop,
+# a checkout of the branch it is on – voided the mark, so the bare carry the missed landings named
+# brought only the last one, and `--status` named none
 # Makes repo <name> whose checkout missed two landings, its sync unable to run, `u` edited
 _RT221_MISSED () {
 	# Args: <name>
@@ -83,8 +83,8 @@ _ST_OUT_LACKS "as does a checkout resetting the branch in place" "left behind at
 # RC2-3: a staged fold below a peer's landing whose merge into the file conflicts recorded the tip
 # before the fold, which holds the landing – `--status` named nothing, the bare carry had nothing to
 # carry, and the guard named a carry from the tip the fold rewrote, which cleared the record
-# Makes repo <name>: the caller's commit of `f` line 11, a peer's of line 2 on top, then the caller's
-# fold of staging that predates the peer's, its file edited beside the peer's line
+# Makes repo <name>: the caller's commit of `f` line 11, a peer's of line 2 on top, then
+# the caller's fold of staging that predates the peer's, its file edited beside the peer's line
 _RT221_FOLD () {
 	# Args: <name> [<command running the fold>]
 	_RT221_REPO "$1"

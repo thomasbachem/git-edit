@@ -17,8 +17,8 @@ _ZR_CLEAN () {
 	[ ! -f "$(git rev-parse --git-common-dir)/git-edit-state" ] && [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]
 }
 
-# A revert moved before what it reverts replays clean yet ends elsewhere – refused, by
-# --reorder and --move alike, nothing landed and nothing left behind
+# A revert moved before what it reverts replays clean yet ends elsewhere
+# – refused, by --reorder and --move alike, nothing landed and nothing left behind
 _ST_PZ_NEW zr1
 _ZR_C f.txt "ZR1 base" a b c d e
 _ZR_C f.txt "ZR1 A: c to C" a b C d e
@@ -50,8 +50,8 @@ _ST_RUN --move="$(git rev-list --max-parents=0 HEAD)" --after=HEAD
 _ST_EQ "a move of the root commit lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:ZR7 root|ZR7 B|ZR7 A|"
 _ST_EQ "listing its new order under the summary" "$(print -r -- "$OUT" | grep -A3 'new order (oldest-first):' | grep -c '^  [0-9a-f]\{7,\} ZR7 ')" "3"
 
-# A pre-rebase hook's veto is no conflict – refused with its words by a move, a fold and a
-# placed commit, nothing paused, the staging kept
+# A pre-rebase hook's veto is no conflict – refused with its words by a move,
+# a fold and a placed commit, nothing paused, the staging kept
 _ST_PZ_NEW zr2
 _ZR_C a.txt "ZR2 base" a
 _ZR_C b.txt "ZR2 B" b
@@ -98,8 +98,8 @@ _ZR_C f.txt "ZR2 F4" 4
 _ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
 _ST_EQ "a real conflict still pauses" "$RC" "2"
 _ST_OUT_HAS "naming the file" 'Conflicted files:'
-# A resume whose continue fails with nothing to resolve keeps its pause, in git's words – a stand-in
-# fails it, as a hook or signer would
+# A resume whose continue fails with nothing to resolve keeps its pause,
+# in git's words – a stand-in fails it, as a hook or signer would
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt 4
 mkdir -p "$TMP/zr2-git"
 print -l '#!/bin/sh' 'case " $* " in *" rebase --continue "*) echo "error: zr2 stand-in refused the commit" >&2; exit 1 ;; esac' \
@@ -197,8 +197,8 @@ _ST_OUT_HAS "sending it to leave that record out" 'leave its record out of the b
 _ST_RUN_IN "$(git log -1 --format='--- %h%n%B' HEAD~2 | sed 's/^ZR8 B$/ZR8 B reworded/')" -M --text -
 _ST_EQ "and one leaving it out rewords" "$RC:$(git log -3 --format=%s | tr '\n' '|')" "0:ZR8 D|ZR8 C|ZR8 B reworded|"
 
-# A branch on a split commit is offered the remainder as what the rewrite made of it, one on
-# a commit above as the same change
+# A branch on a split commit is offered the remainder as what
+# the rewrite made of it, one on a commit above as the same change
 _ST_PZ_NEW zr9
 _ZR_C a.txt "ZR9 base" a
 mkdir -p src && print i > src/i.svg && print j > j.js && git add -A && git commit -qm "ZR9 mixed"

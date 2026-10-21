@@ -37,8 +37,8 @@ GIT_SELFTEST () {
 	local OUT RC
 
 	# A pause that never came leaves its worktree path empty, and a write through
-	# it would land at the filesystem root – this sends it nowhere instead, so a
-	# missed pause fails the scenario's assertions and nothing else
+	# it would land at the filesystem root – this sends it nowhere instead,
+	# so a missed pause fails the scenario's assertions and nothing else
 	local ST_NO_WT=/nonexistent/git-edit-selftest
 
 	# A caller's label would close every reflog message the checks compare – set empty rather than
@@ -54,8 +54,8 @@ GIT_SELFTEST () {
 		GIT_AUTHOR_DATE="${GIT_AUTHOR_DATE:-@$ST_TICK +0000}" GIT_COMMITTER_DATE="${GIT_COMMITTER_DATE:-@$ST_TICK +0000}" command git "$@"
 	}
 
-	# Fails a run ending past its trailer, the line a caller's `| tail -1` reads – a prompt or a note
-	# printed after it hides it there
+	# Fails a run ending past its trailer, the line a caller's `| tail -1` reads
+	# – a prompt or a note printed after it hides it there
 	_ST_TRAILER_LAST () {
 		[[ "${OUT##*$'\n'}" == git-edit:* ]] && return 0
 		[[ "$*" == (-h|--help|--version)* ]] && return 0
@@ -147,8 +147,8 @@ GIT_SELFTEST () {
 	_ST_OUT_LACKS () {
 		local DESC=$1
 		local PATTERN=$2
-		# A here-string, since a pipe's writer dies once `grep -q` has its match, and on a long
-		# `$OUT` the failed pipeline passed this check
+		# A here-string, since a pipe's writer dies once `grep -q` has its match,
+		# and on a long `$OUT` the failed pipeline passed this check
 		if grep -q -e "$PATTERN" <<<"$OUT"; then
 			FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m $DESC"
 			echo "$OUT" | grep -e "$PATTERN" | head -3 | sed 's/^/       | /'
@@ -166,8 +166,8 @@ GIT_SELFTEST () {
 		fi
 	}
 	# Writes a conflict resolution and stages it, verifying the stage took – the dance once
-	# failed silently under `2>/dev/null` and resurfaced two continues later as a
-	# mis-narrated empty step, while a missing worktree stays quiet since its pause already failed
+	# failed silently under `2>/dev/null` and resurfaced two continues later as a mis-narrated
+	# empty step, while a missing worktree stays quiet since its pause already failed
 	_ST_RESOLVE () {
 		# Args: <worktree> <file> <content>
 		[ -d "$1" ] || return 1
@@ -184,8 +184,8 @@ GIT_SELFTEST () {
 	# Composes in a private index from `HEAD`'s own entries, as a caller would, into a commit on
 	# `HEAD`, which pins the tip it was composed on – what `--amend-into --tree` takes
 	_ST_COMPOSE () {
-		# Args: <path> <content>... – prints the commit carrying `HEAD`'s tree with each <path>
-		# replaced, at the mode `HEAD` holds it at
+		# Args: <path> <content>... – prints the commit carrying `HEAD`'s tree
+		# with each <path> replaced, at the mode `HEAD` holds it at
 		local IDX="$TMP/compose-index"
 		rm -f "$IDX"
 		GIT_INDEX_FILE=$IDX git read-tree HEAD
@@ -199,8 +199,8 @@ GIT_SELFTEST () {
 		# Args: <worktree> <file> <content> – the temp-file write that drops the executable bit
 		printf '%s\n' "$3" > "$1/$2.tmp" && mv "$1/$2.tmp" "$1/$2" && git -C "$1" add -- "$2"
 	}
-	# Makes and enters a fresh repo `pz-<name>` under `$TMP` – `_ST_PZ_C` commits there, and
-	# `_ST_PZ_WT` names the worktree a pause recorded
+	# Makes and enters a fresh repo `pz-<name>` under `$TMP` – `_ST_PZ_C`
+	# commits there, and `_ST_PZ_WT` names the worktree a pause recorded
 	_ST_PZ_NEW () {
 		cd "$TMP" && rm -rf "pz-$1" && git init -q -b main "pz-$1" && cd "pz-$1" && git config user.email p@x.invalid && git config user.name P
 	}
@@ -216,30 +216,30 @@ GIT_SELFTEST () {
 	_ST_MERGE_BASE_OK () {
 		[[ "$(LC_ALL=C command git merge-tree -h 2>&1)" == *merge-base* ]]
 	}
-	# Answers whether this git's sparse-checkout takes `check-rules` (2.42), so the tool reads a
-	# sparse checkout's patterns rather than taking every path it adds as outside them
+	# Answers whether this git's sparse-checkout takes `check-rules` (2.42), so the tool
+	# reads a sparse checkout's patterns rather than taking every path it adds as outside them
 	_ST_SPARSE_RULES_OK () {
 		[[ "$(LC_ALL=C command git sparse-checkout -h 2>&1)" == *check-rules* ]]
 	}
-	# Answers whether this git's `mv` takes `--sparse`, which it then needs to move a file out of the
-	# cone in a run's worktree, as that worktree is sparse too
+	# Answers whether this git's `mv` takes `--sparse`, which it then needs to move
+	# a file out of the cone in a run's worktree, as that worktree is sparse too
 	_ST_MV_SPARSE_OK () {
 		# Newer gits list it as `--[no-]sparse`
 		[[ "$(LC_ALL=C command git mv -h 2>&1)" == *sparse* ]]
 	}
-	# Answers whether this git takes `--attr-source` (2.40), so a merge reads
-	# the attributes the edits were made under
+	# Answers whether this git takes `--attr-source` (2.40),
+	# so a merge reads the attributes the edits were made under
 	_ST_ATTR_SOURCE_OK () {
 		LC_ALL=C command git --attr-source=HEAD version >/dev/null 2>&1
 	}
-	# Runs git edit on a pseudo-terminal as a person at one would – stdin and stdout a TTY, no agent
-	# or CI marker – leaving `OUT` and `RC` as `_ST_RUN` does
+	# Runs git edit on a pseudo-terminal as a person at one would
+	# – stdin and stdout a TTY, no agent or CI marker – leaving `OUT` and `RC` as `_ST_RUN` does
 	_ST_TTY () {
 		# Args: [<name>=<value>...] -- <arg>...
 		_ST_TTY_START "$@" && _ST_TTY_END
 	}
-	# `_ST_TTY` in steps, for a run awaiting keys – `_ST_TTY_AT` waits for its prompt, then
-	# `zpty -wn ST_TTY <key>` answers it
+	# `_ST_TTY` in steps, for a run awaiting keys – `_ST_TTY_AT`
+	# waits for its prompt, then `zpty -wn ST_TTY <key>` answers it
 	_ST_TTY_START () {
 		# Args: [<name>=<value>...] -- <arg>...
 		local -a ENVS=()
@@ -291,8 +291,8 @@ GIT_SELFTEST () {
 	}
 
 	PRINT_TEXT "Selftest scratch repo: %s" 36 "$TMP"
-	# Holds a hook or a check open until the test releases it, past its signal – a fixed sleep there
-	# closes the window early on a machine stalling the test longer
+	# Holds a hook or a check open until the test releases it, past its signal
+	# – a fixed sleep there closes the window early on a machine stalling the test longer
 	printf '#!/bin/sh\ni=0\nwhile [ ! -e "$1" ] && [ $i -lt 1200 ]; do sleep 0.1; i=$((i+1)); done\n' > "$TMP/st-hold"
 	chmod +x "$TMP/st-hold"
 	unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -305,12 +305,14 @@ GIT_SELFTEST () {
 	export GIT_CONFIG_NOSYSTEM=1
 	# Nor an identity git guesses from the host – a CI runner has none, so a repo without its own fails
 	printf '[user]\n\tuseConfigOnly = true\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n' > "$GIT_CONFIG_GLOBAL"
-	# No editor from the caller – one an agent's environment exports hid a run reaching for
-	# `$EDITOR`, which a plain terminal or a server then opened
+	# No editor from the caller – one an agent's environment exports hid a run
+	# reaching for `$EDITOR`, which a plain terminal or a server then opened
 	unset GIT_EDITOR GIT_SEQUENCE_EDITOR VISUAL
 	export EDITOR=false
 
-	# --- Scratch repo: A, B pushed to a bare origin; C, D, E unpushed ---
+	# ----- Scratch repo -----
+	# A, B pushed to a bare origin – C, D, E unpushed
+
 	git init -q -b main "$TMP/repo" || { PRINT_ERR "Cannot init scratch repo"; exit 1; }
 	cd "$TMP/repo" || exit 1
 	git config user.email "selftest@git-edit"
@@ -332,9 +334,9 @@ GIT_SELFTEST () {
 	# its locals too, is there for the ones after it
 	local ST_FILE ST_ERR
 	for ST_FILE in "${SELFTEST_FILES[@]}"; do
-		# One failing to parse would run up to its error and pass, so it parses first, running none of
-		# it – as a function body, where a stray `else` or `fi` shows, and in an `if false`, where no
-		# later `{` balances a stray `}` – `zsh -n` reads a `$(<file)`
+		# One failing to parse would run up to its error and pass, so it parses first, running none
+		# of it – as a function body, where a stray `else` or `fi` shows, and in an `if false`,
+		# where no later `{` balances a stray `}` – `zsh -n` reads a `$(<file)`
 		if ! ST_ERR=$( { eval "_ST_PARSE () { $(<"$ST_FILE")"$'\n}' && eval "if false; then $(<"$ST_FILE")"$'\nfi'; } 2>&1); then
 			FAIL=$((FAIL+1))
 			ECHO_E "  \e[1;31mFAIL\e[0m ${ST_FILE:t} does not parse"
@@ -346,7 +348,7 @@ GIT_SELFTEST () {
 		source "$ST_FILE"
 	done
 
-	# --- Summary ---
+	# ----- Summary -----
 	local TOTAL=$((PASS+FAIL))
 	echo ""
 	if [ $FAIL -eq 0 ]; then

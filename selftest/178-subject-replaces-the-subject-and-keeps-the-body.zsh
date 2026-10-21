@@ -1,7 +1,7 @@
-# `--subject` replaces git's subject – the whole first paragraph – with -M and an edit pause's
-# `--continue`, keeping everything from the blank line after it byte for byte, one line only, never
-# beside `--text`, refused by a mode writing a new message – and a `--text` dropping a body
-# names it as the way to keep one
+# `--subject` replaces git's subject – the whole first paragraph – with -M
+# and an edit pause's `--continue`, keeping everything from the blank line after
+# it byte for byte, one line only, never beside `--text`, refused by a mode writing
+# a new message – and a `--text` dropping a body names it as the way to keep one
 _ST_SCENARIO "\e[1;96m[178] --subject replaces the subject and keeps the body\e[0m"
 local SJ_T SJ_TREE SJ_TOP SJ_HEAD SJ_WT
 # Prints commit <1>'s message as its object holds it, byte for byte

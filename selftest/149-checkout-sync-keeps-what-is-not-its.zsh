@@ -181,8 +181,8 @@ _ST_PZ_C z.txt z "CS9b tip"
 _ST_RUN -d -y HEAD~1
 _ST_OUT_HAS "a dropped name ending in a CR is named as taken out" 'Taken out of your checkout with the rewrite: Icon^M – '
 _ST_EQ "that file alone gone" "$(test -e $'Icon\r' && echo cr):$(<Icon)" ":other"
-# A case-only rename on a filesystem that ignores case merges the landed side, and a carry onto it
-# takes the landed spelling
+# A case-only rename on a filesystem that ignores case merges
+# the landed side, and a carry onto it takes the landed spelling
 _ST_PZ_NEW cs10
 print -r -- probe > ci-probe && [ -e CI-PROBE ] && CS_CI=1
 rm -f ci-probe
@@ -207,8 +207,8 @@ if [ -n "$CS_CI" ]; then
 	_ST_TTY -- -d -y HEAD~1
 	_ST_OUT_HAS "edits carried over a case-only rename" 'merged onto what landed: README.md → readme.md'
 	_ST_EQ "take the landed spelling on disk and in the index" "$(ls | grep -ix readme.md):$(git ls-files | grep -ix readme.md):$(tail -1 readme.md)" "readme.md:readme.md:8mine"
-	# An agent's case-only rename offers no clean of the old name, which does nothing there – the file
-	# under it is the new name's, brought along where it holds the old content
+	# An agent's case-only rename offers no clean of the old name, which does nothing there
+	# – the file under it is the new name's, brought along where it holds the old content
 	_ST_PZ_NEW cs12
 	_ST_PZ_C readme.md $'1\n2' "CS12 base"
 	_ST_PZ_C o.txt o "CS12 other"

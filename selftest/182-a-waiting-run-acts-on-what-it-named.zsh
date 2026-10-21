@@ -10,8 +10,8 @@ _ST_SCENARIO "\e[1;96m[182] a waiting run acts on what it named, and a bad argum
 local PW_WTD PW_HEAD PW_C PW_MAN PW_RE PW_RD PW_ARGS
 local PW_T
 local -a PW_CASE
-# Starts `git edit <arg>...` in the background as caller w-self, outside the suite's no-wait pin –
-# its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
+# Starts `git edit <arg>...` in the background as caller w-self, outside the suite's no-wait pin
+# – its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
 _W182_BG () {
 	# Args: <name> <arg>...
 	local N=$1
@@ -29,8 +29,8 @@ _W182_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, its output and status into `OUT` and `RC` –
-# at most 60 s, a run still going then stopped
+# Waits for background run <name> to end, its output and status
+# into `OUT` and `RC` – at most 60 s, a run still going then stopped
 _W182_END () {
 	# Args: <name>
 	local -i I=0
@@ -138,8 +138,8 @@ _W182_END pw5
 _ST_EQ "a pinned commit the landing changed refuses, nothing moved" "$RC:$(git rev-parse HEAD)" "1:$PW_HEAD"
 _ST_OUT_HAS "naming its counterpart" "Its counterpart on HEAD is $(git rev-parse --short=12 HEAD~1) (same subject, changed content)"
 
-# Every argument the run would refuse refuses at once beside another caller's pause, never after
-# the wait – a valid run alone waits
+# Every argument the run would refuse refuses at once beside
+# another caller's pause, never after the wait – a valid run alone waits
 _ST_PZ_NEW pw6
 _ST_PZ_C a.txt a "PW6 A" && _ST_PZ_C b.txt b "PW6 B" && _ST_PZ_C c.txt c "PW6 C"
 _W182_PEER HEAD~1
@@ -180,8 +180,8 @@ _ST_RUN --carry --wait=5
 _ST_OUT_HAS "and --carry" '--carry never waits for a pause, so --wait has nothing to bound'
 _W182_PEER --abort
 
-# An edit's continue with a `--subject` the commit has already and nothing else changed refuses as
-# nothing to amend, the pause kept – a new subject lands
+# An edit's continue with a `--subject` the commit has already and nothing else
+# changed refuses as nothing to amend, the pause kept – a new subject lands
 _ST_PZ_NEW pw8
 _ST_PZ_C a.txt a "PW8 A" && _ST_PZ_C b.txt b "PW8 B" && _ST_PZ_C c.txt c "PW8 C"
 PW_HEAD=$(git rev-parse HEAD)

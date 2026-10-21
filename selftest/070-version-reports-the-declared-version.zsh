@@ -8,8 +8,8 @@ _ST_RUN --version
 _ST_EQ "exits 0" "$RC" "0"
 _ST_OUT_HAS "prints a release number" '^git-edit [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
 _ST_OUT_HAS "matching the declared one" "^git-edit ${DECLARED}\$"
-# The dispatch sits above everything that needs a repository, and a version is most often
-# asked for while filing a report from somewhere else
+# The dispatch sits above everything that needs a repository, and a version
+# is most often asked for while filing a report from somewhere else
 cd "$TMP"
 _ST_RUN --version
 _ST_EQ "answers outside a repository too" "$RC" "0"

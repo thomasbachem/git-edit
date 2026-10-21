@@ -73,8 +73,8 @@ git config edit.verifyCmd '! test -e litter.txt && test -e keep.log'
 _ST_RUN --exec -- sh -c 'echo x > litter.txt; echo y > keep.log; git commit -q --allow-empty -m "GL exec"'
 _ST_EQ "an --exec gate runs without the command's litter" "$RC" "0"
 _ST_OUT_HAS "saying it was removed" 'left untracked, which never lands: litter.txt'
-# A check leaving a process behind holds no pipe the gate waits on – that process outliving the
-# run proves it, where a clock reads a loaded machine as a wait
+# A check leaving a process behind holds no pipe the gate waits on – that process
+# outliving the run proves it, where a clock reads a loaded machine as a wait
 rm -f "$TMP/gl-bg"
 _ST_RUN --exec --verify="(sleep 300 & echo \$! > '$TMP/gl-bg'); true" -- git commit -q --allow-empty -m "GL bg"
 _ST_EQ "a check leaving a background process lands" "$RC" "0"
@@ -110,8 +110,8 @@ git config --unset core.commentChar
 # A dumb terminal skips `VISUAL`, and git refuses rather than fall back to vi there
 _ST_TTY TERM=dumb GIT_EDITOR= EDITOR= VISUAL=false -- -M HEAD
 _ST_OUT_HAS "a dumb terminal with no EDITOR refuses as git does" 'Terminal is dumb, but EDITOR unset'
-# What a person authors at a terminal edit's prompt lands only once the check passes on it, a
-# failing one pausing into `--continue`, and Escape twice leaving nothing
+# What a person authors at a terminal edit's prompt lands only once the check passes
+# on it, a failing one pausing into `--continue`, and Escape twice leaving nothing
 _ST_PZ_NEW g6
 for GL_N in a b c; do _ST_PZ_C "$GL_N.txt" "$GL_N" "GL $GL_N"; done
 git config edit.verifyCmd '! grep -q bad b.txt'

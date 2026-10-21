@@ -12,9 +12,9 @@ _MK220_REPO () {
 	MK_X=$(git rev-parse HEAD)
 }
 
-# RC-1: the checkout switches away and back while another checkout of the branch lands – the mark
-# still names the tip before, so the next sync read a hand revert of the landed line as a file the
-# switch never brought and put the line back
+# RC-1: the checkout switches away and back while another checkout of the branch lands
+# – the mark still names the tip before, so the next sync read a hand revert
+# of the landed line as a file the switch never brought and put the line back
 _MK220_REPO mk1
 _ST_RUN --commit --text "MK1 A" --edits='{"f": [["l11\n", "A11\n"]]}'
 git switch -q -c mk1-feat
@@ -26,8 +26,8 @@ _ST_RUN --commit --text "MK1 C" --edits='{"g": [["g5\n", "C5\n"]]}'
 _ST_EQ "a hand revert after a switch away and back stays, though the mark predates the switch" \
 	"$RC:$(sed -n 2p f):$(sed -n 5p g):$(git status --porcelain | tr '\n' ' ')" "0:l2:C5: M f "
 git worktree remove --force "$TMP/mk1-x"
-# Its own landings and undos keep it, though an undo moves its `HEAD` – a hand revert of a brought
-# line stays
+# Its own landings and undos keep it, though an undo
+# moves its `HEAD` – a hand revert of a brought line stays
 _MK220_REPO mk2
 _ST_RUN --commit --text "MK2 A" --edits='{"f": [["l2\n", "A2\n"]]}'
 _ST_RUN --commit --text "MK2 B" --edits='{"g": [["g2\n", "B2\n"]]}'
@@ -37,9 +37,9 @@ _ST_RUN --commit --text "MK2 C" --edits='{"g": [["g5\n", "C5\n"]]}'
 _ST_EQ "a mark the checkout's own landings and undos followed still counts, a hand revert kept" \
 	"$RC:$(sed -n 2p f):$(tr -d '\n' < g):$(git status --porcelain | tr '\n' ' ')" "0:l2:g1B2g3g4C5g6: M f  M g "
 
-# RC-4: a fold of staged content below a peer's landing on its file – the replay brings the landing
-# into the commit, and the sync merges it into the file from what the fold read, which once took
-# the entry alone and left the file taking the landing back
+# RC-4: a fold of staged content below a peer's landing on its file – the replay brings
+# the landing into the commit, and the sync merges it into the file from what the fold
+# read, which once took the entry alone and left the file taking the landing back
 _MK220_FOLD () {
 	# Args: <repo name> – the caller's commit of `f` line 7, a peer's of line 2 on top
 	_MK220_REPO "$1"
@@ -53,8 +53,8 @@ git add f
 GIT_EDIT_ACTOR=mk-b _ST_RUN --amend-into="$MK_X"
 _ST_EQ "a staged fold below a peer's landing brings the landing into the file" \
 	"$RC:$(tr -d '\n' < f):$(git status --porcelain | tr '\n' ' ')" "0:l1A2l3l4l5B6B7l8l9l10l11l12:"
-# Edits made since on a line beside the landing's write nothing – named with the merge from what
-# the fold read, the path recorded
+# Edits made since on a line beside the landing's write nothing
+# – named with the merge from what the fold read, the path recorded
 _MK220_FOLD mk4
 print -l l1 l2 l{3..5} B6 B7 l{8..12} > f
 git add f
@@ -83,9 +83,9 @@ GIT_EDIT_ACTOR=mk-b _ST_RUN_UNSYNCED --amend-into="$MK_X"
 _ST_EQ "a fold whose sync can't run leaves the file" "$RC:$(sed -n 2p f)" "0:l2"
 _ST_OUT_HAS "naming the merge that brings the replay's change in" "cat-file --filters ${MK_T:0:12}:f > .* git merge-file -- f "
 
-# RC-2: an undo whose sync can't run names the bare carry, which brings the undo along – once, the
-# walk read no undo as a step, so a mark at the undone tip counted as none, and a later landing
-# moved it past the undo, leaving the undone land's file in the checkout, staged
+# RC-2: an undo whose sync can't run names the bare carry, which brings the undo along – once,
+# the walk read no undo as a step, so a mark at the undone tip counted as none, and a later
+# landing moved it past the undo, leaving the undone land's file in the checkout, staged
 _MK220_UNDONE () {
 	# Args: <repo name> – a land of `side`'s line 2, then its undo with the index locked
 	_MK220_REPO "$1"
@@ -115,8 +115,8 @@ _ST_RUN --undo
 rm -f .git/index.lock
 _ST_RUN --commit --text "MK9 C" --edits='{"g": [["g5\n", "C5\n"]]}'
 _ST_EQ "an undone commit's content stays in the checkout past a later landing" "$RC:$(sed -n 2p f)" "0:A2"
-# The branch's other checkout keeps its mark below an undo, as the walk goes on past one – its bare
-# carry brings the landing before the undone one too
+# The branch's other checkout keeps its mark below an undo, as the walk goes
+# on past one – its bare carry brings the landing before the undone one too
 _MK220_REPO mk12
 git switch -q -c side && print -l g1 S2 g{3..6} > g && git commit -qam "MK side" && git switch -q main
 git worktree add -q -f "$TMP/mk12-o" main
@@ -147,9 +147,9 @@ _MK220_REPO mk11
 _ST_RUN --commit --text "MK11 f" --edits='{"f": [["l10\n", "L10\n"]]}'
 _ST_EQ "a clean checkout's first mark is final" "$(sed -n 1p .git/git-edit-brought | cut -d' ' -f3)" ""
 
-# RC-5: the branch's other checkout whose mark a later landing moved on – past 40 landings, the walk
-# no longer reaching it – once carried only the landings since, though its record names the file an
-# earlier one left there: the bare carry takes the record's paths too
+# RC-5: the branch's other checkout whose mark a later landing moved on – past 40 landings,
+# the walk no longer reaching it – once carried only the landings since, though its record
+# names the file an earlier one left there: the bare carry takes the record's paths too
 _MK220_REPO mk13
 git worktree add -q -f "$TMP/mk13-x" main
 print -l l{1..5} X6 l{7..12} > "$TMP/mk13-x/f"
@@ -164,9 +164,9 @@ _ST_EQ "a bare carry from a mark moved past an earlier landing brings the file i
 	"$(<"$TMP/mk13.got")" "0:l1A2l3l4l5X6l7l8l9l10l11l12:B5"
 git worktree remove --force "$TMP/mk13-x"
 
-# RC-6: an entry a missed landing left on the mark – the index locked then – is no one's staging, so
-# the next landing on the file merges both into the edits, where it once left the file staged and
-# edited both
+# RC-6: an entry a missed landing left on the mark – the index locked then –
+# is no one's staging, so the next landing on the file merges both
+# into the edits, where it once left the file staged and edited both
 _MK220_REPO mk14
 : > .git/index.lock
 _ST_RUN --commit --text "MK14 A" --edits='{"f": [["l2\n", "A2\n"]]}'
@@ -184,8 +184,8 @@ _ST_RUN --commit --text "MK15 L2" --edits='{"g": [["g1\n", "D1\n"]]}'
 _ST_EQ "an entry a re-sync took ahead merges from the mark, the hand revert kept" \
 	"$RC:$(sed -n 2p f):$(sed -n 10p f):$(git status --porcelain | tr '\n' ' ')" "0:l2:L10: M f "
 
-# V1-7: a rename's source outside a sparse checkout is named with the other paths outside it, never
-# as come along
+# V1-7: a rename's source outside a sparse checkout is
+# named with the other paths outside it, never as come along
 if _ST_SPARSE_RULES_OK; then
 	_ST_PZ_NEW mk16
 	mkdir in out && print -l l{1..3} > in/f && print -l r{1..3} > out/r && git add -A && git commit -qm "MK base"

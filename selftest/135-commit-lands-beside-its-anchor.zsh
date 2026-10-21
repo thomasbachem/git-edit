@@ -46,8 +46,8 @@ git init -q --bare "$TMP/pl-origin.git" && git remote add origin "$TMP/pl-origin
 _ST_RUN --commit --text "PL x" --after=HEAD~1 -- x.txt
 _ST_EQ "placing below a pushed commit refuses, nothing landed" "${RC}:$(git rev-parse HEAD):$(git status --porcelain -- x.txt)" "1:$PL_T:?? x.txt"
 _ST_OUT_HAS "naming it" 'already pushed'
-# A conflict placing it pauses as a move does, with nothing landed – the tip it read is what the
-# resume lands against, and what was built on it what a clean replay reproduces
+# A conflict placing it pauses as a move does, with nothing landed – the tip it read is
+# what the resume lands against, and what was built on it what a clean replay reproduces
 _ST_PZ_NEW pl2
 _ST_PZ_C f.txt $'1\n2\n3\n4' "PL2 A"
 _ST_PZ_C f.txt $'1\n2b\n3\n4' "PL2 B"

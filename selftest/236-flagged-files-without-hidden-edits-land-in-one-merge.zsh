@@ -16,8 +16,8 @@ print -l -- one two three four five six seven eight > n1.txt
 print -l -- uno dos tres cuatro cinco seis siete ocho > n2.txt
 git add -A && git commit -qm "FU change all"
 _ST_PZ_C t.txt t "FU tip"
-# Every entry flagged, the first ten skip-worktree, the rest assume-unchanged – hidden edits in
-# five of the files, two touched alone, one of each flag, one renamed file edited
+# Every entry flagged, the first ten skip-worktree, the rest assume-unchanged
+# – hidden edits in five of the files, two touched alone, one of each flag, one renamed file edited
 git ls-files -z | git update-index -z --assume-unchanged --stdin
 git update-index --no-assume-unchanged -- f{1..10}.txt && git update-index --skip-worktree -- f{1..10}.txt
 for FU_I in 3 9 17 28 40; do print -r -- mine >> "f$FU_I.txt"; FU_WANT+="1 2 3 4 5 6 mine "; done

@@ -1,8 +1,8 @@
 # --verify gates the CAS on the caller's own check
 
-# A rewrite can land semantically wrong yet green – a bad resolution, a fold that breaks a
-# later commit – so `--verify=<cmd>` or `edit.verifyCmd` runs the caller's check over the
-# built result before the CAS, primary plus tip by default, all of it under `--verify-span`
+# A rewrite can land semantically wrong yet green – a bad resolution, a fold that breaks
+# a later commit – so `--verify=<cmd>` or `edit.verifyCmd` runs the caller's check over
+# the built result before the CAS, primary plus tip by default, all of it under `--verify-span`
 _ST_SCENARIO "\e[1;96m[60] --verify gates the CAS, pausing on failure\e[0m"
 git reset -q --hard
 printf '#!/bin/sh\nif grep -q FORBIDDEN vf.txt; then echo VERIFY_SAW_FORBIDDEN; exit 1; fi\nexit 0\n' > "$TMP/verify.sh" && chmod +x "$TMP/verify.sh"
@@ -59,8 +59,8 @@ fi
 _ST_RUN --no-verify --continue
 _ST_EQ "the override applies the fold" "$RC" "0"
 _ST_OUT_HAS "after restoring the inspected-away worktree" 'restoring'
-# The run that lands a result a gate rejected is the one a reader most needs told, and the
-# command comes from what the pause recorded rather than from config
+# The run that lands a result a gate rejected is the one a reader most needs told,
+# and the command comes from what the pause recorded rather than from config
 _ST_OUT_HAS "and the landing says the gate was overridden" 'Verify skipped'
 _ST_OUT_HAS "naming the check the pause had recorded" "$TMP/verify.sh"
 _ST_EQ "the whole chain survived" "$(git rev-list --count HEAD)" "$(git rev-list --count $VF_TIP)"
@@ -76,8 +76,8 @@ _ST_OUT_LACKS "and the check never ran" 'Verified'
 _ST_OUT_HAS "while saying the gate was bypassed" 'Verify skipped'
 _ST_OUT_HAS "naming the flag that bypassed it" '--no-verify was passed'
 _ST_OUT_HAS "and the command that never ran" "$TMP/verify.sh"
-# With nothing configured there was no gate to skip, and a note would invent one – that
-# remaining silence is what makes the note above tell the two states apart
+# With nothing configured there was no gate to skip, and a note would invent one
+# – that remaining silence is what makes the note above tell the two states apart
 git config --unset edit.verifyCmd
 printf 'vf ungated\n' >> vf.txt && git add vf.txt
 _ST_RUN --no-verify --amend-into="$(git rev-parse ':/VF base')" -- vf.txt
@@ -132,8 +132,8 @@ _ST_RUN --split="$SP_TIP" --text "SP extracted sa" -- sa.txt
 _ST_EQ "the split is refused on its broken intermediate" "$RC" "1"
 _ST_OUT_HAS "saying nothing was applied" 'the split was not applied'
 _ST_EQ "and the branch never moved" "$(git rev-parse HEAD)" "$SP_TIP"
-# The gate's own pause hints name a worktree removed the line after it fails, and a
-# resume that re-derives the halves rather than applying this result
+# The gate's own pause hints name a worktree removed the line after it fails,
+# and a resume that re-derives the halves rather than applying this result
 _ST_OUT_LACKS "not pointing into the worktree it removed" 'Inspect the failing state'
 _ST_OUT_LACKS "nor at a resume that would re-derive instead" '--no-verify --continue'
 git config edit.verifyCmd "true"
@@ -166,8 +166,8 @@ _ST_EQ "and it landed" "$(git rev-parse HEAD~1)" "$EX_GOOD"
 _ST_RUN --exec -- true
 _ST_EQ "an --exec that moves nothing completes" "$RC" "0"
 _ST_OUT_LACKS "without running the check" 'Verified'
-# The span tier reaches --exec too, where a command commonly builds a whole run of commits
-# and only the tip would otherwise be checked
+# The span tier reaches --exec too, where a command commonly builds
+# a whole run of commits and only the tip would otherwise be checked
 printf '#!/bin/sh\necho x >> %s/excount\n' "$TMP" > "$TMP/excount.sh" && chmod +x "$TMP/excount.sh"
 rm -f "$TMP/excount"
 local EX_SPAN_BASE=$(git rev-parse HEAD)

@@ -6,9 +6,9 @@
 _ST_SCENARIO "\e[1;96m[176] remedies work as printed, programs read from where they run\e[0m"
 local AX_T AX_OLD AX_RS AX_C AX_ADD AX_MV AX_WHY
 
-# A staged fold taking back a landing that renamed one of its files names the unstage the carry
-# needs, the re-stage under the new name – once, the carry it named refused the staged old path,
-# and the fold refused again as before
+# A staged fold taking back a landing that renamed one of its files names
+# the unstage the carry needs, the re-stage under the new name – once, the carry
+# it named refused the staged old path, and the fold refused again as before
 _ST_PZ_NEW ax1
 print -l {1..10} > f.txt && print -l {1..10} > h.txt && print -r -- x > t.txt && git add -A && git commit -qm "AX1 base"
 print -l 1 2-A {3..10} > f.txt && print -l 1 2-A {3..10} > h.txt && git add f.txt h.txt
@@ -42,8 +42,8 @@ GIT_EDIT_ACTOR=ax-self _ST_RUN --amend-into="$AX_T"
 _ST_OUT_HAS "a fold over a file a landing only edited names the carry alone" "merge that into the checkout with 'git edit --carry=[0-9a-f]\{12\}', which stages each file again as merged, as you staged it whole\."
 _ST_OUT_LACKS "no unstage" 'git restore --staged'
 
-# `core.sparseCheckout` with no patterns file is a full checkout, as git's own checkout writes it –
-# once, a rename's new path was taken as outside it, its file never written, the edits left behind
+# `core.sparseCheckout` with no patterns file is a full checkout, as git's own checkout writes it
+# – once, a rename's new path was taken as outside it, its file never written, the edits left behind
 _ST_PZ_NEW ax2
 mkdir d && print -l {1..10} > d/a && print -r -- t > top && git add -A && git commit -qm "AX2 base"
 git config core.sparseCheckout true

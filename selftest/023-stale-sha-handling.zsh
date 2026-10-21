@@ -29,15 +29,15 @@ export GIT_EDIT_NO_RESOLVE=1
 _ST_RUN -M --text="Opted out" "$SHIFTED"
 unset GIT_EDIT_NO_RESOLVE
 _ST_EQ "GIT_EDIT_NO_RESOLVE opts out" "$RC" "1"
-# --amend-into and --split take their target as an option value, not a
-# positional, so they need the guard wired in separately
+# --amend-into and --split take their target as an option value,
+# not a positional, so they need the guard wired in separately
 echo "anchor" > anchor.txt && git add anchor.txt && git commit -qm "Anchor commit"
 local ANCHOR=$(git rev-parse HEAD)
 echo "opt" > opt.txt && git add opt.txt && git commit -qm "Option-value target"
 local OPTVAL=$(git rev-parse HEAD)
 echo "shift" > shift.txt && git add shift.txt && git commit -qm "Shifter"
-# Fold below the target so it is only rebuilt – its own diff, and so its
-# patch id, must survive for the resolution to be provable
+# Fold below the target so it is only rebuilt – its own diff,
+# and so its patch id, must survive for the resolution to be provable
 echo "anchor2" > anchor.txt && git add anchor.txt
 _ST_RUN --amend-into="$ANCHOR"
 echo "folded" > folded.txt && git add folded.txt

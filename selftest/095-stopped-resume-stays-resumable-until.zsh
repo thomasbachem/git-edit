@@ -52,9 +52,9 @@ _ST_OUT_HAS "naming the signal above the trailer" '^SIGTERM arrived once the bra
 _ST_RUN --status
 _ST_OUT_HAS "leaves nothing in flight" 'no operation in flight'
 _ST_EQ "and no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$VR_WORKTREES"
-# Only the state the run resumed – a pause another run wrote while this one was checking holds
-# that run's work, so finishing this one leaves it be – on another branch, as one on this run's own
-# wins over its landing
+# Only the state the run resumed – a pause another run wrote while this one
+# was checking holds that run's work, so finishing this one leaves it be –
+# on another branch, as one on this run's own wins over its landing
 local VR_SF="$(git rev-parse --git-common-dir)/git-edit-state"
 local VR_ONE=$(git log -1 --format=%H --grep='^VR one$' HEAD)
 git config edit.verifyCmd "sh -c 'echo \$\$ > \"$TMP/vr-check\"; \"$TMP/st-hold\" \"$TMP/vr-release3\"'"

@@ -1,8 +1,8 @@
 # The orphan sweep takes debris and nothing else
 _ST_SCENARIO "\e[1;96m[43] orphan worktree sweep\e[0m"
 git reset -q --hard
-# A temp dir of the run's own – any git-edit on the machine sweeps the shared one, and one
-# getting there first would leave this run nothing to report
+# A temp dir of the run's own – any git-edit on the machine sweeps the shared one,
+# and one getting there first would leave this run nothing to report
 local GCBASE="$TMP/gc-tmp"
 mkdir -p "$GCBASE"
 # Provable debris: pointer dangles, and it has sat around for a day

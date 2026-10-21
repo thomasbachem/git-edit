@@ -1,6 +1,6 @@
-# A whole file holding a peer's landed block lands where the caller removed the lines above it, a
-# merge of the landing then doubling the block – while one lacking it, holding fewer copies than the
-# landing left, or doubling a block of lines it held before, still refuses
+# A whole file holding a peer's landed block lands where the caller removed the lines above
+# it, a merge of the landing then doubling the block – while one lacking it, holding fewer
+# copies than the landing left, or doubling a block of lines it held before, still refuses
 _ST_SCENARIO "\e[1;96m[224] a whole file holding a landed block beside its own removal lands, ones lacking it refuse\e[0m"
 local W224_TIP W224_OWN
 

@@ -1,5 +1,5 @@
-# As `git commit -- <paths>` takes them, composed apart from the shared index – refused where
-# another caller's landing would go back out with them
+# As `git commit -- <paths>` takes them, composed apart from the shared index
+# – refused where another caller's landing would go back out with them
 _ST_SCENARIO "\e[1;96m[113] --commit and --whole take files whole from the checkout\e[0m"
 export GIT_EDIT_ACTOR=wc-self
 printf 'a\nb\nc\nd\ne\nf\ng\nh\n' > wc.txt && printf '#!/bin/sh\n' > wc.sh && chmod +x wc.sh
@@ -91,8 +91,8 @@ WC_TIP=$(git rev-parse HEAD)
 _ST_RUN --commit --text "x" -- wc-hook.txt
 _ST_EQ "a pre-commit hook refusing it leaves the branch" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 rm -f "$WC_HOOK" wc-hook.txt
-# A relative hooks path the temp worktree lacks – husky's untracked `.husky/_`, say – runs from
-# the checkout, where it would otherwise go unrun
+# A relative hooks path the temp worktree lacks – husky's untracked `.husky/_`, say –
+# runs from the checkout, where it would otherwise go unrun
 mkdir -p wc-hooks/_ && printf '*\n' > wc-hooks/_/.gitignore
 printf '#!/bin/sh\nexit 1\n' > wc-hooks/_/pre-commit && chmod +x wc-hooks/_/pre-commit
 git config core.hooksPath wc-hooks/_
@@ -108,8 +108,8 @@ _ST_EQ "a commit an --exec makes in another repository runs none of this one's h
 _ST_RUN --exec -- sh -c 'D=$(git rev-parse --git-dir)/modules/wc-sm && git init -q --bare "$D" && echo "wc-sm hooks:[$(git --git-dir="$D" config --get core.hooksPath)]"'
 _ST_OUT_HAS "nor does a submodule's, its git dir below the temp worktree's" 'wc-sm hooks:\[\]$'
 git config --unset core.hooksPath && rm -rf wc-hooks wc-hook.txt "$TMP/wc-other"
-# A repository path the override's glob would read as a pattern – a `[`, a `\` – gets it all the
-# same, and prints as itself in the banner and in a hint's cd
+# A repository path the override's glob would read as a pattern – a `[`, a `\` –
+# gets it all the same, and prints as itself in the banner and in a hint's cd
 local WC_ODD=$TMP/'wc-odd[1]\e[0m'
 git init -q "$WC_ODD" && cd "$WC_ODD" && git config user.email o@x.invalid && git config user.name O
 mkdir -p hk/_ sub && printf '*\n' > hk/_/.gitignore && printf '#!/bin/sh\nexit 1\n' > hk/_/pre-commit && chmod +x hk/_/pre-commit

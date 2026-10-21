@@ -1,6 +1,6 @@
-# A resume lands only what its own pause holds – no peer's landing read as its own, no replay a
-# hand finished with markers committed or redid elsewhere, no commit a gate pause never built – and
-# a prompt or a label answers only for the pause and the stop it was given
+# A resume lands only what its own pause holds – no peer's landing read as its own, no replay
+# a hand finished with markers committed or redid elsewhere, no commit a gate pause never built –
+# and a prompt or a label answers only for the pause and the stop it was given
 _ST_SCENARIO "\e[1;96m[148] a resume lands only what its pause holds, a prompt or a label only its own\e[0m"
 local HF_T HF_WT HF_SF HF_R HF_I
 local -i HF_W
@@ -11,8 +11,8 @@ _HF_HAND_FINISH () {
 	done
 	return 1
 }
-# A peer's drop of everything above a paused edit lands on the paused commit itself – passing the
-# in-flight check before the pause, the state file held aside standing in for that race
+# A peer's drop of everything above a paused edit lands on the paused commit itself – passing
+# the in-flight check before the pause, the state file held aside standing in for that race
 _ST_PZ_NEW hf1
 _ST_PZ_C a.txt a "HF a" && _ST_PZ_C b.txt b "HF b" && _ST_PZ_C c.txt c "HF c" && _ST_PZ_C d.txt d "HF d"
 HF_T=$(git rev-parse HEAD~2)
@@ -115,8 +115,8 @@ _ST_RUN --continue
 _ST_EQ "as does a reorder's" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "named as not the reorder's" "is not this reorder's"
 _ST_RUN --abort
-# A gate pause whose result was amended refuses rather than restore it away, while an inspect
-# checkout of a commit the result holds is restored
+# A gate pause whose result was amended refuses rather than restore it away,
+# while an inspect checkout of a commit the result holds is restored
 _ST_PZ_NEW hf6
 _ST_PZ_C a.txt a "HF6 a" && _ST_PZ_C b.txt b "HF6 b" && _ST_PZ_C c.txt c "HF6 c"
 HF_T=$(git rev-parse HEAD)
@@ -207,9 +207,9 @@ _ST_RESOLVE "${HF_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 8 E9 10 11 
 _ST_RUN --continue
 _ST_EQ "one resolved to the target's own content lands, each later commit keeping its change" \
 	"$RC:$(git diff --stat HEAD~2 HEAD~1 -- f.txt | grep -c f.txt):$(git show HEAD:f.txt | tr '\n' ' ')" "0:1:1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12 "
-# A resume held in its gate while its pause is aborted and another run pauses lands over, notes
-# into and clears nothing of that run's pause – its worktree lock taken away first, as nothing else
-# lets an abort in while it lives
+# A resume held in its gate while its pause is aborted and another run pauses
+# lands over, notes into and clears nothing of that run's pause – its worktree
+# lock taken away first, as nothing else lets an abort in while it lives
 _ST_PZ_NEW hf11
 _ST_PZ_C a.txt a "HF11 a" && _ST_PZ_C b.txt b "HF11 b"
 _ST_PZ_C f.txt $'1\n2\n3' "HF11 f1" && _ST_PZ_C f.txt $'1\n2x\n3' "HF11 f2" && _ST_PZ_C f.txt $'1\n2xy\n3' "HF11 f3"

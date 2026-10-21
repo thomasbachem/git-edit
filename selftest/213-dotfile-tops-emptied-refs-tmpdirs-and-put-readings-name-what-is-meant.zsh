@@ -1,8 +1,8 @@
 # What a run prints or does holds only what it knows, each neighbor going on:
 # • A work tree only `GIT_DIR` reaches is told a concrete `.git` path only where `GIT_WORK_TREE`
 #   names its top – skip-worktree entries or a subdirectory mirroring the tracked names prove none
-# • A tag or branch on a commit the rebase dropped as emptied is named as dropped, no subject guess –
-#   a twin left standing keeps its counterpart, twins alike in authorship and subject the guess
+# • A tag or branch on a commit the rebase dropped as emptied is named as dropped, no subject guess
+#   – a twin left standing keeps its counterpart, twins alike in authorship and subject the guess
 # • A relative `TMPDIR`, or one opening with `-`, works as an absolute one, leaving nothing in it
 # • A `--put` from a subdirectory of a path new to the tip whose name from the top is tracked
 #   refuses, naming both readings – the absolute spelling and a really new file still land
@@ -10,8 +10,8 @@
 _ST_SCENARIO "\e[1;96m[213] dotfile tops, emptied refs, relative TMPDIRs and put readings name what is meant\e[0m"
 local SE_P SE_C SE_D SE_Y SE_N SE_H
 
-# A `GIT_DIR` work tree whose entries are all skip-worktree, run from a subdirectory – nothing the
-# index lists there reads as deleted, yet the top is unknown
+# A `GIT_DIR` work tree whose entries are all skip-worktree, run from a subdirectory
+# – nothing the index lists there reads as deleted, yet the top is unknown
 SE_P=$TMP/se1
 mkdir -p "$SE_P/wt/sub"
 git init -q --bare "$SE_P/repo.git" && git --git-dir="$SE_P/repo.git" config core.bare false
@@ -47,8 +47,8 @@ unset GIT_DIR GIT_WORK_TREE
 _ST_EQ "while GIT_WORK_TREE's work tree refuses too" "$RC" "1"
 _ST_OUT_HAS "naming its top by path" "> '*$(cd "$SE_P/wt" && pwd -P)/\.git'*\$"
 
-# A drop empties a later commit sharing its subject with an earlier one – a ref on the emptied one is
-# named as dropped, one on the earlier twin re-pointed to its counterpart
+# A drop empties a later commit sharing its subject with an earlier one – a ref on the emptied one
+# is named as dropped, one on the earlier twin re-pointed to its counterpart
 _ST_PZ_NEW se2
 _ST_PZ_C a.txt a "SE2 base" && _ST_PZ_C x.txt x "SE2 add x" && _ST_PZ_C y.txt y "fix typo"
 git rm -q x.txt && git commit -qm "fix typo"

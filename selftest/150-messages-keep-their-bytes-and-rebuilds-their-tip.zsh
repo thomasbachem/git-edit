@@ -1,4 +1,4 @@
-# A message the run leaves alone keeps its bytes – re-parented, squashed into, or resumed as a fixup
+# A message the run leaves alone keeps its bytes – re-parented, squashed into or resumed as a fixup
 # chain's target – an editor comments and cleans up as `git commit` would under the caller's
 # settings, and a rebuild ends at the tip the run read, refusing a move with the rerun it needs
 _ST_SCENARIO "\e[1;96m[150] messages keep their bytes, editors clean up as git commit, rebuilds end at the tip read\e[0m"
@@ -16,8 +16,8 @@ _MB_BODY () {
 	REPLY=$(git cat-file commit "$1"; print -n x)
 	REPLY=${${REPLY%x}#*$'\n\n'}
 }
-# A peer as a `git` in `PATH`: at the `MB_LAND`th `git $MB_SUB` it lands a commit on main – or with
-# `MB_ACT=amend` replaces main's tip – and at the `MB_BACK`th it takes that back
+# A peer as a `git` in `PATH`: at the `MB_LAND`th `git $MB_SUB` it lands a commit on main
+# – or with `MB_ACT=amend` replaces main's tip – and at the `MB_BACK`th it takes that back
 mkdir -p "$TMP/mb-shim"
 cat > "$TMP/mb-shim/git" <<'SH'
 #!/bin/sh
@@ -86,9 +86,9 @@ _ST_EQ "and rebuilds the commit above it as it was" "$REPLY" "$MB_X"
 
 # C3-1 – a fixup chain resumed after a conflict keeps its target's own `#` line
 _ST_PZ_NEW mb2
-# The fold's line abuts the later commit's, so it conflicts on the target, resolved to the target's
-# own content plus the fold – the later commit keeping its change – the line the fold adds to h
-# keeping it from resolving its stops itself, as scenario 226's do
+# The fold's line abuts the later commit's, so it conflicts on the target, resolved
+# to the target's own content plus the fold – the later commit keeping its change –
+# the line the fold adds to h keeping it from resolving its stops itself, as scenario 226's do
 print -l a b c d > f && print h > h && git add f h && git commit -qm "MB2 base"
 print -l A b c d > f && git add f && printf 'MB2 target\n\n#123 issue ref\n' > "$TMP/mb-msg" && git commit -q --cleanup=verbatim -F "$TMP/mb-msg"
 print -l A b C d > f && print l > g && git add f g && git commit -qm "MB2 later"
@@ -181,8 +181,8 @@ _ST_EQ "and a fold rewording its target" "$RC:$(git log --format=%s | grep -c 'M
 # C3-5 – a move under a rewrite is refused naming it and the rerun, offering nothing built
 _ST_PZ_NEW mb7
 _ST_PZ_C f.txt 0 "MB7 c0" && _ST_PZ_C f.txt 1 "MB7 c1" && _ST_PZ_C f.txt 2 "MB7 c2" && _ST_PZ_C f.txt 3 "MB7 c3"
-# Past the four `stripspace` calls reading the records before any wait, two a record, the reword's
-# second
+# Past the four `stripspace` calls reading the records
+# before any wait, two a record, the reword's second
 _MB_PEER stripspace 6 0 amend -M --text "--- $(git rev-parse HEAD~2)
 MB7 new c1
 --- $(git rev-parse HEAD~1)

@@ -11,8 +11,8 @@
 #   unstaged line never lands
 _ST_SCENARIO "\e[1;96m[193] whole files judge a renaming edit, a staged fold's remedy restages only its own\e[0m"
 local GA_T GA_CMD GA_I GA_C1 GA_IDX GA_REB
-# Follows a printed command step by step – its `git edit` steps through `_ST_RUN`, the rest as
-# printed – stopping at a step that fails
+# Follows a printed command step by step – its `git edit` steps through
+# `_ST_RUN`, the rest as printed – stopping at a step that fails
 _GA_FOLLOW () {
 	# Args: <command as printed>
 	local STEP
@@ -110,8 +110,8 @@ GIT_EDIT_ACTOR=ga-a _GA_FOLLOW "$GA_CMD"
 GIT_EDIT_ACTOR=ga-a _ST_RUN --commit --text "GA3 A" -- h
 _ST_EQ "followed as printed, the file lands keeping the land" "$RC:$(_GA_KEPT "$(git show HEAD:h)")" "0:2"
 
-# A file of the caller's own in the renamed file's place keeps the addition's remedy, and one
-# carried as the landing said, so holding the edit, lands
+# A file of the caller's own in the renamed file's place keeps the addition's remedy,
+# and one carried as the landing said, so holding the edit, lands
 _GA_SETUP ga4
 GA_CMD=$(sed -n 's/^.*edits merged onto it: //p' <<<"$OUT")
 print -l "own "{1..20} > h
@@ -163,8 +163,8 @@ for GA_I in alice alone; do
 		"$(git log --format=%h -S'alice' | wc -l | tr -d ' '):$(LC_ALL=C grep -c 'alice$' doc)" "0:$([ $GA_I = alice ] && print 1 || print 0)"
 done
 
-# The staging conflicting with what landed, a rebuild can't be printed – a replay with `--edits` is
-# named instead, which then lands bob's change alone
+# The staging conflicting with what landed, a rebuild can't be printed
+# – a replay with `--edits` is named instead, which then lands bob's change alone
 _ST_PZ_NEW gb2
 print -l "doc line "{1..40} > doc && print -r -- x > t && git add -A && git commit -qm "GB2 base"
 print -l "doc line "{1..4} "doc line 5 bob" "doc line "{6..40} > doc && git add doc
@@ -185,8 +185,8 @@ _ST_EQ "the replay named lands bob's change beside the landing, never another ca
 eval "$GA_CMD"
 _ST_EQ "and the staging dropped as printed, nothing staged takes the landing back" "$?:$(git diff --cached --name-only)" "0:"
 
-# Staged over a file renamed with an edit, with another caller's line beside: the unstaging, the
-# move back and the carry, then the staging rebuilt alone – followed, that line never lands
+# Staged over a file renamed with an edit, with another caller's line beside: the unstaging,
+# the move back and the carry, then the staging rebuilt alone – followed, that line never lands
 _GA_SETUP gb3
 _ST_PZ_C t y "GB3 target" && GA_T=$(git rev-parse HEAD)
 mv f h && git add h

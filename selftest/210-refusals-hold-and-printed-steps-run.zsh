@@ -6,7 +6,7 @@
 # • A pause whose `-C` path now holds another repository's checkout, which its abort leaves alone
 # • A land of a branch sharing no history with the target
 # • A carry partway through a rebase, a cherry-pick or a revert
-# And printed steps run as printed – a `-C` path holding two spaces, a branch named `-x`, and the
+# And printed steps run as printed – a `-C` path holding two spaces, a branch named `-x` and the
 # merge an unrelated land names
 _ST_SCENARIO "\e[1;96m[210] unpinned refusals hold, and printed steps run as printed\e[0m"
 local RF_S RF_M RF_B RF_T RF_WT RF_P RF_CMD RF_SHA RF_GITFN RF_OP
@@ -53,8 +53,8 @@ git -C "${RF_WT:-$ST_NO_WT}" checkout -q -- f.txt
 _ST_RUN --continue
 _ST_EQ "with the edit gone, the replay finished by hand lands" "$RC:$(git show HEAD:f.txt):$(git show HEAD~1:f.txt)" "0:Y:X"
 
-# A `-C` path holding two spaces – its printed `worktree add` makes that path, run as printed – and
-# kept there, refused while it holds uncommitted changes
+# A `-C` path holding two spaces – its printed `worktree add` makes that path,
+# run as printed – and kept there, refused while it holds uncommitted changes
 _ST_PZ_NEW rf3
 _ST_PZ_C a.txt a "RF3 a" && _ST_PZ_C b.txt b "RF3 b" && _ST_PZ_C c.txt c "RF3 c"
 RF_P="$TMP/rf3 two  spaces"
@@ -75,8 +75,8 @@ _ST_RUN -d -y -C="$RF_P" HEAD
 _ST_EQ "while clean, it takes the next run" "$RC:$(git log -1 --format=%s)" "0:RF3 a"
 command git worktree remove --force "$RF_P" 2>/dev/null
 
-# A fold whose staging a peer takes back between its check and its snapshot – stood in for by a
-# `git` unstaging everything right after the fold's first `diff --cached`
+# A fold whose staging a peer takes back between its check and its snapshot
+# – stood in for by a `git` unstaging everything right after the fold's first `diff --cached`
 _ST_PZ_NEW rf4
 _ST_PZ_C a.txt a1 "RF4 a" && _ST_PZ_C b.txt b1 "RF4 b"
 RF_T=$(git rev-parse HEAD)

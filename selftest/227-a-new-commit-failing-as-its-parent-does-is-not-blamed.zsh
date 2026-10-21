@@ -9,8 +9,8 @@ VP_ANCHOR=$(git rev-parse HEAD)
 _ST_PZ_C vp_mid.txt mid "VP mid"
 _ST_PZ_C vp_ready.txt ready "VP ready"
 VP_TIP=$(git rev-parse HEAD)
-# The script names the deciding file, not the command – a token naming it would skip the
-# commits lacking it rather than fail them
+# The script names the deciding file, not the command
+# – a token naming it would skip the commits lacking it rather than fail them
 printf '#!/bin/sh\ntest -f vp_ready.txt\n' > "$TMP/vp_ready.sh"
 chmod +x "$TMP/vp_ready.sh"
 print -r -- placed > vp_placed.txt

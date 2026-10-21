@@ -15,8 +15,8 @@ _ST_CHECK "the branch now sits on the upstream tip" \
 _ST_CHECK "and still carries its own commits" \
 	sh -c "test \$(git rev-list --count onto-main..onto-feature) -eq 2"
 _ST_OUT_HAS "reports what landed" 'Replanted 2 of 2'
-# The branch moved under this checkout and a replant changes its content –
-# left stale, every commit the upstream gained reads as a local deletion
+# The branch moved under this checkout and a replant changes its content
+# – left stale, every commit the upstream gained reads as a local deletion
 _ST_CHECK "the checkout came along" sh -c "test -f om2.txt"
 _ST_CHECK "and reports nothing pending" sh -c "git diff --quiet && git diff --cached --quiet"
 _ST_OUT_HAS "which is stated, not left to be discovered" 'Your checkout came along – now as they landed: om2.txt'
@@ -38,8 +38,8 @@ _ST_OUT_LACKS "without claiming it guessed" 'could not answer'
 _ST_CHECK "no upstream commit was replayed onto the branch" \
 	sh -c "test \$(git log --format=%s onto-main..onto-orphan | grep -c '^OM ') -eq 0"
 
-# A commit the upstream already carries by patch id is dropped, not lost –
-# and the summary has to say so, or the shorter branch reads as lost work
+# A commit the upstream already carries by patch id is dropped, not lost
+# – and the summary has to say so, or the shorter branch reads as lost work
 git checkout -q -B onto-dup onto-main
 printf 'dup work\n' > dup.txt && git add dup.txt && git commit -qm "Dup on branch"
 printf 'own\n' > own.txt && git add own.txt && git commit -qm "Own work"
@@ -79,8 +79,8 @@ _ST_RUN --onto=onto-main
 _ST_EQ "a merge in the span is refused" "$RC" "1"
 _ST_OUT_HAS "rather than flattened silently" 'contains a merge commit'
 
-# A replant whose checkout no sync can bring along – halfway through a sequence – must refuse
-# before the CAS, not move the branch and then decline to follow
+# A replant whose checkout no sync can bring along – halfway through a sequence –
+# must refuse before the CAS, not move the branch and then decline to follow
 git checkout -q -B onto-dirty onto-main
 printf 'od branch\n' > od.txt && git add od.txt && git commit -qm "OD on branch"
 git checkout -q onto-main

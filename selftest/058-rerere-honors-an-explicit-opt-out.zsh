@@ -28,8 +28,8 @@ _ST_OUT_HAS "completion forgets the run's records, and says so" 'Forgot 1 resolu
 _ST_CHECK "rr-cache is back to its baseline after completion" \
 	sh -c "[ $(ls "$RR58_DIR" 2>/dev/null | wc -l | tr -d ' ') -eq $RR58_BEFORE ]"
 git reset -q --hard
-# Abort forgets too – here the sole record is preimage-only (no
-# resolution was recorded), so it is removed without a note
+# Abort forgets too – here the sole record is preimage-only
+# (no resolution was recorded), so it is removed without a note
 printf 'sa line A\n' > sa.txt && git add sa.txt && git commit -qm "SA base"
 printf 'sa line B\n' > sa.txt && git add sa.txt && git commit -qm "SA middle"
 local SA_MID=$(git rev-parse HEAD)

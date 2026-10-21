@@ -1,6 +1,7 @@
 # Printed steps hold where they're run, and a ref left in a rewrite is named by what is known of it
-# • A work tree only `GIT_DIR` reaches is told a concrete `.git` file only at a top it knows –
-#   `GIT_WORK_TREE` or `core.worktree` – never one in a subdirectory, every tracked file deleted there
+# • A work tree only `GIT_DIR` reaches is told a concrete `.git` file
+#   only at a top it knows – `GIT_WORK_TREE` or `core.worktree` –
+#   never one in a subdirectory, every tracked file deleted there
 # • A locked index's re-sync step – a fold's, another checkout's, a carry's – resets only entries
 #   still as the run read them, a peer's staging since kept and listed, even one a textconv hides,
 #   and runs as printed in sh, bash and zsh, from the top and from a subdirectory
@@ -10,8 +11,8 @@ _ST_SCENARIO "\e[1;96m[207] locked re-syncs keep a peer's staging, dotfile tops,
 local RL_P RL_CMD RL_STEP RL_GD RL_WT RL_OLD RL_NEW RL_PEER RL_SO RL_RC RL_B RL_T RL_F
 local RL_NAP=$TMP/rl-nap
 mkdir -p "$RL_NAP" && print -l '#!/bin/sh' 'exit 0' > "$RL_NAP/sleep" && chmod +x "$RL_NAP/sleep"
-# Writes <git dir>'s reference-transaction hook, which takes <lock> once the branch's move commits –
-# an index locked past the run's wait, as a peer's long `add` holds one, the wait cut short
+# Writes <git dir>'s reference-transaction hook, which takes <lock> once the branch's move commits
+# – an index locked past the run's wait, as a peer's long `add` holds one, the wait cut short
 _RL_LOCK_HOOK () {
 	# Args: <git dir> <lock file>
 	mkdir -p "$1/hooks"
@@ -105,7 +106,7 @@ git update-ref refs/heads/main "$(git commit-tree -p HEAD -m "RL2 peer landing" 
 _RL_PASTE zsh "$RL_STEP"
 _ST_EQ "an entry as the fold read it is re-synced, in zsh" "$RL_RC:$(git rev-parse ":../$RL_F")" "0:$RL_B"
 
-# A peer's staged change a textconv view hides survives too – its guard is plumbing, which runs none –
+# A peer's staged change a textconv view hides survives too – its guard is plumbing, running none –
 # the view here a file's first line, which the fold changes and the peer's change keeps
 _ST_PZ_NEW rl2t
 print -l '#!/bin/sh' 'sed 1q "$1"' > "$TMP/rl-tc" && chmod +x "$TMP/rl-tc"
@@ -124,8 +125,8 @@ RL_PEER=$(git rev-parse ":x y.tc")
 _RL_PASTE bash "$RL_STEP"
 _ST_EQ "a peer's change only textconv hides survives the step, in bash from the top" "$RL_RC:$(git rev-parse ":x y.tc")" "1:$RL_PEER"
 
-# Another checkout of the branch whose index was locked is told a step resetting only entries still on
-# the pre-rewrite tip – run in zsh from its subdirectory, a peer's staging there kept
+# Another checkout of the branch whose index was locked is told a step resetting only entries
+# still on the pre-rewrite tip – run in zsh from its subdirectory, a peer's staging there kept
 _ST_PZ_NEW rl3
 mkdir sub
 _ST_PZ_C a.txt a "RL3 base" && _ST_PZ_C "$RL_F" one "RL3 f" && _ST_PZ_C "$RL_F" two "RL3 f two" && _ST_PZ_C g.txt g "RL3 g"
@@ -150,7 +151,7 @@ git -C "$RL_WT" update-index --cacheinfo "100644,$(git rev-parse "$RL_OLD:$RL_F"
 _RL_PASTE sh "$RL_STEP"
 _ST_EQ "an entry still as before is re-synced, in sh" "$RL_RC:$(git rev-parse ":../$RL_F")" "0:$(git rev-parse "main:$RL_F")"
 
-# A carry whose index was locked prints a step guarded the same way – run in bash from a subdirectory
+# A carry with a locked index prints a step guarded the same way – run in bash from a subdirectory
 _ST_PZ_NEW rl4
 mkdir sub
 print -l 1 2 3 4 5 > "$RL_F" && git add -- "$RL_F" && git commit -qm "RL4 base"
@@ -179,8 +180,8 @@ git -C .. update-index --cacheinfo "100644,$(git rev-parse "$RL_OLD:$RL_F"),$RL_
 _RL_PASTE sh "$RL_STEP"
 _ST_EQ "an entry still on the pre-rewrite content is re-synced, in sh" "$RL_RC:$(git rev-parse ":../$RL_F")" "0:$RL_B"
 
-# A tag and a branch on a commit a drop took out are named as dropped – never re-pointed to a later
-# commit sharing its subject
+# A tag and a branch on a commit a drop took out are named as dropped
+# – never re-pointed to a later commit sharing its subject
 _ST_PZ_NEW rl5
 _ST_PZ_C a.txt a "RL5 base" && _ST_PZ_C b.txt b "RL5 fix typo" && _ST_PZ_C c.txt c "RL5 feature" && _ST_PZ_C d.txt d "RL5 fix typo"
 git tag rl5-tag HEAD~2 && git branch rl5-side HEAD~2
@@ -190,8 +191,8 @@ _ST_OUT_HAS "a tag on the dropped commit is named so" '^Tag rl5-tag points at a 
 _ST_OUT_HAS "as is a branch" '^Branch rl5-side points at a commit this run dropped, with no counterpart in the new span'
 _ST_OUT_LACKS "neither re-pointed to the commit sharing its subject" "git \(tag\|branch\) -f rl5-"
 
-# A reword's exact pair names the counterpart of an annotated tag as of a branch, and the tag's
-# command re-points it there, annotated still
+# A reword's exact pair names the counterpart of an annotated tag
+# as of a branch, and the tag's command re-points it there, annotated still
 _ST_PZ_NEW rl6
 _ST_PZ_C a.txt a "RL6 base" && _ST_PZ_C b.txt b "RL6 b" && _ST_PZ_C c.txt c "RL6 c"
 git tag -a -m "RL6 notes" rl6-tag HEAD~1 && git branch rl6-side HEAD~1
@@ -218,8 +219,8 @@ git tag rl7p-tag HEAD~1
 _ST_RUN -S -y "$(git rev-parse HEAD~2)" "$(git rev-parse HEAD~1)"
 _ST_OUT_HAS "a plumbing squash names its member the same way" "^Tag rl7p-tag points at a commit this run squashed into $(git rev-parse --short=12 HEAD~1) – "
 
-# Where no pair is known, a commit sharing the subject is offered as a guess to check, never as the
-# counterpart – a drop's replay changing the context of the tagged commit's diff
+# Where no pair is known, a commit sharing the subject is offered as a guess to check,
+# never as the counterpart – a drop's replay changing the context of the tagged commit's diff
 _ST_PZ_NEW rl8
 print -l 1 2 3 4 5 6 7 8 > f.txt && git add f.txt && git commit -qm "RL8 base"
 print -l 1 two 3 4 5 6 7 8 > f.txt && git commit -qam "RL8 two"

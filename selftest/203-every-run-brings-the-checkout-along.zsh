@@ -84,7 +84,7 @@ _ST_EQ "the conflicting one left as it was" "$(tr '\n' ' ' < g.txt):$(git show :
 _ST_EQ "its merge right above the commit line, a pointer above the trailer" \
 	"$(print -r -- "$OUT" | tail -4 | cut -c1-12 | tr '\n' '|')" "  T=\$(mktemp|  committed:|Still to do,|git-edit: ok|"
 _ST_OUT_HAS "the pointer names the merge" '^Still to do, as named above: the merge of g.txt, if those edits are yours$'
-# Undone, a commit keeps what it landed as uncommitted changes, as it may have come from the checkout
+# Undone, a commit keeps what it landed as uncommitted work, as it may have come from the checkout
 git checkout -q -- g.txt
 _ST_RUN --undo
 _ST_EQ "an undone commit keeps its content in the checkout" "$RC:$(tr '\n' ' ' < f.txt):$(git diff --cached --name-only)" "0:1 2 mine 3 4 5 peer :"
@@ -123,8 +123,8 @@ _ST_OUT_LACKS "naming no read-tree" 'read-tree'
 cd "$TMP/pz-sy4"
 git worktree remove --force "$TMP/sy4-wt"
 
-# A peer writing a file between the sync's read and its write keeps what it wrote, named; staging
-# in a path's way stays
+# A peer writing a file between the sync's read and its write
+# keeps what it wrote, named – staging in a path's way stays
 _ST_PZ_NEW sy5
 print -l 1 2 3 4 5 > e.txt && git add -A && git commit -qm "SY5 base"
 git worktree add -q -b feat "$TMP/sy5-wt" main 2>/dev/null
@@ -171,8 +171,8 @@ git worktree remove --force "$TMP/sy6-one"; git worktree remove --force "$TMP/sy
 # The steps printed name `git edit`, run as printed through a link on `PATH`
 mkdir -p "$TMP/sy-bin" && ln -sf "$SELF" "$TMP/sy-bin/git-edit"
 
-# Its index locked past the wait, the checkout is left with one carry to run, never a restore – and
-# run once a peer staged one of the paths since, it keeps that staging
+# Its index locked past the wait, the checkout is left with one carry to run, never a restore
+# – and run once a peer staged one of the paths since, it keeps that staging
 _ST_PZ_NEW sy7
 print -l 1 2 3 > f.txt && print -l 1 2 3 > g.txt && git add -A && git commit -qm "SY7 base"
 git worktree add -q -b feat "$TMP/sy7-wt" main 2>/dev/null
@@ -208,8 +208,8 @@ _ST_EQ "while one only adding a commit keeps what it landed" "$RC:$(tr '\n' ' ' 
 _ST_OUT_HAS "as uncommitted changes" 'what the undone run landed stays in your checkout, as uncommitted changes: f.txt'
 git checkout -q -- f.txt
 
-# A file staged and edited both, left as it was, is named with the carry, worded for whoever owns
-# the staging – never as the caller's to reconcile
+# A file staged and edited both, left as it was, is named with the carry,
+# worded for whoever owns the staging – never as the caller's to reconcile
 _ST_PZ_NEW sy9
 print -l 1 2 3 4 5 6 7 8 9 > f.txt && print o > o.txt && git add -A && git commit -qm "SY9 base"
 print -l 1 2 3 4 5 6 7 8 9 DROPME > f.txt && git commit -qam "SY9 C1"

@@ -94,8 +94,8 @@ _ST_EQ "an entry outside the cone staging stands in the way of stays out" "$RC:$
 _ST_OUT_HAS "named alike" 'staging in their way: gen/x\.txt (gen staged where its directory goes) – carry them'
 git sparse-checkout disable 2>/dev/null
 
-# Staging put in the way while the carry merges a renamed file keeps its entry out all the same –
-# the file named as written, its entry left
+# Staging put in the way while the carry merges a renamed file keeps
+# its entry out all the same – the file named as written, its entry left
 _ST_PZ_NEW kc7
 print -l 1 2 3 4 5 6 > a.txt && git add -A && git commit -qm "KC7 base" && KC_OLD=$(git rev-parse HEAD)
 git checkout -q -b topic && mkdir d && git mv a.txt d/x.txt && print -l 1 2 3 4 5 6 7 > d/x.txt && git add -A && git commit -qm "KC7 topic" && git checkout -q main

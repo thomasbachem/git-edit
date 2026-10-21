@@ -12,8 +12,8 @@ local -a BP_ODD BP_ALL BP_GOT
 local -i BP_K BP_C1 BP_C2
 BP_ODD=("sp ace.txt" 'q"uote.txt' $'ta\tb.txt' "-dash.txt" "ünï.txt")
 
-# Commits a tree holding each <path> as <content> on `HEAD`, moving the branch alone – the checkout
-# and its index left behind, as an agent's run leaves them
+# Commits a tree holding each <path> as <content> on `HEAD`, moving the branch alone
+# – the checkout and its index left behind, as an agent's run leaves them
 BP_LAND () {
 	# Args: <subject> <content> <path>...
 	local S=$1 C=$2 B

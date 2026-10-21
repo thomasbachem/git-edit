@@ -30,8 +30,8 @@ _ST_RUN --amend-into=auto -- ':(literal)pn-[i].txt'
 _ST_EQ "auto-target takes the commit that touched the name itself" "$RC:$(git log -1 --format=%s HEAD~1):$(git show 'HEAD~1:pn-[i].txt' | tail -1)" "0:PN pattern-like name:c"
 _ST_EQ "and the staging it would match stays staged" "$(git diff --cached --name-only)" "pn-i.txt"
 git restore --staged --worktree -- pn-i.txt
-# A name git C-quotes in its line form – a backslash, a double quote – re-syncs and carries as
-# itself, as a run does under the caller's own pathspec settings
+# A name git C-quotes in its line form – a backslash, a double quote –
+# re-syncs and carries as itself, as a run does under the caller's own pathspec settings
 printf 'v1\n' > 'pn\b.txt' && printf 'v1\n' > 'pn"q.txt' && git add -- ':(literal)pn\b.txt' ':(literal)pn"q.txt' && git commit -qm "PN quoted names"
 printf 'v2\n' > 'pn\b.txt' && printf 'v2\n' > 'pn"q.txt'
 _ST_RUN --commit --text "PN quoted names whole" -- 'pn\b.txt' 'pn"q.txt'

@@ -16,9 +16,9 @@ _ST_RUN --exec -- git commit --allow-empty -qm "XD on a detached HEAD"
 _ST_EQ "exec on a detached HEAD refuses, moving nothing" "$RC:$(git rev-parse HEAD)" "1:$XD_TIP"
 _ST_OUT_HAS "saying a branch is needed" 'requires being on a branch'
 git checkout -q "$XD_BR"
-# A content-changing exec brings the checkout along path by path: a file still as before takes what
-# landed, file and entry, a removed one goes, a rename moves, and a peer's staging on a changed
-# path (xd) is left as it is and named
+# A content-changing exec brings the checkout along path by path: a file still
+# as before takes what landed, file and entry, a removed one goes, a rename
+# moves and a peer's staging on a changed path (xd) is left as it is and named
 echo "xc" > xc.txt && echo "xd" > xd.txt && echo "xe" > xe.txt && echo "xg" > xg.txt && git add xc.txt xd.txt xe.txt xg.txt && git commit -qm "XC to change"
 echo "peer" > xd.txt && git add xd.txt && echo "xd" > xd.txt
 _ST_RUN --exec -- sh -c 'echo changed > xc.txt && echo changed > xd.txt && git rm -q xe.txt && git mv xg.txt xh.txt && git add xc.txt xd.txt && git commit -q --amend --no-edit'
@@ -33,8 +33,8 @@ _ST_OUT_HAS "names the path it left as it was" "Left as they were.*xd\.txt"
 _ST_EQ "peer staging survives" "$(git show :xd.txt)" "peer"
 _ST_OUT_LACKS "prescribes no restore or clean" 'git restore \(--source\|--worktree\|-- \)\|git clean'
 git reset -q --hard
-# The route the rules steer every session onto: the change made in the checkout first, then
-# landed through exec – nothing is left to bring along
+# The route the rules steer every session onto: the change made in the checkout
+# first, then landed through exec – nothing is left to bring along
 echo "xi" > xi.txt && git add xi.txt && git commit -qm "XI to change"
 echo "changed" > xi.txt
 _ST_RUN --exec -- sh -c 'echo changed > xi.txt && git add xi.txt && git commit -q --amend --no-edit'
@@ -42,16 +42,16 @@ _ST_EQ "exec over a checkout already carrying the change exits 0" "$RC" "0"
 _ST_OUT_HAS "reports the branch as rewritten" 'Branch .* rewritten\.$'
 _ST_OUT_LACKS "and names no file" 'came along\|Left as they were'
 _ST_CHECK "nothing left staged or modified" sh -c "test -z \"\$(git status --porcelain -- xi.txt)\""
-# The same change staged first, a rename too – entries already as the new tip has them are in
-# sync, never named as differing
+# The same change staged first, a rename too – entries already
+# as the new tip has them are in sync, never named as differing
 echo "xs" > xs.txt && echo "xt" > xt.txt && git add xs.txt xt.txt && git commit -qm "XS to change, XT to move"
 echo "changed" > xs.txt && git add xs.txt && git mv xt.txt xu.txt
 _ST_RUN --exec -- sh -c 'echo changed > xs.txt && git mv xt.txt xu.txt && git add xs.txt && git commit -q --amend --no-edit'
 _ST_EQ "exec over a checkout that staged the change exits 0" "$RC" "0"
 _ST_OUT_LACKS "names none of those entries as left alone" 'Left as they were'
 _ST_CHECK "nothing left staged or modified there" sh -c "test -z \"\$(git status --porcelain -- xs.txt xt.txt xu.txt)\""
-# A conflicted path is mid-merge – the checkout not brought along, its stages kept, and the
-# entries re-synced none but those still as before
+# A conflicted path is mid-merge – the checkout not brought along,
+# its stages kept and the entries re-synced none but those still as before
 printf '100644 %s 1\txv.txt\n100644 %s 2\txv.txt\n' "$(echo one | git hash-object -w --stdin)" "$(echo two | git hash-object -w --stdin)" | git update-index --index-info
 printf '0 %s\txs.txt\n100644 %s 1\txs.txt\n100644 %s 2\txs.txt\n' "$(git rev-parse HEAD:xs.txt)" "$(echo one | git hash-object -w --stdin)" "$(echo two | git hash-object -w --stdin)" | git update-index --index-info
 _ST_RUN --exec -- sh -c 'echo xv > xv.txt && git rm -q xs.txt && git add xv.txt && git commit -q --amend --no-edit'

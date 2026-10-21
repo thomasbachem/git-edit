@@ -1,15 +1,15 @@
-# `--land` sets aside exactly what an undone land brought – by its commits and its window, whatever
-# it was named – and never guesses a copy landed: a branch commit that looks like one of the
-# target's refuses the land, naming each, with steps that land as printed – the branch moved onto
-# the copies, the --base past them, the fold into the target's own rewrite of it – while a commit
-# the target took by another branch's land stays out by that land's record, a refusal names no
-# --base ending in the merge refusal, and a dry run's "Land it:" keeps the --base it was given
+# `--land` sets aside exactly what an undone land brought – by its commits and its window,
+# whatever it was named – and never guesses a copy landed: a branch commit that looks like
+# one of the target's refuses the land, naming each, with steps that land as printed – the branch
+# moved onto the copies, the --base past them, the fold into the target's own rewrite of it – while
+# a commit the target took by another branch's land stays out by that land's record, a refusal names
+# no --base ending in the merge refusal, and a dry run's "Land it:" keeps the --base it was given
 _ST_SCENARIO "\e[1;96m[184] --land sets aside what an undo took back and refuses a copy it would guess at\e[0m"
 local Q1_T Q1_C Q1_F
 local -i Q1_I Q1_PID
 mkdir -p "$TMP/q1-bin" && ln -sf "$SELF" "$TMP/q1-bin/git-edit"
-# Runs a printed `git edit …` or `git -C <path> edit …` step as a caller would – past the suite's
-# `git`, whose clock a subshell would wind back to the parent's tick
+# Runs a printed `git edit …` or `git -C <path> edit …` step as a caller would
+# – past the suite's `git`, whose clock a subshell would wind back to the parent's tick
 _Q1_AS_PRINTED () {
 	[[ "$1" == "git edit "* || "$1" == "git -C "*" edit "* ]] || return 1
 	( export PATH="$TMP/q1-bin:$PATH" GIT_EDIT_NO_AUTO_OPEN=1; eval "command $1" </dev/null ) > "$TMP/q1-step.out" 2>&1
@@ -43,8 +43,8 @@ _ST_RUN -d HEAD
 _ST_RUN --land=feat
 _ST_EQ "one held again outside the window, then dropped, stays out" "$RC:$(git log --format=%s | tr '\n' '|')" "0:Q1B F2|Q1B base|"
 
-# A land taken back after a fold or a reword below it inside its window – its commits land again,
-# never held by the rewrite's copies of them
+# A land taken back after a fold or a reword below it inside its window
+# – its commits land again, never held by the rewrite's copies of them
 for Q1_F in fold reword; do
 	_ST_PZ_NEW q1c-$Q1_F
 	_ST_PZ_C a.txt a "Q1C base"
@@ -67,9 +67,9 @@ for Q1_F in fold reword; do
 	git worktree remove --force "$TMP/q1c-$Q1_F-wt"
 done
 
-# A commit main dropped and one it rewrote, inside a catch-up merge – the rewrite named as such, and
-# no --base back from the fork, which would end in the merge refusal, while the one past the merge
-# lands as printed, and its dry run keeps that --base
+# A commit main dropped and one it rewrote, inside a catch-up merge – the rewrite named
+# as such, and no --base back from the fork, which would end in the merge refusal,
+# while the one past the merge lands as printed, and its dry run keeps that --base
 _ST_PZ_NEW q1d
 _ST_PZ_C a.txt a "Q1D base"
 git worktree add -q -b feat "$TMP/q1d-wt" main 2>/dev/null
@@ -117,8 +117,8 @@ _ST_EQ "run as printed, the land lands the new commit alone" "$RC:$(git log --fo
 _ST_OUT_HAS "as a fast-forward" 'a fast-forward of 1 commit(s)'
 git worktree remove --force "$TMP/q1e-wt"
 
-# A fold on the branch while a land of it replays – the land run again refuses on the folded commit
-# with the fold of its change, never as landed already
+# A fold on the branch while a land of it replays – the land run again refuses
+# on the folded commit with the fold of its change, never as landed already
 _ST_PZ_NEW q1f
 _ST_PZ_C a.txt a "Q1F base"
 git worktree add -q -b feat "$TMP/q1f-wt" main 2>/dev/null
@@ -203,8 +203,8 @@ _ST_RUN --land=feat
 _ST_OUT_HAS "the message then named alone" '^  [0-9a-f]* Q1H F1 – on main as [0-9a-f]*, its change alike, another message$'
 git worktree remove --force "$TMP/q1h-wt"
 
-# A branch forked from another that a replay landed – the first land of it leaves that branch's
-# commit out by the replay's record and lands its own, no refusal
+# A branch forked from another that a replay landed – the first land of it leaves
+# that branch's commit out by the replay's record and lands its own, no refusal
 _ST_PZ_NEW q1i
 _ST_PZ_C a.txt a "Q1I base"
 git checkout -q -b side && _ST_PZ_C s.txt s "Q1I S1"

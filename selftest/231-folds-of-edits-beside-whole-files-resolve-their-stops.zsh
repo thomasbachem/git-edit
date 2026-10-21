@@ -1,5 +1,5 @@
-# A fold of `--edits` beside files taken whole resolves its replay's stops as either alone does –
-# the pairs given as given, inside a line too, the files taken whole as their replaced lines –
+# A fold of `--edits` beside files taken whole resolves its replay's stops as either alone does
+# – the pairs given as given, inside a line too, the files taken whole as their replaced lines –
 # while one whose whole file inserts a line pauses as before
 _ST_SCENARIO "\e[1;96m[231] folds of --edits beside whole files resolve their stops by replacement\e[0m"
 local MX_T MX_O MX_WT

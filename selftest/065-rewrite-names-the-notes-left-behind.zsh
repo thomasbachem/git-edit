@@ -9,8 +9,8 @@ git config --unset notes.rewriteRef 2>/dev/null
 printf 'nn\n' > nn.txt && git add nn.txt && git commit -qm "NN target"
 local NN_TARGET=$(git rev-parse HEAD)
 printf 'nn2\n' > nn2.txt && git add nn2.txt && git commit -qm "NN annotated descendant"
-# A non-default ref on purpose: `notes.rewriteRef` is a glob, so the check
-# has to look past `refs/notes/commits`
+# A non-default ref on purpose: `notes.rewriteRef` is a glob,
+# so the check has to look past `refs/notes/commits`
 git notes --ref=ge-left add -m "a note worth not losing quietly" HEAD >/dev/null 2>&1
 _ST_RUN -M --text="NN target reworded" "$NN_TARGET"
 _ST_EQ "the reword over an annotated descendant applies" "$RC" "0"

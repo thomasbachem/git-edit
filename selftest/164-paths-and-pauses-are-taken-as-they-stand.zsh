@@ -7,8 +7,8 @@
 _ST_SCENARIO "\e[1;96m[164] paths and pauses are taken as they stand once held\e[0m"
 local ZL_P ZL_WT ZL_GD ZL_LOCK ZL_N ZL_X ZL_PID ZL_LIVE
 local -i ZL_I
-# Writes `<dir>/<command>` standing in for the real one, running <script> first where <dir>/arm is
-# there and <case pattern> takes the call's arguments
+# Writes `<dir>/<command>` standing in for the real one, running <script>
+# first where <dir>/arm is there and <case pattern> takes the call's arguments
 _ZL_STAND_IN () {
 	# Args: <dir> <command> <case pattern> <script>
 	mkdir -p "$1"
@@ -95,8 +95,8 @@ sh -c 'exit 0' & ZL_PID=$!
 wait $ZL_PID
 print -r -- "$ZL_PID Thu Jan 1 00:00:00 1970" > "$ZL_LOCK"
 ln "$ZL_LOCK" "$ZL_LOCK.break"
-# Each poll's `sleep` touches the second name, keeping its ctime under the 10 s that age a break
-# stale, however slowly a loaded machine polls
+# Each poll's `sleep` touches the second name, keeping its ctime under
+# the 10 s that age a break stale, however slowly a loaded machine polls
 mkdir -p "$TMP/zl3-nap" && print -l '#!/bin/sh' "touch -c ${(q)ZL_LOCK}.break" 'exit 0' > "$TMP/zl3-nap/sleep"
 chmod +x "$TMP/zl3-nap/sleep"
 PATH="$TMP/zl3-nap:$PATH" _ST_RUN -C "$ZL_P" HEAD~1

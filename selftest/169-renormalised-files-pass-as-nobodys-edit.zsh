@@ -4,15 +4,15 @@
 # checkout's sync and its hints read it as the content it holds rather than as the caller's edit
 _ST_SCENARIO "\e[1;96m[169] renormalised files block no resume and pass as nobody's edit\e[0m"
 local RN_WT RN_CR RN_LF RN_TIP RN_X
-# Writes <path> as <printf format> and stages its bytes unfiltered, as a commit made
-# before the attribute holds them
+# Writes <path> as <printf format> and stages its bytes unfiltered,
+# as a commit made before the attribute holds them
 _RN_RAW () {
 	# Args: <path> <printf format>
 	printf "$2" > "$1" && git update-index --add --cacheinfo "100644,$(git hash-object -w --no-filters -- "$1"),$1"
 }
-# Starts repo <name> with `crlf.txt` committed CRLF, then `.gitattributes` putting
-# text files under `eol=lf`, then `f.txt` – every later file staged by name, as
-# `commit -a` would renormalize `crlf.txt`
+# Starts repo <name> with `crlf.txt` committed CRLF, then `.gitattributes`
+# putting text files under `eol=lf`, then `f.txt` – every later file
+# staged by name, as `commit -a` would renormalize `crlf.txt`
 _RN_REPO () {
 	# Args: <name>
 	_ST_PZ_NEW "$1"
@@ -22,8 +22,8 @@ _RN_REPO () {
 	print -l 1 2 3 4 5 6 7 8 9 > f.txt && git add f.txt && git commit -qm "RN base"
 	RN_CR=$(git rev-parse HEAD:crlf.txt)
 }
-# Commits <path> as <printf format> onto <branch>, its checkout untouched – a checkout of the branch
-# would refuse over the CRLF file
+# Commits <path> as <printf format> onto <branch>, its checkout untouched
+# – a checkout of the branch would refuse over the CRLF file
 _RN_ON () {
 	# Args: <branch> <path> <printf format> <subject>
 	local IDX=$TMP/rn-on-index B
@@ -69,8 +69,8 @@ git -C "${RN_WT:-$ST_NO_WT}" restore -- crlf.txt
 _ST_RUN --continue
 _ST_EQ "while restored, the pause resumes" "$RC:$(git rev-parse HEAD:crlf.txt)" "0:$RN_CR"
 
-# A first run replays commits rewriting the CRLF file – once, git refused to start over it, or to
-# write it a second time in the second it was checked out
+# A first run replays commits rewriting the CRLF file – once, git refused
+# to start over it, or to write it a second time in the second it was checked out
 _RN_REPO rn3
 _RN_F "RN3 Y" 1 2 DEBUG 3 4 5 6 7 8 9
 _RN_RAW crlf.txt 'one\r\ntwo\r\nthree\r\n' && git commit -qm "RN3 three"

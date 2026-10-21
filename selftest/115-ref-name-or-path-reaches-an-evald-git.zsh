@@ -32,9 +32,9 @@ printf '%s\n' 'local CMD="git worktree add --detach $WT ${(q-)SHA}"' \
 	'local U="git update-ref -m ${(q-)${:-git edit: x}} ${(q-)REF} ${(q-)A} ${(q-)B}"' > "$TMP/iq-fixture"
 IQ_OUT=("${(@f)$(awk "$IQ_AWK" "$TMP/iq-fixture")}")
 _ST_EQ "the check flags a bare path and clears a fully quoted line" "${(F)IQ_OUT}" $'1: local CMD="git worktree add --detach $WT ${(q-)SHA}"\nseen 2'
-# A ref name is shell code only an eval would run: a branch created by plumbing (as a fetch or
-# push of a crafted ref would), its name a `$(>file)` redirection – valid, space-free, and under
-# the old bare `$REF` it fired when the reword's update-ref was eval'd
+# A ref name is shell code only an eval would run: a branch created by plumbing
+# (as a fetch or push of a crafted ref would), its name a `$(>file)` redirection – valid,
+# space-free and under the old bare `$REF` it fired when the reword's update-ref was eval'd
 local IQ_WAS=$(git symbolic-ref --short HEAD)
 local IQ_HEAD=$(git rev-parse HEAD)
 local IQ_REF='refs/heads/iq$(>iq-pwned)x'

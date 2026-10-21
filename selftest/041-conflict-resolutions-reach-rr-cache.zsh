@@ -48,16 +48,16 @@ _ST_CHECK "edit mode records its resolution too" \
 	sh -c "[ $(ls "$RR_DIR" 2>/dev/null | wc -l | tr -d ' ') -gt $RR_BEFORE_E ]"
 git config --unset rerere.enabled
 git reset -q --hard
-# Structural, so a start that loses the flag is caught even where no scenario drives that
-# mode into a conflict – anchored to the start of a line, or the patterns would count the
-# assertion lines that carry them
+# Structural, so a start that loses the flag is caught even where no scenario
+# drives that mode into a conflict – anchored to the start of a line,
+# or the patterns would count the assertion lines that carry them
 _ST_CHECK "every conflict-capable rebase start carries rerere" \
 	sh -c "[ \$(grep -cE '^[[:space:]]*reply=\\(-c rerere.enabled=true (-c [^ ]+ |[^ ]*_CAPTURE_PIN[^ ]* )*rebase' \"\$1\") -eq 1 ]" _ "$SELF"
 _ST_CHECK "and none was left without it" \
 	sh -c "! grep -qE '^[[:space:]]*(local CMD|reply)=\\(rebase' \"\$1\"" _ "$SELF"
-# Every rebase the script runs carries rerere, so a line with that flag but not the
-# `rebase.updateRefs` pin is a rebase that would move other branches ahead of the CAS – a
-# snapshot fold's direct `git rerere` aside, which moves nothing
+# Every rebase the script runs carries rerere, so a line with that flag but not
+# the `rebase.updateRefs` pin is a rebase that would move other branches ahead
+# of the CAS – a snapshot fold's direct `git rerere` aside, which moves nothing
 _ST_CHECK "and every one pins rebase.updateRefs off" \
 	sh -c "! grep -E -- '-c rerere\\.enabled=true' \"\$1\" | grep -vE -- '-c rerere\\.enabled=true (-c [^ ]+ )*rerere ' | grep -vq -- '-c rebase\\.updateRefs=false'" _ "$SELF"
 _ST_CHECK "and carries the pins that hold a rewrite's delivery back" \

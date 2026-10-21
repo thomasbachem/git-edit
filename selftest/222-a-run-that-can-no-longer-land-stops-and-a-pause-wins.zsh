@@ -10,8 +10,8 @@ _ST_SCENARIO "\e[1;96m[222] a run that can no longer land stops, and a pause win
 local S_C1 S_C2 S_G S_TIP S_MOVED S_WT S_OLD S_PEER S_SIDE S_L S_WTS
 local -i S_N
 
-# Writes `<dir>/git`, stalling a run's first `rebase` until `<dir>/go` is there – `<dir>/in` saying
-# it got there – so a peer can act while the run replays
+# Writes `<dir>/git`, stalling a run's first `rebase` until `<dir>/go` is there
+# – `<dir>/in` saying it got there – so a peer can act while the run replays
 _S222_STALL_GIT () {
 	# Args: <dir>
 	mkdir -p "$1"
@@ -23,9 +23,9 @@ _S222_STALL_GIT () {
 	chmod +x "$1/git"
 	: > "$1/arm"
 }
-# Starts `git edit <arg>...` in the background under label <label>, the stand-in in <dir> first on
-# `PATH` – its output and status into `$TMP/<name>.out` and `.rc` – and waits up to 60 s for it to
-# stall there or end
+# Starts `git edit <arg>...` in the background under label <label>, the stand-in
+# in <dir> first on `PATH` – its output and status into `$TMP/<name>.out` and `.rc` –
+# and waits up to 60 s for it to stall there or end
 _S222_BG () {
 	# Args: <name> <label> <dir> <arg>...
 	local N=$1 L=$2 D=$3
@@ -35,8 +35,8 @@ _S222_BG () {
 	  print -r -- $? >"$TMP/$N.rc" ) &
 	until [ -e "$D/in" ] || [ -s "$TMP/$N.rc" ] || (( ++I > 600 )); do sleep 0.1; done
 }
-# Lets the run stalled in <dir> go on and waits up to 60 s for background run <name> to end, its
-# output and status into `OUT` and `RC`
+# Lets the run stalled in <dir> go on and waits up to 60 s for background
+# run <name> to end, its output and status into `OUT` and `RC`
 _S222_END () {
 	# Args: <name> <dir>
 	local -i I=0
@@ -57,8 +57,8 @@ _S222_REPO () {
 	S_TIP=$(git rev-parse HEAD)
 }
 
-# A fold already replaying when another caller's drop pauses on the branch refuses at its CAS – its
-# landing would strand the drop's resolution – and that resolution then lands
+# A fold already replaying when another caller's drop pauses on the branch refuses at its CAS
+# – its landing would strand the drop's resolution – and that resolution then lands
 _S222_REPO s222a
 print -r -- g2 > g.txt && git add g.txt
 _S222_STALL_GIT "$TMP/s222-a"
@@ -92,8 +92,8 @@ _S222_END s222n "$TMP/s222-n"
 _ST_EQ "the fold, that pause not in its way, lands" "$RC:$(git show HEAD~2:g.txt)" "0:g2"
 OUT=$(cd "$S_SIDE" && GIT_EDIT_ACTOR=s-side "$SELF" --abort </dev/null 2>&1)
 
-# A fold whose branch another caller's commit moved during its replay refuses at its conflict, no
-# pause written for a resolution that could never land
+# A fold whose branch another caller's commit moved during its replay refuses
+# at its conflict, no pause written for a resolution that could never land
 _S222_REPO s222b
 print -r -- $'1\n2F\n3' > f.txt && git add f.txt
 S_WTS=$(git worktree list | wc -l | tr -d ' ')
@@ -154,8 +154,8 @@ _ST_OUT_LACKS "and no resolve-then-continue" 'Resolve there, then'
 _ST_RUN --abort
 export GIT_EDIT_ACTOR=
 
-# A lost race points at the fixup recipe only where other callers landed 3 times in the last 10
-# minutes – the caller's own landings never count
+# A lost race points at the fixup recipe only where other callers landed
+# 3 times in the last 10 minutes – the caller's own landings never count
 _S222_REPO s222e
 S_N=0
 for S_L in s-me s-me s-me s-other4 s-other5; do
@@ -203,8 +203,8 @@ _ST_OUT_LACKS "and no busy hint" "is busy"
 git update-ref refs/heads/main "$S_OLD"
 rm -f l7.txt
 
-# An edit's pause wins too – a fold below its target, replaying as it began, would take that
-# target out of the branch, the edit's work then nowhere to land
+# An edit's pause wins too – a fold below its target, replaying as it began,
+# would take that target out of the branch, the edit's work then nowhere to land
 _S222_REPO s222f
 print -r -- g2 > g.txt && git add g.txt
 _S222_STALL_GIT "$TMP/s222-f"

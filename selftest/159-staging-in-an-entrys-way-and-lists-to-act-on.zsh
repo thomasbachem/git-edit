@@ -13,8 +13,8 @@ mkdir P && print mine1 > P/a.md && print mine2 > P/b.md && git add P
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "files staged under a path a terminal drop puts a file at stay staged" "$RC:$(git ls-files P | tr '\n' ' ')" "0:P/a.md P/b.md "
 _ST_OUT_HAS "named once, as staged under it" 'reconcile: P – files staged under it where the rewrite put a file$'
-# As does a file staged where it puts a directory, in the checkout or gone from it – the latter one
-# the two-tree merge took before
+# As does a file staged where it puts a directory, in the checkout
+# or gone from it – the latter one the two-tree merge took before
 _ST_PZ_NEW sw2
 print a > a.txt && mkdir d && print x > d/x.txt && git add -A && git commit -qm "SW2 base"
 git rm -rq d && git commit -qm "SW2 rm d"
@@ -48,8 +48,8 @@ print mine >> P/y
 _ST_TTY -- -d -y HEAD~1
 _ST_EQ "as does one swapping a directory edited for a file" "$RC:$(git ls-files | tr '\n' ' ')" "0:P a.txt t.txt "
 _ST_OUT_HAS "naming the directory where the file goes" 'P – your directory stands where the rewrite put a file'
-# Staging a peer makes under such a path as the sync runs stays too, named once – and a merged file
-# a peer staged meanwhile is named once, as merged, its staging noted
+# Staging a peer makes under such a path as the sync runs stays too, named once
+# – and a merged file a peer staged meanwhile is named once, as merged, its staging noted
 _ST_PZ_NEW sw6
 print -l 1 2 3 4 5 6 7 8 9 > f.txt && print notes > P && git add -A && git commit -qm "SW6 base"
 print -l 1 2 3 4 5 6 7 8 9X > f.txt && git rm -q P && git add f.txt && git commit -qm "SW6 tail, rm P"
@@ -100,8 +100,8 @@ git rm -rq d && print file > d && git add d && git commit -qm "SW8b d a file"
 _ST_PZ_C t.txt t "SW8b tip"
 _ST_RUN -d -y HEAD~1
 _ST_EQ "while its re-sync of a swap takes both entries" "$RC:$(git ls-files | tr '\n' ' ')" "0:a.txt d/x.txt t.txt "
-# A replant refused over 12 dirty paths the upstream changed – halfway through a sequence – names
-# each, as each takes its own step
+# A replant refused over 12 dirty paths the upstream changed
+# – halfway through a sequence – names each, as each takes its own step
 _ST_PZ_NEW sw9
 print base > base.txt && git add -A && git commit -qm "SW9 base" && git branch sw9-up
 git checkout -q sw9-up

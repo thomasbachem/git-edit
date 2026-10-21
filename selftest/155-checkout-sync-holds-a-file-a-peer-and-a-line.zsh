@@ -1,7 +1,7 @@
-# A checkout sync keeps a file of the caller's standing where a landed path's directory goes, writes
-# its index entries in one guarded step keeping a peer's late staging, and prints each list on its
-# line – while a drop that can't bring the checkout along, an agent's here, names what it leaves, a
-# case-only rename undone onto edits read as taking the rewrite back
+# A checkout sync keeps a file of the caller's standing where a landed path's directory goes,
+# writes its index entries in one guarded step keeping a peer's late staging, and prints
+# each list on its line – while a drop that can't bring the checkout along, an agent's here,
+# names what it leaves, a case-only rename undone onto edits read as taking the rewrite back
 _ST_SCENARIO "\e[1;96m[155] a checkout sync keeps a file where a directory lands, a peer's late staging, and its lists whole and on one line\e[0m"
 local SY_BIN SY_REAL SY_BLOB SY_OLD SY_N SY_CI=""
 # A file of the caller's where a terminal drop lands a directory stays, named, unrestored
@@ -52,8 +52,8 @@ print -r -- target > t.txt && ln -s t.txt d
 _ST_RUN_UNSYNCED -d -y HEAD~1
 _ST_OUT_HAS "a symlink to a file there still reads as a link" 'Worktree paths left alone under a symlink of yours.*d/x'
 _ST_CHECK "the link kept" test -L d
-# A peer staging a path while the terminal sync merges keeps its staging – every entry written in
-# one locked step, which re-reads each
+# A peer staging a path while the terminal sync merges keeps its staging
+# – every entry written in one locked step, which re-reads each
 _ST_PZ_NEW sy3
 print -l 1 2 3 4 5 6 7 8 9 > a.txt && cp a.txt b.txt && cp a.txt c.txt && git add -A && git commit -qm "SY3 base"
 print -l 1 2 3 4 5 6 7 8 9X > a.txt && cp a.txt b.txt && cp a.txt c.txt && git commit -qam "SY3 tail"
@@ -103,8 +103,8 @@ if [ -n "$SY_CI" ]; then
 	_ST_OUT_HAS "while edits on the new content read as edits there" 'uncommitted edits there, not the pre-rewrite content.*: Case.txt$'
 	_ST_OUT_LACKS "never as taking it back" 'on the pre-rewrite content –'
 fi
-# A name holding a newline lists on its line, as its quoted form – merged, conflicting or deleted at
-# a terminal, edited at an agent's
+# A name holding a newline lists on its line, as its quoted form
+# – merged, conflicting or deleted at a terminal, edited at an agent's
 _ST_PZ_NEW sy5
 for SY_N in $'nl\nname' $'nl2\nx' $'nl3\ny'; do printf 'l1\nl2\nl3\nl4\nl5\n' > "$SY_N"; done
 git add -A && git commit -qm "SY5 base"

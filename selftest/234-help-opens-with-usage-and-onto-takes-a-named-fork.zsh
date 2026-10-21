@@ -21,8 +21,8 @@ _ST_CHECK "-h base says what it means with --onto" \
 	grep -qE -- 'With --onto, the commit the branch.s own work starts above' <<<"$("$SELF" -h base 2>/dev/null)"
 _ST_CHECK "-h gives --onto its --base" grep -qE -- '--onto=<upstream> \[--base=<sha>\]' <<<"$("$SELF" -h 2>&1)"
 
-# A rewrite of main kept its commits' author, date and subject but not their content, and main
-# kept no reflog – the merge base sits below the real fork
+# A rewrite of main kept its commits' author, date and subject but not their content,
+# and main kept no reflog – the merge base sits below the real fork
 _ST_PZ_NEW ob
 _ST_PZ_C init.txt i "OB init"
 _ST_PZ_C a.txt a "OB shared a"
@@ -68,8 +68,8 @@ _ST_OUT_HAS "and which of those main holds in no form" '^2 of them main holds in
 _ST_OUT_LACKS "never guessing" 'could not answer'
 _ST_CHECK "the checkout comes along" sh -c "test \"\$(cat a.txt):\$(cat f.txt)\" = 'a2:f'"
 
-# Where the upstream merely moved, no copy names the fork – a placeholder does, and a fork named
-# on the upstream itself is still on it
+# Where the upstream merely moved, no copy names the fork
+# – a placeholder does, and a fork named on the upstream itself is still on it
 git checkout -q -b plain main~1
 _ST_PZ_C p.txt p "OB plain own"
 OB_TIP=$(git rev-parse HEAD)

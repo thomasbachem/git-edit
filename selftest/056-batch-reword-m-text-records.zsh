@@ -18,8 +18,8 @@ _ST_OUT_HAS "asserts the tree invariant" 'Trees unchanged'
 _ST_EQ "first target's message applied" "$(git log --format=%s | grep -c '^Batch bw1 reworded$')" "1"
 _ST_EQ "second target's message applied" "$(git log --format=%s | grep -c '^Batch bw3 reworded$')" "1"
 _ST_EQ "second target's body applied" "$(git log -1 --format=%b :/'Batch bw3 reworded' | grep -c 'With a body')" "1"
-# Two-dash headers read as records to their author and as nothing to the detector – every
-# session that wrote them got the bare missing-commit refusal, so name the shape
+# Two-dash headers read as records to their author and as nothing to the detector
+# – every session that wrote them got the bare missing-commit refusal, so name the shape
 _ST_RUN_IN "$(printf -- '-- %s\nTwo dashes\n' "$BW1")" -M --text -
 _ST_EQ "two-dash records refuse" "$RC" "1"
 _ST_OUT_HAS "and name the three-dash shape" "Records start with '--- <commit>'"

@@ -43,8 +43,8 @@ _ST_RUN --move=HEAD~1 --after=HEAD
 _ST_OUT_HAS "a move's summary shows a raw escape in caret notation" 'TE-M raw ^\[\]0;x^G end'
 _ST_CHECK "there too with no escape byte reaching the terminal" eval '[[ "$OUT" != *$'"'"'\e'"'"'* ]]'
 git reset -q --hard "$TE_BASE"
-# A name holding a color code's text prints as itself in a report – rendered, it hid part of the
-# name
+# A name holding a color code's text prints as itself
+# in a report – rendered, it hid part of the name
 printf 'v1\n' > 'te\e[0mx.txt' && printf 'v1\n' > tex.txt && git add -- ':(literal)te\e[0mx.txt' tex.txt && git commit -qm "TE-L names"
 _ST_RUN --exec -- sh -c 'printf "v2\n" > "$1" && git commit -qam "TE-L lands"' sh 'te\e[0mx.txt'
 _ST_OUT_HAS "a sync names such a file as itself" 'came along – now as they landed: .*te\\e\[0mx\.txt'
@@ -84,8 +84,8 @@ rm -f te-s.txt
 # and a byte no UTF-8 holds in a UTF-8 locale where one is installed, as BSD sed died on it there
 local TE_U8=$(locale -a 2>/dev/null | grep -m1 -E '^(en_US\.UTF-8|en_US\.utf8|C\.UTF-8|C\.utf8)$')
 printf 'tg\n' > te-g.txt
-# CPU seconds over a run whose gate prints one short line, as load stretches the clock tenfold and
-# a slow machine the whole run – a pass per character costs 30 here, the long line about one
+# CPU seconds over a run whose gate prints one short line, as load stretches the clock tenfold
+# and a slow machine the whole run – a pass per character costs 30 here, the long line about one
 git config edit.verifyCmd "printf 'TE gate short\n'; exit 1"
 times > "$TMP/te-cpu"
 LC_ALL=${TE_U8:-C} _ST_RUN --commit --text "x" -- te-g.txt
@@ -119,16 +119,16 @@ git commit -q --allow-empty -m 'TE-H reset \e[0m kept'
 _ST_RUN -M --text "x"
 _ST_OUT_HAS "the HEAD a missing commit names shows its subject as itself" 'HEAD is currently [0-9a-f]* TE-H reset \\e\[0m kept$'
 git reset -q --hard "$TE_BASE"
-# A C1 control in a subject – U+009B, a CSI to some terminals – shows as `cat -v` has it, and a
-# caret's own backslash starts no escape
+# A C1 control in a subject – U+009B, a CSI to some terminals –
+# shows as `cat -v` has it, and a caret's own backslash starts no escape
 git commit -q --allow-empty -m $'TE-C1 \xc2\x9b2J and \x1ce[0;30mhidden'
 _ST_RUN -M --text "x"
 _ST_OUT_HAS "a C1 control in a subject shows as cat -v has it" 'HEAD is currently [0-9a-f]* TE-C1 M-BM-^\[2J and'
 _ST_OUT_HAS "and a caret's backslash renders no escape" 'and \^\\e\[0;30mhidden$'
 _ST_CHECK "with no C1 pair reaching the terminal" eval '[[ "$(print -r -- "$OUT" | od -An -tx1 | tr -d " \n")" != *c29b* ]]'
 git reset -q --hard "$TE_BASE"
-# A terminal run pads with a real blank line – `ECHO_E` renders no `\n` spelled out, so padding
-# held as text would print literally on every line
+# A terminal run pads with a real blank line – `ECHO_E` renders no `\n`
+# spelled out, so padding held as text would print literally on every line
 local TE_TTY=""
 if script -q /dev/null true </dev/null >/dev/null 2>&1; then
 	TE_TTY=$(script -q /dev/null "$SELF" --status </dev/null 2>&1)
@@ -138,8 +138,8 @@ fi
 if [ -n "$TE_TTY" ]; then
 	_ST_CHECK "a terminal run pads with blank lines, never a literal \\n" eval '[[ "$TE_TTY" == *"git-edit: ok"* && "$TE_TTY" != *"\\n"* ]]'
 fi
-# The status line stays the last line, a name in it whole – `echo` cut one at its `\c`, and a
-# raw newline split the line, leaving no `git-edit:` anchor last
+# The status line stays the last line, a name in it whole – `echo` cut one at its `\c`,
+# and a raw newline split the line, leaving no `git-edit:` anchor last
 _ST_RUN --commit --text "x" -- 'te\c\nno.txt'
 _ST_EQ "the status line keeps a name's backslashes" "$(print -r -- "$OUT" | tail -1)" 'git-edit: error – te\c\nno.txt: no such file, in the checkout or at the tip'
 _ST_RUN --commit --text "x" -- $'te\nnl.txt'

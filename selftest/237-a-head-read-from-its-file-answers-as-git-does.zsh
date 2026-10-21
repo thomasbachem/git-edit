@@ -1,5 +1,5 @@
-# A run reads `HEAD` off its file where it knows the checkout's git dir, each answer git's own –
-# a form it can't read goes to git – and asks a held fact again once its directory is remade:
+# A run reads `HEAD` off its file where it knows the checkout's git dir, each answer git's own
+# (a form it can't read goes to git) and asks a held fact again once its directory is remade:
 # • A branch, a subdirectory, unborn, detached, bare, a linked worktree either way, a link to a link
 # • Hand-written under files alone, reftable's `HEAD` in its tables – `ref:` without its space, a
 #   stray space, no final newline, a CRLF, a symlink, a name ending in a dot, a part in `.lock`

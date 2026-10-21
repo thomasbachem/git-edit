@@ -42,8 +42,8 @@ _ST_EQ "and lands it, the copy left out" "$RC:$(git log --format=%s main | tr '\
 _ST_OUT_HAS "the resume naming the copy left out" "^1 commit(s) left out as main's own by a land's record"
 git worktree remove --force "$TMP/kp1-wt"
 
-# A resolution committed by hand at the stop takes a date of its own, the pick's message kept – it
-# is main's copy all the same, left out of the land back once main dropped what it copies
+# A resolution committed by hand at the stop takes a date of its own, the pick's message kept
+# – it is main's copy all the same, left out of the land back once main dropped what it copies
 _ST_PZ_NEW kp1b
 print -l l1 l2 l3 > f.txt && git add f.txt && git commit -qm "KP1B base"
 git worktree add -q -b feat "$TMP/kp1b-wt" main 2>/dev/null
@@ -133,9 +133,9 @@ _ST_EQ "a --base past what main dropped lands what follows" "$RC:$(git log --for
 _ST_OUT_HAS "the move onto the copies offered still" 'point it at those (git branch -f feat '
 _ST_OUT_LACKS "no commit named as the branch's alone" 'is the only branch holding them'
 
-# The raw undo moves the ref alone, and where the land could not bring the checkout along, the step
-# `--status` names for the re-synced entries puts them back as printed – a peer's staged file kept
-# throughout
+# The raw undo moves the ref alone, and where the land could not bring
+# the checkout along, the step `--status` names for the re-synced entries
+# puts them back as printed – a peer's staged file kept throughout
 _ST_PZ_NEW kp6
 _ST_PZ_C f.txt base "KP6 base"
 git worktree add -q -b feat "$TMP/kp6-wt" main 2>/dev/null

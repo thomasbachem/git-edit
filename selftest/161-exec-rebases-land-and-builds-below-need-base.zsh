@@ -25,8 +25,8 @@ git reset -q --hard "$EB_T"
 _ST_RUN --exec -- sh -c 'GIT_SEQUENCE_EDITOR="sed -i.bak 1s/^pick/edit/" git rebase -q -i HEAD~2 && git reset -q --hard HEAD~1 && git rebase --continue >/dev/null'
 _ST_EQ "a reset below the tip at a rebase's stop still refuses" "${RC}:$(git rev-parse HEAD)" "1:$EB_T"
 _ST_OUT_HAS "naming where HEAD went" 'below the tip this run started on'
-# A result built below the tip – by plumbing, by hand or as a root of its own – drops what sat
-# above as surely, so needs `--base`, named in full
+# A result built below the tip – by plumbing, by hand or as a root of its own –
+# drops what sat above as surely, so needs `--base`, named in full
 EB_B=$(git rev-parse HEAD~2)
 _ST_RUN --exec -- sh -c 'git update-ref HEAD "$(git commit-tree -p HEAD~2 -m "EB2 built below" HEAD~2^{tree})"'
 _ST_EQ "plumbing's commit-tree below the tip, moved to by update-ref, refuses" "${RC}:$(git rev-parse HEAD)" "1:$EB_T"
@@ -54,8 +54,8 @@ git reset -q --hard "$EB_T"
 _ST_RUN --exec --base="$EB_T" -- sh -c 'git checkout -q --orphan eb2 && git commit -qm "EB2 all in one" && git checkout -q --detach && git branch -q -D eb2'
 _ST_EQ "and an orphan commit with it" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:EB2 all in one|"
 git reset -q --hard "$EB_T"
-# And what builds on the tip or names what it drops lands as ever: plumbing on the tip, a side
-# built in the run and merged after an amend, a rebase onto one
+# And what builds on the tip or names what it drops lands as ever: plumbing on the tip,
+# a side built in the run and merged after an amend, a rebase onto one
 _ST_RUN --exec -- sh -c 'git reset -q --hard "$(git commit-tree -p HEAD -m "EB3 on top" HEAD^{tree})"'
 _ST_EQ "commit-tree on the tip lands" "${RC}:$(git log -1 --format=%s)" "0:EB3 on top"
 git reset -q --hard "$EB_T"

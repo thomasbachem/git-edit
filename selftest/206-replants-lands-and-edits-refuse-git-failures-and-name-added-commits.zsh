@@ -15,8 +15,8 @@ _FR_VETO () {
 	mkdir -p .git/hooks && print -l '#!/bin/sh' 'echo "fr hook: no rebasing here" >&2' 'exit 1' > .git/hooks/pre-rebase
 	chmod +x .git/hooks/pre-rebase
 }
-# A gpg stand-in that signs anything, so a rebase begun signing fails only once it is swapped out –
-# its status line after a newline, where git 2.31 looks for it
+# A gpg stand-in that signs anything, so a rebase begun signing fails only once
+# it is swapped out – its status line after a newline, where git 2.31 looks for it
 print -l '#!/bin/sh' 'cat >/dev/null' 'echo >&2' 'echo "[GNUPG:] SIG_CREATED D 1 8 00 1 X" >&2' \
 	"printf -- '-----BEGIN PGP SIGNATURE-----\\n\\nfr\\n-----END PGP SIGNATURE-----\\n'" > "$FR_GPG"
 chmod +x "$FR_GPG"
@@ -127,8 +127,8 @@ _ST_RUN --continue
 _ST_EQ "once signing works the retry lands" "$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD~1:f.txt)" "0:FR4 C|FR4 B|FR4 A|:b"
 git config --unset commit.gpgSign && git config --unset gpg.program
 
-# A commit made on top of the paused commit leaves it as it was – no replaced message, no body
-# named lost and no reword offered for the hand commit
+# A commit made on top of the paused commit leaves it as it was
+# – no replaced message, no body named lost and no reword offered for the hand commit
 _ST_PZ_NEW fr5
 _ST_PZ_C a.txt a "FR5 A"
 print -r -- b > b.txt && git add b.txt && git commit -qm "FR5 B" -m "FR5 B body that stays on B"
@@ -159,8 +159,8 @@ _ST_OUT_HAS "the subject it replaced" '^  replaced: FR5 B$'
 _ST_OUT_HAS "the body it dropped" 'The replaced message carried a 1-line body'
 _ST_OUT_HAS "and the commit added after it" "^  added: $FR_Y FR5 Y by hand\$"
 
-# Untracked files beside commits made at the stop, a check configured, are refused with an edit's
-# step, never a resolution's
+# Untracked files beside commits made at the stop, a check configured,
+# are refused with an edit's step, never a resolution's
 _ST_PZ_NEW fr6
 _ST_PZ_C a.txt a "FR6 A" && _ST_PZ_C b.txt b "FR6 B" && _ST_PZ_C c.txt c "FR6 C"
 git config edit.verifyCmd true

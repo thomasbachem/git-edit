@@ -3,8 +3,8 @@
 _ST_SCENARIO "\e[1;96m[229] renaming a file another caller added lands where the new name holds it\e[0m"
 local RN_TIP RN_LONG
 
-# Lands a peer's old/<name>.json, then moves it to new/ holding <lines> and commits both names
-# whole – leaving `OUT`, `RC`, and `RN_TIP` the tip before
+# Lands a peer's old/<name>.json, then moves it to new/ holding <lines>
+# and commits both names whole – leaving `OUT`, `RC` and `RN_TIP` the tip before
 _RN_TRY () {
 	# Args: <name> <line>...
 	mkdir -p old new

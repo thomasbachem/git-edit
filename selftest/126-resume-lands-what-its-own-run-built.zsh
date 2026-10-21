@@ -1,7 +1,7 @@
 _ST_SCENARIO "\e[1;96m[126] a resume lands what its own run built, and nothing else\e[0m"
 local RE_WT RE_TIP RE_PID RE_AMENDED RE_N
-# A resume cut off in its gate left the worktree on the commit it was checking – the next one
-# lands the whole result all the same, as the pause records it
+# A resume cut off in its gate left the worktree on the commit it was checking
+# – the next one lands the whole result all the same, as the pause records it
 _ST_PZ_NEW re1
 _ST_PZ_C f.txt $'1\n2\n3' "RE base"
 _ST_PZ_C f.txt $'1\n2x\n3' "RE x"

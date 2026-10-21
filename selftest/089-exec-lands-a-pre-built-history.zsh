@@ -42,7 +42,7 @@ _ST_RUN --exec -- git reset -q --hard HEAD~1
 _ST_EQ "a rewind refuses without --base" "$RC" "1"
 _ST_OUT_HAS "pointing a drop at -d" 'git edit -d <sha>'
 _ST_EQ "leaving the tip" "$(git rev-parse HEAD)" "$PB_AHEAD"
-# A dry run builds in isolation, skips even a standing gate, moves nothing, and hands over
+# A dry run builds in isolation, skips even a standing gate, moves nothing and hands over
 # the landing pinned to its base – which then lands what it built
 git config edit.verifyCmd false
 _ST_RUN --exec --dry-run -- git commit -q --amend --allow-empty -m "PB ahead, amended"

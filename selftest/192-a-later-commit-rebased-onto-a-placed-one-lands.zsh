@@ -1,12 +1,12 @@
-# A commit placed or moved below a later commit that rewrote its line lands once each stop is
-# resolved as told – that commit, rebuilt, still rewriting the line, its change rebased onto the
-# placed one's rather than taken in – while a stop that took that change in refuses, naming the
-# placement past it that works
+# A commit placed or moved below a later commit that rewrote its line lands once
+# each stop is resolved as told – that commit, rebuilt, still rewriting the line,
+# its change rebased onto the placed one's rather than taken in – while a stop
+# that took that change in refuses, naming the placement past it that works
 _ST_SCENARIO "\e[1;96m[192] a later commit rebased onto a placed one lands, one taken in refuses\e[0m"
 local RB_C1 RB_C2 RB_X RB_T RB_CMD
 
-# Commits f.txt's twelve lines, a.txt beside, then c1 (a.txt), c2 (line 5 – g.txt too, given
-# <g>) and c3 (a.txt), leaving line 5 edited on top
+# Commits f.txt's twelve lines, a.txt beside, then c1 (a.txt), c2
+# (line 5 – g.txt too, given <g>) and c3 (a.txt), leaving line 5 edited on top
 _RB_SETUP () {
 	# Args: <name> [<g>]
 	_ST_PZ_NEW "$1"
@@ -61,8 +61,8 @@ _ST_EQ "resolved as printed, the move lands" "$RC:$(git log --format=%s | tr '\n
 _ST_EQ "the later change rebased onto the moved one" "$(git diff HEAD~2 HEAD~1 -- f.txt | grep '^[-+]f' | tr '\n' '|')" \
 	"-f line 5 wip|+f line 5 v2 wip|"
 
-# Its neighbor: a stop taking in c2's change, c2 left with nothing there, refuses – naming the
-# placement past c2, which then lands
+# Its neighbor: a stop taking in c2's change, c2 left with nothing
+# there, refuses – naming the placement past c2, which then lands
 _RB_SETUP rb3 g2
 _ST_RUN --commit --before="$RB_C2" --text "RB3 wip on line 5" -- f.txt
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt "$(_RB_F "f line 5 v2 wip")"

@@ -39,9 +39,9 @@ _ST_EQ "a spanned tip drop onto a failing commit pauses" "$RC" "2"
 _ST_OUT_HAS "naming that commit" "paused – verify failed at $VD_SIX"
 _ST_RUN --abort
 _ST_EQ "and the abort keeps the tip" "$(git log -1 --format=%s)" "VD seven"
-# A recorded result that no longer resolves refuses the resume, since falling back to
-# worktree `HEAD` would reopen the truncation trap – a tip fold has no replays, so the
-# pause is guaranteed to be verify's rather than a conflict
+# A recorded result that no longer resolves refuses the resume, since falling
+# back to worktree `HEAD` would reopen the truncation trap – a tip fold has
+# no replays, so the pause is guaranteed to be verify's rather than a conflict
 git config edit.verifyCmd false
 printf 'vd\nstale\n' > vd.txt && git add vd.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" -- vd.txt
@@ -55,17 +55,17 @@ _ST_OUT_HAS "and names what happened" 'no longer resolves'
 _ST_RUN --abort
 _ST_EQ "while abort still cancels clean" "$RC" "0"
 git reset -q -- vd.txt && git checkout -q -- vd.txt
-# A verify pause discards worktree edits, so a continue refuses while any are present rather
-# than swallowing them – the content-edit pause invites exactly the opposite instinct,
-# and a tip fold has no replays, so the pause is verify's for certain
+# A verify pause discards worktree edits, so a continue refuses while any are present
+# rather than swallowing them – the content-edit pause invites exactly the opposite
+# instinct, and a tip fold has no replays, so the pause is verify's for certain
 printf 'vd\ndirty\n' > vd.txt && git add vd.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" -- vd.txt
 _ST_EQ "the tip fold pauses on verification" "$RC" "2"
 _ST_OUT_HAS "and warns that editing there is not the repair" 'not the repair'
 local VE_WT=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in \([^;]*\);.*/\1/p' | head -1)
 _ST_CHECK "the pause named a worktree" sh -c "[ -d '$VE_WT' ]"
-# Untracked files feed the re-verify yet never land, so they block the resume – an ignored
-# one does not, the linked deps being ignored paths
+# Untracked files feed the re-verify yet never land, so they block the resume
+# – an ignored one does not, the linked deps being ignored paths
 printf 'log\n' > "${VE_WT:-$ST_NO_WT}/verify-run.log"
 _ST_RUN --continue
 _ST_EQ "an untracked file blocks the gated resume" "$RC" "1"
@@ -92,8 +92,8 @@ _ST_RUN --no-verify --continue
 _ST_EQ "and applies once they are gone" "$RC" "0"
 git reset -q -- vd.txt && git checkout -q -- vd.txt
 
-# A flag-only --verify survives the pause – with no standing config, a
-# resume that forgot it would apply the result with no verification at all
+# A flag-only --verify survives the pause – with no standing config,
+# a resume that forgot it would apply the result with no verification at all
 git config --unset edit.verifyCmd
 printf 'vd\nflagkeep\n' > vd.txt && git add vd.txt
 _ST_RUN --verify=false --amend-into="$(git rev-parse HEAD)" -- vd.txt
@@ -114,8 +114,8 @@ _ST_EQ "the spanned fold pauses" "$RC" "2"
 _ST_RUN --continue
 _ST_EQ "and the resume re-pauses" "$RC" "2"
 _ST_OUT_HAS "verifying the span, not just primary+tip" '# verify 3 commit(s)'
-# The flag on a resume steps the recorded span down, and the pause then keeps that –
-# a flag given on any invocation of an operation sticks to the operation, as --verify-span does
+# The flag on a resume steps the recorded span down, and the pause then keeps that
+# – a flag given on any invocation of an operation sticks to the operation, as --verify-span does
 _ST_RUN --no-verify-span --continue
 _ST_EQ "a resume may decline the recorded span" "$RC" "2"
 _ST_OUT_HAS "verifying primary+tip alone" '# verify 2 commit(s)'
@@ -136,8 +136,8 @@ _ST_OUT_HAS "running the resume's command" 'false resumed # verify'
 _ST_RUN --continue
 _ST_EQ "and a plain resume keeps it" "$RC" "2"
 _ST_OUT_HAS "still the resume's command" 'false resumed # verify'
-# A multi-line command is refused before it can be persisted truncated – on a resume as on
-# a fresh run, whose conflict pause comes before any gate
+# A multi-line command is refused before it can be persisted truncated
+# – on a resume as on a fresh run, whose conflict pause comes before any gate
 _ST_RUN --verify="$(printf 'false\nfalse')" --continue
 _ST_EQ "a multi-line --verify on a resume refuses" "$RC" "1"
 _ST_OUT_HAS "naming the reason" 'spans multiple lines'

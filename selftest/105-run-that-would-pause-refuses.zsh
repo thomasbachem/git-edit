@@ -5,8 +5,8 @@ for PSN in 1 2 3; do echo "ps $PSN" > "ps$PSN.txt" && git add "ps$PSN.txt" && gi
 PS_FIRST=$(git rev-parse HEAD~2)
 PS_LAST=$(git rev-parse HEAD)
 PS_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
-# The failing check records a parallel run's pause first, with that run's check output – once,
-# as the failure's diagnosis reruns it
+# The failing check records a parallel run's pause first,
+# with that run's check output – once, as the failure's diagnosis reruns it
 printf '#!/bin/sh\n[ -f "%s" ] || printf "operation=edit\\nworktree=/nonexistent/peer\\n" > "%s"\n[ -f "%s-verify" ] || echo "peer log" > "%s-verify"\nexit 1\n' \
 	"$PS_SF" "$PS_SF" "$PS_SF" "$PS_SF" > "$TMP/ps-pause.sh" && chmod +x "$TMP/ps-pause.sh"
 _ST_RUN --move="$PS_LAST" --before="$PS_FIRST" --verify="$TMP/ps-pause.sh"
@@ -17,8 +17,8 @@ _ST_EQ "and the branch where it was" "$(git rev-parse HEAD)" "$PS_LAST"
 _ST_EQ "the parallel run's pause stands" "$(sed -n 2p "$PS_SF")" "worktree=/nonexistent/peer"
 _ST_EQ "and so does its check output" "$(cat "$PS_SF-verify")" "peer log"
 rm -f "$PS_SF" "$PS_SF-verify"
-# An edit pause records itself as soon as its worktree exists – a hook on that checkout
-# records the parallel run's pause first
+# An edit pause records itself as soon as its worktree exists
+# – a hook on that checkout records the parallel run's pause first
 mkdir -p "$TMP/ps-hooks"
 printf '#!/bin/sh\nprintf "operation=edit\\nworktree=/nonexistent/peer\\n" > "%s"\n' "$PS_SF" > "$TMP/ps-hooks/post-checkout"
 chmod +x "$TMP/ps-hooks/post-checkout"
@@ -44,8 +44,8 @@ _ST_EQ "a conflict pause refuses the same way" "$RC" "1"
 _ST_OUT_HAS "as an operation in flight, mid-rebase" 'Another git-edit operation is in flight'
 _ST_EQ "its worktree gone, rebase and all" "$(git worktree list | wc -l | tr -d ' ')" "$PS_WORKTREES"
 rm -f "$PS_SF"
-# A worktree named with -C is the caller's, which git-edit reuses from run to run – one the run just
-# made, refused before anything was authored there, goes again
+# A worktree named with -C is the caller's, which git-edit reuses from run to run
+# – one the run just made, refused before anything was authored there, goes again
 git -c core.hooksPath=/dev/null worktree add -q --detach "$TMP/ps-own" HEAD
 _ST_RUN -d "$(git rev-parse HEAD~1)" -C="$TMP/ps-own"
 _ST_EQ "a drop's conflict pause in a -C worktree refuses too" "$RC" "1"

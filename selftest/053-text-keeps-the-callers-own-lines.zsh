@@ -16,9 +16,9 @@ echo "hm3" > hm3.txt && git add hm3.txt && git commit -qm "HM two"
 _ST_RUN -s="$(git rev-parse HEAD~1)" -y --text="$HM_BODY" "$(git rev-parse HEAD)"
 _ST_EQ "a plumbing fold keeps them" "$(git log --format=%B | grep -c '^#123 route-plumbing$')" "1"
 
-# Non-adjacent, so it falls to the rebase path where the message reaches the commit through
-# an editor – which route a fold takes turns on adjacency, not on anything the caller
-# said, so the two must not disagree here
+# Non-adjacent, so it falls to the rebase path where the message reaches
+# the commit through an editor – which route a fold takes turns on adjacency,
+# not on anything the caller said, so the two must not disagree here
 HM_BODY=$(printf 'HM gapped\n\nSee also:\n#123 route-rebase')
 echo "hm4" > hm4.txt && git add hm4.txt && git commit -qm "HM gap a"
 echo "hm5" > hm5.txt && git add hm5.txt && git commit -qm "HM gap b"

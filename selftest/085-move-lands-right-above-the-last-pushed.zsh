@@ -1,6 +1,6 @@
-# The move's span took in the anchor it lands right after, which the rebase replays unchanged,
-# and the pushed guard reads the span's oldest commit – so moving a commit to the bottom of the
-# unpushed run was refused as rewriting the pushed one below it
+# The move's span took in the anchor it lands right after, which the rebase replays
+# unchanged, and the pushed guard reads the span's oldest commit – so moving a commit
+# to the bottom of the unpushed run was refused as rewriting the pushed one below it
 _ST_SCENARIO "\e[1;96m[85] a move lands right above the last pushed commit\e[0m"
 echo "pa" > pa.txt && git add pa.txt && git commit -qm "PA pushed"
 local PA_PUSHED=$(git rev-parse HEAD)

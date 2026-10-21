@@ -48,9 +48,9 @@ _ST_RUN --continue
 _ST_EQ "a bare continue lands it" "$RC" "0"
 _ST_OUT_HAS "and the landing names the mode change" 'mode change 100755 => 100644 sm\.sh'
 _ST_EQ "the tip carries it" "$(git ls-tree HEAD -- sm.sh | cut -d' ' -f1)" "100644"
-# What the replay carries is git's own merge of modes: a fold flipping the bit on purpose sets
-# the fixup's mode at its stop and the new parent's at the later commit's, so a resolution at
-# the commit's original mode is the stray at either
+# What the replay carries is git's own merge of modes: a fold flipping the bit
+# on purpose sets the fixup's mode at its stop and the new parent's at the later
+# commit's, so a resolution at the commit's original mode is the stray at either
 git reset -q --hard
 printf '#!/bin/sh\necho fm1\n' > fm.sh && git add fm.sh && git commit -qm "FM base"
 local FM_BASE=$(git rev-parse HEAD)

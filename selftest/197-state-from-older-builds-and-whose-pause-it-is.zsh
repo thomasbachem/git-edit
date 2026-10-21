@@ -79,8 +79,8 @@ _ST_RESOLVE "${SO_WT:-$ST_NO_WT}" f.txt "$(print -l bee l2)"
 _ST_RUN --continue
 _ST_EQ "and lands from there" "$RC:$(git show HEAD~2:f.txt | tr '\n' ' ')|$(git show --format= --name-only HEAD | tr '\n' ' ')" "0:fold l2 |g.txt h.txt "
 
-# A pause from before labels – no actor line – is anyone's to resume, so a labeled caller never
-# waits for it, refusing at once with its continue and abort named
+# A pause from before labels – no actor line – is anyone's to resume, so a labeled
+# caller never waits for it, refusing at once with its continue and abort named
 _ST_PZ_NEW so4
 _ST_PZ_C a.txt a "SO4 A" && _ST_PZ_C b.txt b "SO4 B" && _ST_PZ_C c.txt c "SO4 C"
 export GIT_EDIT_ACTOR=so-peer
@@ -99,8 +99,8 @@ _S197_RUN so-self -M --text "SO4 C reworded" --wait=1 HEAD
 _ST_EQ "while one naming another label is waited for" "$RC" "1"
 _ST_OUT_HAS "up to the bound" 'Waiting up to 1s for so-peer'"'"'s paused edit'
 
-# Another caller's pause is left to that caller or waited for – its continue and abort are not this
-# one's to run – the caller's own, and one from before labels, still named so
+# Another caller's pause is left to that caller or waited for – its continue and abort
+# are not this one's to run – the caller's own, and one from before labels, still named so
 _S197_RUN so-self -M --text "SO4 C reworded" --wait=0 HEAD
 _ST_EQ "another caller's pause refuses at once" "$RC:$(git log -1 --format=%s)" "1:SO4 C"
 _ST_OUT_HAS "left to that caller, or waited for" "Leave it to that caller, or wait for it to clear: run this again with --wait=<secs> ('git edit --status' shows it)"

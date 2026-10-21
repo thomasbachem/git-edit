@@ -53,8 +53,8 @@ _SE_REFUSED "one rewriting the line below the gap, growing"
 _SE_TRY a 'size (95 MB)' 'case1 (95 MB)' 'case3 (95 MB)' c d e
 _SE_REFUSED "and one editing the block beside the line above, one of its lines dropped"
 
-# Inputs compose on the tip's text, so a pair writing over a landed line edits what landed – the
-# same content taken whole refuses
+# Inputs compose on the tip's text, so a pair writing over a landed
+# line edits what landed – the same content taken whole refuses
 _SE_LAND
 _ST_RUN --commit --text "SE caller $SE_K" --edits '{"se'"$SE_K"'.txt": [["case1 (95 nb MB)\n", "case one rewritten\n"]]}'
 _ST_EQ "--edits writing over a landed line lands" "$RC:$(git show HEAD:se$SE_K.txt | sed -n 3p):$(git rev-parse HEAD~1)" "0:case one rewritten:$SE_TIP"

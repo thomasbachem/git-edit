@@ -1,5 +1,5 @@
-# An exported name the script uses, a git dir named through the environment, or config that
-# changes the output it parses each changed what ran
+# An exported name the script uses, a git dir named through the environment,
+# plus config that changes the output it parses each changed what ran
 _ST_SCENARIO "\e[1;96m[118] a caller's environment and config leave the script as it reads itself\e[0m"
 local GV_AWK='
 	/^[A-Za-z_][A-Za-z0-9_]* \(\) \{/ { infn = 1; delete loc; next }
@@ -83,8 +83,8 @@ local GV_STALE=$(git rev-parse HEAD~1)
 _ST_RUN -M --text "GV stale once" HEAD~1
 GIT_EDIT_NO_RESOLVE=0 _ST_RUN -M --text "GV stale twice" "$GV_STALE"
 _ST_OUT_HAS "a GIT_EDIT_NO_ switch set to 0 is off" 'was rewritten'
-# A caller's `rerere.autoUpdate` stages no resolution an abandoned run
-# recorded – the file comes back unmerged
+# A caller's `rerere.autoUpdate` stages no resolution
+# an abandoned run recorded – the file comes back unmerged
 _ST_RUN --abort
 git config rerere.autoUpdate true
 printf 'l1\nl2\nl3\n' > gvr.txt && git add gvr.txt && git commit -qm "GV rr A"

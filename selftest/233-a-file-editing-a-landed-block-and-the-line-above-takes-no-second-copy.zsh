@@ -1,6 +1,6 @@
-# A file holding its own version of a peer's fresh block where the landing's merge adds it again –
-# edited or stale alike – refuses whole or as --edits, naming the diff to read before --base, never
-# the carry, which, like a sync, leaves the file as it is with its record kept:
+# A file holding its own version of a peer's fresh block where the landing's merge adds it again
+# – edited or stale alike – refuses whole or as --edits, naming the diff to read before --base,
+# never the carry, which, like a sync, leaves the file as it is with its record kept:
 # • A file lacking the block, or one copy of two, still takes the carry, and a sync merges it in
 # • A line the file lacks landing beside the block, or after it, changes none of that
 # • The refusal names the landing on its trailer, the --base line above the way keeping it
@@ -8,11 +8,11 @@ _ST_SCENARIO "\e[1;96m[233] a file editing a landed block and the line above it 
 local DD_OLD DD_TIP DD_TRAILER
 local -i DD_K=0
 
-# Prints the file as <variant> has it – `base`, `tip` the peer's blocks landed on it, `above` and
-# `inside` the tip edited there alone, `both` in both places, `drop` and `dropexit` that without a
-# landed line, `shaped` the line above edited beside blocks shaped like the peer's, `near` beside
-# its own copy of them three lines differing, `shifted` beside theirs a line down, `stale` without,
-# `tip2` the tip and a line a second landing appends
+# Prints the file as <variant> has it – `base`, `tip` the peer's blocks landed on it, `above`
+# and `inside` the tip edited there alone, `both` in both places, `drop` and `dropexit`
+# that without a landed line, `shaped` the line above edited beside blocks shaped like
+# the peer's, `near` beside its own copy of them three lines differing, `shifted` beside
+# theirs a line down, `stale` without, `tip2` the tip and a line a second landing appends
 _DD_LINES () {
 	# Args: <variant>
 	local V=$1
@@ -41,8 +41,8 @@ _DD_LINES () {
 	[ "$V" = tip2 ] && print -r -- '// peer two'
 	return 0
 }
-# Commits a fresh file as `base` unjournaled, then lands the peer's blocks on it – setting `DD_OLD`
-# and `DD_TIP` to the tips around that landing
+# Commits a fresh file as `base` unjournaled, then lands the peer's blocks on it
+# – setting `DD_OLD` and `DD_TIP` to the tips around that landing
 _DD_LAND () {
 	DD_K+=1
 	_DD_LINES base > "dd$DD_K.swift" && git add "dd$DD_K.swift" && git commit -qm "DD base $DD_K"
@@ -145,8 +145,8 @@ _ST_RUN --commit --text "DD caller $DD_K" -- "dd$DD_K.swift"
 _DD_OWN "and the file committed whole then refuses"
 git checkout -q -- "dd$DD_K.swift"
 
-# A landing adding a block in two places lacked once by a file holding the first, which a sync
-# brings in and the refusal points the carry at
+# A landing adding a block in two places lacked once by a file holding
+# the first, which a sync brings in and the refusal points the carry at
 DD_K+=1
 print -l a b c d e f g h i j > "dd$DD_K.txt" && git add "dd$DD_K.txt" && git commit -qm "DD base $DD_K"
 DD_OLD=$(git rev-parse HEAD)

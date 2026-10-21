@@ -4,8 +4,8 @@
 _ST_SCENARIO "\e[1;96m[153] exec builds traced, stale moves, :/ trees, held locks, landed bits, case clashes\e[0m"
 local WE_T WE_I WE_O3 WE_O4 WE_TC WE_GD WE_DEAD WE_H
 local -a WE_PIDS WE_ARGS
-# An `--exec` building below its start tip, then passing back through it on the way to that result,
-# still needs `--base`
+# An `--exec` building below its start tip, then passing back
+# through it on the way to that result, still needs `--base`
 _ST_PZ_NEW we1
 _ST_PZ_C a.txt a "WE1 a" && _ST_PZ_C b.txt b "WE1 b" && _ST_PZ_C c.txt c "WE1 c"
 WE_T=$(git rev-parse HEAD)
@@ -19,8 +19,8 @@ _ST_RUN --exec -- sh -c 'git checkout -q HEAD~2 && git checkout -q - && git comm
 _ST_EQ "an amend between two detours lands" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:WE1 c amended|WE1 b|WE1 a|"
 _ST_RUN --exec -- sh -c 'git checkout -q HEAD~2 && git checkout -q - && GIT_SEQUENCE_EDITOR="sed -i.bak 1d" git rebase -q -i HEAD~2'
 _ST_EQ "as does a rebase after a detour, its todo naming what it drops" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:WE1 c amended|WE1 a|"
-# A `--move` run whose two ends a rewrite staled moves the commits it named, not one a peer put
-# between their current identities
+# A `--move` run whose two ends a rewrite staled moves the commits
+# it named, not one a peer put between their current identities
 _ST_PZ_NEW we2
 for WE_I in a b c d e f; do _ST_PZ_C "$WE_I" "line $WE_I" "WE2 $WE_I"; done
 WE_O3=$(git rev-parse --short HEAD~3) WE_O4=$(git rev-parse --short HEAD~2)
@@ -32,8 +32,8 @@ _ST_RUN --move="$WE_O3..$WE_O4" --after=HEAD
 _ST_EQ "a --move run with both ends stale moves those commits alone" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:WE2 d|WE2 c|WE2 f|WE2 e|WE2 peer|WE2 b reworded|WE2 a|"
 _ST_RUN --move="$(git rev-parse HEAD~4)..$(git rev-parse HEAD~2)" --after="$(git rev-parse HEAD)"
 _ST_EQ "while a live run moves every commit between its ends" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:WE2 f|WE2 e|WE2 peer|WE2 d|WE2 c|WE2 b reworded|WE2 a|"
-# A `--tree` given as a `:/<text>` search reads a bracketed name as the tree holds it – that path
-# alone, never `app/i.tsx` beside it
+# A `--tree` given as a `:/<text>` search reads a bracketed name
+# as the tree holds it – that path alone, never `app/i.tsx` beside it
 _ST_PZ_NEW we3
 mkdir app && print 1 > 'app/[id].tsx' && print 1 > app/i.tsx && git add app && git commit -qm "WE3 app"
 _ST_PZ_C t.txt t "WE3 tip"
@@ -49,8 +49,8 @@ WE_TC=$(git commit-tree "$(git write-tree)" -p HEAD -m "WE3 composed both")
 git reset -q --hard && git update-ref refs/keep/we3-both "$WE_TC"
 _ST_RUN --amend-into="$(git rev-parse HEAD~1)" --tree=':/WE3 composed both' -- 'app/[id].tsx'
 _ST_EQ "while one changing both folds the bracketed path alone" "${RC}:$(git show HEAD~1:'app/[id].tsx' | tail -1):$(git show HEAD~1:app/i.tsx)" "0:mine:1"
-# A `-C` lock is never missing while its holder runs – a run that read it stale and acts late, after
-# another took it, leaves it in place, so a third finds it held
+# A `-C` lock is never missing while its holder runs – a run that read it stale
+# and acts late, after another took it, leaves it in place, so a third finds it held
 _ST_PZ_NEW we4
 _ST_PZ_C a.txt a "WE4 a"
 git worktree add -q --detach "$TMP/we4-wt" HEAD
@@ -163,8 +163,8 @@ WE_H=${WE_H#*Take the bit that landed with: }
 _ST_EQ "a bit taken back over 12 files refuses, its chmod fed from a file" "${RC}:${WE_H%%< *}" "1:xargs -0 chmod -- +x "
 _ST_CHECK "which runs" sh -c "${WE_H:-false}"
 _ST_EQ "setting each bit" "$(ls -l s*.sh | grep -c '^-rwx')" "12"
-# Where case tells no names apart, a clash with a tip directory names its files, and a `--rm` of
-# that directory says it is one
+# Where case tells no names apart, a clash with a tip directory
+# names its files, and a `--rm` of that directory says it is one
 _ST_PZ_NEW we8
 git config core.ignorecase true
 mkdir Docs && print a > Docs/a.md && print b > Docs/b.md && print r > readme.md && git add -A && git commit -qm "WE8 base"
@@ -178,8 +178,8 @@ _ST_RUN --commit --text "WE8 lower" --rm Docs --put docs/a.md="$TMP/we8-a" --put
 _ST_OUT_HAS "a --rm of the directory says it is one" '--rm Docs: a directory at the tip – name its files'
 _ST_RUN --commit --text "WE8 lower" --rm Docs/a.md --rm Docs/b.md --put docs/a.md="$TMP/we8-a" --put docs/b.md="$TMP/we8-b"
 _ST_EQ "while removing each file renames it" "${RC}:$(git ls-tree -r --name-only HEAD | tr '\n' ' ')" "0:docs/a.md docs/b.md readme.md "
-# And a `--tree` spelling a tip name another way refuses, a `--commit` and a fold alike, unless it
-# removes the tip's spelling
+# And a `--tree` spelling a tip name another way refuses,
+# a `--commit` and a fold alike, unless it removes the tip's spelling
 WE_T=$(git rev-parse HEAD)
 rm -f "$TMP/compose-index" && GIT_INDEX_FILE=$TMP/compose-index git read-tree HEAD
 GIT_INDEX_FILE=$TMP/compose-index git update-index --add --cacheinfo "100644,$(git rev-parse HEAD:readme.md),README.md"

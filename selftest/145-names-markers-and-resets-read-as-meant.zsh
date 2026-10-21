@@ -36,8 +36,8 @@ _ST_OUT_HAS "a resolution keeping a diff3 base marker is refused" 'still contain
 _ST_RUN --abort
 git config --unset merge.conflictStyle
 git reset -q --hard
-# An `--exec` going back below its start tip and building there drops what sat above – a peer's
-# commit landed meanwhile – so it needs `--base`, however it got there
+# An `--exec` going back below its start tip and building there drops what sat above
+# – a peer's commit landed meanwhile – so it needs `--base`, however it got there
 _ST_PZ_NEW nm4
 _ST_PZ_C a.txt a "NM4 a" && _ST_PZ_C b.txt b "NM4 b" && _ST_PZ_C c.txt c "NM4 mine"
 NM_C=$(git rev-parse HEAD)

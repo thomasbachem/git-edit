@@ -5,8 +5,8 @@
 _ST_SCENARIO "\e[1;96m[154] absorption reads moved lines, pairs keep replay order, a pause is told by its mark\e[0m"
 local AB_T AB_B AB_D AB_P AB_WT AB_SF AB_REAL
 local -i AB_W
-# Writes a `git` stand-in to <dir> that, armed by <dir>/arm, runs <script> once – disarming first –
-# when a call's arguments open with <words>, then runs the real git
+# Writes a `git` stand-in to <dir> that, armed by <dir>/arm, runs <script> once
+# – disarming first – when a call's arguments open with <words>, then runs the real git
 _AB_GIT_HOOK () {
 	# Args: <dir> <script> <words>
 	mkdir -p "$1"
@@ -62,9 +62,9 @@ _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l 1 2z 3 4 5 6 7 8w 9)"
 _ST_RUN --continue
 _ST_EQ "a replant onto an upstream holding part of a later change lands" "$RC:$(git log --format=%s | tr '\n' '|')" \
 	"0:AB4 W line 8, add h|AB4 Z line 2|AB4 U line 2, line 8 as W|AB4 base|"
-# A fold's stop taking in one hunk of a later commit, which still changes the file, refuses – while
-# one resolved to the target's own content lands – the line the fold adds to h.txt keeping it from
-# resolving its stops itself, as scenario 226's do
+# A fold's stop taking in one hunk of a later commit, which still changes the file,
+# refuses – while one resolved to the target's own content lands – the line the fold
+# adds to h.txt keeping it from resolving its stops itself, as scenario 226's do
 _ST_PZ_NEW ab5
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "AB5 base"
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 T14 > f.txt && git commit -qam "AB5 target"
@@ -116,8 +116,8 @@ _ST_RESOLVE "${AB_WT:-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 8 9)"
 GIT_EDITOR=true git -C "${AB_WT:-$ST_NO_WT}" rebase --continue >/dev/null 2>&1
 _ST_RUN --continue
 _ST_EQ "a hand finish among them, one adding an underline of its own, lands" "$RC:$(git log --format=%s | wc -l | tr -d ' ')" "0:5"
-# A squash finished by hand lands a member applied past the stop with its own underline, while one
-# finished with its markers staged refuses
+# A squash finished by hand lands a member applied past the stop
+# with its own underline, while one finished with its markers staged refuses
 _ST_PZ_NEW ab7
 _ST_PZ_C f.txt $'1\n2\n3' "AB7 base" && _ST_PZ_C t.txt t "AB7 Target" && _ST_PZ_C f.txt $'1\n2m\n3' "AB7 Middle"
 _ST_PZ_C f.txt $'1\n2m\n3f' "AB7 Fix" && _ST_PZ_C README.rst $'Install\n=======' "AB7 Docs"
@@ -181,9 +181,9 @@ _ST_EQ "an abort of a pause re-taken alike meanwhile cancels nothing" "$RC:$([ -
 _ST_OUT_HAS "saying so" 'ended by another run meanwhile – nothing was cancelled'
 cp "$TMP/ab-sf" "$AB_SF"
 GIT_EDIT_ACTOR= _ST_RUN --abort
-# A resume holds its `-C` path, so an abort and a new run there both refuse while
-# its gate runs – and a pause re-taken alike meanwhile, its nonce alone telling it
-# apart, it lands nothing of, leaving it
+# A resume holds its `-C` path, so an abort and a new run there both
+# refuse while its gate runs – and a pause re-taken alike meanwhile,
+# its nonce alone telling it apart, it lands nothing of, leaving it
 _ST_PZ_NEW ab10
 _ST_PZ_C f $'1\n2\n3' "AB10 A" && _ST_PZ_C f $'1\n2b\n3' "AB10 B" && _ST_PZ_C f $'1\n2c\n3' "AB10 C"
 AB_T=$(git rev-parse HEAD)
@@ -254,8 +254,8 @@ AB_WT=$(_ST_PZ_WT)
 [ -d "${AB_WT:-$ST_NO_WT}" ] && printf 'v3\0x\n' > "$AB_WT/bin.dat" && git -C "$AB_WT" add bin.dat
 _ST_RUN --continue
 _ST_EQ "one holding the fold's own content lands" "$RC:$(git show HEAD~1:bin.dat | head -c 2)" "0:v3"
-# An abort meeting a resume at its ref move refuses, the resume holding the pause's worktree – never
-# cancelling a pause that lands under it
+# An abort meeting a resume at its ref move refuses, the resume holding
+# the pause's worktree – never cancelling a pause that lands under it
 _ST_PZ_NEW ab13
 _ST_PZ_C f.txt $'1\n2\n3' "AB13 c1" && _ST_PZ_C f.txt $'1\n2x\n3' "AB13 c2" && _ST_PZ_C f.txt $'1\n2xy\n3' "AB13 c3"
 AB_T=$(git rev-parse HEAD)

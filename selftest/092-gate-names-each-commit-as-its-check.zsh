@@ -1,5 +1,5 @@
-# A span tier can run for minutes, and a caller following along saw nothing until the end –
-# while a captured run, which nobody watches live, would carry a line per commit
+# A span tier can run for minutes, and a caller following along saw nothing until the end
+# – while a captured run, which nobody watches live, would carry a line per commit
 _ST_SCENARIO "\e[1;96m[92] the gate names each commit as its check starts, where someone watches\e[0m"
 local VP
 for VP in base one two; do

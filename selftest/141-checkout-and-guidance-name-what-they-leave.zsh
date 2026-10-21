@@ -1,6 +1,6 @@
-# What a run leaves in the shared checkout is named and never lost – a locked index, a second
-# checkout of the branch, a case-only rename – its environment refused where it points elsewhere,
-# and a pause's guidance gives the exact answer wherever there is one
+# What a run leaves in the shared checkout is named and never lost – a locked index,
+# a second checkout of the branch, a case-only rename – its environment refused where it
+# points elsewhere, and a pause's guidance gives the exact answer wherever there is one
 _ST_SCENARIO "\e[1;96m[141] a run names what it leaves in the checkout, and a pause the exact answer\e[0m"
 local CG_T CG_WT CG_PRE
 # An object directory naming another store refuses, one naming the repo's own is dropped

@@ -96,9 +96,9 @@ _ST_EQ "which, run as printed, lands it with its change" "$(git show HEAD:f.txt 
 _ST_RUN --land=feat
 _ST_OUT_HAS "the land again ending landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lc3-wt"
-# Fixes folded into two landed commits – the first fold run as printed rewrites main's copy of the
-# second, which still refuses, weighed against the commit main first took, its own fold then
-# landing it, the land again ending landed with both fixes on main
+# Fixes folded into two landed commits – the first fold run as printed rewrites main's copy
+# of the second, which still refuses, weighed against the commit main first took,
+# its own fold then landing it, the land again ending landed with both fixes on main
 _ST_PZ_NEW lc7
 _ST_PZ_C f.txt $'a\nb\nc' "LC7 base"
 git worktree add -q -b feat "$TMP/lc7-wt" main 2>/dev/null
@@ -128,8 +128,8 @@ _ST_EQ "its fold run as printed, the land again ends landed with both fixes" \
 	"$RC:$(git show HEAD~1:f.txt | tr '\n' ' '):$(git show HEAD:g.txt | tr '\n' ' ')" "0:a B c FIX1 :x y FIX2 "
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lc7-wt"
-# A fix folded on the branch that main already holds, made apart, brings nothing –
-# left out as landed, no refusal
+# A fix folded on the branch that main already holds,
+# made apart, brings nothing – left out as landed, no refusal
 _ST_PZ_NEW lc8
 _ST_PZ_C f.txt $'a\nb\nc\nd\ne' "LC8 base"
 git worktree add -q -b feat "$TMP/lc8-wt" main 2>/dev/null
@@ -144,8 +144,8 @@ _ST_RUN --land=feat
 _ST_EQ "a change main holds already – nothing to land, no refusal" "$RC:$(git log -1 --format=%s)" "0:LC8 fix made apart"
 _ST_OUT_HAS "ending as landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lc8-wt"
-# Main's copy of another patch – a pick resolved by hand – refuses whatever the dates, never left
-# out as landed, the --base past it landing the rest
+# Main's copy of another patch – a pick resolved by hand – refuses whatever
+# the dates, never left out as landed, the --base past it landing the rest
 _ST_PZ_NEW lc4
 _ST_PZ_C f.txt $'a\nb\nc' "LC4 base"
 git checkout -q -b feat && _ST_PZ_C f.txt $'a\nB\nc' "LC4 F1" && _ST_PZ_C g.txt g "LC4 F2" && git checkout -q main
@@ -187,9 +187,9 @@ _ST_EQ "resumed, it lands the branch's own alone" "$RC:$(git log --format=%s | t
 _ST_OUT_HAS "naming the copy left out" "^1 commit(s) left out as main's own by a land's record"
 _ST_OUT_HAS "by name" '^  [0-9a-f]* LC5 B$'
 git worktree remove --force "$TMP/lc5-wt"
-# A catch-up of main, checked out nowhere, into a worktree's branch leaves main as it is – no move
-# onto the worktree's commits, no deletion – landed or already landed, while landed into the main
-# worktree's branch, a branch checked out nowhere is still offered both
+# A catch-up of main, checked out nowhere, into a worktree's branch leaves main as it is
+# – no move onto the worktree's commits, no deletion – landed or already landed, while
+# landed into the main worktree's branch, a branch checked out nowhere is still offered both
 _ST_PZ_NEW lc6
 _ST_PZ_C a.txt a "LC6 A"
 git worktree add -q -b feat "$TMP/lc6-wt" main 2>/dev/null

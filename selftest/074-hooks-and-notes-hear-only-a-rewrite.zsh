@@ -1,4 +1,4 @@
-# Hooks and notes hear a rewrite that lands, once, and nothing else
+# Hooks and notes hear a landed rewrite once and nothing else
 # git copies notes and runs `post-rewrite` as its rebase finishes, ahead of the verify and the
 # CAS – held back now for the landing to deliver, to a hook file and one defined in config alike
 _ST_SCENARIO "\e[1;96m[74] hooks and notes hear only a rewrite that lands, once\e[0m"
@@ -110,8 +110,8 @@ _ST_CHECK "git announced the rebase finished by hand itself" test "$HB_BY_GIT" -
 _ST_RUN --continue
 _ST_EQ "and git edit then applies it" "$RC" "0"
 _ST_EQ "without announcing it a second time" "$(grep -c '^EVENT' "$HB_LOG")" "$HB_BY_GIT"
-# One intermediate step typed in by hand, the rest through git edit – git never finished that
-# run, so the landing still announces the rebase
+# One intermediate step typed in by hand, the rest through git edit
+# – git never finished that run, so the landing still announces the rebase
 git reset -q --hard "$HB_TIP"
 printf 'hb2 changed later\n' > hb2.txt && git commit -qam "HB 5 touches hb2"
 : > "$HB_LOG"
@@ -149,9 +149,9 @@ _ST_EQ "and resolved through git edit, applies" "$RC" "0"
 _ST_EQ "announced once" "$(grep -c '^EVENT' "$HB_LOG")" "1"
 _ST_EQ "with the target's note carried to its final commit" \
 	"$(git log --format=%H | while read s; do git notes show $s 2>/dev/null; done | grep -c '^HB fold note$')" "1"
-# Two runs overlapping in one repo, on two branches – the first held in its verify until the
-# second has landed – announce their own rewrites, as one fixed capture file let the second
-# discard the first run's list, so the first landed unannounced
+# Two runs overlapping in one repo, on two branches – the first held in its verify
+# until the second has landed – announce their own rewrites, as one fixed capture
+# file let the second discard the first run's list, so the first landed unannounced
 git reset -q --hard "$HB_TIP"
 git branch -f hb-side "$(git rev-parse HEAD~3)"
 git worktree add -q "$TMP/hb-side" hb-side
@@ -186,8 +186,8 @@ _ST_EQ "listing the three commits the fold on main replaced" "$HB_MAIN_N" "3"
 _ST_EQ "and the two the fold on the side branch replaced" "$HB_SIDE_N" "2"
 git worktree remove --force "$TMP/hb-side"
 git branch -qD hb-side
-# Armed, the capture steps count toward git's own step numbers – a pause must still number the
-# picks alone and hide those steps, and the final step must still resolve itself
+# Armed, the capture steps count toward git's own step numbers – a pause must still number
+# the picks alone and hide those steps, and the final step must still resolve itself
 git reset -q --hard "$HB_TIP"
 printf 'hbmv-base\n' > hbmv.txt && git add hbmv.txt && git commit -qm "HBMV base"
 printf 'hbmv-base\nhbmv-A\n' > hbmv.txt && git add hbmv.txt && git commit -qm "HBMV A"

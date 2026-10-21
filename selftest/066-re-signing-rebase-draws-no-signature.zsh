@@ -1,6 +1,6 @@
 # The plumbing modes cannot sign, so the notice fires for them – but a rebase re-signs
-# under `commit.gpgsign` and a mode that drops a commit takes its signature along, so a
-# shortfall alone would cry wolf, and only a real key proves the quiet half
+# under `commit.gpgsign` and a mode that drops a commit takes its signature along,
+# so a shortfall alone would cry wolf, and only a real key proves the quiet half
 _ST_SCENARIO "\e[1;96m[66] a re-signing rebase draws no signature notice\e[0m"
 git reset -q --hard
 local GPG_HOME=$TMP/gnupg
@@ -9,7 +9,7 @@ if command -v gpg >/dev/null 2>&1; then
 	mkdir -p "$GPG_HOME" && chmod 700 "$GPG_HOME"
 	print -r -- 'pinentry-mode loopback' > "$GPG_HOME/gpg.conf"
 	print -r -- 'allow-loopback-pinentry' > "$GPG_HOME/gpg-agent.conf"
-	# A long `$TMPDIR` can push the agent socket past the ~104-char sun_path
+	# A long `$TMPDIR` can push the agent socket past the ~104-char `sun_path`
 	# limit, so a failure here is "no usable gpg" rather than a test failure
 	GNUPGHOME=$GPG_HOME gpg --batch --yes --passphrase '' --quick-generate-key \
 		"git-edit selftest <selftest@example.invalid>" default default never \

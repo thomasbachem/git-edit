@@ -1,6 +1,6 @@
-# A commit composed from the caller's own changes alone – replacements replayed onto the tip's
-# text, files put, patches applied, paths removed – in a private index, so a peer's line in the
-# same checkout file and a peer's staging beside it never come along
+# A commit composed from the caller's own changes alone – replacements replayed
+# onto the tip's text, files put, patches applied, paths removed – in a private index, so
+# a peer's line in the same checkout file and a peer's staging beside it never come along
 _ST_SCENARIO "\e[1;96m[136] a commit composes the caller's own changes, a peer's beside them left out\e[0m"
 local IN_T IN_B IN_O IN_P
 _ST_PZ_NEW in1

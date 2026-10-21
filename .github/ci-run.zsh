@@ -23,8 +23,8 @@ if [ -z "$ID" ]; then
 	exit 2
 fi
 print -r -- "ci-run: ${URL}/actions/runs/${ID}"
-# Polled, as `gh run watch` ends on the first dropped connection, which reads as a failed run –
-# each read retried, until ten in a row go unanswered
+# Polled, as `gh run watch` ends on the first dropped connection, which reads
+# as a failed run – each read retried, until ten in a row go unanswered
 FAILS=0 ST=""
 while (( FAILS < 10 )); do
 	if S=$(gh run view "$ID" --repo "$REPO" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2>/dev/null) && [ -n "$S" ]; then

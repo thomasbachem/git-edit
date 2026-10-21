@@ -8,8 +8,8 @@
 _ST_SCENARIO "\e[1;96m[189] a carry follows an undo, and every step named works as printed\e[0m"
 local CU_T0 CU_T1 CU_TIP CU_C CU_REAL=${commands[git]}
 
-# Writes `<dir>/git` standing in for a git before 2.35 – one flagging a file it adds outside a
-# sparse checkout's patterns, and asking none
+# Writes `<dir>/git` standing in for a git before 2.35 – one flagging
+# a file it adds outside a sparse checkout's patterns, and asking none
 _CU_OLD_GIT () {
 	# Args: <dir>
 	mkdir -p "$1"
@@ -24,9 +24,9 @@ _CU_OLD_GIT () {
 	chmod +x "$1/git"
 }
 
-# Two landings on a file with edits made before both, the second undone and a third made: the
-# bare carry the third names takes the file from the first's old tip, and the file then committed
-# keeps all
+# Two landings on a file with edits made before both, the second undone
+# and a third made: the bare carry the third names takes the file
+# from the first's old tip, and the file then committed keeps all
 _ST_PZ_NEW cu1
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CU1 base"
 CU_T0=$(git rev-parse HEAD)
@@ -72,8 +72,8 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	_ST_EQ "followed as printed, the file keeps both landings and its edits" "$RC:$(git ls-files | tr '\n' ' '):$(sed -n '2p;5p;8p' readme.md | tr '\n' ' ')" "0:readme.md t.txt :2-A 5-L1 8-L2 "
 fi
 
-# A file a landing renamed and a later one removed takes the removal's remedy, not a carry
-# naming a name the tip has not
+# A file a landing renamed and a later one removed takes
+# the removal's remedy, not a carry naming a name the tip has not
 _ST_PZ_NEW cu4
 print -l {1..10} > f.txt && print -r -- x > t.txt && git add -A && git commit -qm "CU4 base"
 print -l 1 2-A {3..10} > f.txt
@@ -140,9 +140,9 @@ GIT_EDIT_ACTOR=cu-peer _ST_RUN_UNSYNCED --exec -- sh -c "printf '%s\n' 1 2 3 4 5
 _ST_OUT_HAS "a path left missing by an earlier rename is named missing" "Worktree files left alone, missing from the checkout – deleted there, or never moved in from the old path of an earlier landing's rename: h\.txt$"
 _ST_OUT_LACKS "never as edits there" "uncommitted edits there"
 
-# A git before 2.35 flags the files an agent's landing adds in a sparse checkout, asking no
-# patterns: the landing names them for the reapply, never calling the checkout current, and a
-# carry names those still unwritten the same way
+# A git before 2.35 flags the files an agent's landing adds in a sparse checkout,
+# asking no patterns: the landing names them for the reapply, never calling
+# the checkout current, and a carry names those still unwritten the same way
 _ST_PZ_NEW cu9
 mkdir in out && print -l {1..10} > in/a.txt && print o > out/o.txt && print t > top.txt
 git add -A && git commit -qm "CU9 base"

@@ -1,7 +1,7 @@
 # What a land of the branch took is the branch's value when that land started – read from the
 # copies it made, never guessed where the branch's reflog cannot tell:
-# • A version made in that land's pause, after a recreate or an expiry of the reflog, is unsure –
-#   named so with the land past it that ends the retry – never already landed, the fix lost
+# • A version made in that land's pause, after a recreate or an expiry of the reflog, is unsure
+#   – named so with the land past it that ends the retry – never already landed, the fix lost
 # • A reword before the land, or a rename since, still reads as landed
 # • A branch value in the second the land started is unsure, one before it landed, one after it a
 #   change since, offered its fold – and a copy the target changed reads alike whatever the clock
@@ -81,8 +81,8 @@ _LW_RESUME () {
 	git reset -q --hard
 }
 
-# A fix made in the pause, feat recreated or its reflog expired – unsure, never already landed, its
-# land past them ending the retry with nothing to land, the fix kept on feat
+# A fix made in the pause, feat recreated or its reflog expired – unsure, never already
+# landed, its land past them ending the retry with nothing to land, the fix kept on feat
 for LW_S in recreate expire; do
 	_LW_REPO "lw1-$LW_S" a
 	LW_T+=100
@@ -103,8 +103,8 @@ for LW_S in recreate expire; do
 	_ST_EQ "the fix on feat alone ($LW_S)" "$(git cat-file -e main:fix.txt 2>/dev/null && print main):$(git cat-file -e feat:fix.txt 2>/dev/null && print feat)" ":feat"
 done
 
-# A reword after main's last move, before the land – landed as that land took it, as is the
-# branch renamed since
+# A reword after main's last move, before the land
+# – landed as that land took it, as is the branch renamed since
 _LW_REPO lw2 a
 _LW_AMEND $(( ++LW_T )) reword A move
 LW_T+=100
@@ -118,9 +118,9 @@ _ST_RUN --land=feat2
 _ST_OUT_HAS "and renamed since, still" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 _ST_OUT_LACKS "no fold offered under the new name" 'amend-into'
 
-# B, picked at a stop past A's clean pick, the land started in A's copy's second – B fixed the
-# second before reads as landed, in that second as unsure, the second after as a change since,
-# its fold, run as printed, bringing the fix
+# B, picked at a stop past A's clean pick, the land started in A's copy's second
+# – B fixed the second before reads as landed, in that second as unsure,
+# the second after as a change since, its fold, run as printed, bringing the fix
 for LW_N in -1 0 1; do
 	_LW_REPO "lw3$LW_N" b
 	LW_T+=100
@@ -143,8 +143,8 @@ for LW_N in -1 0 1; do
 	esac
 done
 
-# A fix main folded into its copy, in the land's second or seconds after – the branch's commit
-# named as main first took it either way
+# A fix main folded into its copy, in the land's second or seconds after
+# – the branch's commit named as main first took it either way
 for LW_N in 0 5; do
 	_ST_PZ_NEW "lw4-$LW_N"
 	_ST_PZ_C f.txt f "LW base"
@@ -191,8 +191,8 @@ _ST_OUT_HAS "the land again ends landed, main still holding what the hand resolu
 _ST_OUT_LACKS "naming nothing as dropped" 'dropped since'
 git worktree remove --force "$TMP/lw5-wt"
 
-# A commit made at a stop, then the stop skipped – made in the pause, the pick skipped and kept on
-# feat alone, no move of feat offered
+# A commit made at a stop, then the stop skipped – made in the pause,
+# the pick skipped and kept on feat alone, no move of feat offered
 _ST_PZ_NEW lw6
 _ST_PZ_C f.txt $'1\n2\n3' "LW base"
 git worktree add -q -b feat "$TMP/lw6-wt" main 2>/dev/null
@@ -207,8 +207,8 @@ _ST_OUT_HAS "a commit made at a skipped stop counts as made in the pause" '^Land
 _ST_OUT_HAS "the skipped pick named as kept on feat alone" "^Branch feat keeps 1 commit(s) main holds in no form – skipped, or emptied by a resolution"
 _ST_OUT_LACKS "no move of feat offered" 'reset --keep\|git branch -f\|git branch -D'
 git worktree remove --force "$TMP/lw6-wt"
-# A stop's resolution committed by hand under a message of its own, then resumed – git's own pair
-# kept, the pick landed, nothing named as skipped or made in the pause
+# A stop's resolution committed by hand under a message of its own, then resumed
+# – git's own pair kept, the pick landed, nothing named as skipped or made in the pause
 _ST_PZ_NEW lw6b
 _ST_PZ_C f.txt $'1\n2\n3' "LW base"
 git worktree add -q -b feat "$TMP/lw6b-wt" main 2>/dev/null
@@ -223,9 +223,9 @@ _ST_OUT_HAS "a resolution committed by hand under a new message lands as the pic
 _ST_OUT_LACKS "never as skipped, nor kept on feat alone" 'were skipped\|holds in no form'
 git worktree remove --force "$TMP/lw6b-wt"
 
-# A commit made in a catch-up's pause repeating the message of main's copy of feat's own earlier
-# commit – which the catch-up left out as there already – stays feat's, the --base past the
-# catch-up landing it
+# A commit made in a catch-up's pause repeating the message of main's copy
+# of feat's own earlier commit – which the catch-up left out as there already –
+# stays feat's, the --base past the catch-up landing it
 _ST_PZ_NEW lw6c
 _ST_PZ_C f.txt $'1\n2\n3' "LW base"
 git worktree add -q -b feat "$TMP/lw6c-wt" main 2>/dev/null

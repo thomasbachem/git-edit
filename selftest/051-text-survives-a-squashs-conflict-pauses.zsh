@@ -29,8 +29,8 @@ _ST_CHECK "and no commit kept git's squash boilerplate" \
 	sh -c "! git log --format=%B | grep -q 'This is a combination of'"
 _ST_EQ "the replayed commit keeps its own message" "$(git log --format=%s -1)" "TX 3"
 
-# Folding an older commit forward replays the commits it skipped first, and
-# a resume commits those too – each opening an editor the fold's message
+# Folding an older commit forward replays the commits it skipped first,
+# and a resume commits those too – each opening an editor the fold's message
 # must not answer, or an untouched commit silently takes the fold's subject
 git reset -q --hard
 for N in 1 2 3 4; do
@@ -83,8 +83,8 @@ _ST_CHECK "with none of git's conflict template in it" \
 	sh -c "! git log --format=%B | grep -q 'Conflicts:'"
 git reset -q --hard
 
-# A conflict exits straight from the handler, past the `rm` that follows the
-# call – so the message file it wrote survived the run, once per pause
+# A conflict exits straight from the handler, past the `rm` that follows the call
+# – so the message file it wrote survived the run, once per pause
 local TX_TMP_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-squash-msg.*' 2>/dev/null | grep -c .)
 local TX_ED_BEFORE=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-edit-fold-editor.*' 2>/dev/null | grep -c .)
 for N in 1 2 3 4; do

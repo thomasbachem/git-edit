@@ -100,7 +100,7 @@ _ST_PZ_C a.txt $'1\n2\n3' "FI4 a" && _ST_PZ_C b.txt b "FI4 b"
 _ST_RUN --amend-into=auto --edits '{"a.txt": [["2\n", "2x\n"]]}'
 _ST_EQ "--amend-into=auto finds the commit the edit's lines came from" "$RC:$(git log -1 --format=%s HEAD~1):$(git show HEAD~1:a.txt | tr '\n' ' ')" "0:FI4 a:1 2x 3 "
 _ST_OUT_HAS "naming the lines folded, not staged" 'auto-target: commit that last touched the folded lines'
-# Names git would read as a pattern, as magic, or as two words are each taken as themselves
+# Names git would read as a pattern, as magic or as two words are each taken as themselves
 _ST_PZ_NEW fi3
 print -r -- x > x.txt && print -r -- br > '[x].txt' && print -r -- c > ':c.txt' && print -r -- spaced > 'a b.txt'
 git add -A && git commit -qm "FI3 names"

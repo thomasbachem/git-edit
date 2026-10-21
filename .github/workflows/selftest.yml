@@ -1,5 +1,5 @@
 # Runs git-edit's end-to-end suite as its release test, every leg side by side – for each push to
-# main or a `ci/…` branch, each pull request, or by hand
+# main or a `ci/…` branch, each pull request or by hand
 # • Linux: the default git, SHA-256 with reftable, Debian 12's git, the oldest supported (2.31.8)
 # • macOS: the default git run serially, as a plain `--selftest` is, in 3 slices, and the C locale
 #   in 2 – each cut by `selftest-slice.zsh` to about equal time

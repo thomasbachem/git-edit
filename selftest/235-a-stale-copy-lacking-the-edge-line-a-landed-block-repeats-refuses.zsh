@@ -9,9 +9,9 @@ _ST_SCENARIO "\e[1;96m[235] a stale copy lacking the edge line a landed block re
 local SC_OLD SC_TIP SC_F SC_WIDE
 local -i SC_K=0
 
-# Prints the list as <variant> has it – `base`, `tip` the peer's entry appended, `stale` that entry
-# a line higher without the line closing the one above, `own` the tip without that one – each entry
-# a line longer under `SC_WIDE`
+# Prints the list as <variant> has it – `base`, `tip` the peer's entry appended,
+# `stale` that entry a line higher without the line closing the one above,
+# `own` the tip without that one – each entry a line longer under `SC_WIDE`
 _SC_JS () {
 	# Args: <variant>
 	print -l -- 'const routes = [' '  {' '    path: "/x",' '  },'
@@ -25,9 +25,9 @@ _SC_JS () {
 	fi
 	print -r -- '];'
 }
-# Prints the switch as <variant> has it – `base`, `tip` the peer's case landed on it, `above` the
-# line above it edited, `far` that and the last case's `exit(0)` removed, `near` that and the
-# `exit(0)` right above the landed case removed
+# Prints the switch as <variant> has it – `base`, `tip` the peer's case landed on it,
+# `above` the line above it edited, `far` that and the last case's `exit(0)` removed,
+# `near` that and the `exit(0)` right above the landed case removed
 _SC_SW () {
 	# Args: <variant>
 	print -r -- 'case "disk-step":'
@@ -38,8 +38,8 @@ _SC_SW () {
 	[ "$1" = far ] || print -r -- $'\texit(0)'
 	return 0
 }
-# Prints the module as <variant> has it – `base`, `tip` the peer's function landed on it, `above`
-# without the blank line above it
+# Prints the module as <variant> has it – `base`, `tip` the peer's
+# function landed on it, `above` without the blank line above it
 _SC_PY () {
 	# Args: <variant>
 	print -l -- 'def a():' '    return 1'
@@ -47,8 +47,8 @@ _SC_PY () {
 	[ "$1" = base ] || print -l -- 'def b():' '    return 2' ''
 	print -l -- 'def c():' '    return 3'
 }
-# Commits <gen>'s `base` as a fresh file unjournaled, then lands its `tip` as a peer – setting
-# `SC_OLD` and `SC_TIP` to the tips around that landing and `SC_F` to the file
+# Commits <gen>'s `base` as a fresh file unjournaled, then lands its `tip` as a peer
+# – setting `SC_OLD` and `SC_TIP` to the tips around that landing and `SC_F` to the file
 _SC_LAND () {
 	# Args: <gen>
 	SC_K+=1 SC_F=sc$SC_K.txt

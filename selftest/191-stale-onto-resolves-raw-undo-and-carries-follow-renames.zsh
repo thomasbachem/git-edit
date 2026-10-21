@@ -19,8 +19,8 @@ _OV_PEER () {
 	_ST_RUN "$@"
 	export GIT_EDIT_ACTOR=
 }
-# Starts `git edit <arg>...` in the background as caller ov-self, outside the suite's no-wait pin –
-# its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
+# Starts `git edit <arg>...` in the background as caller ov-self, outside the suite's no-wait pin
+# – its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
 _OV_BG () {
 	# Args: <name> <arg>...
 	local N=$1
@@ -38,8 +38,8 @@ _OV_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, its output and status into `OUT` and `RC` – at most
-# 60 s, a run still going then stopped
+# Waits for background run <name> to end, its output and status
+# into `OUT` and `RC` – at most 60 s, a run still going then stopped
 _OV_END () {
 	# Args: <name>
 	local -i I=0
@@ -51,8 +51,8 @@ _OV_END () {
 	OUT=$(<"$TMP/$1.out")
 	RC=$(<"$TMP/$1.rc")
 }
-# Follows a printed command step by step – its `git edit` steps through `_ST_RUN`, the rest as
-# printed – stopping at a step that fails
+# Follows a printed command step by step – its `git edit` steps through
+# `_ST_RUN`, the rest as printed – stopping at a step that fails
 _OV_FOLLOW () {
 	# Args: <command as printed>
 	local STEP
@@ -122,8 +122,8 @@ _ST_OUT_LACKS "never the raw re-sync step" "After the raw undo"
 _ST_RUN --undo
 _ST_EQ "the undo named puts every entry back, flags and all" \
 	"$RC:$(git ls-files -t | LC_ALL=C sort | tr '\n' '|'):$(git status --short | LC_ALL=C sort | tr '\n' '|')" "0:$OV_PRE"
-# Re-syncing paths inside the cone alone, a git that asks the patterns prints the raw step, which
-# works as printed – one that can't ask names `--undo` there too
+# Re-syncing paths inside the cone alone, a git that asks the patterns prints
+# the raw step, which works as printed – one that can't ask names `--undo` there too
 _ST_RUN_UNSYNCED --exec -- sh -c 'echo a3 > in/a && git add in/a && git commit -qm "OV2 in-cone"'
 _ST_RUN --status
 if _ST_SPARSE_RULES_OK; then
@@ -229,8 +229,8 @@ git add -- h
 GIT_EDIT_ACTOR=ov-a _ST_RUN --amend-into="$OV_TIP" -- h
 _ST_EQ "followed as printed, the fold keeps every landing" "$RC:$(_OV_KEPT "$(git show HEAD:h)")" "0:3"
 
-# The move back checks the old name again as it runs – a file put there since stops it, kept – and
-# with the old name taken, a directory or a file at the tip, the guard merges into the new name
+# The move back checks the old name again as it runs – a file put there since stops it, kept –
+# and with the old name taken, a directory or a file at the tip, the guard merges into the new name
 for OV_I in 1 2 3; do
 	_ST_PZ_NEW ov7-$OV_I
 	print -l "f line "{1..20} > f && git add f && git commit -qm "OV7 base"
@@ -266,8 +266,8 @@ for OV_I in 1 2 3; do
 		"$RC:$(_OV_KEPT "$(git show HEAD:h)"):$(cat f f/inside 2>/dev/null):$(git show HEAD:f 2>/dev/null)" "0:3:$OV_PRE"
 done
 
-# Staged outside a sparse checkout, a fold withholds the unstaging, which would miss or unflag it –
-# merged into the new name and staged again as printed, it folds every landing
+# Staged outside a sparse checkout, a fold withholds the unstaging, which would miss or unflag it
+# – merged into the new name and staged again as printed, it folds every landing
 if [[ "$(git add -h 2>&1)" == *(--|\])sparse\ * ]]; then
 	_ST_PZ_NEW ov8
 	mkdir x && print -l "f line "{1..20} > x/f && print -r -- x > t && git add -A && git commit -qm "OV8 base"

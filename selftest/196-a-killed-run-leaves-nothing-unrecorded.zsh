@@ -51,8 +51,8 @@ print -r -- "1 $REPLY" > .git/git-edit-journal.lock
 GIT_EDIT_ACTOR=A _ST_RUN --status
 _ST_OUT_LACKS "a live run's journal lock keeps --status from journaling the move" 'journaled from the reflog'
 _ST_EQ "the journal and index left as they are" "$(cat .git/git-edit-journal 2>/dev/null | grep -c .):$(git diff --cached --name-only)" "0:F"
-# The lock the killed run left put back – what tells its move, made a moment ago, from a live older
-# build's not yet journaled
+# The lock the killed run left put back – what tells its move,
+# made a moment ago, from a live older build's not yet journaled
 print -r -- "$KM_HAND" > .git/git-edit-journal.lock
 GIT_EDIT_ACTOR=A _ST_RUN --status
 _ST_OUT_HAS "--status journals the killed run's move from the reflog" "journaled from the reflog: commit by A (${KM_BASE:0:7} → ${KM_TIP:0:7}) – index entries re-synced to it: F"
@@ -65,8 +65,8 @@ _ST_OUT_LACKS "a second --status journals nothing more" 'journaled from the refl
 _ST_EQ "one line still" "$(grep -c . .git/git-edit-journal)" "1"
 GIT_EDIT_ACTOR=A _ST_RUN --undo
 _ST_EQ "--undo takes the killed run's move back" "$RC:$(git rev-parse HEAD):$(git diff --cached --name-only)" "0:$KM_BASE:"
-# A temp worktree no mark tells of is named alone, and the killed run's swept by a run once it is
-# 10 min old, never before
+# A temp worktree no mark tells of is named alone,
+# and the killed run's swept by a run once it is 10 min old, never before
 KM_HAND="$TMPDIR/git-edit-hand.km1abc"
 git worktree add -q --detach "$KM_HAND" HEAD
 _ST_RUN --status
@@ -80,8 +80,8 @@ _ST_OUT_HAS "while one made earlier is swept" 'Swept 1 temp worktree(s) a killed
 _ST_EQ "leaving the unmarked one registered" "$(git worktree list --porcelain | grep -c '^worktree '):$([ -d "$KM_HAND" ] && echo kept)" "2:kept"
 git worktree remove --force "$KM_HAND"
 
-# A drop killed so leaves a peer's whole-file commit refused, as it would have been after a drop
-# that finished
+# A drop killed so leaves a peer's whole-file commit refused,
+# as it would have been after a drop that finished
 _ST_PZ_NEW km2
 printf 'l1\nl2\nl3\n' > F && git add F && git commit -qm "KM2 base"
 printf 'l1\nl2\nl3\nx2 by A\n' > F

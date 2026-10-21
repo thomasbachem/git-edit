@@ -25,8 +25,8 @@ _ST_TTY -- --undo
 _ST_EQ "an undo brings the checkout back" "$RC:$(<gone.txt):$(tr '\n' ' ' < a.txt)" "0:gone:1 2x 3 4 5y "
 _ST_EQ "nothing staged" "$(git diff --cached --name-only | wc -l | tr -d ' ')" "0"
 _ST_EQ "and journals the undo as a move of its own" "$(tail -1 .git/git-edit-journal | awk '{print $5}')" "undo"
-# A conflict writes nothing – no markers in a file a peer may be editing, no unmerged entry in an
-# index it shares – the edits left as changes to what landed, with the merge named
+# A conflict writes nothing – no markers in a file a peer may be editing, no unmerged entry
+# in an index it shares – the edits left as changes to what landed, with the merge named
 _ST_PZ_NEW bc2
 _ST_PZ_C a.txt $'1\n2\n3' "BC2 base"
 _ST_PZ_C a.txt $'1\n2x\n3' "BC2 drop"

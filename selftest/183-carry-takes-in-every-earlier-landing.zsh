@@ -1,9 +1,9 @@
-# A printed carry starts from the earliest landing the file lacks, so one carry takes in every
-# later one too: the landings guard reads an edit a later landing renamed away at its new name,
-# and orders two landings of one second as journaled, while a landing that can't bring the
-# checkout along names the bare carry, from the checkout's mark, which an edited file predating an
-# earlier landing too merges from that one's old tip – once, each named the newest landing's old
-# tip, and followed as printed took the earlier landing's edit back under `ok`
+# A printed carry starts from the earliest landing the file lacks, so one carry takes in every later
+# one too: the landings guard reads an edit a later landing renamed away at its new name,
+# and orders two landings of one second as journaled, while a landing that can't bring the checkout
+# along names the bare carry, from the checkout's mark, which an edited file predating an earlier
+# landing too merges from that one's old tip – once, each named the newest landing's old tip,
+# and followed as printed took the earlier landing's edit back under `ok`
 _ST_SCENARIO "\e[1;96m[183] a printed carry takes in every earlier landing the file lacks\e[0m"
 local CB_T CB_TIP CB_L1 CB_RS CB_C CB_ADD CB_JF
 local -i CB_NOW

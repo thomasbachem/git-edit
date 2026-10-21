@@ -1,5 +1,5 @@
 # A run refuses before any wait what its arguments earn, and keeps what it named across it:
-# • A pushed target, a record header naming nothing, twice or with no message, and a split,
+# • A pushed target, a record header naming nothing (twice or with no message) and a split,
 #   `--commit` or `--amend-into` path matching nothing refuse at once beside another caller's pause
 # • `--onto=<rev>` naming no branch rebases onto what it named before the wait, a branch onto
 #   where that branch stands after it
@@ -21,8 +21,8 @@ _W188_PEER () {
 	_ST_RUN "$@"
 	export GIT_EDIT_ACTOR=
 }
-# Starts `git edit <arg>...` in the background as caller w-self, outside the suite's no-wait pin –
-# its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
+# Starts `git edit <arg>...` in the background as caller w-self, outside the suite's no-wait pin
+# – its output, pid and status into `$TMP/<name>.out`, `.pid` and `.rc`
 _W188_BG () {
 	# Args: <name> <arg>...
 	local N=$1
@@ -40,8 +40,8 @@ _W188_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, its output and status into `OUT` and `RC` – at most
-# 60 s, a run still going then stopped
+# Waits for background run <name> to end, its output and status
+# into `OUT` and `RC` – at most 60 s, a run still going then stopped
 _W188_END () {
 	# Args: <name>
 	local -i I=0
@@ -54,8 +54,8 @@ _W188_END () {
 	RC=$(<"$TMP/$1.rc")
 }
 
-# Beside another caller's pause, every refusal an argument earns comes at once – W3 and below
-# stand on a remote, W4 is paused, W5 the tip
+# Beside another caller's pause, every refusal an argument earns comes at once
+# – W3 and below stand on a remote, W4 is paused, W5 the tip
 _ST_PZ_NEW wr1
 _ST_PZ_C a.txt a "WR1 W1" && _ST_PZ_C b.txt b "WR1 W2" && _ST_PZ_C c.txt c "WR1 W3"
 git update-ref refs/remotes/o/main HEAD
@@ -134,8 +134,8 @@ for WR_I in 1 2; do
 	fi
 done
 
-# A new message with a body of its own is never offered a command putting the old body back,
-# which would drop the new one – a subject-only one is
+# A new message with a body of its own is never offered a command putting
+# the old body back, which would drop the new one – a subject-only one is
 _ST_PZ_NEW wr3
 _ST_PZ_C a.txt a "WR3 base"
 git commit -q --allow-empty -m $'WR3 old\n\nOld body A\nOld body B'
@@ -180,8 +180,8 @@ _ST_OUT_HAS "naming X as the commit that lost its change" 'WR4 X sets alpha 2, a
 _ST_OUT_LACKS "never naming its alpha line superseded" 'Superseded'
 _ST_RUN --abort
 
-# An edit pause of an empty commit takes a new message or subject at its continue – tip and below
-# it alike – while an edit emptying a commit that had a change still refuses
+# An edit pause of an empty commit takes a new message or subject at its continue
+# – tip and below it alike – while an edit emptying a commit that had a change still refuses
 _ST_PZ_NEW wr5
 _ST_PZ_C a.txt a "WR5 base"
 git commit -q --allow-empty -m $'WR5 empty\n\nWR5 body'

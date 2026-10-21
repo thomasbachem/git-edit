@@ -3,8 +3,8 @@
 # stays runnable, and a terminal resume checks what was pushed while it waited
 _ST_SCENARIO "\e[1;96m[151] removals and trees name their paths, -C locks hold, detours land, long hints run\e[0m"
 local NP_T NP_C NP_I NP_WT NP_LOCK NP_GD NP_H NP_TIP NP_DEAD
-# A fold named `app/[id].tsx`, staged as a removal, takes that removal alone – a peer's staged
-# `app/i.tsx` left staged
+# A fold named `app/[id].tsx`, staged as a removal, takes
+# that removal alone – a peer's staged `app/i.tsx` left staged
 _ST_PZ_NEW np1
 mkdir app && print 1 > 'app/[id].tsx' && print 1 > app/i.tsx
 git add app && git commit -qm "NP1 app" && _ST_PZ_C t.txt t "NP1 tip"
@@ -27,8 +27,8 @@ mkdir app && print 1 > 'app/[id].tsx' && print 1 > app/i.tsx && git add app && g
 git rm -q -- ':(literal)app/[id].tsx' && print 2 > app/i.tsx && git add app/i.tsx && git commit -qm "NP2 both"
 _ST_RUN --split=HEAD --text "NP2 removal alone" -- 'app/[id].tsx'
 _ST_EQ "a split by a bracketed name the commit deletes takes that deletion alone" "${RC}:$(git show --name-status --format= HEAD~1 | tr '\t\n' ' |')" "0:D app/[id].tsx|"
-# A `-C` run lets go of the lock at its end only where it still names this run – one another run
-# took as stale is that run's
+# A `-C` run lets go of the lock at its end only where it still
+# names this run – one another run took as stale is that run's
 _ST_PZ_NEW np3
 for NP_I in 1 2 3; do _ST_PZ_C "f$NP_I.txt" "$NP_I" "NP3 c$NP_I"; done
 git config edit.verifyCmd "$TMP/st-hold $TMP/np3.go"

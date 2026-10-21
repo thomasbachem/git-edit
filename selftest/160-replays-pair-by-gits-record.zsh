@@ -1,8 +1,8 @@
 # Each replayed commit pairs with its own pick by git's record of the replay – a pick git left out
 # pairs with nothing, commits of one author and second included – so an absorption among them
 # refuses naming its victim and a hand finish reads each commit against its own original, while a
-# line the stop's own fold rewrites never counts as taken in, a later rename of the file landing –
-# and a pick git left out, its whole change taken in at a stop, refuses too
+# line the stop's own fold rewrites never counts as taken in, a later rename of the file landing
+# – and a pick git left out, its whole change taken in at a stop, refuses too
 _ST_SCENARIO "\e[1;96m[160] replays pair by git's record, a stop's own lines are never taken in\e[0m"
 local RP_D="@1760000000 +0000" RP_T RP_B RP_WT RP_V
 # Commits <file> holding <line>... as <subject>, every one in the same second
@@ -43,8 +43,8 @@ _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 8 9 10
 _ST_RUN --continue
 _ST_EQ "while its stop resolved to its own content lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:RP1 top|RP1 V edit 8 and 12|RP1 Z edit line 3|RP1 base|"
 _ST_OUT_HAS "the later revert the drop emptied named as such" 'emptied: [0-9a-f]* RP1 X remove debug'
-# Where the replay saved no record, the pairing by author and second tells the picks
-# apart by their patch and subject
+# Where the replay saved no record, the pairing by author
+# and second tells the picks apart by their patch and subject
 git reset -q --hard "$RP_T"
 _ST_RUN -d -y HEAD~4
 RP_WT=$(_ST_PZ_WT)
@@ -88,8 +88,8 @@ _ST_EQ "a fold's stop taking in a later commit whole, its step skipped, refuses"
 _ST_OUT_HAS "naming the commit left out" 'RP10 later only f – f.txt (left out as emptied)'
 _ST_RUN --abort
 git checkout -q -- f.txt h.txt
-# While a fold of the very change a later commit made, no stop on its file, lands with
-# that commit dropped as emptied
+# While a fold of the very change a later commit made,
+# no stop on its file, lands with that commit dropped as emptied
 _ST_PZ_NEW rp11
 print -l 1 2 3 4 5 6 7 8 9 > f.txt && print -l a b c > g.txt && git add -A && git commit -qm "RP11 base"
 print -l 1 2 3 4 5 6 7 8 T9 > f.txt && git commit -qam "RP11 T edit 9"
@@ -121,8 +121,8 @@ _ST_EQ "one subject throughout, the absorption refuses" "$RC:$(git rev-parse HEA
 _ST_OUT_HAS "naming the replay of the commit that lost the line" "${RP_V:-none} wip – f.txt"
 _ST_EQ "and that commit alone" "$(grep -c -e '– f.txt' <<<"$OUT")" "1"
 _ST_RUN --abort
-# Builds that history in a repo of its own, whose drop of `HEAD~4` stops at the next commit, the one
-# after it then left out as emptied
+# Builds that history in a repo of its own, whose drop of `HEAD~4`
+# stops at the next commit, the one after it then left out as emptied
 _RP_HAND () {
 	# Args: <repo name>
 	_ST_PZ_NEW "$1"
@@ -134,8 +134,8 @@ _RP_HAND () {
 	_RP_C g.txt "RP3 top" g
 	RP_T=$(git rev-parse HEAD)
 }
-# A hand finish past a pick git left out reads each commit against its own original's markers –
-# an underline a commit brings lands, while markers the stop's resolution committed refuse
+# A hand finish past a pick git left out reads each commit against its own original's markers
+# – an underline a commit brings lands, while markers the stop's resolution committed refuse
 _RP_HAND rp3
 _ST_RUN -d -y HEAD~4
 RP_WT=$(_ST_PZ_WT)

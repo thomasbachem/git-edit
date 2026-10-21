@@ -31,8 +31,8 @@ _ST_OUT_LACKS "never a merge" 'merge --no-ff'
 _ST_RUN --land=feat --base="$LD_T"
 _ST_EQ "which lands it back, as asked" "$RC:$(git log --format=%s main | grep -c 'LD1 X')" "0:1"
 git worktree remove --force "$TMP/ld1-wt"
-# Main moved on as well – the refusal comes before the merge's own, names the fork past the merge
-# for what follows it, and that fork lands it alone
+# Main moved on as well – the refusal comes before the merge's own, names
+# the fork past the merge for what follows it, and that fork lands it alone
 _ST_PZ_NEW ld2
 _ST_PZ_C a.txt a "LD2 A"
 git worktree add -q -b feat "$TMP/ld2-wt" main 2>/dev/null
@@ -51,8 +51,8 @@ _ST_OUT_HAS "the fork past the merge offered for what follows" "Land what follow
 _ST_RUN --land=feat --base="$LD_M"
 _ST_EQ "that lands the commit past the merge alone" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LD2 F2|LD2 B|LD2 A|"
 git worktree remove --force "$TMP/ld2-wt"
-# A merge of the branch's own past a fork main still holds is offered as a merge – past one
-# main rewrote, a merge would bring the old commits along, so none is
+# A merge of the branch's own past a fork main still holds is offered as a merge
+# – past one main rewrote, a merge would bring the old commits along, so none is
 _ST_PZ_NEW ld3
 _ST_PZ_C a.txt a "LD3 A0"
 _ST_PZ_C b.txt b "LD3 A"
@@ -67,9 +67,9 @@ _ST_RUN --land=feat
 _ST_OUT_HAS "past a fork main rewrote it still refuses" 'holds a merge commit past its fork'
 _ST_OUT_LACKS "with no merge offered" 'merge --no-ff'
 _ST_OUT_HAS "saying why" 'A merge would bring along what main rewrote or dropped below the fork'
-# A catch-up land from a worktree branch leaves the main worktree's branch where it is, naming
-# the land the other way, which lands the branch's own commit alone – the copies of main's
-# commits named as main's by the catch-up's record
+# A catch-up land from a worktree branch leaves the main worktree's branch where
+# it is, naming the land the other way, which lands the branch's own commit alone
+# – the copies of main's commits named as main's by the catch-up's record
 _ST_PZ_NEW ld4
 _ST_PZ_C a.txt a "LD4 A"
 git worktree add -q -b feat "$TMP/ld4-wt" main 2>/dev/null
@@ -100,8 +100,8 @@ _ST_OUT_HAS "by name" '^  [0-9a-f]* LD4 C$'
 _ST_OUT_LACKS "never the copy of a commit main still holds" '^  [0-9a-f]* LD4 B$'
 _ST_OUT_HAS "ending as nothing to land" '^git-edit: ok – refs/heads/main unchanged, nothing to land$'
 git worktree remove --force "$TMP/ld4-wt"
-# The branch's commit like a replay land's copy main dropped since refuses, never left out as the
-# drop standing – the fork named landing it back all the same
+# The branch's commit like a replay land's copy main dropped since refuses,
+# never left out as the drop standing – the fork named landing it back all the same
 _ST_PZ_NEW ld5
 _ST_PZ_C a.txt a "LD5 A"
 git checkout -q -b rp && _ST_PZ_C r.txt r "LD5 R1" && git checkout -q main
@@ -137,9 +137,9 @@ LD_C=$(print -r -- "$OUT" | sed -n 's/^.*leaving them out: //p' | head -1)
 _ST_EQ "the --base past them offered" "${LD_C%%$'\e'*}" "git edit --land=feat --base=$(git rev-parse --short=12 feat~1)"
 _ST_RUN --land=feat --base="$(git rev-parse feat~1)"
 _ST_EQ "which lands only what the branch gained" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LD6 F3|LD6 F2|LD6 F1|LD6 M|LD6 base|"
-# A peer's commit made and taken back inside an undone land's window stays held – the branch
-# having caught up to it, between its own commits, the replay leaves it out by name, while a
-# branch that never caught up lands all its own
+# A peer's commit made and taken back inside an undone land's window stays held
+# – the branch having caught up to it, between its own commits, the replay
+# leaves it out by name, while a branch that never caught up lands all its own
 _ST_PZ_NEW ld7
 _ST_PZ_C a.txt a "LD7 A"
 git worktree add -q -b feat "$TMP/ld7-wt" main 2>/dev/null
@@ -193,8 +193,8 @@ _ST_RUN --land=feat
 _ST_EQ "one taken back by a bare update-ref lands nothing" "$RC:$(git rev-parse HEAD)" "0:$LD_T"
 _ST_OUT_HAS "ending as nothing to land" '^git-edit: ok – refs/heads/main unchanged, nothing to land$'
 _ST_OUT_HAS "naming the --base that lands it all the same" 'name an older fork: git edit --land=feat --base=<sha>'
-# Main rewritten below the fork by a fold, a reword and a drop – the branch's own commits land, no
-# refusal, and a linked worktree's branch replayed is still offered the move onto the copies
+# Main rewritten below the fork by a fold, a reword and a drop – the branch's own commits land,
+# no refusal, and a linked worktree's branch replayed is still offered the move onto the copies
 _ST_PZ_NEW ld9
 _ST_PZ_C a.txt a1 "LD9 m1"
 _ST_PZ_C b.txt b1 "LD9 m2"

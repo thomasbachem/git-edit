@@ -30,8 +30,8 @@ printf 'id esc2\n' > id-esc2.txt && git add id-esc2.txt
 _ST_RUN --amend-into=HEAD
 _ST_EQ "a subject's backslash escapes reach the identity line intact" \
 	"$(echo "$OUT" | grep -cF 'amended: ')" "1"
-# `print -r`, not `echo` – zsh's `echo` would interpret the escapes here in
-# the harness and report a mangling that never happened
+# `print -r`, not `echo` – zsh's `echo` would interpret the escapes
+# here in the harness and report a mangling that never happened
 _ST_EQ "and are not interpreted on the way" \
 	"$(print -r -- "$OUT" | grep -F 'amended: ' | grep -cF 'ID esc \d and \n intact')" "1"
 # The preamble names the same subject through a different path, so it needs

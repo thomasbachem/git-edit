@@ -18,8 +18,8 @@ _IX_PEER_LANDS () {
 		GIT_EDIT_ACTOR=ix-peer GIT_EDIT_NO_AUTO_OPEN=1 _ST_UNSYNCED "$SELF" --land="$1" </dev/null >/dev/null 2>&1
 }
 
-# A command run from a subdirectory runs in the worktree's copy of it, `GIT_PREFIX` naming it –
-# once, a relative path there named the top-level file of the same name, which landed `ok`
+# A command run from a subdirectory runs in the worktree's copy of it, `GIT_PREFIX` naming it
+# – once, a relative path there named the top-level file of the same name, which landed `ok`
 _ST_PZ_NEW ix1
 mkdir sub && print -r -- 'version = 1' > config.txt && print -r -- 'version = 1' > sub/config.txt
 print -l '#!/bin/sh' 'echo ran-tool' > sub/tool.sh && chmod +x sub/tool.sh
@@ -78,9 +78,9 @@ _ST_RUN --commit --text "IX2 ws3" --patch "$TMP/ix2-ws3.patch"
 _ST_EQ "while the patch as cut applies" "$RC:$(git show HEAD:f.txt | sed -n 3p)" "0:line 3 y"
 git config --unset apply.ignoreWhitespace
 
-# A staged fold taking back a landing below its target names the carry into the checkout, which
-# stages again the file staged whole, then lands – once, only "stage those files again from
-# content that holds it"
+# A staged fold taking back a landing below its target names the carry
+# into the checkout, which stages again the file staged whole, then lands
+# – once, only "stage those files again from content that holds it"
 _ST_PZ_NEW ix3
 print -l "line "{1..20} > f.txt && git add f.txt && git commit -qm "IX3 base"
 _IX_PEER_LANDS ix3-feat "IX3 B" f.txt "line "{1..14} "line 15 B" "line "{16..20}
@@ -95,8 +95,8 @@ GIT_EDIT_ACTOR=ix-self GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" "$IX_C" </dev/null >/dev/
 GIT_EDIT_ACTOR=ix-self _ST_RUN --amend-into="$IX_T" -- f.txt
 _ST_EQ "followed as printed, the fold lands keeping what landed" \
 	"$RC:$(git show HEAD:f.txt | sed -n 2p):$(git show HEAD:f.txt | sed -n 15p)" "0:line 2 A:line 15 B"
-# Each of two bits taken back names its own command –
-# once, the second took the first line as its `cd`
+# Each of two bits taken back names its own command
+# – once, the second took the first line as its `cd`
 _ST_PZ_NEW ix3b
 print -r -- a > a.sh && print -r -- b > b.sh && chmod +x b.sh && git add . && git commit -qm "IX3B base"
 git branch ix3b-feat && git worktree add -q "$TMP/ix3b-wt" ix3b-feat
@@ -107,9 +107,9 @@ GIT_EDIT_ACTOR=ix-self _ST_RUN --commit --text "IX3B self" --allow-mode-change -
 _ST_OUT_HAS "the first bit named" '^  Take the bit that landed with: chmod -- +x a\.sh$'
 _ST_OUT_HAS "and the second as its own command" '^  Take the bit that landed with: chmod -- -x b\.sh$'
 
-# An edit of a path the tip lacks names the commit that renamed or removed it, or the key read from
-# where the caller stands – once, always "--put it if it is new", which the put's refusal answered
-# with "replay your change with --edits"
+# An edit of a path the tip lacks names the commit that renamed or removed it,
+# or the key read from where the caller stands – once, always "--put it if it is new",
+# which the put's refusal answered with "replay your change with --edits"
 _ST_PZ_NEW ix4
 print -l "line "{1..20} > f.txt && mkdir sub && print -l "line "{1..3} > sub/s.txt && print -r -- r > r.txt
 git add . && git commit -qm "IX4 base"
@@ -142,8 +142,8 @@ _ST_RUN --commit --text "IX4 sub" --edits '{"s.txt": [["line 2", "line 2 S"]]}'
 cd ..
 _ST_EQ "which lands" "$RC:$(git show HEAD:sub/s.txt | sed -n 2p)" "0:line 2 S"
 
-# A moved tip names the inputs, never a --tree the caller never passed – the branch moved by a
-# stand-in for git as the inputs are composed
+# A moved tip names the inputs, never a --tree the caller never passed
+# – the branch moved by a stand-in for git as the inputs are composed
 _ST_PZ_NEW ix5
 print -l "line "{1..10} > f.txt && print -r -- g > g.txt && git add . && git commit -qm "IX5 base"
 IX_T=$(git rev-parse HEAD)
@@ -161,8 +161,8 @@ _ST_OUT_LACKS "never a --tree" '--tree [0-9a-f]'
 _ST_RUN --amend-into="$IX_T" --edits '{"f.txt": [["line 3\n", "line 3 A\n"]]}'
 _ST_EQ "run again, it lands" "$RC:$(git show HEAD~2:f.txt | sed -n 3p)" "0:line 3 A"
 
-# A removal taking back a landing names what landed alone, a put its rebuild – once, a removal
-# was told "What you put predates what landed"
+# A removal taking back a landing names what landed alone, a put its rebuild
+# – once, a removal was told "What you put predates what landed"
 _ST_PZ_NEW ix6
 print -l "line "{1..10} > f.txt && print -l "line "{1..10} > p.txt && git add . && git commit -qm "IX6 base"
 _IX_PEER_LANDS ix6-feat "IX6 B" f.txt "line "{1..3} "line 4 B" "line "{5..10}
@@ -188,8 +188,8 @@ _ST_EQ "never the fold of whole files" "$(print -r -- "$OUT" | grep -A2 'cannot 
 _ST_RUN --commit --amend-into="$IX_T" --text "IX7" -- f.txt
 _ST_OUT_HAS "while beside --amend-into it does" 'folding whole files into a past commit takes --amend-into=<sha> --whole'
 git checkout -q -- f.txt
-# A removal folded below the commit adding its path refuses as bringing nothing about, no override
-# offered – once, named an add/add conflict with --allow-new-path to override
+# A removal folded below the commit adding its path refuses as bringing nothing about,
+# no override offered – once, named an add/add conflict with --allow-new-path to override
 _ST_RUN --amend-into="$IX_T" --rm n.txt
 _ST_EQ "a removal below the commit adding its path refuses" "$RC:$(git log -1 --format=%s)" "1:IX7 add n"
 _ST_OUT_HAS "as the later add brings it back" 'Removed path(s) absent at [0-9a-f]\{7\} – the commit that adds them comes later and brings them back'

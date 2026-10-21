@@ -18,8 +18,8 @@ _P199_AS () {
 	export GIT_EDIT_ACTOR=
 }
 
-# A body dropped by a subject holding a `!`, put back by its printed step in each shell – the
-# step's line fed to an interactive shell, which expands a `!` from its history
+# A body dropped by a subject holding a `!`, put back by its printed step in each shell
+# – the step's line fed to an interactive shell, which expands a `!` from its history
 PS_GITFN="git () { if [ \"\$1\" = edit ]; then shift; GIT_EDIT_NO_AUTO_OPEN=1 ${(qq)SELF} \"\$@\"; else command git \"\$@\"; fi; }"
 for PS_SH in bash-i sh zsh-i; do
 	_ST_PZ_NEW ps1-$PS_SH
@@ -97,8 +97,8 @@ _ST_OUT_LACKS "never to resolve and continue" 'Resolve there'
 _P199_AS ps-a --abort
 _ST_EQ "which clears it" "$RC:$(git log -1 --format=%s)" "0:PS4 four"
 
-# A placement before the commit its change builds on – the stop for that commit has no answer of
-# its own, so the pause names the placement past it, which then lands
+# A placement before the commit its change builds on – the stop for that commit has
+# no answer of its own, so the pause names the placement past it, which then lands
 _ST_PZ_NEW ps5
 git config rerere.enabled false
 mkdir sub && print -l 1 2 3 > sub/f && print o > o && git add -A && git commit -qm "PS5 base"

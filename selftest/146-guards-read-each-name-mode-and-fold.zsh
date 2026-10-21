@@ -1,5 +1,5 @@
 # The landings guard reads a name ending in CR and a landed mode flip, never offers a restore over
-# the caller's own file, markers refuse in every fold, and case clashes fold as the filesystem does
+# the caller's own file, markers refuse in every fold and case clashes fold as the filesystem does
 _ST_SCENARIO "\e[1;96m[146] guards read every name, a mode flip, every fold's markers, and case as the filesystem folds it\e[0m"
 local GR_T GR_N GR_TREE GR_IDX="$TMP/gr-index"
 # A stale copy taking back a peer's edit to a name ending in a CR refuses, as for any other
@@ -90,8 +90,8 @@ _ST_OUT_HAS "a put's named as the inputs', never as files taken whole" 'Conflict
 print -l l1 l2x l3 > f.txt && git add f.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD~1)" -- f.txt
 _ST_EQ "while a staged fold free of them lands" "$RC:$(git show HEAD~1:f.txt | sed -n 2p)" "0:l2x"
-# Where the filesystem ignores case, a non-ASCII name folds as it does, whatever the locale, and a
-# patch's new path is checked as a put's is
+# Where the filesystem ignores case, a non-ASCII name folds as it does,
+# whatever the locale, and a patch's new path is checked as a put's is
 _ST_PZ_NEW gr5
 git config core.ignorecase true
 print one > $'\xc3\xa9.txt' && print cs > cs.txt && git add -A && git commit -qm "GR5 base"
@@ -142,8 +142,8 @@ _ST_OUT_HAS "a conflict on a name ending in a CR pauses" 'Conflicted files:'
 _ST_OUT_LACKS "its markers read in that file" 'No conflict markers in'
 _ST_RUN --abort
 git reset -q --hard
-# Names reach a replant's refusal – its checkout halfway through a sequence – and an edit's
-# absorbed files as themselves, never C-quoted
+# Names reach a replant's refusal – its checkout halfway through a sequence –
+# and an edit's absorbed files as themselves, never C-quoted
 _ST_PZ_NEW gr8
 print o > $'\xc3\xa9.txt' && print o > $'c\r' && git add -A && git commit -qm "GR8 base"
 git checkout -q -b gr8-up && print u > $'\xc3\xa9.txt' && print u > $'c\r' && git commit -qam "GR8 up"

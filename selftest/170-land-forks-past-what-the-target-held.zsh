@@ -1,14 +1,14 @@
 # `--land`'s own commits are those the target never held, by its reflog, a land of the
 # branch an `--undo` took back set aside – so a branch redone or moved onto its copies
-# after that undo, a land kept and partly dropped since, or a catch-up to a commit the
+# after that undo, a land kept but partly dropped since or a catch-up to a commit the
 # target dropped all land exactly their own
 # Without a reflog to read, a span past the merge base holding what looks like the
 # target's rewritten history refuses
 # What landed comes from the replay, never a patch id, and every hint runs
 _ST_SCENARIO "\e[1;96m[170] --land lands what the target never held, and says what landed\e[0m"
 local LH_T LH_B LH_C LH_WT
-# The branch's moves after an undo dated past it, as they come in real time – the undo's entry takes
-# the wall clock, the suite's commits a pinned one long before
+# The branch's moves after an undo dated past it, as they come in real time
+# – the undo's entry takes the wall clock, the suite's commits a pinned one long before
 local LH_LATE="@$(( $(date +%s) + 3600 )) +0000"
 # A land taken back, the branch's last commit then redone – both its commits land,
 # where the redone one alone did
@@ -34,8 +34,8 @@ git checkout -q feat && _ST_PZ_C d.txt c3 "LH1B c3" && git checkout -q main
 _ST_RUN --land=feat
 _ST_EQ "a land kept, main dropping one of its commits since – only the new one lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH1B c3|LH1B c2|LH1B m2|LH1B m1|"
 _ST_OUT_HAS "forking at the newest commit of it main held" "Fork point [0-9a-f]* LH1B c2, from main's reflog – main rewrote or dropped it since"
-# The branch moved onto the copies a replay landed, as the land's hint offers, then the land taken
-# back – the copies land again, where nothing did
+# The branch moved onto the copies a replay landed, as the land's hint offers,
+# then the land taken back – the copies land again, where nothing did
 _ST_PZ_NEW lh2
 _ST_PZ_C a.txt m1 "LH2 m1"
 git worktree add -q -b feat "$TMP/lh2-wt" main 2>/dev/null
@@ -48,8 +48,8 @@ _ST_RUN --undo
 _ST_RUN --land=feat
 _ST_EQ "the land taken back after that move lands the copies again" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH2 c2|LH2 c1|LH2 m2|LH2 m1|"
 git worktree remove --force "$TMP/lh2-wt"
-# A branch caught up to main – by a fast-forward merge, a bare `update-ref`, a land of main – then
-# main dropping what it caught up to: that commit stays out, while kept it fast-forwards
+# A branch caught up to main – by a fast-forward merge, a bare `update-ref`, a land of main –
+# then main dropping what it caught up to: that commit stays out, while kept it fast-forwards
 _ST_PZ_NEW lh3
 _ST_PZ_C a.txt m1 "LH3 m1"
 _ST_PZ_C a.txt m2 "LH3 m2"
@@ -125,8 +125,8 @@ git reflog expire --expire=now --all
 _ST_RUN --land=feat
 _ST_EQ "neither keeping one, nothing alike – it lands from the merge base" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LH7 c1|LH7 m2|LH7 m1|"
 _ST_OUT_HAS "saying so" 'the merge base, as neither main nor feat keeps a reflog to read'
-# A commit whose context changed lands as landed, the branch offered its move – and landed again it
-# ends ok as already landed, never as skipped
+# A commit whose context changed lands as landed, the branch offered its move
+# – and landed again it ends ok as already landed, never as skipped
 _ST_PZ_NEW lh8
 _ST_PZ_C f.txt $'l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8' "LH8 base"
 git checkout -q -b feat && _ST_PZ_C f.txt $'l1\nl2\nl3\nl4\nL5\nl6\nl7\nl8' "LH8 feat l5" && git checkout -q main

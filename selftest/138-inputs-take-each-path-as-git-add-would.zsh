@@ -79,8 +79,8 @@ _ST_OUT_HAS "a shape error names a string as one" "':' expected where a string s
 # A --base beside edits alone guards their paths as it does a put's
 _ST_RUN --commit --text "IG base" --base="$IG_B" --edits '{"brace.txt": [["{", "}"]]}'
 _ST_OUT_HAS "--base beside edits alone refuses a path changed since" 'so changed by --edits they would take that back: brace.txt'
-# An intent-to-add entry on a path the landing adds stages nothing, so is re-synced rather than
-# left to read as a staged removal of what landed
+# An intent-to-add entry on a path the landing adds stages nothing,
+# so is re-synced rather than left to read as a staged removal of what landed
 _ST_PZ_NEW ig2
 _ST_PZ_C a.txt a "IG2 base" && _ST_PZ_C b.txt b "IG2 b"
 IG_B=$(git rev-parse HEAD)
@@ -112,8 +112,8 @@ _ST_OUT_HAS "an LF old text on a file stored with CRLF says why it misses" 'stor
 print -r -- 'w.txt text' > .gitattributes && git add .gitattributes && git commit -qm "IG2 attrs"
 _ST_RUN --commit --text "IG2 crlf kept" --edits $'{"w.txt": [["one\\r\\n", "ONE\\r\\n"]]}'
 _ST_EQ "a file stored before its attributes keeps its line ends" "${RC}:$(git show HEAD:w.txt | od -An -c | tr -d ' \n')" '0:ONE\r\ntwo\r\n'
-# A value stuck to its flag is an unknown option, one after `=` or given apart the value – a removal
-# and an edit of one path refuse
+# A value stuck to its flag is an unknown option, one after `=`
+# or given apart the value – a removal and an edit of one path refuse
 print -r -- f > foo && print -r -- e > '=bar' && git add -A && git commit -qm "IG2 stuck"
 _ST_RUN --commit --text "IG2 stuck rm" --rmfoo --rm '=bar'
 _ST_OUT_HAS "--rmfoo is an unknown option" 'Unknown option: --rmfoo'

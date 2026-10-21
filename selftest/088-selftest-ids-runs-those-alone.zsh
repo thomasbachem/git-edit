@@ -1,6 +1,6 @@
 # --selftest=<ids> runs those scenarios alone, with the ones they need
 # A development run takes a few scenario files from the suite dir, so the pick must find every
-# one in suite order, keep out what it was not asked for, and bring along what each one needs
+# one in suite order, keep out what it was not asked for and bring along what each one needs
 _ST_SCENARIO "\e[1;96m[88] --selftest=<ids> runs those alone, with what they need\e[0m"
 _ST_EQ "a pick of every scenario takes each file in the suite dir, in suite order" \
 	"$(_SELFTEST_PICK "$SELFTEST_DIR" - && print -rl -- "${SELFTEST_FILES[@]:t}")" \
@@ -28,8 +28,8 @@ print -r -- '_ST_SCENARIO "\e[1;96m[9] nine\e[0m"' > "$TMP/pick-order/9-nine.zsh
 print -r -- '_ST_SCENARIO "\e[1;96m[10] ten\e[0m"' > "$TMP/pick-order/010-ten.zsh"
 _ST_EQ "a letter follows its number, a number past 9 its predecessors" \
 	"$(_SELFTEST_PICK "$TMP/pick-order" - && print -r -- "${SELFTEST_IDS[@]}")" "2 2b 9 10"
-# A need no file order can meet, an id on two files, a banner naming another, or a file named
-# otherwise refuses every pick, the cause named
+# A need no file order can meet, an id on two files, a banner naming
+# another or a file named otherwise refuses every pick, the cause named
 print -r -- "$ST_P1 # needs 2" > "$TMP/pick-ahead/001-one.zsh"
 print -r -- "$ST_P2" > "$TMP/pick-ahead/002-two.zsh"
 OUT=$(_SELFTEST_PICK "$TMP/pick-ahead" 2 2>&1)
@@ -53,8 +53,8 @@ OUT=$(_SELFTEST_PICK "$TMP/pick-name" 2 2>&1)
 RC=$?
 _ST_EQ "a scenario file named otherwise, without a number too, refuses rather than drop out" "$RC" "1"
 _ST_OUT_HAS "naming it" 'one.zsh is not named <id>-<name>.zsh'
-# A file that fails to parse fails the run, the files after it still running – sourced alone, it
-# would run up to its error and pass
+# A file that fails to parse fails the run, the files after it still running
+# – sourced alone, it would run up to its error and pass
 mkdir -p "$TMP/pick-parse/selftest"
 cp "$SELF" "$TMP/pick-parse/git-edit" && cp "$SELFTEST_DIR/lib.zsh" "$TMP/pick-parse/selftest/"
 print -rl -- '_ST_SCENARIO "\e[1;96m[1] broken\e[0m"' 'if true; then' > "$TMP/pick-parse/selftest/001-broken.zsh"
@@ -93,8 +93,8 @@ _ST_OUT_HAS "pointing at the full suite" 'leave the value off for the full suite
 _ST_RUN --selftest=1 --selftest=2
 _ST_EQ "a second --selftest refuses" "$RC" "1"
 _ST_OUT_HAS "as any repeat does" '--selftest given twice'
-# `--jobs` runs the units the needs tie together side by side, then prints them in suite order
-# under one count – the sum of what each counts alone
+# `--jobs` runs the units the needs tie together side by side, then prints
+# them in suite order under one count – the sum of what each counts alone
 _ST_RUN --selftest=1-2,70 --jobs=2
 _ST_EQ "a pick spread over jobs runs" "$RC" "0"
 _ST_EQ "each scenario once, in suite order" "$(print -r -- "$OUT" | command grep -o '^\[[0-9a-z]*\]' | tr '\n' ' ')" "[1] [2] [70] "
@@ -110,8 +110,8 @@ _ST_OUT_HAS "naming it" '--jobs takes a count of 1 or more (got: 0)'
 _ST_RUN --selftest= --jobs=2
 _ST_EQ "an empty pick refuses over jobs too" "$RC" "1"
 _ST_OUT_HAS "as it does alone" 'leave the value off for the full suite'
-# A stand-in for the script plays the units – one holding two the suite runs apart, then one
-# failing, then one dying without a trailer
+# A stand-in for the script plays the units – one holding two the suite
+# runs apart, then one failing, then one dying without a trailer
 print -rl -- '#!/bin/sh' 'case "$1" in' \
 	'--selftest=1,2) printf "%s\n" "[1] one" "  PASS a" "[2] two" "  PASS b" "" "git-edit: ok – selftest 2/2 passed" ;;' \
 	'--selftest=1,3) printf "%s\n" "[1] one" "  PASS a" "[3] three" "  PASS c" "git-edit: ok – selftest 2/2 passed" ;;' \

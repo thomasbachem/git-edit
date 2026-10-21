@@ -1,5 +1,5 @@
-# A landing the checkout never got, as a rewrite lands one, makes a whole file a revert – on
-# the file as 113 leaves it, committed here where a run starts without 113
+# A landing the checkout never got, as a rewrite lands one, makes a whole file a revert
+# – on the file as 113 leaves it, committed here where a run starts without 113
 _ST_SCENARIO "\e[1;96m[113b] a whole file lacking another caller's landing refuses\e[0m"
 export GIT_EDIT_ACTOR=wc-self
 local WC_BR=$(git symbolic-ref --short HEAD) WC_HOOK=$(git rev-parse --git-path hooks/pre-commit)
@@ -96,8 +96,8 @@ _ST_OUT_HAS "a restore hint marks such a name literal" "restore --staged -- ':(l
 git checkout -q -- ':(literal)wc-[g].txt' && printf 'g\nmine\nlanded\nfolded\n' > 'wc-[g].txt' && echo f > ':wc-fold.txt'
 _ST_RUN --amend-into="$(git rev-parse HEAD)" --whole -- 'wc-[g].txt' ':wc-fold.txt'
 _ST_EQ "--whole folds such names as themselves" "$RC:$(git show 'HEAD:wc-[g].txt' | tail -1):$(git show 'HEAD::wc-fold.txt'):$(git show HEAD:wc-g.txt | tail -1)" "0:folded:f:g"
-# A tip moving while the files are read refuses – a clean filter landing a commit stands in for
-# the peer, running between the read of the tip and the landing
+# A tip moving while the files are read refuses – a clean filter landing a commit
+# stands in for the peer, running between the read of the tip and the landing
 git config filter.wcmove.clean "sh -c '[ -e \"$TMP/wc-moved\" ] || { touch \"$TMP/wc-moved\" && git update-ref HEAD \"\$(git commit-tree HEAD^{tree} -p HEAD -m \"WC peer lands mid-run\")\"; }; cat'"
 echo '*.wcmove filter=wcmove' >> .git/info/attributes && echo race > wc.wcmove
 WC_TIP=$(git rev-parse HEAD)

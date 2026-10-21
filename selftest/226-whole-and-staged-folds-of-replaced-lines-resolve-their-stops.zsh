@@ -5,8 +5,8 @@ _ST_SCENARIO "\e[1;96m[226] whole and staged folds of replaced lines resolve the
 local RL_T RL_O RL_WT
 local -a RL_C
 
-# Builds a Markdown file one paragraph a line, a later commit inserting a paragraph right after the
-# one the fold edits and another rewording the last – sets `RL_T`, `RL_C` and `RL_O`
+# Builds a Markdown file one paragraph a line, a later commit inserting a paragraph right
+# after the one the fold edits and another rewording the last – sets `RL_T`, `RL_C` and `RL_O`
 _RL_DOC () {
 	# Args: <repo name>
 	_ST_PZ_NEW "$1"
@@ -19,7 +19,7 @@ _RL_DOC () {
 	RL_C+=("$(git rev-parse HEAD)")
 	RL_O=$(git rev-parse HEAD)
 }
-# Prints <rev>'s doc.md on one line
+# Prints <rev>'s `doc.md` on one line
 _RL_AT () {
 	# Args: <rev>
 	git show "$1:doc.md" | tr '\n' '|'

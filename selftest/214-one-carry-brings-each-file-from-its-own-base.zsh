@@ -1,8 +1,8 @@
 # A run's sync and `--carry` are one implementation, bringing each file from the tip it was last
 # brought to:
-# • A file a landing brought along, then a later one took back, loses that landing's line under the
-#   bare carry a landing names, from the checkout's mark – a peer's staging on it keeping the carry's
-#   one base
+# • A file a landing brought along, then a later one took back, loses that landing's line
+#   under the bare carry a landing names, from the checkout's mark
+#   – a peer's staging on it keeping the carry's one base
 # • A file a landing's sync left as it was keeps that landing's old tip on record: the next landing
 #   merges from there, taking neither back, and the record clears once the file holds the landing
 # • A file moved to its new name by hand takes the landings' edits from its old name
@@ -54,8 +54,8 @@ _ST_EQ "followed, the file brought along in between loses the line taken back, i
 	"$RC:$(tr '\n' ' ' < f.txt)" "0:1 2-mine 3 4 5 6 7 8 9 10 "
 _ST_EQ "while the conflicting one keeps its edit, the landing gone from it too" "$(tr '\n' ' ' < h.txt)" "1 2 3 4 5-mine 6 7 8 9 10 "
 _ST_OUT_HAS "named as carried" 'Carried onto the new content: f\.txt$'
-# A peer's staging on the file keeps the one base, from before both – with no record or mark, as
-# an older build leaves the checkout
+# A peer's staging on the file keeps the one base, from before both
+# – with no record or mark, as an older build leaves the checkout
 _PB214_SETUP pb1s
 git update-index --cacheinfo "100644,$(print -r -- PEER | git hash-object -w --stdin),f.txt"
 : > .git/git-edit-unbrought
@@ -63,8 +63,8 @@ git update-index --cacheinfo "100644,$(print -r -- PEER | git hash-object -w --s
 _ST_RUN --carry="$PB_X"
 _ST_EQ "a peer's staging on it keeps the carry's one base, the file as it was" "$RC:$(tail -1 f.txt):$(git show :f.txt)" "0:a:PEER"
 
-# A conflict a landing's sync leaves records the file's base, which the next landing merges from –
-# from the entry, now on what landed, its stale line would read as an edit taking the first back
+# A conflict a landing's sync leaves records the file's base, which the next landing merges from
+# – from the entry, now on what landed, its stale line would read as an edit taking the first back
 _ST_PZ_NEW pb2
 print -l {1..10} > f.txt && print o > o.txt && git add -A && git commit -qm "PB2 base"
 PB_X=$(git rev-parse HEAD)
@@ -110,8 +110,8 @@ _ST_OUT_HAS "a conflict at the third names the merge from that landing's own old
 _ST_EQ "recording that tip" "$(cut -f1 .git/git-edit-unbrought 2>/dev/null | cut -d' ' -f5)" "$PB_T"
 git checkout -q -- f.txt
 
-# A sync and a carry of one state end alike – an untouched file, edits beside what landed and on it,
-# a removed and an added file, a renamed one with edits
+# A sync and a carry of one state end alike – an untouched file, edits beside
+# what landed and on it, a removed and an added file, a renamed one with edits
 for PB_S in sync carry; do
 	_ST_PZ_NEW "pb5-$PB_S"
 	for PB_F in u e c r m; do print -l 1 2 3 4 5 > $PB_F.txt; done
@@ -167,8 +167,8 @@ _ST_OUT_HAS "naming the rebase, its branch and step, and the way on" \
 _ST_OUT_LACKS "never a bare detached HEAD" 'HEAD is detached$'
 git rebase --abort 2>/dev/null
 
-# A run killed past its move, adopted by the next, names the carry its checkout needs, which brings
-# it along as named
+# A run killed past its move, adopted by the next, names
+# the carry its checkout needs, which brings it along as named
 _ST_PZ_NEW pb8
 printf 'f1\nf2\n' > F && print -r -- b > B.txt && git add -A && git commit -qm "PB8 base"
 PB_X=$(git rev-parse HEAD)

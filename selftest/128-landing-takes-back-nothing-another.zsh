@@ -1,7 +1,7 @@
 _ST_SCENARIO "\e[1;96m[128] a landing takes back nothing another caller landed, and says what it did\e[0m"
 local LA_GIT=$(whence -p git) LA_TIP LA_T LA_WT LA_N
-# Staging made before another caller's landing would take it back where the fold rebuilds the
-# file as staged – above the landing that went through silently
+# Staging made before another caller's landing would take it back where the fold
+# rebuilds the file as staged – above the landing that went through silently
 _ST_PZ_NEW la1
 print -l {1..10} > f.txt && git add f.txt && git commit -qm "LA base"
 print -l 1x {2..10} > f.txt && git add f.txt
@@ -27,8 +27,8 @@ if _ST_MERGE_BASE_OK; then
 fi
 git reset -q
 git checkout -q -- f.txt
-# A tree composed on a tip a peer moves past before the fold reads it takes that peer back –
-# refused, named as the caller gave it
+# A tree composed on a tip a peer moves past before the fold reads
+# it takes that peer back – refused, named as the caller gave it
 mkdir -p "$TMP/la-shim"
 cat > "$TMP/la-shim/git" <<LA_SHIM
 #!/bin/sh
@@ -142,8 +142,8 @@ rm ln.txt && print -r -- plain > ln.txt
 _ST_RUN --commit --text "LA3 unlink" -- ln.txt
 _ST_OUT_HAS "a symlink turned file is named as one, not a chmod" 'Put a symlink back where one was'
 git checkout -q -- ln.txt
-# A drop's content leaves the checkout, nothing of it staged, and edits on top of it merge onto what
-# is left, so a carry after it finds nothing to do
+# A drop's content leaves the checkout, nothing of it staged, and edits on top
+# of it merge onto what is left, so a carry after it finds nothing to do
 _ST_PZ_NEW la4
 _ST_PZ_C f.txt $'1\n2\n3' "LA4 base"
 print -r -- $'1\n2x\n3' > f.txt && print -r -- g > g.txt && git add f.txt g.txt && git commit -qm "LA4 drop"
@@ -167,8 +167,8 @@ _ST_RUN -d -y HEAD
 _ST_EQ "a branch checked out twice re-syncs the index of the copy the run started in" "$RC:$(git diff --cached --name-only | wc -l | tr -d ' ')" "0:0"
 cd "$TMP/pz-la4"
 git worktree remove --force "$TMP/la4-twin"
-# A landing whose commit a drop took out since is none to take back – a version cut again that a
-# dropped cut held, and the bump back after it – while one squashed away stays guarded
+# A landing whose commit a drop took out since is none to take back – a version cut again
+# that a dropped cut held, and the bump back after it – while one squashed away stays guarded
 _ST_PZ_NEW la5
 _ST_PZ_C v.txt dev "LA5 base"
 # The peer's author dates set apart from the caller's, which match a commit across rewrites
@@ -198,8 +198,8 @@ RC=$?
 _ST_EQ "a file as before one squashed away still refuses" "$RC:$(git log -1 --format=%s):$(git rev-parse HEAD)" "1:LA5 w:$LA_TIP"
 _ST_OUT_HAS "naming that landing" "w\.txt – la-peer's commit run .*the file still as before it"
 git checkout -q -- w.txt
-# Nor is a drop run whose file a later tip held as before it again – its cut made anew, the
-# caller's own cut on top taken back
+# Nor is a drop run whose file a later tip held as before it again
+# – its cut made anew, the caller's own cut on top taken back
 print -r -- rc > v.txt
 OUT=$(GIT_AUTHOR_DATE="1700000005 +0000" GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --commit --text "LA5 rc" -- v.txt </dev/null 2>&1)
 OUT=$(GIT_EDIT_ACTOR=la-peer GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d -y HEAD </dev/null 2>&1)

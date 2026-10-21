@@ -1,14 +1,14 @@
-# A signal sent to git-edit's whole process group, as a terminal's Ctrl-C is, ends the git call it
-# waits on too – once the branch moved, that call's cut-short answer read as "nothing changed" or
-# "nothing to journal", an abort stopped past its clear left the worktree without its pause, and a
-# signal before the traps, after the trailer, at a prompt or inside a settle ended the run on a
-# status or state that contradicted what it said
+# A signal sent to git-edit's whole process group, as a terminal's Ctrl-C is, ends the git call
+# it waits on too – once the branch moved, that call's cut-short answer read as "nothing changed"
+# or "nothing to journal", an abort stopped past its clear left the worktree without its pause,
+# and a signal before the traps, after the trailer, at a prompt or inside a settle ended
+# the run on a status or state that contradicted what it said
 _ST_SCENARIO "\e[1;96m[172] signals leave no half state, and the code says what the trailer does\e[0m"
 local SG_DIR="$TMP/sg" SG_BIN="$TMP/sg-bin" SG_B SG_WT SG_GROUP=""
 mkdir -p "$SG_DIR" "$SG_BIN"
-# A `git` holding one call: the first matching `SG_MATCH` once `$SG_DIR/armed` is there – made by
-# the first call matching `SG_AFTER` – or, with `SG_OUT`, once that output holds a trailer, failing
-# it instead under `SG_FAIL` – and a `sleep` holding a settle's nap where `$SG_DIR/nap` is
+# A `git` holding one call: the first matching `SG_MATCH` once `$SG_DIR/armed` is there
+# – made by the first call matching `SG_AFTER` – or with `SG_OUT` once that output holds a trailer,
+# failing it instead under `SG_FAIL` – and a `sleep` holding a settle's nap where `$SG_DIR/nap` is
 {
 	print -r -- '#!/bin/sh'
 	print -r -- 'D=$SG_DIR'
@@ -36,9 +36,9 @@ mkdir -p "$SG_DIR" "$SG_BIN"
 chmod +x "$SG_BIN/git" "$SG_BIN/sleep"
 # A process group of its own, as a terminal gives the command it runs – `perl` makes one
 (( ${+commands[perl]} )) && SG_GROUP=1
-# Runs git edit <arg>... under the stand-ins, arming at once where <after> is `-`, and once its
-# call is held sends <signal> as <how> – to git-edit alone, twice 0.3 s apart, to its whole
-# process group, or not at all – leaving `OUT` and `RC`
+# Runs git edit <arg>... under the stand-ins, arming at once where <after> is `-`,
+# and once its call is held sends <signal> as <how> – to git-edit alone, twice
+# 0.3 s apart, to its whole process group, or not at all – leaving `OUT` and `RC`
 _SG_GO () {
 	# Args: <pid|twice|group|none> <signal> <after|-> <match> <arg>...
 	local HOW=$1 SIG=$2 AFTER=$3 MATCH=$4 P
@@ -188,8 +188,8 @@ _SG_GO none TERM update-ref "--name-only --no-renames" -d -y HEAD~1
 _ST_OUT_HAS "a re-sync whose diff failed says so" 'git could not list what changed, so your checkout was not reconciled'
 _ST_OUT_LACKS "rather than calling the checkout untouched" 'left as it was'
 
-# A settle stopped mid-nap left its files flagged assume-unchanged, hiding a later edit there – the
-# pause's, which runs once the conflict's trailer is out
+# A settle stopped mid-nap left its files flagged assume-unchanged, hiding
+# a later edit there – the pause's, which runs once the conflict's trailer is out
 _ST_PZ_NEW sg9
 git config rerere.enabled false
 printf 'one\r\ntwo\r\n' > crlf.txt && git update-index --add --cacheinfo "100644,$(git hash-object -w --no-filters -- crlf.txt),crlf.txt" && git commit -qm "SG9 crlf"

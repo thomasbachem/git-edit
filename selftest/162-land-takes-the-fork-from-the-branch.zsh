@@ -5,8 +5,8 @@
 # as the only holder of what it skipped
 _ST_SCENARIO "\e[1;96m[162] --land forks past what the target held, ends ok where nothing lands\e[0m"
 local LF_T LF_F LF_B LF_WT LF_N LF_C
-# A land taken back, then the target reworded below the fork and the branch grown – every commit
-# of the branch lands, not just the newest
+# A land taken back, then the target reworded below the fork and the branch grown
+# – every commit of the branch lands, not just the newest
 _ST_PZ_NEW lf1
 _ST_PZ_C a.txt a "LF1 base"
 _ST_PZ_C m.txt m "LF1 main two"
@@ -20,8 +20,8 @@ _ST_OUT_HAS "a dry run names the fork and where it came from" "Fork point [0-9a-
 _ST_OUT_HAS "and replays all three" 'would replay 3 commit(s)'
 _ST_RUN --land=feat
 _ST_EQ "a land taken back and a rewrite below lose no commit" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LF1 feat three|LF1 feat two|LF1 feat one|LF1 main two, reworded|LF1 base|"
-# A land taken back, then one of its commits cherry-picked – the copy refuses the land, never left
-# out as landed, and the --base past it it names lands the rest
+# A land taken back, then one of its commits cherry-picked – the copy refuses the land,
+# never left out as landed, and the --base past it it names lands the rest
 _ST_PZ_NEW lf2
 _ST_PZ_C a.txt a "LF2 base"
 git checkout -q -b feat && _ST_PZ_C f1.txt f1 "LF2 feat one" && _ST_PZ_C f2.txt f2 "LF2 feat two" && git checkout -q main
@@ -76,8 +76,8 @@ _ST_OUT_HAS "naming what it takes" '--base takes the SHA of the commit the lande
 _ST_RUN --land=feat --base="$(git rev-parse HEAD)"
 _ST_EQ "--base outside the branch's history refuses" "$RC" "1"
 _ST_OUT_HAS "as such" "is not in feat's history – nothing landed"
-# A branch rebased onto a newer target, or replanted by --onto, forks there – the target dropping
-# that newer commit afterwards keeps it out
+# A branch rebased onto a newer target, or replanted by --onto, forks there
+# – the target dropping that newer commit afterwards keeps it out
 _ST_PZ_NEW lf4
 _ST_PZ_C a.txt a "LF4 base"
 git checkout -q -b feat && _ST_PZ_C f.txt f "LF4 feat" && git checkout -q -b feat2 && git checkout -q main
@@ -95,8 +95,8 @@ _ST_RUN --undo && git reset -q --hard
 _ST_RUN --land=feat2
 _ST_EQ "and a replant by --onto" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LF4 feat|LF4 main moved|LF4 base|"
 _ST_OUT_HAS "said so for the replant too" "Fork point [0-9a-f]* LF4 main newer, from main's reflog – main rewrote or dropped it since"
-# A branch made by `git worktree add -b`, the target folding the commit it forked from – its own
-# commit alone lands, and its checkout is named with a step that runs from here
+# A branch made by `git worktree add -b`, the target folding the commit it forked from
+# – its own commit alone lands, and its checkout is named with a step that runs from here
 _ST_PZ_NEW lf5
 _ST_PZ_C a.txt a "LF5 base"
 _ST_PZ_C b.txt b1 "LF5 main one"
@@ -172,8 +172,8 @@ _ST_RUN --onto=main --undo
 _ST_EQ "--onto beside --undo refuses" "$RC:$(git rev-parse HEAD)" "1:$LF_T"
 _ST_RUN --undo
 _ST_EQ "while --undo alone takes the reword back" "$RC:$(git log -1 --format=%s)" "0:LF7 main moved"
-# A skipped commit is named as landed nowhere, the branch as its only holder – nothing moving or
-# deleting it offered – and a run skipping all moves and journals nothing
+# A skipped commit is named as landed nowhere, the branch as its only holder
+# – nothing moving or deleting it offered – and a run skipping all moves and journals nothing
 _ST_PZ_NEW lf8
 _ST_PZ_C c.txt $'1\n2\n3' "LF8 base"
 git checkout -q -b feat && _ST_PZ_C c.txt $'1\n2f\n3' "LF8 feat conflicting" && _ST_PZ_C g.txt g "LF8 feat two" && git checkout -q main

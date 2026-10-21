@@ -25,8 +25,8 @@ _ST_OUT_LACKS "a restated body draws no notice" 'carried a .*-line body'
 _ST_RUN -M --text="$(printf 'NB kept more\n\n• first body line\n• added body line')" HEAD
 _ST_EQ "a body-extending reword applies" "$RC" "0"
 _ST_OUT_LACKS "an extended body draws no notice either" 'carried a .*-line body'
-# A `--text` carrying a body of its own can still cut lines – a whole-body check reads that as
-# clean, and a count alone would not say which lines went, so they print
+# A `--text` carrying a body of its own can still cut lines – a whole-body check
+# reads that as clean, and a count alone would not say which lines went, so they print
 _ST_RUN -M --text="$(printf 'NB cut\n\n• added body line')" HEAD
 _ST_EQ "a body-cutting reword applies" "$RC" "0"
 _ST_OUT_HAS "names the lines the new body lacks" 'carried a 2-line body – the new one lacks 1 of its lines, still readable at [0-9a-f]\{12\}'
@@ -48,8 +48,8 @@ git update-ref refs/heads/main "$(git hash-object -w -t commit "$NS_RAW")"
 _ST_RUN -M --text="NS target reworded" "$NS_TARGET"
 _ST_EQ "a reword under a signed descendant applies" "$RC" "0"
 _ST_OUT_HAS "names the signature the rebuild could not carry" 'carried [0-9]* signature'
-# The notice sits on the shared ref-move path, so it covers every mode –
-# pin a second, non-reword one rather than trusting that by construction
+# The notice sits on the shared ref-move path, so it covers every mode
+# – pin a second, non-reword one rather than trusting that by construction
 printf 'nr\n' > nr.txt && git add nr.txt && git commit -qm "NR first"
 printf 'nr2\n' > nr2.txt && git add nr2.txt && git commit -qm "NR second"
 printf 'nr3\n' > nr3.txt && git add nr3.txt && git commit -qm "NR signed tip"

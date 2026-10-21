@@ -1,8 +1,8 @@
 # What a run prints and parses holds whatever the names, values and settings
 _ST_SCENARIO "\e[1;96m[122] output and parsing hold whatever the names, values and settings\e[0m"
 local OP_A OP_OLD OP_WT
-# A check given at a resume is recorded as written, and rerere's notes come before the
-# trailer, which stays the last line
+# A check given at a resume is recorded as written,
+# and rerere's notes come before the trailer, which stays the last line
 _ST_PZ_NEW o1
 git config rerere.enabled false
 printf 'a\nb\nc\n' > f.txt && git add f.txt && git commit -qm "OP base"
@@ -58,8 +58,8 @@ _ST_OUT_HAS "a value given apart that reads like a flag is named as the flag it 
 _ST_RUN --verify='OP_GATE=1 true' --commit --text=--verify -- op-v.txt
 _ST_EQ "while glued on, it is the value, kept whole" "$RC:$(git log -1 --format=%s)" "0:--verify"
 git reset -q --hard HEAD~1
-# A repeated `--carry` refuses as every single-value option does, and a
-# `--` ahead of the commits only ends the flags
+# A repeated `--carry` refuses as every single-value option
+# does, and a `--` ahead of the commits only ends the flags
 _ST_RUN --carry=HEAD --carry=HEAD~1
 _ST_EQ "a repeated --carry refuses" "$RC" "1"
 _ST_OUT_HAS "saying why" '--carry given twice'
@@ -104,8 +104,8 @@ for OP_A in a b c; do _ST_PZ_C "$OP_A.txt" "$OP_A" "OP $OP_A"; done
 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d HEAD~1 </dev/null >"$TMP/op-out" 2>&1
 _ST_CHECK "a run written to a file keeps its opening lines" grep -q '^Dropping' "$TMP/op-out"
 _ST_EQ "and no tee reopens a stream it would truncate" "$(grep -n 'tee /dev/' "$SELF")" ""
-# A path holding a byte no UTF-8 has is read as text, so a mode flip on it still refuses –
-# where the filesystem takes such a name at all, as APFS does not
+# A path holding a byte no UTF-8 has is read as text, so a mode flip on it still refuses
+# – where the filesystem takes such a name at all, as APFS does not
 _ST_PZ_NEW o10
 _ST_PZ_C base.txt b "OP base"
 OP_A=$'m\377.sh'
@@ -179,8 +179,8 @@ _ST_RUN --carry="$OP_OLD"
 _ST_EQ "a carry into a rename destination holding what landed succeeds" "$RC" "0"
 _ST_EQ "merging the stale edits there" "$(sed -n '3p;10p' moved.txt | tr '\n' ' ')" "X3 C10 "
 _ST_CHECK "and taking the source along" test ! -e f.txt
-# A rebuilt commit keeps its author line byte for byte, as a rebase does – quotes git would
-# trim from a name it is handed, and a name it would refuse
+# A rebuilt commit keeps its author line byte for byte, as a rebase does
+# – quotes git would trim from a name it is handed, and a name it would refuse
 _ST_PZ_NEW o8
 _ST_PZ_C a.txt a "OP base"
 OP_A=$(git rev-parse 'HEAD^{tree}')

@@ -1,12 +1,12 @@
-# A sync record of a file merged by hand since refuses neither `--edits` editing a landed line nor
-# the file whole – a file truly left unbrought refuses whole but takes `--edits` composed on the
-# tip, and staging from before the hand merge refuses too
+# A sync record of a file merged by hand since refuses neither `--edits` editing
+# a landed line nor the file whole – a file truly left unbrought refuses whole but takes
+# `--edits` composed on the tip, and staging from before the hand merge refuses too
 _ST_SCENARIO "\e[1;96m[230] a stale sync record refuses no edit of a landed line\e[0m"
 local SR_X SR_T
 
-# Makes and enters repo <name>: `f` of ten lines, a peer's landing of lines 3 and 7 on it, then the
-# caller's edit of landed line 3 in the checkout, recorded as that landing left it – sets `SR_X`
-# and `SR_T`, the tips before and after the landing
+# Makes and enters repo <name>: `f` of ten lines, a peer's landing of lines 3 and 7 on it,
+# then the caller's edit of landed line 3 in the checkout, recorded as that landing left it
+# – sets `SR_X` and `SR_T`, the tips before and after the landing
 _SR230_REPO () {
 	# Args: <name>
 	_ST_PZ_NEW "$1"

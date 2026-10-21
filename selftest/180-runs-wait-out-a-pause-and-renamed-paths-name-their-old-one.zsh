@@ -30,8 +30,8 @@ _W180_UNTIL () {
 		sleep 0.1
 	done
 }
-# Waits for background run <name> to end, its output and status into `OUT` and `RC` –
-# at most 60 s, a run still going then stopped
+# Waits for background run <name> to end, its output and status
+# into `OUT` and `RC` – at most 60 s, a run still going then stopped
 _W180_END () {
 	# Args: <name>
 	local -i I=0
@@ -111,8 +111,8 @@ _ST_EQ "--wait=0 refuses at once" "$RC:$(git rev-parse HEAD)" "1:$WT_HEAD"
 _ST_OUT_HAS "leaving it to that caller, or a wait" "Leave it to that caller, or wait for it to clear: run this again with --wait=<secs>"
 _ST_OUT_LACKS "never waiting" 'Waiting up to'
 
-# The caller's own pause is never waited for – the same label, or both unlabeled – while a labeled
-# caller waits on an unlabeled one
+# The caller's own pause is never waited for – the same label, or both unlabeled –
+# while a labeled caller waits on an unlabeled one
 WT_T=$EPOCHSECONDS
 _W180_BG w6 GIT_EDIT_ACTOR=w-peer -- -M --text="WT c own" --wait=30 HEAD
 _W180_END w6
@@ -167,8 +167,8 @@ export GIT_EDIT_ACTOR=w-peer
 _ST_RUN --abort
 export GIT_EDIT_ACTOR=
 
-# A pause recorded once the first check passed refuses at the check made holding the -C path, at
-# once – waiting there would block that path for others
+# A pause recorded once the first check passed refuses at the check made
+# holding the -C path, at once – waiting there would block that path for others
 mkdir -p "$TMP/w180-git"
 printf '#!/bin/sh\ncase " $* " in *" worktree add "*) if [ -e %s/arm ]; then mv %s/arm %s/in; %s/st-hold %s/go; fi ;; esac\nexec %s "$@"\n' \
 	"${(q)TMP}/w180-git" "${(q)TMP}/w180-git" "${(q)TMP}/w180-git" "${(q)TMP}" "${(q)TMP}/w180-git" "${(q)commands[git]}" > "$TMP/w180-git/git"
@@ -187,8 +187,8 @@ export GIT_EDIT_ACTOR=w-peer
 _ST_RUN --abort
 export GIT_EDIT_ACTOR=
 
-# The bound takes the value-flag forms – required, a whole number, given once – and none beside a
-# resume or a standalone command, while with no pause in the way a run waits for nothing
+# The bound takes the value-flag forms – required, a whole number, given once – and none beside
+# a resume or a standalone command, while with no pause in the way a run waits for nothing
 _ST_RUN -M --text="WT c plain" --wait=5 HEAD
 _ST_EQ "with no pause a run with --wait runs at once" "$RC:$(git log -1 --format=%s HEAD)" "0:WT c plain"
 _ST_OUT_LACKS "saying nothing of waiting" 'Waiting up to'
@@ -236,8 +236,8 @@ _ST_OUT_HAS "naming its old name there and the commit renaming it" "new\.txt –
 _ST_OUT_HAS "as no file of that name at the target" 'do not exist at [0-9a-f]\{7\} by that name – renamed in a later commit'
 _ST_OUT_HAS "naming the edit pause that changes it there" "Change it under its old name in an edit pause: 'git edit ${WT_OLD:0:7}', make the change to the old path in the worktree the pause names, then 'git edit --continue'"
 _ST_OUT_LACKS "not the introducing commit's remedy" 'Fold into the introducing commit'
-# Where the replay's merge pairs no renames, the change made at the old name would meet the rename
-# as a modify/delete – it arrives there as an add, as before
+# Where the replay's merge pairs no renames, the change made at the old name
+# would meet the rename as a modify/delete – it arrives there as an add, as before
 git config merge.renames false
 _ST_RUN --amend-into="$WT_OLD" -- new.txt
 _ST_OUT_HAS "where the merge pairs no renames it arrives in that commit, as before" "new\.txt – arrives in $WT_REN (WR rename)"

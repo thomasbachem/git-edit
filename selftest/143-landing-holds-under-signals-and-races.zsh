@@ -2,8 +2,8 @@
 # of one run takes back nothing more, and a `-C` path is this repository's and one run's at a time
 _ST_SCENARIO "\e[1;96m[143] a landing holds under signals and races, -C only this repo's and one run's\e[0m"
 local LK_T LK_I LK_P LK_C3 LK_C5
-# `update-ref` killed once the ref moved – a signal to the terminal's group while a hook runs on the
-# committed transaction – lands, journaled, and `--undo` takes it back
+# `update-ref` killed once the ref moved – a signal to the terminal's group while
+# a hook runs on the committed transaction – lands journaled, and `--undo` takes it back
 _ST_PZ_NEW lk1
 for LK_I in 1 2 3 4 5; do _ST_PZ_C "f$LK_I.txt" "$LK_I" "LK1 c$LK_I"; done
 LK_T=$(git rev-parse HEAD)

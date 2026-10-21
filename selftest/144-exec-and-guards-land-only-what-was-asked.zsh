@@ -1,6 +1,6 @@
-# An `--exec` lands only a finished result built on what it found, a placement only what it built,
-# a resumed fold only a change, and pushed history stays guarded across a pause, an undo, a commit
-# named twice and the environment a caller brings
+# An `--exec` lands only a finished result built on what it found, a placement only
+# what it built, a resumed fold only a change, and pushed history stays guarded
+# across a pause, an undo, a commit named twice and the environment a caller brings
 _ST_SCENARIO "\e[1;96m[144] exec, placement and folds land only what was asked, pushed history guarded throughout\e[0m"
 local XG_T XG_C XG_N XG_WT XG_A XG_B XG_S
 # A command leaving a rebase stopped partway exits 0 with no result
@@ -54,8 +54,8 @@ _ST_OUT_HAS "saying the fold left history unchanged" 'The fold left history unch
 _ST_RUN --abort
 _ST_EQ "and the abort keeps the staging" "$(git show :a.txt | sed -n 3p)" "S"
 git reset -q --hard
-# A commit named twice is dropped once and guarded as itself, its pushed self refused – the commits
-# made in one second, as an agent's are, where a timestamp sort can't order them
+# A commit named twice is dropped once and guarded as itself, its pushed self refused
+# – the commits made in one second, as an agent's are, where a timestamp sort can't order them
 _ST_PZ_NEW xg4
 export GIT_COMMITTER_DATE=1700000000 GIT_AUTHOR_DATE=1700000000
 _ST_PZ_C base.txt base "XG4 base" && _ST_PZ_C a.txt a "XG4 A" && _ST_PZ_C b.txt b "XG4 B" && _ST_PZ_C c.txt c "XG4 C"

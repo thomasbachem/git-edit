@@ -5,8 +5,8 @@ _ST_SCENARIO "\e[1;96m[90] a checkout differing only in mode is named apart\e[0m
 git reset -q --hard
 printf 'mx\n' > mx.sh && printf 'my\n' > my.sh && chmod +x mx.sh my.sh && printf 'mz\n' > mz.txt
 git add mx.sh my.sh mz.txt && git commit -qm "MX to change"
-# The change made in the checkout first, a mode drifting on the way – a temp file moved in
-# loses the bit, a stray chmod adds one
+# The change made in the checkout first, a mode drifting on the way
+# – a temp file moved in loses the bit, a stray chmod adds one
 printf 'mx changed\n' > mx.tmp && mv mx.tmp mx.sh
 printf 'mz changed\n' > mz.txt && chmod +x mz.txt
 _ST_RUN --exec -- sh -c 'printf "mx changed\n" > mx.sh && printf "mz changed\n" > mz.txt && git commit -qam "MX changed"'

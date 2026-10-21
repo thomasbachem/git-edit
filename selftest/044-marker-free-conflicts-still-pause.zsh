@@ -1,9 +1,9 @@
 # Marker-free conflicts must still pause, with history intact
 _ST_SCENARIO "\e[1;96m[44] marker-free conflicts still pause\e[0m"
 git reset -q --hard
-# Neither of these carries conflict markers, so any attempt to decide a
-# conflict by inspecting the file auto-resolves them the wrong way – which
-# silently reverted a deletion and dropped the commit that made it
+# Neither of these carries conflict markers, so any attempt to decide
+# a conflict by inspecting the file auto-resolves them the wrong way
+# – which silently reverted a deletion and dropped the commit that made it
 printf 'md one\n' > md2.txt && git add md2.txt && git commit -qm "MD2 base"
 printf 'md two\n' > md2.txt && git add md2.txt && git commit -qm "MD2 middle"
 local MD2_MID=$(git rev-parse HEAD)
@@ -16,7 +16,7 @@ _ST_CHECK "its deleting commit survives" sh -c "git log --format=%s | grep -qx '
 _ST_CHECK "and the file is still deleted at the tip" \
 	sh -c "! git cat-file -e HEAD:md2.txt 2>/dev/null"
 git reset -q --hard
-# Binary: three stages, no markers, and rerere cannot resolve it either
+# Binary: three stages, no markers and rerere cannot resolve it either
 printf 'bin\000\001 v1\n' > bin.dat && git add bin.dat && git commit -qm "BIN base"
 printf 'bin\000\002 v2\n' > bin.dat && git add bin.dat && git commit -qm "BIN middle"
 local BIN_MID=$(git rev-parse HEAD)

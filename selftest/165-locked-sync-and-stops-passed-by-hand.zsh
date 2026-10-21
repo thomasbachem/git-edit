@@ -114,8 +114,8 @@ _ST_EQ "a resume through the record step lands" "$RC:$(git log -1 --format=%s HE
 _ST_OUT_HAS "having run the rebase on" 'Successfully rebased'
 _ST_OUT_LACKS "printing no line of git-edit's own step" 'Executing: .*git-edit-replayed'
 
-# A hand finish whose last pick git left out as emptied – once refused as stopped short, its hint a
-# hard reset landing the worktree past every guard
+# A hand finish whose last pick git left out as emptied – once refused
+# as stopped short, its hint a hard reset landing the worktree past every guard
 _ST_PZ_NEW hp3
 print -l 1 2 3 4 5 6 7 8 9 > f.txt && print -l a b c > g.txt && git add -A && git commit -qm "HP3 base"
 print -l 1 2 DEBUG 3 4 5 6 7 8 9 > f.txt && print -l a b c DBG > g.txt && git commit -qam "HP3 Y debug"

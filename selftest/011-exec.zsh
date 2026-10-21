@@ -3,8 +3,8 @@ _ST_SCENARIO "\e[1;96m[11] exec\e[0m"
 _ST_RUN --exec -- git commit --amend -m "amended via exec"
 _ST_EQ "exits 0" "$RC" "0"
 _ST_EQ "amend applied" "$(git log --format=%s -1)" "amended via exec"
-# Two shapes that ran the wrong thing in the wild – a quoted shell line as one argument, and
-# a commit ahead of the command – refuse by name instead of exiting 127
+# Two shapes that ran the wrong thing in the wild – a quoted shell line as one argument,
+# and a commit ahead of the command – refuse by name instead of exiting 127
 _ST_RUN --exec -- 'ls -d nowhere-at-all'
 _ST_EQ "one quoted shell line refuses" "$RC" "1"
 _ST_OUT_HAS "and names the shape" 'one argument, run as a program of that name'

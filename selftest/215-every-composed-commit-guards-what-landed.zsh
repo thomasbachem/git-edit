@@ -9,8 +9,8 @@
 _ST_SCENARIO "\e[1;96m[215] every composed commit guards what another caller landed\e[0m"
 local EG_T EG_X EG_B
 
-# Lands eg-a's edit of line 3 while the checkout holds older edits of its own there, so the sync
-# conflicts and leaves the file on its base
+# Lands eg-a's edit of line 3 while the checkout holds older edits
+# of its own there, so the sync conflicts and leaves the file on its base
 _EG215_SETUP () {
 	# Args: <repo name> <the checkout's line 3>
 	_ST_PZ_NEW "$1"
@@ -22,7 +22,7 @@ _EG215_SETUP () {
 	EG_T=$(git rev-parse HEAD)
 }
 
-# The reproduced case: the file as it was, taken whole, as edits and a patch built from it, and put
+# The reproduced case: the file as it was, taken whole, put, as edits and as a patch built from it
 _EG215_SETUP eg1 3B
 _ST_EQ "the landing leaves the conflicting file as it was" "$RC:$(sed -n 3p f.txt)" "0:3B"
 _ST_OUT_HAS "its sync says the next commit of the file taking it back is refused" 'its next commit of the file that would take it back is refused, naming this merge'
@@ -119,9 +119,9 @@ GIT_EDIT_ACTOR=eg-b _ST_RUN --amend-into="$EG_X" --edits '{"f.txt": [["3A\n", "3
 _ST_EQ "a fold's edits built from the file refuse" "$RC:$(git rev-parse HEAD)" "1:$EG_X"
 _ST_OUT_HAS "naming the merge" 'git merge-file -- f.txt "$T/base" "$T/landed"'
 
-# A file committed in stages from a checkout holding the finished version keeps it, each stage
-# landing without a conflict to resolve, while a peer's stale edits on a file the same landing edits
-# still conflict, recorded, and refuse its commit
+# A file committed in stages from a checkout holding the finished version keeps it,
+# each stage landing without a conflict to resolve, while a peer's stale edits
+# on a file the same landing edits still conflict, recorded and refuse its commit
 _ST_PZ_NEW eg7
 print -l 1 2 3 4 5 6 > f.txt && print -l 1 2 3 4 5 > h.txt && git add -A && git commit -qm "EG7 base"
 print -l 1 2-final 3-final 4 5 6-final > f.txt

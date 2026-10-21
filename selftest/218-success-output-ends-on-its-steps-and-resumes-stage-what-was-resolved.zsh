@@ -69,8 +69,8 @@ print -l 2 mine > f.txt
 _ST_RUN --status
 _ST_OUT_LACKS "and not once the file holds what landed" 'Left unbrought'
 
-# A resume stages a file whose markers are gone – a drop's, a reorder's, a fold's, an edit's, a
-# replant's – and continues the conflict over one still holding them
+# A resume stages a file whose markers are gone – a drop's, a reorder's, a fold's,
+# an edit's, a replant's – and continues the conflict over one still holding them
 _SO218_REPO s4 2 3
 _ST_RUN -d -y HEAD~1
 SO_WT=$(_ST_PZ_WT)
@@ -169,9 +169,9 @@ GIT_EDIT_ACTOR=me _ST_RUN --commit --text "SO stale" -- new/t.js
 _ST_EQ "one lacking it refuses" "$RC" 1
 _ST_OUT_HAS "reading it at its old name" 'on its old name old/t\.js'
 
-# A put composed in scratch merges into a checkout file lacking it, a peer's line there kept – one
-# the checkout holds already takes its entry alone, as does one whose lines the file changed
-# further, the caller's later work, left on record
+# A put composed in scratch merges into a checkout file lacking it, a peer's line
+# there kept – one the checkout holds already takes its entry alone, as does one
+# whose lines the file changed further, the caller's later work, left on record
 _ST_PZ_NEW s12
 print -l a b c d e > f && git add f && git commit -qm "SO base"
 print -l a b c d PEER > f

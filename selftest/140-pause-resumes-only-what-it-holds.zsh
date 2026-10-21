@@ -1,5 +1,5 @@
-# A pause resumes only as what it holds – its owner's, its messages whole, a hand quit at its last
-# stop refused – and a refused resume leaves it as it was
+# A pause resumes only as what it holds – its owner's, its messages whole,
+# a hand quit at its last stop refused – and a refused resume leaves it as it was
 _ST_SCENARIO "\e[1;96m[140] a pause resumes only what it holds, a refused resume changing nothing\e[0m"
 local PR_T PR_WT PR_SF
 _ST_PZ_NEW pr1

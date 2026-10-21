@@ -51,8 +51,8 @@ _ST_CHECK "a nested path is linked, not silently skipped" \
 _ST_OUT_LACKS "and reports no failure" 'Could not link'
 _ST_RUN --abort
 
-# A value added mid-pause reaches the already-created worktree on resume –
-# links are made at worktree setup, so --continue re-ensures them
+# A value added mid-pause reaches the already-created worktree on resume
+# – links are made at worktree setup, so --continue re-ensures them
 mkdir -p node_modules/dep && printf 'installed\n' > node_modules/dep/index.js
 _ST_RUN HEAD
 local WL_WT4=$(echo "$OUT" | sed -n 's/.*paused – edit [^ ]* in \([^;]*\);.*/\1/p')
@@ -67,8 +67,8 @@ _ST_CHECK "while the edit landed" sh -c "git show HEAD:wl.txt | grep -qx 'wl rel
 _ST_RUN --undo
 rm -rf vendor
 
-# The auto-isolated worktree (non-interactive drop/squash/edit) links too –
-# proven through a verify command needing the linked path, since the check
+# The auto-isolated worktree (non-interactive drop/squash/edit) links too
+# – proven through a verify command needing the linked path, since the check
 # runs in that worktree before anything applies
 git config edit.verifyCmd 'test -e node_modules/dep/index.js'
 printf 'wl3\n' > wl3.txt && git add wl3.txt && git commit -qm "WL three"
@@ -81,8 +81,8 @@ _ST_OUT_HAS "and verifying there" 'Verified 1 commit'
 # The reused --dir branch (reset --hard sync) must link too – one run to
 # create the worktree, strip the link, and the next has to restore it
 local WL_DIR=$TMP/wl-reuse
-# Disposable targets, so neither drop consumes the commit carrying the
-# bare ignore pattern the link depends on
+# Disposable targets, so neither drop consumes the commit
+# carrying the bare ignore pattern the link depends on
 printf 'wl5\n' > wl5.txt && git add wl5.txt && git commit -qm "WL five"
 printf 'wl6\n' > wl6.txt && git add wl6.txt && git commit -qm "WL six"
 _ST_RUN -d HEAD~1 -y --dir="$WL_DIR"

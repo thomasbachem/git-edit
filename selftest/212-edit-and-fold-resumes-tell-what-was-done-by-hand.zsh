@@ -22,7 +22,7 @@ mkdir -p "$TMP/ep-kill"
 	print -r -- "exec ${(q)commands[git]} \"\$@\""
 } > "$TMP/ep-kill/git"
 chmod +x "$TMP/ep-kill/git"
-# Builds A, B, C changing f.txt, D, and pauses an edit of B
+# Builds A, B, C changing f.txt and D, then pauses an edit of B
 _EP_PAUSE_B () {
 	# Args: <name>
 	_ST_PZ_NEW "$1"
@@ -103,8 +103,8 @@ _ST_RUN --continue
 _ST_EQ "an edit adding a commit of its own at the stop lands" "$RC:$(git log --format=%s | tr '\n' '|')" "0:EP3B D|EP3B C|EP3B X|EP3B B|EP3B A|"
 _ST_OUT_HAS "naming it added" 'added: [0-9a-f]* EP3B X$'
 _ST_OUT_LACKS "and no drop" 'dropped:'
-# An amend taking in what a later commit adds names that one dropped as before – and its run prints
-# no stray commit id
+# An amend taking in what a later commit adds names that one
+# dropped as before – and its run prints no stray commit id
 _ST_PZ_NEW ep3c
 _ST_PZ_C a.txt a "EP3C A" && _ST_PZ_C b.txt b "EP3C B" && _ST_PZ_C f.txt x "EP3C C adds x" && _ST_PZ_C d.txt d "EP3C D"
 _ST_RUN HEAD~2

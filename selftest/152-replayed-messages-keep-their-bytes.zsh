@@ -5,8 +5,8 @@ _ST_SCENARIO "\e[1;96m[152] replayed commits keep their message bytes on every r
 local CB_BASE CB_WT CB_X
 local -A CB_SHA CB_SUBJ
 CB_SUBJ=(x "CB target" nl "CB no newline" bl "CB blank lines" ws "CB trailing ws")
-# Writes a commit on `HEAD` whose message is exactly <printf %b text>, <file> holding <content>,
-# recorded under <key> in `CB_SHA`
+# Writes a commit on `HEAD` whose message is exactly <printf %b text>,
+# <file> holding <content>, recorded under <key> in `CB_SHA`
 _CB_MK () {
 	# Args: <key> <message> <file> <content>
 	local P=$(git rev-parse HEAD) T
@@ -66,8 +66,8 @@ git config commit.cleanup strip
 _ST_RUN -d "${CB_SHA[x]}"
 _CB_KEPT "as does a drop under the caller's commit.cleanup=strip" ws
 git config --unset commit.cleanup
-# A squash on the rebase path keeps its target's message, its fixup chain combining none, and the
-# commits it replays above
+# A squash on the rebase path keeps its target's message,
+# its fixup chain combining none, and the commits it replays above
 _CB_FIX cb3
 _ST_RUN -s "${CB_SHA[x]}" HEAD
 _CB_KEPT "a -s keeps its target's message whole" x
@@ -132,8 +132,8 @@ _ST_RUN --continue
 _CB_KEPT "a drop's conflicted pick resumed keeps its message" nl
 _CB_CLEAN "with no # Conflicts: line"
 _CB_KEPT "and the picks after it theirs" ws
-# A reorder whose both picks conflict, under the caller's commit.cleanup=strip – each stop resolved
-# to its own commit's change alone
+# A reorder whose both picks conflict, under the caller's commit.cleanup=strip
+# – each stop resolved to its own commit's change alone
 _CB_FIX cb12 abut
 git config commit.cleanup strip
 _ST_RUN --reorder "${CB_SHA[nl]}" "${CB_SHA[x]}"

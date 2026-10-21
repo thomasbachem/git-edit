@@ -40,8 +40,8 @@ _ST_RUN --land=feat
 _ST_EQ "the land run again ends landed" "$RC:$(git log --format=%s | tr '\n' '|')" "0:RW1 F2|RW1 F1|RW1 base|"
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/rw1-wt"
-# Its subject alone reworded after a replay land, dated past the replay –
-# the subject alone offered, which keeps main's body
+# Its subject alone reworded after a replay land, dated past the replay
+# – the subject alone offered, which keeps main's body
 _ST_PZ_NEW rw2
 _ST_PZ_C f.txt f "RW2 base"
 git worktree add -q -b feat "$TMP/rw2-wt" main 2>/dev/null
@@ -67,9 +67,9 @@ _ST_EQ "which, run as printed, renames main's commit and keeps its body" "$(git 
 _ST_RUN --land=feat
 _ST_OUT_HAS "and the land again ends landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/rw2-wt"
-# A copy main reworded itself refuses as well, whichever side changed – the move of a branch checked
-# out nowhere onto main's copies offered, main's messages standing, and run as printed, nothing is
-# left to land, main's message kept
+# A copy main reworded itself refuses as well, whichever side changed – the move
+# of a branch checked out nowhere onto main's copies offered, main's messages
+# standing, and run as printed, nothing is left to land, main's message kept
 _ST_PZ_NEW rw3
 _ST_PZ_C f.txt f "RW3 base"
 git checkout -q -b feat && _ST_PZ_C g.txt g "RW3 F1" && _ST_PZ_C h.txt h "RW3 F2" && git checkout -q main
@@ -86,8 +86,8 @@ eval "${RW_C:-false}"
 _ST_RUN --land=feat
 _ST_EQ "run as printed, nothing is left to land, main's message kept" "$RC:$(git log -1 --format=%s HEAD~1)" "0:RW3 F1 as main words it"
 _ST_OUT_HAS "ending ok" '^git-edit: ok – refs/heads/main unchanged, nothing to land$'
-# A commit main dropped, reworded on the branch since –
-# nothing lands, the commit named against the copy main dropped
+# A commit main dropped, reworded on the branch since
+# – nothing lands, the commit named against the copy main dropped
 _ST_PZ_NEW rw4
 _ST_PZ_C f.txt f "RW4 base"
 git worktree add -q -b feat "$TMP/rw4-wt" main 2>/dev/null
@@ -129,8 +129,8 @@ _ST_EQ "whose reword run as printed keeps main's fix" "$(git log -1 --format=%B 
 _ST_RUN --land=feat
 _ST_OUT_HAS "and the land again ends landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/rw5-wt"
-# A fix and a new body amended into one landed commit – the fold it prints first, then the reword,
-# each run as printed, and the land ends landed with both
+# A fix and a new body amended into one landed commit – the fold it prints first,
+# then the reword, each run as printed, and the land ends landed with both
 _ST_PZ_NEW rw6
 _ST_PZ_C f.txt f "RW6 base"
 git worktree add -q -b feat "$TMP/rw6-wt" main 2>/dev/null
@@ -155,9 +155,9 @@ _ST_EQ "each run as printed, the land ends landed with fix and body" \
 	"$RC:$(git show HEAD~1:g.txt | tr '\n' ' '):$(git log -1 --format=%b HEAD~1)" "0:g FIX :With its fix"
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/rw6-wt"
-# A catch-up of main, checked out nowhere, into the main worktree's dev leaves main as it
-# is – no move onto dev's copies, no deletion – landed or already landed, while another
-# branch checked out nowhere is still offered both
+# A catch-up of main, checked out nowhere, into the main worktree's dev leaves
+# main as it is – no move onto dev's copies, no deletion – landed or already
+# landed, while another branch checked out nowhere is still offered both
 _ST_PZ_NEW dm1
 _ST_PZ_C a.txt a "DM1 A"
 git checkout -q -b dev && _ST_PZ_C d.txt d "DM1 D" && git checkout -q main
@@ -173,8 +173,8 @@ _ST_OUT_HAS "landed already, main said to stay" "^Nothing to do – main, the re
 _ST_OUT_LACKS "never deleted" 'git branch -[dD] main'
 _ST_RUN --land=side
 _ST_OUT_HAS "another branch checked out nowhere still offered both" "point it at those (git branch -f side $(git rev-parse --short=12 HEAD)) or delete it (git branch -D side)"
-# Main checked out in a linked worktree, landed into the main worktree's dev – never a move of that
-# checkout onto dev's copies, nor a deletion
+# Main checked out in a linked worktree, landed into the main worktree's dev
+# – never a move of that checkout onto dev's copies, nor a deletion
 _ST_PZ_NEW dm2
 _ST_PZ_C a.txt a "DM2 A"
 git checkout -q -b dev && _ST_PZ_C d.txt d "DM2 D"
@@ -188,8 +188,8 @@ _ST_RUN --land=main
 _ST_OUT_HAS "landed already, main said to stay" "^Nothing to do – main, the repository's default branch, checked out in .*dm2-wt, stays as it is\.$"
 _ST_OUT_LACKS "never deleted" 'git branch -[dD] main'
 git worktree remove --force "$TMP/dm2-wt"
-# The default branch by `init.defaultBranch` first, `main` then offered both –
-# by a remote's `HEAD` where that is unset, past `main`
+# The default branch by `init.defaultBranch` first, `main` then offered both
+# – by a remote's `HEAD` where that is unset, past `main`
 _ST_PZ_NEW dm3
 _ST_PZ_C a.txt a "DM3 A"
 git branch trunk

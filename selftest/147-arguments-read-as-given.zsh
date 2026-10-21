@@ -79,8 +79,8 @@ _ST_OUT_HAS "an end naming a tree as a tree" 'its start HEAD^{tree} names a tree
 _ST_RUN -d "HEAD^{tree}"
 _ST_EQ "a tree given as the commit refuses" "${RC}:$(git rev-parse HEAD)" "1:$AG_T"
 _ST_OUT_HAS "as a tree, not as missing" '<commit> HEAD^{tree} names a tree, not a commit'
-# With both ends stale, each commit the range named resolves alone – the span between their current
-# identities holds a commit moved in since, which a drop would take too
+# With both ends stale, each commit the range named resolves alone – the span between
+# their current identities holds a commit moved in since, which a drop would take too
 _AG_NEW ag5
 local AG_O3=$(git rev-parse HEAD~2) AG_O4=$(git rev-parse HEAD~1)
 _ST_RUN -M --text "AG c2 reworded" HEAD~3
@@ -112,8 +112,8 @@ _ST_PZ_C f.txt f "AG a=b"
 _ST_RUN -y -s ':/AG a=b'
 _ST_EQ "-s given a value holding = squashes that commit" "${RC}:$(git log --format=%s | tr '\n' '|')" "0:AG ignore|AG c2|AG c1|"
 _ST_CHECK "carrying its file" git show HEAD:f.txt
-# A `:/<text>` value names the commit its search finds wherever a commit is taken – a `^{commit}`
-# appended to it joined the search text
+# A `:/<text>` value names the commit its search finds wherever a commit is taken
+# – a `^{commit}` appended to it joined the search text
 _AG_NEW ag6
 _ST_RUN -y -s=':/AG c2' HEAD~2
 _ST_EQ "-s=:/<text> squashes into the commit it finds" "${RC}:$(git log --format=%s | wc -l | tr -d ' '):$(git ls-tree --name-only HEAD~2 c.txt)" "0:4:c.txt"

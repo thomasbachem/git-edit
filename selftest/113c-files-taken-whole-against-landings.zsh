@@ -55,8 +55,8 @@ _ST_RUN --commit --text "x" -- wc-adj.txt wc-adj.bin
 _ST_EQ "a copy still as before a landing another sits next to refuses, a binary too" "$RC:$(git rev-parse HEAD)" "1:$WC_TIP"
 _ST_OUT_HAS "both pointed at the restore" "Take what landed with: git restore --source=HEAD --worktree -- wc-adj.bin wc-adj.txt – or leave it out"
 git checkout -q -- wc-adj.txt wc-adj.bin
-# A file holding a later landing but lacking an earlier one is named for the earlier, as the
-# landings are checked oldest first
+# A file holding a later landing but lacking an earlier one is
+# named for the earlier, as the landings are checked oldest first
 printf 'k1\nk2\nk3\nk4\nk5\nk6\nk7\nk8\n' > wc-ord.txt
 _ST_RUN --commit --text "WC order base" -- wc-ord.txt
 export GIT_EDIT_ACTOR=wc-peer
@@ -108,8 +108,8 @@ _ST_OUT_HAS "while untouched, the new name is pointed at the restore" "Take what
 _ST_OUT_HAS "and the old one left out" 'Leave out what was removed: wc-rn.txt'
 _ST_OUT_LACKS "with no carry, which takes nothing in" '--carry='
 rm -f wc-rn.txt && git checkout -q -- wc-rn2.txt
-# A fold resumed after a pause still re-syncs the staging of a file it took
-# whole, one whose name holds a tab too
+# A fold resumed after a pause still re-syncs the staging
+# of a file it took whole, one whose name holds a tab too
 local WC_PS WC_PSW WC_K WC_PN
 for WC_PN in wc-ps.txt $'wc-p\ts.txt'; do
 	printf '1\n2\n3\n' > "$WC_PN"

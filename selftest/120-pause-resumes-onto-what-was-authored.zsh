@@ -29,8 +29,8 @@ echo "b edited" > "$PZ_WT/b.txt"
 _ST_RUN --continue
 _ST_OUT_HAS "an edit whose branch was rewritten below it refuses" 'was rewritten under this edit'
 _ST_RUN --abort
-# A squash of a commit with its revert keeps the tip's content – skipping the emptied step
-# brought the reverted file back
+# A squash of a commit with its revert keeps the tip's content
+# – skipping the emptied step brought the reverted file back
 _ST_PZ_NEW p2
 _ST_PZ_C base.txt base "PZ base" && _ST_PZ_C a.txt a "PZ add a" && PZ_A=$(git rev-parse HEAD)
 _ST_PZ_C x.txt x "PZ x" && git rm -q a.txt && git commit -qm "PZ remove a" && PZ_B=$(git rev-parse HEAD) && _ST_PZ_C y.txt y "PZ y"

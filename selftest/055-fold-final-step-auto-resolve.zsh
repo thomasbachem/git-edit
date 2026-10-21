@@ -29,8 +29,8 @@ _ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
 WT55=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ (;]*\).*/\1/p' | head -1)
 printf 'g8\n' > "$WT55/g.txt" && git -C "$WT55" add g.txt
 
-# "G three" is the final step – its result is the staged tree, so this
-# continue resolves it itself and completes in one go
+# "G three" is the final step – its result is the staged tree,
+# so this continue resolves it itself and completes in one go
 _ST_RUN --continue
 _ST_EQ "final step completes without another pause" "$RC" "0"
 _ST_OUT_HAS "names the auto-resolution" 'auto-resolved'

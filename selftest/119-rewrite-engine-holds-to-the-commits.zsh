@@ -2,8 +2,8 @@ _ST_SCENARIO "\e[1;96m[119] the rewrite engine holds to the commits it was named
 local EN_DIR="$TMP/en" EN_X
 git init -q -b main "$EN_DIR" && cd "$EN_DIR" && git config user.email e@x.invalid && git config user.name E
 for EN_X in a b c d; do echo "$EN_X" > "$EN_X.txt" && git add "$EN_X.txt" && git commit -qm "EN ${(U)EN_X}"; done
-# A stale squash target resolves as any commit does – its fixups once followed a `pick` the
-# todo never had, which dropped the squashed commits
+# A stale squash target resolves as any commit does – its fixups once
+# followed a `pick` the todo never had, which dropped the squashed commits
 local EN_B=$(git rev-parse HEAD~2) EN_D=$(git rev-parse HEAD)
 _ST_RUN -M --text "EN B2" "$EN_B"
 _ST_RUN -s="$EN_B" "$EN_D"
@@ -12,8 +12,8 @@ git checkout -q -b en-side HEAD~1 && echo s > s.txt && git add s.txt && git comm
 _ST_RUN -s="$(git rev-parse en-side)" HEAD
 _ST_OUT_HAS "a target outside the branch refuses" 'not in HEAD.s history'
 git branch -q -D en-side
-# A peer's rewrite between the run's reading of its commits and of the tip refuses the run – it
-# would have replayed the old commits back over the peer's
+# A peer's rewrite between the run's reading of its commits and of the tip
+# refuses the run – it would have replayed the old commits back over the peer's
 echo e > e.txt && git add e.txt && git commit -qm "EN E" && echo f > f.txt && git add f.txt && git commit -qm "EN F"
 # The binary, past the suite's own `git` function – named, the shim would exec itself
 local EN_GIT=$(whence -p git) EN_BEFORE

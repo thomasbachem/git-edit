@@ -1,6 +1,6 @@
-# The suite runs on git's defaults, while a caller's config colors, lists in columns, hides
-# untracked files, autosquashes, skips blame revisions and spells renames `copies` – set in
-# the suite's own global config here, each case in a repo of its own
+# The suite runs on git's defaults, while a caller's config colors, lists in columns,
+# hides untracked files, autosquashes, skips blame revisions and spells renames `copies`
+# – set in the suite's own global config here, each case in a repo of its own
 _ST_SCENARIO "\e[1;96m[123] a caller's git settings change no result\e[0m"
 local RS_WT RS_T RS_N RS_K RS_V RS_HOME
 for RS_K RS_V in color.ui always column.ui always status.showUntrackedFiles no rebase.autoSquash true \
@@ -47,7 +47,7 @@ for RS_N in ign ext tc tc2 safe home; do
 	_ST_EQ "auto-target folds into the line's owner – $RS_N" "$RC:$(git show HEAD~1:bl.txt | sed -n 2p)" "0:b2 A2"
 done
 git config --file "$GIT_CONFIG_GLOBAL" --unset safe.directory
-# A submodule's pointer has no lines to blame, so auto refuses its bump, and the commit named folds it
+# A submodule pointer has no lines to blame, so auto refuses its bump, and the commit named folds it
 _ST_PZ_NEW rs1-sm
 _ST_PZ_C f.txt f "RS sm base"
 git update-index --add --cacheinfo 160000,"$(git rev-parse HEAD)",sub && git commit -qm "RS sm add sub"
@@ -147,8 +147,8 @@ for RS_N in follow zero valueless; do
 	_ST_RUN --abort
 done
 git config --file "$GIT_CONFIG_GLOBAL" --unset log.follow
-# A repo hiding its untracked files has them left as they are – the run never touches the checkout
-# but to bring it along, and a stash would have taken every one of them
+# A repo hiding its untracked files has them left as they are – the run never touches
+# the checkout but to bring it along, and a stash would have taken every one of them
 _ST_PZ_NEW rs7
 # In the repo, as a git before 2.32 reads no `GIT_CONFIG_GLOBAL`
 git config status.showUntrackedFiles no

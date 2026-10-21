@@ -11,8 +11,8 @@
 _ST_SCENARIO "\e[1;96m[223] a file merged by hand around its edit comes along\e[0m"
 local HM_X
 
-# Makes and enters repo <name>: `f` of ten lines and `u` of four committed, `f`'s line 3 edited,
-# then a peer's landing of lines 3 and 7, which records `f`
+# Makes and enters repo <name>: `f` of ten lines and `u` of four committed,
+# `f`'s line 3 edited, then a peer's landing of lines 3 and 7, which records `f`
 _HM223_REPO () {
 	# Args: <name> [<line 7 as the landing leaves it>] [<command running the landing>]
 	_ST_PZ_NEW "$1"
@@ -113,9 +113,9 @@ _ST_EQ "a rename's source merged by hand comes along to the new name, the record
 	"$RC:$(tr '\n' ' ' < h 2>/dev/null):$([ -e f ] && echo f):$([ -s .git/git-edit-unbrought ] && echo recorded)" \
 	"0:1 2 3-L1-mine 4 5 6 7-L1 8 9 10 ::"
 
-# A base past the landings on record – a commit made outside git-edit since – takes the file's own
-# merge, as a carry from there would merge every edited file from it: `u` would conflict where it
-# holds that commit's line, edited
+# A base past the landings on record – a commit made outside git-edit since –
+# takes the file's own merge, as a carry from there would merge every edited
+# file from it: `u` would conflict where it holds that commit's line, edited
 _HM223_REPO hm5
 print -l u1 u2-P u3 u4 > u && git commit -qm "HM plain" -- u
 print -l u1 u2-P-mine u3 u4 > u

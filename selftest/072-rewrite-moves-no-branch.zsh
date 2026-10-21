@@ -1,6 +1,6 @@
-# Git applies `rebase.updateRefs` as its rebase completes, ahead of the verify and the CAS, so
-# an aborted or refused rewrite would leave a branch in the span rewritten – pinned off, with
-# the branch named instead, on either route, and never one a worktree has checked out
+# Git applies `rebase.updateRefs` as its rebase completes, ahead of the verify and the CAS,
+# so an aborted or refused rewrite would leave a branch in the span rewritten – pinned off,
+# with the branch named instead (on either route) and never one a worktree has checked out
 _ST_SCENARIO "\e[1;96m[72] a rewrite moves no branch but its own, whatever rebase.updateRefs says\e[0m"
 cd "$TMP/repo"
 git checkout -q main 2>/dev/null

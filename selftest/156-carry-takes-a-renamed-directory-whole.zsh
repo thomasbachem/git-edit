@@ -1,6 +1,6 @@
 # A landing renaming a directory whole has `--carry` take along each file still at its old path,
-# edited or not, and the untracked files left there – never one over a file in its place, an
-# ignored one, or any in a directory renamed only in part – as a terminal run's sync does
+# edited or not, and the untracked files left there – never one over a file in its place,
+# an ignored one, or any in a directory renamed only in part – as a terminal run's sync does
 _ST_SCENARIO "\e[1;96m[156] --carry and a terminal sync take a directory renamed whole along\e[0m"
 local DR_A DR_OLD DR_WT
 # A landing that can't bring the checkout along names the untracked files left behind, and

@@ -9,8 +9,8 @@ local CZ_OLD CZ_B CZ_REAL=${commands[git]}
 _CZ_RAW () {
 	git update-ref refs/heads/main topic "$CZ_OLD"
 }
-# Writes `<dir>/git` standing in for the real one, running <script> first where
-# <case pattern> takes the call's arguments
+# Writes `<dir>/git` standing in for the real one, running
+# <script> first where <case pattern> takes the call's arguments
 _CZ_STAND_IN () {
 	# Args: <dir> <case pattern> <script>
 	mkdir -p "$1"
@@ -82,8 +82,8 @@ _ST_EQ "nothing written where the link points, the edits where they were" "$(ls 
 y"
 _ST_EQ "while a file it adds elsewhere is written" "$(cat doc/n.txt 2>/dev/null)" "n"
 
-# A renamed directory's own `.gitignore` still tells what stays behind –
-# the carry's and a terminal sync's
+# A renamed directory's own `.gitignore` still tells
+# what stays behind – the carry's and a terminal sync's
 _ST_PZ_NEW cz5
 mkdir old && print a > old/a.js && print '*.log' > old/.gitignore
 git add -A && git commit -qm "CZ5 base" && CZ_OLD=$(git rev-parse HEAD)
@@ -101,8 +101,8 @@ print log > old/build.log && print u > old/u.txt
 _ST_TTY -- --land=topic
 _ST_EQ "as does a terminal landing's sync" "$RC:$(cat old/build.log 2>/dev/null):$(LC_ALL=C ls -A new | tr '\n' ' ')" "0:log:.gitignore a.js u.txt "
 
-# Staging in the way of an entry the carry adds – a peer's file staged where its directory goes – is
-# kept, the path named once, as left
+# Staging in the way of an entry the carry adds
+# – a peer's file staged where its directory goes – is kept, the path named once, as left
 _ST_PZ_NEW cz6
 print a > a.txt && git add a.txt && git commit -qm "CZ6 base" && CZ_OLD=$(git rev-parse HEAD)
 mkdir d && print x > d/x.txt && git add d && git commit -qm "CZ6 d"
@@ -138,8 +138,8 @@ _ST_EQ "a rename's staged old path stays, its staging with it" "$RC:$(git show :
 _ST_OUT_HAS "named with what to do" 'to merge by hand: src\.txt → dst\.txt – staged changes at its old path, which stays as it is till they are committed or unstaged$'
 _ST_EQ "while a rename with no staging moves" "$(cat r.txt 2>/dev/null):$([ -e q.txt ] && print there)" "q:"
 
-# A conflicting rename lands its new path, the edits left untracked at the old one, with the command
-# merging them – as a conflict in place names its own
+# A conflicting rename lands its new path, the edits left untracked at the old one,
+# with the command merging them – as a conflict in place names its own
 _ST_PZ_NEW cz8
 print -l 1 2 3 4 5 6 > a.txt && print -l 1 2 3 4 5 6 > c.txt
 git add -A && git commit -qm "CZ8 base" && CZ_OLD=$(git rev-parse HEAD)

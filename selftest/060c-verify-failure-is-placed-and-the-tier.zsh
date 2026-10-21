@@ -61,9 +61,9 @@ _ST_RUN --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
 _ST_EQ "the config-raised span applies" "$RC" "0"
 _ST_OUT_HAS "verifying the whole span" 'Verified 3 commit(s)'
 _ST_OUT_LACKS "so the line reports nothing short" 'unchecked in between'
-# The span tier states in turn what it ran beyond the default one, with the lever that steps
-# back down and what the whole check took – a caller picks its flags before running, so the
-# price that can reach it in time is the previous run's
+# The span tier states in turn what it ran beyond the default one, with the lever
+# that steps back down and what the whole check took – a caller picks its flags
+# before running, so the price that can reach it in time is the previous run's
 _ST_OUT_HAS "stating what the whole check took" 'Verified 3 commit(s) with `true` in [0-9][0-9]*s'
 _ST_OUT_HAS "and what it ran beyond the default tier" '1 beyond the default tier'
 _ST_OUT_HAS "with the lever that steps back down" 'no-verify-span` runs only its 2 (set by edit.verifySpan)'
@@ -73,9 +73,9 @@ _ST_EQ "the flag steps one run down to the default tier" "$RC" "0"
 _ST_OUT_HAS "verifying the primary commit and the tip alone" 'Verified 2 of 3 commit(s)'
 _ST_OUT_HAS "naming the shortfall as the default tier does" 'unchecked in between'
 _ST_OUT_LACKS "and not the step it just took" 'beyond the default tier'
-# The lever is not named where nothing lies beyond the default tier – a fold at the tip
-# rebuilds one commit under either, on the tip's own file, so the later folds below still
-# replay over descendants that leave theirs alone
+# The lever is not named where nothing lies beyond the default tier
+# – a fold at the tip rebuilds one commit under either, on the tip's own file,
+# so the later folds below still replay over descendants that leave theirs alone
 printf 'nv\nat the tip\n' > nv_late.txt && git add nv_late.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" -- nv_late.txt
 _ST_EQ "a fold at the tip applies under the tier" "$RC" "0"
@@ -85,8 +85,8 @@ _ST_OUT_LACKS "with nothing beyond the default tier to name" 'no-verify-span'
 _ST_RUN --verify-span --no-verify-span --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
 _ST_EQ "both tier flags together refuse" "$RC" "1"
 _ST_OUT_HAS "naming the contradiction" 'verify-span and --no-verify-span cannot be combined'
-# And the declined tier survives a pause – a resume that fell back to the config would
-# climb to the whole span the run stepped down from
+# And the declined tier survives a pause – a resume that fell back
+# to the config would climb to the whole span the run stepped down from
 printf 'USE\nstepped\n' > nv_app.txt && git add nv_app.txt
 _ST_RUN --verify=false --no-verify-span --amend-into="$(git rev-parse ':/NV base')" -- nv_app.txt
 _ST_EQ "the stepped-down fold pauses on its failing check" "$RC" "2"
@@ -116,8 +116,8 @@ while [ "$RC" = "2" ] && [ $NV_ROUNDS -lt 4 ]; do
 	NV_ROUNDS=$((NV_ROUNDS+1))
 	local NV_WT=$(print -r -- "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ (;]*\).*/\1/p' | head -1)
 	[ -z "$NV_WT" ] && break
-	# Each stop resolved to what the commit it builds holds – the fold's line at the target, the
-	# bootstrap line added beside it – as one taking that commit's line in early is refused
+	# Each stop resolved to what the commit it builds holds – the fold's line at the target,
+	# the bootstrap line added beside it – as one taking that commit's line in early is refused
 	if [ "$(git -C "$NV_WT" log -1 --format=%s REBASE_HEAD 2>/dev/null)" = "NV bootstrap line" ]; then
 		printf 'boot\nNEEDED\nrewritten\n' > "${NV_WT:-$ST_NO_WT}/nv_boot.txt"
 	else

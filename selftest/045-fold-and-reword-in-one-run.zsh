@@ -40,8 +40,8 @@ _ST_RUN --abort
 _ST_CHECK "abort leaves the branch intact" sh -c "git log --format=%s | grep -qx 'ATC top'"
 git reset -q --hard
 
-# A resolution that empties the replayed commit shortens the chain, so an
-# offset from the new tip names a commit the fold never touched
+# A resolution that empties the replayed commit shortens the chain,
+# so an offset from the new tip names a commit the fold never touched
 printf 'ae base\n' > ae.txt && git add ae.txt && git commit -qm "AE base"
 printf 'ae mid\n' > ae.txt && git add ae.txt && git commit -qm "AE target"
 local AE_TARGET=$(git rev-parse HEAD)

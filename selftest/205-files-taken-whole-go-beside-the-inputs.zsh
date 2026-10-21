@@ -1,5 +1,5 @@
-# Files taken whole go beside the inputs, each as `-- <paths>` alone takes it – the named-path checks,
-# conflict markers, other callers' landings or `--base`, a removal where the checkout lacks the file,
+# Files taken whole go beside the inputs, each as `-- <paths>` alone takes it – named-path checks,
+# conflict markers, other callers' landings or `--base`, a removal where the checkout has no file,
 # the index re-sync – where rebuilding them as inputs skipped the landings guard
 # An edit losing its one match to an earlier edit of the same list names that edit, not a peer
 _ST_SCENARIO "\e[1;96m[205] files taken whole go beside the inputs, guarded as alone, and an overlapping edit is named\e[0m"

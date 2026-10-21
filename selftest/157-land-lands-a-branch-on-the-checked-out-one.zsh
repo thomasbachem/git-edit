@@ -3,8 +3,8 @@
 # <branch> itself never moving, the checkout handled as after any landing
 _ST_SCENARIO "\e[1;96m[157] --land lands a branch on the checked-out one\e[0m"
 local LD_T LD_F LD_N LD_WT LD_P LD_C
-# A fast-forward into a dirty checkout – a peer's staging kept, uncommitted work merged onto what
-# landed, the checkout brought along
+# A fast-forward into a dirty checkout – a peer's staging kept,
+# uncommitted work merged onto what landed, the checkout brought along
 _ST_PZ_NEW ld1
 _ST_PZ_C a.txt $'1\n2\n3' "LD base"
 LD_T=$(git rev-parse HEAD)
@@ -58,7 +58,7 @@ _ST_RUN --land=feat HEAD
 _ST_EQ "a positional refuses" "$RC" "1"
 _ST_OUT_HAS "naming it" '--land takes no <commit> arguments'
 # A replay without a conflict, onto a target that moved past the fork – the branch keeps its
-# commits and is named as keeping them, a checkout of it elsewhere too, and a pushed one copied
+# commits and is named as keeping them (a checkout of it elsewhere too) and a pushed one copied
 _ST_PZ_NEW ld2
 _ST_PZ_C a.txt a "LR base"
 git checkout -q -b feat2
@@ -147,8 +147,8 @@ export GIT_EDIT_ACTOR=ld-a
 _ST_RUN --abort
 _ST_EQ "while its own label cancels it" "$RC" "0"
 export GIT_EDIT_ACTOR=
-# A peer landing on the target meanwhile – a paused replay refuses, its resolution kept, and a
-# fresh land rebuilds on the new tip
+# A peer landing on the target meanwhile – a paused replay refuses,
+# its resolution kept, and a fresh land rebuilds on the new tip
 _ST_RUN --land=feat4
 LD_WT=$(_ST_PZ_WT)
 _ST_PZ_C p.txt p "LC peer"
@@ -173,8 +173,8 @@ _ST_OUT_HAS "naming the move" 'moved from .* during the land – refusing to ove
 _ST_OUT_HAS "and the run again" 'land it onto the new tip: git edit --land=feat5'
 _ST_RUN --land=feat5
 _ST_EQ "which lands on the new tip" "$RC:$(git log --format=%s | tr '\n' '|')" "0:LP feat|LP peer|LP base|"
-# A target that once held the branch's commits – a fast-forward taken back – then moved on still
-# lacks them, its reflog's word notwithstanding
+# A target that once held the branch's commits – a fast-forward taken back –
+# then moved on still lacks them, its reflog's word notwithstanding
 _ST_PZ_NEW ld7
 _ST_PZ_C a.txt a "LU base"
 git checkout -q -b feat7 && _ST_PZ_C f.txt f "LU feat one" && _ST_PZ_C g.txt g "LU feat two" && git checkout -q main

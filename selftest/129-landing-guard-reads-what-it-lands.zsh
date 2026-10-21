@@ -69,9 +69,9 @@ _ST_OUT_HAS "an undo hands its run back as the checkout's" 'what the undone run 
 _ST_EQ "its file kept, untracked" "$(<w.txt):$(git status --porcelain -- w.txt)" "w:?? w.txt"
 _ST_OUT_LACKS "nothing offered to discard it" 'Keep it, or discard\|git clean\|git restore \(--source\|--worktree\|-- \)'
 rm -f w.txt
-# A journal lock whose holder is gone is broken at once, the landing journaling under it,
-# while one a live run holds is waited on and then refused, moving nothing – that wait cut
-# short here by a `sleep` returning at once
+# A journal lock whose holder is gone is broken at once, the landing journaling
+# under it, while one a live run holds is waited on and then refused,
+# moving nothing – that wait cut short here by a `sleep` returning at once
 _ST_PZ_NEW lg6
 _ST_PZ_C base.txt b "LG6 base"
 sh -c 'exit 0' & LG_HOLD=$!

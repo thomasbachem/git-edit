@@ -10,8 +10,8 @@
 _ST_SCENARIO "\e[1;96m[186] --land refusals print only steps that work as printed\e[0m"
 local LR_M1 LR_C LR_T LR_WT
 mkdir -p "$TMP/lr-bin" && ln -sf "$SELF" "$TMP/lr-bin/git-edit"
-# Runs a printed `git edit …` or `git -C <path> edit …` step as a caller would – past the suite's
-# `git`, whose clock a subshell would wind back to the parent's tick
+# Runs a printed `git edit …` or `git -C <path> edit …` step as a caller would
+# – past the suite's `git`, whose clock a subshell would wind back to the parent's tick
 _LR_AS_PRINTED () {
 	[[ "$1" == "git edit "* || "$1" == "git -C "*" edit "* ]] || return 1
 	( export PATH="$TMP/lr-bin:$PATH" GIT_EDIT_NO_AUTO_OPEN=1; eval "command $1" </dev/null ) > "$TMP/lr-step.out" 2>&1
@@ -22,8 +22,8 @@ _LR_STEP () {
 	S=${S%%$'\e'*}
 	print -r -- "${S%%${2:-$'\n'}*}"
 }
-# Makes `pz-<name>`: feat landed by a replay, caught up to main by a land of main, a commit of its
-# own past that, and main's commit the catch-up copied dropped since
+# Makes `pz-<name>`: feat landed by a replay, caught up to main by a land of main,
+# a commit of its own past that, and main's commit the catch-up copied dropped since
 _LR_CAUGHT () {
 	_ST_PZ_NEW "$1"
 	_ST_PZ_C f.txt f "LR base"
@@ -37,8 +37,8 @@ _LR_CAUGHT () {
 		_ST_PZ_C c.txt c "LR C" )
 	"$SELF" -d "$LR_M1" </dev/null >/dev/null 2>&1
 }
-# The --base leaving the copies out sits past the catch-up copy of the dropped commit, and run as
-# printed lands the branch's own commit alone
+# The --base leaving the copies out sits past the catch-up copy of the dropped
+# commit, and run as printed lands the branch's own commit alone
 _LR_CAUGHT lr1
 LR_T=$(git rev-parse HEAD)
 _ST_RUN --land=feat
@@ -50,8 +50,8 @@ _LR_AS_PRINTED "$LR_C"
 _ST_EQ "which, run as printed, lands the branch's own commit alone, the drop standing" \
 	"$(git log --format=%s | tr '\n' '|')" "LR C|LR A|LR M0|LR base|"
 git worktree remove --force "$TMP/lr1-wt"
-# The move onto main's copies, run as printed, never brings the dropped commit back either – the
-# land again refuses it as a copy of a dropped one, its --base landing the rest
+# The move onto main's copies, run as printed, never brings the dropped commit back either
+# – the land again refuses it as a copy of a dropped one, its --base landing the rest
 _LR_CAUGHT lr2
 _ST_RUN --land=feat
 LR_C=$(_LR_STEP 'onto main.s copies, then run it again: ')
@@ -74,8 +74,8 @@ _LR_PICKED () {
 	( cd "$TMP/$1-wt" && _ST_PZ_C a.txt a "LR A" && git cherry-pick main~1 main >/dev/null 2>&1 )
 	"$SELF" -d "$(git rev-parse main~1)" "$(git rev-parse main)" </dev/null >/dev/null 2>&1
 }
-# Its own commit below the picks is named, with the drop of the picks from its checkout, which run
-# as printed lets the land again land it alone
+# Its own commit below the picks is named, with the drop of the picks
+# from its checkout, which run as printed lets the land again land it alone
 _LR_PICKED lr3
 _ST_EQ "main dropped both" "$(git log --format=%s | tr '\n' '|')" "LR base|"
 _ST_RUN --land=feat
@@ -129,8 +129,8 @@ _ST_RUN --land=feat
 _ST_EQ "the land again ends landed, the resolution's copy counted" "$RC" "0"
 _ST_OUT_HAS "as already landed" '^git-edit: ok – refs/heads/main unchanged, already landed$'
 git worktree remove --force "$TMP/lr6-wt"
-# A fix amended into the second while the land waited – the first counted as landed, never a
-# fold of its pre-resolution change, the second's fold run as printed bringing the fix
+# A fix amended into the second while the land waited – the first counted as landed,
+# never a fold of its pre-resolution change, the second's fold run as printed bringing the fix
 _LR_RESOLVED lr7 amend
 _ST_RUN --land=feat
 _ST_EQ "a fix amended in while the land waited – nothing lands" "$RC" "1"
@@ -143,8 +143,8 @@ _LR_AS_PRINTED "$LR_C"
 _ST_RUN --land=feat
 _ST_EQ "which, run as printed, brings the fix, the land again ending landed" "$RC:$(git show HEAD:b.txt | tr '\n' ' ')" "0:b fix "
 git worktree remove --force "$TMP/lr7-wt"
-# Amended past main's last move, before the land – the reflog cannot tell which the resolution took,
-# so no fold is offered, only the comparison
+# Amended past main's last move, before the land – the reflog cannot tell
+# which the resolution took, so no fold is offered, only the comparison
 _ST_PZ_NEW lr8
 _ST_PZ_C f.txt $'1\n2\n3' "LR base"
 git worktree add -q -b feat "$TMP/lr8-wt" main 2>/dev/null
@@ -164,8 +164,8 @@ LR_C=$(_LR_STEP 'leaving them out: ')
 _LR_AS_PRINTED "$LR_C"
 _ST_EQ "the --base past it, run as printed, lands the rest" "$(git log --format=%s | tr '\n' '|')" "LR C|LR B|LR A|LR M|LR base|"
 git worktree remove --force "$TMP/lr8-wt"
-# A fix folded on the branch, dated past the land, into a commit that land took with a resolution –
-# the fold it offers composes the fix alone, keeping the resolution, the land again ending landed
+# A fix folded on the branch, dated past the land, into a commit that land took with a resolution
+# – the fold it offers composes the fix alone, keeping the resolution, the land again ending landed
 _LR_RESOLVED lr10
 cd "$TMP/lr10-wt"
 print -r -- $'1\n2f\n3\n4\n5\n6\nFIX' > f.txt && git add f.txt
@@ -184,8 +184,8 @@ _ST_EQ "which, run as printed, brings the fix alone, the resolution kept, the la
 	"$RC:$(git show HEAD~1:f.txt | tr '\n' ' ')" "0:1 2m 2f 3 4 5 6 FIX "
 git worktree remove --force "$TMP/lr10-wt"
 
-# A fix main folded into its copy – the branch's commit named as main first took it, no move onto
-# the copies offered, the --base past them landing the rest as printed
+# A fix main folded into its copy – the branch's commit named as main first took it,
+# no move onto the copies offered, the --base past them landing the rest as printed
 _ST_PZ_NEW lr9
 _ST_PZ_C f.txt f "LR base"
 git worktree add -q -b feat "$TMP/lr9-wt" main 2>/dev/null

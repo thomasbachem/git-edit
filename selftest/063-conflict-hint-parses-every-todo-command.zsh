@@ -1,7 +1,7 @@
 # The pause hint reads a todo's object, not its second word
 
-# `amend!` autosquashes into `fixup -C <sha>`, whose second word is a flag –
-# read as the object it drops that step from the hint, and hands `git log`
+# `amend!` autosquashes into `fixup -C <sha>`, whose second word is a flag
+# – read as the object it drops that step from the hint, and hands `git log`
 # its own copy-detection flag on the way
 _ST_SCENARIO "\e[1;96m[63] conflict hint parses every todo command\e[0m"
 git reset -q --hard

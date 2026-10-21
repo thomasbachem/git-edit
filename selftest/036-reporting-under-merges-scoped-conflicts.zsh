@@ -15,8 +15,8 @@ _ST_OUT_HAS "echo names the reworded commit, not its parent" '[0-9a-f]\{7,\} RW 
 _ST_OUT_LACKS "result line does not name the wrong commit" '[0-9a-f]\{7,\} RW target'
 _ST_CHECK "merge topology preserved" sh -c "test \$(git log --format=%P -1 HEAD | wc -w) -eq 2"
 git branch -q -D rw-side 2>/dev/null
-# (b) a scoped fold that conflicts: the scope must survive --continue, or
-# its intended leftovers get reported as an anomaly
+# (b) a scoped fold that conflicts: the scope must survive --continue,
+# or its intended leftovers get reported as an anomaly
 git reset -q --hard
 printf 'sc1\nsc2\nsc3\n' > sf.txt && printf 'keep\n' > sf-other.txt
 git add sf.txt sf-other.txt && git commit -qm "SF base"
@@ -30,8 +30,8 @@ _ST_EQ "scoped fold conflicts as set up" "$RC" "2"
 local SF_WT=$(echo "$OUT" | sed -n 's/^git-edit: conflict – resolve in \([^ ]*\).*/\1/p' | head -1)
 _ST_RESOLVE "$SF_WT" sf.txt $'sc1\nSFS\nsc3'
 _ST_RUN --continue
-# The final pick's staged-tree resolution would empty "SF later" – the
-# auto-resolve must decline that and leave the call with the resolver
+# The final pick's staged-tree resolution would empty "SF later"
+# – the auto-resolve must decline that and leave the call with the resolver
 _ST_EQ "final step that would empty its commit still pauses" "$RC" "2"
 _ST_OUT_LACKS "and is not auto-resolved" 'auto-resolved'
 _ST_OUT_HAS "pauses on a conflict, not a wedge" 'Conflicted files:'

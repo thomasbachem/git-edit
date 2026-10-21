@@ -1,7 +1,7 @@
-# An `--edits` fold's replay resolves its own stops – each commit it stops at that holds every old
-# text exactly once takes the edits in its own content, with no pause – and pauses as before at the
-# first one that doesn't – and a one-pass replay's transient ref goes with its run, a killed run's
-# at the next one's start
+# An `--edits` fold's replay resolves its own stops – each commit it stops at that holds
+# every old text exactly once takes the edits in its own content, with no pause –
+# and pauses as before at the first one that doesn't – and a one-pass replay's transient
+# ref goes with its run, a killed run's at the next one's start
 _ST_SCENARIO "\e[1;96m[204] --edits folds resolve their stops by replacement, a replay's transient ref goes with its run\e[0m"
 local RR_T RR_O RR_P RR_WT RR_I RR_N RR_REAL RR_PID RR_DEAD
 local -a RR_C
@@ -43,8 +43,8 @@ _ST_EQ "authors, dates and messages kept, on the target's own parent" \
 _ST_EQ "and the file's executable bit in every one" "$(git log --format=%H -n 51 HEAD | while read -r RR_I; do git ls-tree "$RR_I" f.sh | cut -c1-6; done | sort -u)" "100755"
 _ST_OUT_HAS "naming the amended commit" '  amended: [0-9a-f]* RR1 target'
 
-# A commit that changed the old text pauses as before, the commits below replayed – a hook told of
-# every commit the fold rewrote, through the pause
+# A commit that changed the old text pauses as before, the commits below replayed
+# – a hook told of every commit the fold rewrote, through the pause
 _ST_PZ_NEW rr2
 _ST_PZ_C init.txt i "RR2 init"
 print -l a "v=1" b c d e f g h z0 > f.txt && git add f.txt && git commit -qm "RR2 target"

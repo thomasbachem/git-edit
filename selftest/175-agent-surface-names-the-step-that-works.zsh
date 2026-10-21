@@ -1,14 +1,14 @@
-# What an agent reads names a step that works for it – a printed command runs as printed from
-# where it is pasted, every mode refuses outside a repository or a cwd that is gone, `--status`
-# names whose a damaged or orphaned pause is and what clears it, owners are told apart by the
-# label as given, and a new `-C` path a late refusal stops is taken back out
+# What an agent reads names a step that works for it – a printed command runs as printed
+# from where it is pasted, every mode refuses outside a repository or a cwd that is gone,
+# `--status` names whose a damaged or orphaned pause is and what clears it, owners are told
+# apart by the label as given, and a new `-C` path a late refusal stops is taken back out
 _ST_SCENARIO "\e[1;96m[175] the agent surface names a step that works, owners by their label as given\e[0m"
 local AS_TOP AS_WT AS_CMD AS_SF AS_D AS_REAL AS_ARG
 local -i AS_RC
 
-# An `--onto` refusal over uncommitted work, halfway through a sequence, names the commit from the
-# top – `--commit` reads its paths from where it runs, so from a subdirectory it once committed
-# another session's file
+# An `--onto` refusal over uncommitted work, halfway through a sequence,
+# names the commit from the top – `--commit` reads its paths from where
+# it runs, so from a subdirectory it once committed another session's file
 _ST_PZ_NEW as2
 mkdir -p sub/sub
 _ST_PZ_C sub/x.txt x0 "AS2 base"
@@ -142,8 +142,8 @@ mkdir -p "$TMP/as9-empty"
 _ST_RUN -C="$TMP/as9-empty" -d -y HEAD~1
 _ST_OUT_HAS "-C on an existing directory that is no worktree names a path to give instead" 'Name a path that does not exist yet'
 
-# A new `-C` path the late in-flight checks refuse is taken back out – kept only where a pause in it
-# holds work, a peer's that took the path while this run waited
+# A new `-C` path the late in-flight checks refuse is taken back out – kept only
+# where a pause in it holds work, a peer's that took the path while this run waited
 _ST_PZ_NEW asc
 _ST_PZ_C a.txt a "ASC A" && _ST_PZ_C b.txt b "ASC B" && _ST_PZ_C c.txt c "ASC C"
 AS_SF=$PWD/.git/git-edit-state
