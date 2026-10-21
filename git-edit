@@ -4409,8 +4409,8 @@ _INDEX_FLAGS_BACK () {
 }
 
 # Fills `reply` with each flagged <path> whose file a two-tree merge would find not up to date –
-# its stat off its entry's, the flag aside, as `read-tree -m -u` judges it – asked of a copy of the
-# index with the flags off, every <path> where that fails
+# its content off its entry's, as `_SYNC_TWO_TREE` reads a touched file's stat afresh first –
+# asked of a refreshed copy of the index with the flags off, every <path> where that fails
 _FLAGGED_STALE () {
 	# Args: <checkout> <path>...
 	local CO=$1 IDX TMP OUT P
@@ -4430,6 +4430,7 @@ _FLAGGED_STALE () {
 		cp -p "$IDX" "$TMP" 2>/dev/null && \
 		print -rN -- "$@" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-assume-unchanged -z --stdin 2>/dev/null && \
 		print -rN -- "$@" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-skip-worktree -z --stdin 2>/dev/null && \
+		{ GIT_INDEX_FILE=$TMP git -C "$CO" update-index -q --refresh >/dev/null 2>&1; :; } && \
 		OUT=$(GIT_INDEX_FILE=$TMP git -C "$CO" diff-files -z --name-only --ignore-submodules "${SPEC[@]}" 2>/dev/null) || return 0
 	} always {
 		rm -f "$TMP"
@@ -6918,12 +6919,12 @@ _BROUGHT_CARRIED () {
 _SYNC_TWO_TREE () {
 	# Args: <checkout> <old tip> <new tip> <path>... – reads the caller's `DIFF_O` and `DIFF_N`, its
 	# `TT_EXP` and `TT_FROM` with a path's entry as read and its file's base where either isn't
-	# <old>'s, its `WIDE` with each path whose `DIFF_O` is the mark's, and fills its `TT_MOVED` with
-	# each path staged since, `TT_IN_WAY` with each one staging blocks (path -> the staged one), the
-	# merge taking the rest
+	# <old>'s, its `WIDE` with each path whose `DIFF_O` is the mark's, its `FLAG_AU` and `FLAG_SW` as
+	# `_INDEX_FLAGS` fills them, and fills its `TT_MOVED` with each path staged since, `TT_IN_WAY`
+	# with each one staging blocks (path -> the staged one), the merge taking the rest
 	local CO=$1 OLD=$2 NEW=$3 IDX TMP PRIV MID FROM OUT P E
 	local -x GIT_LITERAL_PATHSPECS=1
-	local -a TAKE ADDS BACK
+	local -a TAKE ADDS BACK AU SW
 	local -A IDX_ENT GOES IN_WAY
 	shift 3
 	REPLY="" TT_MOVED=() TT_IN_WAY=() FROM=$OLD
@@ -6963,11 +6964,23 @@ _SYNC_TWO_TREE () {
 		for P in "${TAKE[@]}"; do
 			[ "${IDX_ENT[$P]}" = "${TT_FROM[$P]-${DIFF_O[$P]}}" ] || BACK+=("$P")
 		done
+		# A flagged file touched since, its content as committed, reads as not up to date where git
+		# judges it by its stat alone – read off the file with the flag off, as for any other, the
+		# flag set again for the merge – a skip-worktree entry with no file has nothing to read
+		AU=("${(@)FLAG_AU:*TAKE}")
+		for P in "${(@)FLAG_SW:*TAKE}"; do [ -e "$CO/$P" ] || [ -L "$CO/$P" ] && SW+=("$P"); done
 		if (( ${#BACK} )); then
 			{ for P in "${BACK[@]}"; do E=${TT_FROM[$P]}; printf '%s %s\t%s\0' "${E% *}" "${E#* }" "$P"; done; :; } | \
 				GIT_INDEX_FILE=$TMP git -C "$CO" update-index -z --index-info 2>/dev/null || { REPLY="the index could not be written"; return 1; }
-			GIT_INDEX_FILE=$TMP git -C "$CO" update-index -q --refresh >/dev/null 2>&1
 		fi
+		if (( ${#BACK} + ${#AU} + ${#SW} )); then
+			{ (( ! ${#AU} )) || print -rN -- "${AU[@]}" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-assume-unchanged -z --stdin; } && \
+			{ (( ! ${#SW} )) || print -rN -- "${SW[@]}" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --no-skip-worktree -z --stdin; } && \
+			GIT_INDEX_FILE=$TMP git -C "$CO" update-index -q --refresh
+			{ (( ! ${#AU} )) || print -rN -- "${AU[@]}" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --assume-unchanged -z --stdin; } && \
+			{ (( ! ${#SW} )) || print -rN -- "${SW[@]}" | GIT_INDEX_FILE=$TMP git -C "$CO" update-index --skip-worktree -z --stdin; } || \
+				{ REPLY="the index could not be written"; return 1; }
+		fi >/dev/null 2>&1
 		rm -f "$PRIV"
 		# The tree each path merges from – <old>'s, but where a file's base is another, or a missed
 		# landing's path sits on the mark
