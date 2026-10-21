@@ -5539,6 +5539,17 @@ _SYNC_CHECKOUT () {
 	else
 		ORDER=("${CHANGED[@]}")
 	fi
+	# A flagged file hides its edits from the read of what is unstaged – one staged off <old> is asked
+	# again with its flag off, so hidden edits never read as staged whole
+	local -a FLAG_ASK
+	for P in "${FLAG_AU[@]}" "${FLAG_SW[@]}"; do
+		(( ${+IS_DIRTY[$P]} && ! ${+UNSTAGED[$P]} )) && [ -n "${IDX_ENT[$P]}" ] && [ "${IDX_ENT[$P]}" != "${DIFF_O[$P]}" ] && \
+			FLAG_ASK+=("$P")
+	done
+	if (( ${#FLAG_ASK} )); then
+		_FLAGGED_STALE "$CO" "${FLAG_ASK[@]}"
+		for P in "${reply[@]}"; do UNSTAGED[$P]=1; done
+	fi
 	for P in "${ORDER[@]}"; do
 		if (( ! ${+IS_DIRTY[$P]} )); then
 			# A carry names what the two-tree merge wrote as it reaches it – a rename by both its paths
