@@ -8955,6 +8955,20 @@ _LAND_REBASE () {
 	if [ "$ACT" = drop ]; then
 		for T in "${NAMED[@]}"; do MEANT+="$(_MODE_LINES "$WT" "$T" "$T^")"$'\n'; done
 	fi
+	# A drop or squash takes the commits it names out of the branch, emptied ones besides – a replay
+	# taking fewer out did neither, its todo edit gone unmatched or a rebase begun there by hand
+	local -aU OUT_N=("${(@)NAMED:#$TGT}")
+	local -i GONE=$(( $(git -C "$WT" rev-list --count "$OLD") - $(git -C "$WT" rev-list --count "$NEW") ))
+	if (( GONE < ${#OUT_N} )); then
+		PRINT_ERR "The $ACT would leave $(( ${#OUT_N} - GONE )) of its ${#OUT_N} commit(s) in the branch – its replay never took them out, so nothing was applied"
+		if [ -n "$_STATE_OWNED" ]; then
+			_CLEANUP_HOOK=""
+			ECHO_E "\e[0;31m  A rebase run by hand in $(_LIT "$WT") is not the run's own – cancel with 'git edit --abort', then run it again.\e[0m" >&2
+		else
+			ECHO_E "\e[0;31m  The branch is as it was.\e[0m" >&2
+		fi
+		exit 1
+	fi
 	# A squash keeps the tip's content by construction – a replay that changed it,
 	# through a resolution say, lands nothing, told before a gate runs on what can't land
 	[ "$ACT" = squash ] && ! _SAME_TREE "$NEW" "$OLD" && _REFUSE_SQUASH_TIP "$WT" "$OLD" "$NEW" "$TGT"
