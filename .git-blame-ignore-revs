@@ -1,0 +1,6 @@
+# Sweeps `git blame` skips – comments, whitespace, syntax or naming normalized, behavior unchanged
+# • Full SHAs of pushed commits only – an abbreviated one aborts blame, a rewritten one is skipped
+# • Local `git blame` reads it once `blame.ignoreRevsFile` is `:(optional).git-blame-ignore-revs`
+
+# Comments
+bd08f3b8026d515d22ceb81a644c2cd39ca6bc6e # Tighten comments in `git-edit` and the selftest suite
