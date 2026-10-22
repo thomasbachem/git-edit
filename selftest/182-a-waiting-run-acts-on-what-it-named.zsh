@@ -136,7 +136,7 @@ _W182_PEER --continue
 PW_HEAD=$(git rev-parse HEAD)
 _W182_END pw5
 _ST_EQ "a pinned commit the landing changed refuses, nothing moved" "$RC:$(git rev-parse HEAD)" "1:$PW_HEAD"
-_ST_OUT_HAS "naming its counterpart" "Its counterpart on HEAD is $(git rev-parse --short=12 HEAD~1) (same subject, changed content)"
+_ST_OUT_HAS "naming its counterpart" "rewritten as $(git rev-parse --short=12 HEAD~1) (same subject, changed content)"
 
 # Every argument the run would refuse refuses at once beside
 # another caller's pause, never after the wait – a valid run alone waits

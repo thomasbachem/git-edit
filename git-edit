@@ -1973,8 +1973,8 @@ _GUARD_REACHABLE () {
 	# consents to the commit the caller named, not to one resolved on its behalf, so where a
 	# guess would compound with a shared-history rewrite, name the match and let them ask
 	if [ "${RESOLVED[2]}" = "patch-id" ] && _IS_PUSHED "${RESOLVED[1]}"; then
-		PRINT_ERR "$WHAT ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
-		ECHO_E "\e[0;31m  Its only match ${RESOLVED[1]:0:12} is already pushed – name it explicitly to rewrite it.\e[0m" >&2
+		PRINT_ERR "$WHAT ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten as ${RESOLVED[1]:0:12}, already pushed"
+		ECHO_E "\e[0;31m  Name it explicitly to rewrite it.\e[0m" >&2
 		exit 1
 	fi
 
@@ -1985,10 +1985,12 @@ _GUARD_REACHABLE () {
 		return 0
 	fi
 
-	PRINT_ERR "$WHAT ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
+	# The commit to retry with rides in the error itself, which a caller keeping only the trailer reads
 	if [ "${RESOLVED[2]}" = "subject" ]; then
-		ECHO_E "\e[0;31m  Its counterpart on HEAD is ${RESOLVED[1]:0:12} (same subject, changed content) – retry with that.\e[0m" >&2
+		PRINT_ERR "$WHAT ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten as ${RESOLVED[1]:0:12} (same subject, changed content)"
+		ECHO_E "\e[0;31m  Retry with that commit once its content is what you meant – only its subject matches.\e[0m" >&2
 	else
+		PRINT_ERR "$WHAT ${C:0:7} ($SUBJECT) is not in HEAD's history – it was likely rewritten"
 		ECHO_E "\e[0;31m  Re-read the current SHAs with 'git log' before retrying.\e[0m" >&2
 	fi
 	exit 1

@@ -10,7 +10,7 @@ local STALE_COUNT=$(git rev-list --count HEAD)
 _ST_RUN -d -y "$STALE_SHA"
 _ST_EQ "drop refuses a stale SHA" "$RC" "1"
 _ST_OUT_HAS "explains it was rewritten" 'likely rewritten'
-_ST_OUT_HAS "names the counterpart" 'counterpart on HEAD'
+_ST_OUT_HAS "names the counterpart in the error a trailer carries" "^git-edit: error – .*rewritten as $(git rev-parse --short=12 HEAD) (same subject, changed content)$"
 _ST_EQ "HEAD untouched" "$(git rev-parse HEAD)" "$STALE_HEAD"
 _ST_EQ "nothing dropped" "$(git rev-list --count HEAD)" "$STALE_COUNT"
 _ST_RUN -d -y "${$(git rev-parse HEAD)//?/d}"

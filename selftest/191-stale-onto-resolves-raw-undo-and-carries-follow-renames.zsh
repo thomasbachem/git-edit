@@ -97,7 +97,7 @@ for OV_I in 1 2 3; do
 		_ST_EQ "one whose content the landing changed refuses, moving nothing" \
 			"$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD~1:f3)" "1:OV1 c4|OV1 c3|OV1 c2|OV1 c1|OV1 base|:3x"
 		_ST_OUT_HAS "naming it and its counterpart" "Upstream ${OV_C3:0:7} (OV1 c3) is not in HEAD's history"
-		_ST_OUT_HAS "with the commit to retry with" "Its counterpart on HEAD is $(git rev-parse --short=12 HEAD~1) (same subject, changed content)"
+		_ST_OUT_HAS "with the commit to retry with" "rewritten as $(git rev-parse --short=12 HEAD~1) (same subject, changed content)"
 	else
 		_ST_EQ "'git edit $OV_ARG' keeps the peer's rewrite, replanting nothing" \
 			"$RC:$(git log --format=%s | tr '\n' '|')" "0:OV1 c4|OV1 c3|OV1 c2 reworded|OV1 c1|OV1 base|"

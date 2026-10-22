@@ -77,7 +77,7 @@ local TE_S=$(git rev-parse HEAD)
 printf 'ts2\n' > te-s.txt && git add te-s.txt
 _ST_RUN --amend-into="$TE_S" -- te-s.txt
 _ST_RUN -d -y "$TE_S"
-_ST_OUT_HAS "as does a stale SHA's, its content changed" 'counterpart on HEAD'
+_ST_OUT_HAS "as does a stale SHA's, its content changed" 'TE-S stale \\e\[0m kept) is not in HEAD.s history – it was likely rewritten as [0-9a-f]* (same subject, changed content)$'
 git reset -q --hard "$TE_BASE"
 rm -f te-s.txt
 # A gate's CRLF line prints without its `\r`, a long colored one without a pass per character,
