@@ -113,7 +113,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
-	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED \
+	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT
 
@@ -17854,18 +17854,49 @@ _COMMIT_CHANGE_LINES () {
 		LC_ALL=C awk 'H && /^[-+]/; /^@@/ { H = 1 }'
 }
 
+# The paths a stop's own commits change that its rebuilt commit no longer holds, by
+# "<rebuilt commit> <its CHAIN>", as NUL-joined "<commit> <path>" pairs – kept for the run
+typeset -gA _STOP_GONE
+_STOP_GONE=()
+
+# Notes `_STOP_GONE`'s pairs for a stop's rebuilt <commit> – called outside the `$(…)` reading
+# them, which keeps nothing, so a stop on a commit changing hundreds of files checks each once
+_STOP_GONE_PATHS () {
+	# Args: <worktree> <stop's rebuilt commit>
+	local WT=$1 T=$2 C P KEY="$2 ${CHAIN[$2]}"
+	local -i I
+	local -a PATHS FLAT TYPES GONE
+	(( ${+_STOP_GONE[$KEY]} )) && return 0
+	for C in ${=CHAIN[$T]}; do
+		PATHS=(${(0)"$(git -C "$WT" diff-tree -r -z --no-commit-id --name-only --no-renames --diff-filter=M "$C" 2>/dev/null)"})
+		# One batch a commit – a name holding a newline, which the batch reads as two, asked alone
+		FLAT=(${PATHS:#*$'\n'*})
+		TYPES=()
+		(( ${#FLAT} )) && TYPES=("${(@f)$(print -rl -- "${FLAT[@]/#/$T:}" | git -C "$WT" cat-file --batch-check='%(objecttype)' 2>/dev/null)}")
+		for (( I = 1; I <= ${#FLAT}; I++ )); do
+			[[ "${TYPES[I]}" == (blob|tree|commit) ]] || GONE+=("$C" "${FLAT[I]}")
+		done
+		for P in ${(M)PATHS:#*$'\n'*}; do
+			git -C "$WT" cat-file -e "$T:$P" 2>/dev/null || GONE+=("$C" "$P")
+		done
+	done
+	_STOP_GONE[$KEY]=${(pj:\0:)GONE}
+}
+
 # Prints the lines a stop's rebuilt <commit> changes in <file> through its own commits
 # – the pick it replays and the fixups folded into it, `CHAIN`'s, whose lines on a path
 # the commit no longer holds count too, as a fold names a file by its path at the tip
 _STOP_OWN_LINES () {
 	# Args: <worktree> <stop's rebuilt commit> <file, from the top>
-	local WT=$1 T=$2 FILE=$3 C P
+	local WT=$1 T=$2 FILE=$3 C KEY="$2 ${CHAIN[$2]}"
+	local -i I
+	local -a GONE
+	_STOP_GONE_PATHS "$WT" "$T"
+	GONE=("${(@0)_STOP_GONE[$KEY]}")
 	for C in ${=CHAIN[$T]}; do
 		_COMMIT_CHANGE_LINES "$WT" "$C" "$FILE"
-		for P in ${(0)"$(git -C "$WT" diff-tree -r -z --no-commit-id --name-only --no-renames --diff-filter=M "$C" 2>/dev/null)"}; do
-			[ "$P" = "$FILE" ] && continue
-			git -C "$WT" cat-file -e "$T:$P" 2>/dev/null && continue
-			_COMMIT_CHANGE_LINES "$WT" "$C" "$P"
+		for (( I = 1; I < ${#GONE}; I += 2 )); do
+			[ "${GONE[I]}" = "$C" ] && [ "${GONE[I+1]}" != "$FILE" ] && _COMMIT_CHANGE_LINES "$WT" "$C" "${GONE[I+1]}"
 		done
 	done
 	return 0
@@ -17999,6 +18030,7 @@ _GUARD_ABSORBED () {
 			LOSTL=("${(@f)$(LC_ALL=C comm -23 <(_COMMIT_CHANGE_LINES "$WT" "$O" "$FILE" | LC_ALL=C sort) <([ -n "$R" ] && _COMMIT_CHANGE_LINES "$WT" "$R" "$FILE" | LC_ALL=C sort))}")
 			HELD=() UNDONE=()
 			for T in "${INTO[@]}"; do
+				_STOP_GONE_PATHS "$WT" "$T"
 				(( ${+TOOK[$T:$FILE]} )) || TOOK[$T:$FILE]=$(_STOP_TOOK_IN "$WT" "$T" "$FILE")
 				(( ${+OWNS[$T:$FILE]} )) || OWNS[$T:$FILE]=$(_STOP_OWN_LINES "$WT" "$T" "$FILE")
 				for L in "${(@f)TOOK[$T:$FILE]}"; do [ -n "$L" ] && HELD[$L]=$T; done
