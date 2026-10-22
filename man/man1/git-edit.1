@@ -327,6 +327,9 @@ Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
 a single \fIcommit\fR into its parent. Auto\-routes to the plumbing path
 when the selection is a
 contiguous, merge\-free range whose target is the oldest commit.
+Given neither \fB\-\-text\fR nor \fB\-m\fR, the message follows the markers it
+folds in, as git's autosquash does: an \fBamend!\fR commit naming the target
+takes the place of its message, a \fBsquash!\fR one adds its body.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
@@ -2781,9 +2784,11 @@ git edit \-s=<target> <fixup commit>...
 .PP
 The fixup's gate may wait for the squash
 .RB ( \-\-no\-verify ),
-and each squash runs gated. A lost race, or a wait that ran out, points here
-when other callers landed on the branch 3 or more times in the last 10
-minutes.
+and each squash runs gated. A fix rewording its target lands as
+\fBamend! <target's subject>\fR with the new message as its body, which
+the squash takes as git's autosquash would. A lost race, or a wait that
+ran out, points here when other callers landed on the branch 3 or more
+times in the last 10 minutes.
 .SH "EXIT STATUS"
 .TP
 .B 0

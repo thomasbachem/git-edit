@@ -8634,6 +8634,56 @@ GIT_REBASE_DROP () {
 	_REBASE_FROM_START "LC_ALL=C sed -i.git-edit$SED_SCRIPT" "" "" "${CMD[@]}"
 }
 
+# Puts into `REPLY` what a subject's markers name, as git's autosquash reads them – each `fixup! `,
+# `amend! ` or `squash! ` and the spaces after it stripped – failing where it opens on none
+_MARKER_NAME () {
+	# Args: <subject>
+	local P=$1
+	[[ "$P" == (amend|fixup|squash)'! '* ]] || return 1
+	while [[ "$P" == (amend|fixup|squash)'! '* ]]; do
+		P=${P#*! }
+		P=${P#"${P%%[![:space:]]*}"}
+	done
+	REPLY=$P
+}
+
+# Puts into `REPLY` the message git's autosquash gives <target> folding in <commit>s, oldest first
+# – an `amend!` naming it takes its place, a `squash!` adds its body – and into `reply` the
+# markers followed, failing where none changes the target's own
+_SQUASH_MARKED_MESSAGE () {
+	# Args: <target> <commit>...
+	local TGT=$1 C ALL FIRST NAME BODY SUBJ MSG ORIG
+	shift
+	SUBJ=$(git log -1 --format=%s "$TGT" 2>/dev/null)
+	MSG=$(git log -1 --format=%B "$TGT" 2>/dev/null | git stripspace)
+	ORIG=$MSG
+	reply=()
+	for C in "$@"; do
+		[ "$C" = "$TGT" ] && continue
+		ALL=$(git log -1 --format=%B "$C" 2>/dev/null)
+		FIRST=${ALL%%$'\n'*}
+		[[ "$FIRST" == (amend|squash)'! '* ]] || continue
+		_MARKER_NAME "$FIRST" && NAME=$REPLY
+		_MARKER_NAMES "$TGT" "$SUBJ" "$NAME" || continue
+		BODY=$(print -r -- "${ALL#"$FIRST"}" | git stripspace)
+		[ -n "$BODY" ] || continue
+		if [[ "$FIRST" == amend* ]]; then MSG=$BODY; else MSG+=$'\n\n'$BODY; fi
+		reply+=("${FIRST%%!*}! ${C:0:7}")
+	done
+	(( ${#reply} )) && [ "$MSG" != "$ORIG" ] || return 1
+	REPLY=$MSG
+}
+
+# Tells whether a marker's <name> points at <target> as git's autosquash matches one
+# – its subject whole, a name resolving to it, or the subject's opening words
+_MARKER_NAMES () {
+	# Args: <target> <its subject> <name>
+	[ -n "$3" ] || return 1
+	[ "$3" = "$2" ] && return 0
+	[[ "$3" != *' '* ]] && [ "$(git rev-parse -q --verify "$3^{commit}" 2>/dev/null)" = "$1" ] && return 0
+	[[ "$2" == "$3"* ]]
+}
+
 # Squashes `COMMITS` into the oldest by a rebase – `squash` given a message or `-m`, else `fixup`
 GIT_REBASE_SQUASH () {
 	_CAPTURE_BEGIN
@@ -21088,6 +21138,14 @@ _RESOLVE_ACTION () {
 			ECHO_E "\e[0;31m  A contiguous squash into the oldest commit preserves every tree by construction.\e[0m" >&2
 			exit 1
 		fi
+	fi
+
+	# A squash given no message follows the `amend!` and `squash!` markers it folds in,
+	# as git's autosquash would – passed on as `--text` is, which every route and a pause carry
+	if [[ "$ACTION" == (squash|resquash) ]] && [ -z "$TEXT_VALUE" ] && [ ${#OPT_MESSAGE} -eq 0 ] && \
+	   _SQUASH_MARKED_MESSAGE "${TARGET:-${COMMITS[1]}}" "${COMMITS[@]}"; then
+		TEXT_VALUE=$REPLY
+		PRINT_TEXT "The message follows %s, as git's autosquash would" 33 "${(j:, :)reply}"
 	fi
 
 	# Merge-span guard for the modes still rebase-based after auto-routing

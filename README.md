@@ -174,6 +174,8 @@ git edit --commit --text "fixup! <target's subject>" -- <paths>   # its gate may
 git edit -s=<target> <fixup commit>...                             # each owner in turn, gate on
 ```
 
+A fix rewording its target lands as `amend! <target's subject>` with the new message as its body, which the squash takes as git's autosquash would – a `squash!` one's body is added to the target's.
+
 A lost race, or a wait that ran out, points here when other callers landed on the branch 3 or more times in the last 10 minutes.
 
 ## Verifying what a rewrite built
