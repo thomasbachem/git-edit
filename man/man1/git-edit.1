@@ -330,6 +330,10 @@ contiguous, merge\-free range whose target is the oldest commit.
 Given neither \fB\-\-text\fR nor \fB\-m\fR, the message follows the markers it
 folds in, as git's autosquash does: an \fBamend!\fR commit naming the target
 takes the place of its message, a \fBsquash!\fR one adds its body.
+A squash ends on the tip's content \(em one whose resolutions add up to
+anything else refuses to land, naming the commits the differing lines came
+from, and keeps its replay paused for one of them to be reworked there
+before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.

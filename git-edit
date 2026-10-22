@@ -100,7 +100,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
 	STATE_ACTOR_ID STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
-	STATE_TARGET STATE_TARGETS \
+	STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
 	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNBROUGHT UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
@@ -3980,6 +3980,7 @@ GIT_STATUS_REPORT () {
 			local STATUS_AUTHORING=false
 			local STATUS_VERIFY=false
 			local STATUS_MODE=false
+			local STATUS_TIP=false
 			# A gate pause holds a finished rebuild it refused – with no rebase
 			# running and nothing unmerged, the conflict report would show no files
 			if [ -n "$STATE_MODE_STRAY" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
@@ -3988,6 +3989,16 @@ GIT_STATUS_REPORT () {
 			elif [ -n "$STATE_VERIFY_FAILED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
 				STATUS_VERIFY=true
 				PRINT_TEXT "Verification failed at %s – the result is built in the worktree, not applied." 33 "${STATE_VERIFY_FAILED:0:7}"
+			# As does a squash its tip refused, while its result stands untouched
+			elif [ -n "$STATE_TIP_REFUSED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ] && \
+			     [ "$(git -C "$STATE_WORKTREE" rev-parse -q --verify HEAD 2>/dev/null)" = "$STATE_TIP_REFUSED" ]; then
+				STATUS_TIP=true
+				if [ -z "$OWNER" ]; then
+					PRINT_TEXT "The squash would change the tip's content, at %s – its replay is kept in the worktree, not applied." 33 \
+						"$(_SOME_PATHS -q ${(f)"$(_TREE_CHANGES "$STATE_ORIG_HEAD" "$STATE_TIP_REFUSED")"})"
+					_PRINT_TIP_SOURCES "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_TIP_REFUSED" "$STATE_SQUASH_TARGET"
+					_PRINT_TIP_REWORK "$STATE_WORKTREE" "$REPLY"
+				fi
 			elif [ "$STATE_OPERATION" = "split" ]; then
 				STATUS_AUTHORING=true
 				if [ -z "$OWNER" ]; then
@@ -4017,6 +4028,9 @@ GIT_STATUS_REPORT () {
 				EMIT_MODE_PAUSED "$STATE_MODE_STRAY" "$STATE_WORKTREE"
 			elif [ "$STATUS_VERIFY" = "true" ]; then
 				EMIT_VERIFY_PAUSED "$STATE_VERIFY_FAILED" "$STATE_WORKTREE"
+			elif [ "$STATUS_TIP" = "true" ]; then
+				_EMIT_TRAILER "git-edit: paused – squash of ${STATE_TARGET:0:7} would change the tip's content, its replay kept in $STATE_WORKTREE; rework the commit named above there, then 'git edit --continue', or 'git edit --abort'"
+				_STATUS_EMITTED=true
 			elif [ "$STATUS_AUTHORING" = "true" ]; then
 				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 				EMIT_PAUSED "$STATE_OPERATION" "$STATE_TARGET" "$STATE_WORKTREE"
@@ -8806,6 +8820,100 @@ _SQUASHED_INTO () {
 	fi
 }
 
+# Refuses a squash whose replay ends off the tip's content, naming the commits the differing lines
+# came from – a pause keeps the replay, one of them to be reworked in place, and notes the result
+# it refused, so `--status` tells it and a resume finding that untouched answers at once
+_REFUSE_SQUASH_TIP () {
+	# Args: <worktree> <old tip> <new tip> <squash target>
+	local WT=$1 OLD=$2 NEW=$3 AT
+	PRINT_ERR "The squash would change the tip's content, at $(_SOME_PATHS -q ${(f)"$(_TREE_CHANGES "$OLD" "$NEW")"}) – not applied"
+	_PRINT_TIP_SOURCES "$WT" "$OLD" "$NEW" "$4" >&2
+	AT=$REPLY
+	[ -n "$_STATE_OWNED" ] || exit 1
+	_CLEANUP_HOOK=""
+	[ "$STATE_TIP_REFUSED" = "$NEW" ] || _STATE_NOTE "tip_refused=$NEW"
+	_PRINT_TIP_REWORK "$WT" "$AT"
+	_PAUSE_EXIT 1 retry
+}
+
+# Prints each line range a squash's result <new> holds otherwise than the tip <old>, beside the
+# replay's commit it came from – marked where a stop's resolution made it – and puts into `REPLY`
+# the one to rework, the oldest a resolution made, else the oldest named, empty where none is
+_PRINT_TIP_SOURCES () {
+	# Args: <worktree> <old tip> <new tip> <squash target>
+	local WT=$1 OLD=$2 NEW=$3 BASE FILE R RUN SHA LN PREV="" FIRST LAST T TREE HOW RES AT="" AT_RES=""
+	local -i COUNT I SHOWN=0 MORE=0
+	local -a FILES RANGES BLAMED ORDER OUT
+	local -A RANK RESOLVED_AT
+	REPLY=""
+	BASE=$(git -C "$WT" rev-parse -q --verify "$4^" 2>/dev/null)
+	ORDER=(${(f)"$(git -C "$WT" rev-list --reverse ${BASE:+^$BASE} "$NEW" 2>/dev/null)"})
+	for (( I = 1; I <= ${#ORDER}; I++ )); do RANK[${ORDER[I]}]=$I; done
+	for T in ${=STATE_RESOLVED}; do RESOLVED_AT[$T]=1; done
+	FILES=(${(f)"$(_TREE_CHANGES "$OLD" "$NEW")"})
+	for FILE in "${FILES[@]:0:5}"; do
+		# Each hunk's new side as "<start> <count>", a count of 0 removing only
+		RANGES=(${(f)"$(git -C "$WT" diff -U0 --no-renames --no-ext-diff --no-textconv --no-color "$OLD" "$NEW" -- ":(literal)$FILE" 2>/dev/null | \
+			LC_ALL=C sed -nE 's/^@@ -[0-9,]+ \+([0-9]+)(,([0-9]+))? @@.*/\1 \3/p')"})
+		for R in "${RANGES[@]}"; do
+			COUNT=${${R#* }:-1}
+			(( COUNT )) || continue
+			# "<commit> <line>" a line each, `-` for one older than
+			# the replay – an empty last entry ends the final run
+			BLAMED=(${(f)"$(git -C "$WT" blame --porcelain -L "${R%% *},+$COUNT" ${BASE:+$BASE..}"$NEW" -- "$FILE" 2>/dev/null | \
+				LC_ALL=C awk '$1 ~ /^[0-9a-f]+$/ && length($1) >= 40 && NF >= 3 { sha = $1; ln = $3 }
+					$0 == "boundary" { b[sha] = 1 }
+					/^\t/ { n++; S[n] = sha; L[n] = ln }
+					END { for (i = 1; i <= n; i++) print ((S[i] in b) ? "-" : S[i]), L[i] }')"} "")
+			for RUN in "${BLAMED[@]}"; do
+				SHA=${RUN%% *} LN=${RUN#* }
+				if [ -n "$PREV" ] && [ "$SHA" = "$PREV" ] && (( LN == LAST + 1 )); then
+					LAST=$LN
+					continue
+				fi
+				# A run of lines from one commit ends – named, and weighed as the one to rework
+				if [ -n "$PREV" ]; then
+					RES=""
+					if [ "$PREV" != - ]; then
+						TREE=$(git -C "$WT" rev-parse -q --verify "$PREV^{tree}" 2>/dev/null)
+						[ -n "$TREE" ] && (( ${+RESOLVED_AT[$TREE]} )) && RES=1
+						[[ -z "$AT" || ${RANK[$PREV]:-0} -lt ${RANK[$AT]:-0} ]] && AT=$PREV
+						[[ -n "$RES" && ( -z "$AT_RES" || ${RANK[$PREV]:-0} -lt ${RANK[$AT_RES]:-0} ) ]] && AT_RES=$PREV
+					fi
+					if (( SHOWN < 8 )); then
+						HOW="older than the squash's target"
+						[ "$PREV" != - ] && HOW="${PREV:0:7} ($(git -C "$WT" log -1 --format=%s "$PREV" 2>/dev/null))${RES:+, resolved at its stop}"
+						[ "$LAST" = "$FIRST" ] || FIRST+="-$LAST"
+						OUT+=("$FILE:$FIRST – $HOW")
+						SHOWN+=1
+					else
+						MORE+=1
+					fi
+				fi
+				PREV=$SHA FIRST=$LN LAST=$LN
+			done
+		done
+	done
+	(( ${#OUT} )) && printf '%s\n' "${OUT[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/"
+	(( MORE )) && print -r -- "${_RED}  … and $MORE more${_OFF}"
+	REPLY=${AT_RES:-$AT}
+}
+
+# Prints how a squash its tip refused goes on – <commit> reworked in the replay
+# kept in <worktree> and the run resumed, or the run cancelled and squashed again
+_PRINT_TIP_REWORK () {
+	# Args: <worktree> <commit to rework, empty where none is named>
+	local WT=$1 AT=$2 FROM
+	if [ -z "$AT" ]; then
+		PRINT_TEXT "A resolution changed what the squashed commits add up to – %s, then squash again, each resolution keeping what the commits hold." 33 "git edit --abort"
+		return 0
+	fi
+	FROM="${AT:0:12}^"
+	git -C "$WT" rev-parse -q --verify "$AT^" >/dev/null 2>&1 || FROM=--root
+	PRINT_TEXT "Rework %s in the replay kept there – %s, marking it edit, then finish that rebase and run %s – or %s, then squash again, each resolution keeping what the commits hold." 33 \
+		"${AT:0:12}" "git -C $(_SHQ "$WT") rebase -i $FROM" "git edit --continue" "git edit --abort"
+}
+
 # Lands what a drop's or squash's rebase built in its worktree – gated, compare-and-swapped onto
 # the tip the run read, then reported – for the run that built it and for the resume finishing it
 _LAND_REBASE () {
@@ -8822,15 +8930,7 @@ _LAND_REBASE () {
 	fi
 	# A squash keeps the tip's content by construction – a replay that changed it,
 	# through a resolution say, lands nothing, told before a gate runs on what can't land
-	if [ "$ACT" = squash ] && ! _SAME_TREE "$NEW" "$OLD"; then
-		PRINT_ERR "The squash would change the tip's content, at $(_SOME_PATHS -q ${(f)"$(_TREE_CHANGES "$OLD" "$NEW")"}) – not applied"
-		if [ -n "$_STATE_OWNED" ]; then
-			_CLEANUP_HOOK=""
-			PRINT_TEXT "A resolution changed what the squashed commits add up to – %s, then squash again, each resolution keeping what the commits hold." 33 "git edit --abort"
-			_PAUSE_EXIT 1 retry
-		fi
-		exit 1
-	fi
+	[ "$ACT" = squash ] && ! _SAME_TREE "$NEW" "$OLD" && _REFUSE_SQUASH_TIP "$WT" "$OLD" "$NEW" "$TGT"
 	# A message `-m`'s editor took is kept for the rerun
 	local TYPED="" RERUN="git edit -s${TGT:+=$TGT}"
 	[ "$ACT" = squash ] && [ -s "$_MSG_TYPED" ] && TYPED=$(<"$_MSG_TYPED")
@@ -16407,6 +16507,10 @@ _CONTINUE_REBASE () {
 		# A resolution finished by hand in the worktree leaves no rebase
 		# in progress – apply its result rather than stranding it
 		[ "$(git rev-parse HEAD)" = "$STATE_ORIG_HEAD" ] && _REFUSE_HAND_ABORT
+		# A result the tip refused, untouched since, is refused again at once – read as a replay
+		# finished by hand, its every commit past the last stop would count as one
+		[ -n "$STATE_TIP_REFUSED" ] && [ "$(git rev-parse HEAD)" = "$STATE_TIP_REFUSED" ] && \
+			_REFUSE_SQUASH_TIP "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_TIP_REFUSED" "$STATE_SQUASH_TARGET"
 		_REQUIRE_REPLAY_DONE "$STATE_WORKTREE"
 		_GUARD_HAND_FINISH "$STATE_WORKTREE" "${MEMBERS[@]}"
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
@@ -17193,6 +17297,7 @@ _LOAD_STATE () {
 	STATE_FLAG_SKIPS=""
 	STATE_PLACED=""
 	STATE_PLACE_LABEL=""
+	STATE_TIP_REFUSED=""
 	# One read, kept – a resume holding the pause's worktree only after
 	# it tells by it whether another run took the pause on meanwhile
 	_STATE_READ=""
@@ -17256,6 +17361,7 @@ _LOAD_STATE () {
 			flag_skips)      STATE_FLAG_SKIPS=$VAL ;;
 			placed)          STATE_PLACED=$VAL ;;
 			place_label)     STATE_PLACE_LABEL=$VAL ;;
+			tip_refused)     STATE_TIP_REFUSED=$VAL ;;
 		esac
 	done <<< "$_STATE_READ"
 	# One from before labels were kept as given holds the mapped one alone, the caller's own where
