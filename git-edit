@@ -3971,12 +3971,17 @@ GIT_STATUS_REPORT () {
 			# a placement's is what it built, as its resume reads
 			local STATUS_PREOP=""
 			[ "$STATE_OPERATION" = "reorder" ] && STATUS_PREOP=${STATE_PLACED:-$STATE_ORIG_HEAD}
+			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
+			local STATUS_HAND=""
+			# A rebase begun by hand where the mode runs its own has no stop of the run's to resolve
+			# – its detail would send the caller on with a resume that refuses it
+			[[ "$STATE_OPERATION" == (rebase|reorder|onto|land|edit|amend-into) ]] && \
+				{ [ -d "$STATUS_GITDIR/rebase-merge" ] || [ -d "$STATUS_GITDIR/rebase-apply" ]; } && ! _PAUSE_OWNS_REBASE && STATUS_HAND=begun
 			# Its guidance is the owner's to follow
 			local UNMERGED_LIST=""
-			[ -z "$OWNER" ] && UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
+			[ -z "$OWNER" ] && [ -z "$STATUS_HAND" ] && UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
 			# A paused edit or split with no rebase running is authoring, not resolving, so
 			# it reports as the pause it is rather than as a conflict
-			local STATUS_GITDIR=$(git -C "$STATE_WORKTREE" rev-parse --git-dir 2>/dev/null)
 			local STATUS_AUTHORING=false
 			local STATUS_VERIFY=false
 			local STATUS_MODE=false
@@ -4017,6 +4022,11 @@ GIT_STATUS_REPORT () {
 				else
 					PRINT_TEXT "Past the amend – the result is built in the worktree, not applied; edits made there now land nowhere." 33
 				fi
+			# A replay finished in the worktree with nothing unmerged,
+			# as its resume reads it – never a conflict without files
+			elif [[ "$STATE_OPERATION" == (rebase|reorder|onto|land|amend-into) ]] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && \
+			     [ ! -d "$STATUS_GITDIR/rebase-apply" ] && [ -z "$UNMERGED_LIST" ] && ! _PAUSE_HAND_ABORTED; then
+				STATUS_HAND=finished
 			fi
 			if [ -n "$OWNER" ]; then
 				# A placement's name holds its anchor already
@@ -4034,6 +4044,23 @@ GIT_STATUS_REPORT () {
 			elif [ "$STATUS_AUTHORING" = "true" ]; then
 				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
 				EMIT_PAUSED "$STATE_OPERATION" "$STATE_TARGET" "$STATE_WORKTREE"
+			# A replant or land refuses one begun by hand, its cancel aborting that rebase too
+			elif [ "$STATUS_HAND" = begun ] && [[ "$STATE_OPERATION" == (onto|land) ]]; then
+				PRINT_TEXT "A rebase begun by hand is in progress in the worktree – %s cancels the %s with it, to run again." 33 "git edit --abort" "${STATE_OPERATION/#onto/replant}"
+				_EMIT_TRAILER "git-edit: paused – a rebase begun by hand is in progress in $STATE_WORKTREE; 'git edit --abort' cancels the ${STATE_OPERATION/#onto/replant} with it"
+				_STATUS_EMITTED=true
+			elif [ "$STATUS_HAND" = begun ]; then
+				PRINT_TEXT "A rebase begun by hand is in progress in the worktree – finish it there (%s) or abort it (%s), then %s – or cancel via %s." 33 \
+					"git -C $(_SHQ "$STATE_WORKTREE") rebase --continue" "git -C $(_SHQ "$STATE_WORKTREE") rebase --abort" "git edit --continue" "git edit --abort"
+				_EMIT_TRAILER "git-edit: paused – a rebase begun by hand is in progress in $STATE_WORKTREE; finish or abort it there, then 'git edit --continue', or 'git edit --abort'"
+				_STATUS_EMITTED=true
+			elif [ "$STATUS_HAND" = finished ]; then
+				# One finished by hand that lost a commit – a raw `git rebase --skip` –
+				# gets the verdict its resume gives, refused
+				_REQUIRE_PICKS_KEPT "$STATE_WORKTREE"
+				PRINT_TEXT "The replay in the worktree is finished, nothing applied yet – %s checks it, landing it where it passes, or %s cancels." 33 "git edit --continue" "git edit --abort"
+				_EMIT_TRAILER "git-edit: paused – the replay in $STATE_WORKTREE is finished, nothing applied; then 'git edit --continue' (checks and lands it) or 'git edit --abort'"
+				_STATUS_EMITTED=true
 			elif [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ] && _PAUSE_HAND_ABORTED; then
 				# The verdict its resume gives, which refuses it
 				PRINT_ERR "The rebase in $STATE_WORKTREE was aborted by hand – nothing was applied, and 'git edit --continue' refuses it"
@@ -16256,10 +16283,7 @@ _CONTINUE_ONTO () {
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
 		PRINT_TEXT "%s – applying its result." 33 "${(C)WHAT[1]}${WHAT[2,-1]} already completed in worktree"
 	else
-		# The rebase in progress is the run's own, from the tip it read onto
-		# the base it named – one begun there by hand would land whatever it built
-		if [ ! -d "$GITDIR/rebase-merge" ] || [ "$(<"$GITDIR/rebase-merge/orig-head")" != "$REBASED" ] || \
-		   [ "$(<"$GITDIR/rebase-merge/onto")" != "$BASE" ]; then
+		if ! _PAUSE_OWNS_REBASE; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "The rebase in progress in $STATE_WORKTREE is not this $WHAT's – nothing was applied"
 			ECHO_E "\e[0;31m  Cancel with 'git edit --abort', which aborts it too, then run it again: $(_LIT "$AGAIN")\e[0m" >&2
@@ -16408,12 +16432,10 @@ _CONTINUE_REORDER () {
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
-		# The rebase in progress is the run's own, started from what it built
-		# – one begun there by hand would land whatever it built
-		if [ ! -d "$GITDIR/rebase-merge" ] || [ "$(<"$GITDIR/rebase-merge/orig-head")" != "$BUILT" ]; then
+		if ! _PAUSE_OWNS_REBASE; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "The rebase in progress in $STATE_WORKTREE is not this ${LABEL%% *}'s – nothing was applied"
-			ECHO_E "\e[0;31m  Finish or abort it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), or cancel with 'git edit --abort'.\e[0m" >&2
+			ECHO_E "\e[0;31m  Finish it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --continue') or abort it ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), then 'git edit --continue' – or cancel with 'git edit --abort'.\e[0m" >&2
 			_PAUSE_EXIT 1 retry
 		fi
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
@@ -16516,12 +16538,10 @@ _CONTINUE_REBASE () {
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
-		# The rebase in progress is the run's own, started from the tip it read
-		# – one begun there by hand would land whatever it built
-		if [ ! -d "$GITDIR/rebase-merge" ] || [ "$(<"$GITDIR/rebase-merge/orig-head")" != "$STATE_ORIG_HEAD" ]; then
+		if ! _PAUSE_OWNS_REBASE; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "The rebase in progress in $STATE_WORKTREE is not this $STATE_ACTION's – nothing was applied"
-			ECHO_E "\e[0;31m  Finish or abort it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), or cancel with 'git edit --abort'.\e[0m" >&2
+			ECHO_E "\e[0;31m  Finish it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --continue') or abort it ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), then 'git edit --continue' – or cancel with 'git edit --abort'.\e[0m" >&2
 			_PAUSE_EXIT 1 retry
 		fi
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE" "${MEMBERS[@]}"
@@ -16789,13 +16809,11 @@ _CONTINUE_EDIT () {
 	fi
 
 	if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
-		# Mid-replay conflict – the run's own replay, onto the amend it recorded from the tip it read,
-		# as a rebase begun there by hand would land whatever it built
-		if [ -z "$STATE_AMENDED" ] || [ ! -d "$GITDIR/rebase-merge" ] || \
-		   [ "$(<"$GITDIR/rebase-merge/onto")" != "$STATE_AMENDED" ] || [ "$(<"$GITDIR/rebase-merge/orig-head")" != "$STATE_REPLAY_TIP" ]; then
+		# Mid-replay conflict – the run's own replay alone
+		if ! _PAUSE_OWNS_REBASE; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "The rebase in progress in $STATE_WORKTREE is not this edit's replay – nothing was applied"
-			ECHO_E "\e[0;31m  Finish or abort it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
+			ECHO_E "\e[0;31m  Finish it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --continue') or abort it ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), then 'git edit --continue' – or 'git edit --abort'.\e[0m" >&2
 			_PAUSE_EXIT 1 retry
 		fi
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
@@ -18856,12 +18874,10 @@ _CONTINUE_AMEND_INTO () {
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE"
 		PRINT_TEXT "%s – applying its result." 33 "Rebase already completed in worktree"
 	else
-		# The rebase in progress is the run's own, started from the fold's fixup
-		# – one begun there by hand would land whatever it built
-		if [ -n "$STATE_FIXUP" ] && { [ ! -d "$GITDIR/rebase-merge" ] || [ "$(<"$GITDIR/rebase-merge/orig-head")" != "$STATE_FIXUP" ]; }; then
+		if ! _PAUSE_OWNS_REBASE; then
 			_CLEANUP_HOOK=""
 			PRINT_ERR "The rebase in progress in $STATE_WORKTREE is not this fold's – nothing was applied"
-			ECHO_E "\e[0;31m  Finish or abort it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), or cancel with 'git edit --abort'.\e[0m" >&2
+			ECHO_E "\e[0;31m  Finish it there ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --continue') or abort it ('git -C $(_LIT "$(_SHQ "$STATE_WORKTREE")") rebase --abort'), then 'git edit --continue' – or cancel with 'git edit --abort'.\e[0m" >&2
 			_PAUSE_EXIT 1 retry
 		fi
 		_NOTE_STOPS_PASSED "$STATE_WORKTREE" ${STATE_FIXUP:+"$STATE_FIXUP"}
@@ -20630,6 +20646,28 @@ _PAUSE_HAND_ABORTED () {
 		edit) [ -n "$STATE_AMENDED" ] && [ "$STATE_REPLAY_TIP" != "$STATE_TARGET" ] && BEGAN=$STATE_REPLAY_TIP ;;
 	esac
 	[ -n "$BEGAN" ] && [ "$(git -C "$STATE_WORKTREE" rev-parse -q --verify HEAD 2>/dev/null)" = "$BEGAN" ]
+}
+
+# Tells whether the rebase in progress in the loaded pause's worktree is the run's own,
+# begun where its mode begins one – as each resume and `--status` read it,
+# one begun there by hand landing whatever it built – failing where none is in progress
+_PAUSE_OWNS_REBASE () {
+	local GD AT ONTO
+	# A fold recorded without its fixup has nothing to tell its own by
+	[ "$STATE_OPERATION" = amend-into ] && [ -z "$STATE_FIXUP" ] && return 0
+	GD=$(git -C "$STATE_WORKTREE" rev-parse --path-format=absolute --git-dir 2>/dev/null)
+	[ -n "$GD" ] && [ -d "$GD/rebase-merge" ] || return 1
+	# Read quietly, as a `--status` beside a run starting its rebase may find the files not yet written
+	{ AT=$(<"$GD/rebase-merge/orig-head") ONTO=$(<"$GD/rebase-merge/onto") } 2>/dev/null
+	case "$STATE_OPERATION" in
+		rebase) [ "$AT" = "$STATE_ORIG_HEAD" ] ;;
+		reorder) [ "$AT" = "${STATE_PLACED:-$STATE_ORIG_HEAD}" ] ;;
+		onto) [ "$AT" = "$STATE_ORIG_HEAD" ] && [ "$ONTO" = "$STATE_TARGET" ] ;;
+		land) [ "$AT" = "$STATE_TARGET" ] && [ "$ONTO" = "$STATE_ORIG_HEAD" ] ;;
+		edit) [ -n "$STATE_AMENDED" ] && [ "$ONTO" = "$STATE_AMENDED" ] && [ "$AT" = "$STATE_REPLAY_TIP" ] ;;
+		amend-into) [ "$AT" = "$STATE_FIXUP" ] ;;
+		*) return 1 ;;
+	esac
 }
 
 # Names the commands that take up a pause left for later

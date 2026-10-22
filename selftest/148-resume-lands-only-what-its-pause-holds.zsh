@@ -69,6 +69,8 @@ git -C "${HF_WT:-$ST_NO_WT}" rebase --abort && git -C "${HF_WT:-$ST_NO_WT}" reba
 _ST_RUN --continue
 _ST_EQ "and one still in progress there lands nothing" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "named as not the replant's" "is not this replant's"
+_ST_RUN --status
+_ST_OUT_HAS "--status names it so, its cancel taking it along" "^git-edit: paused – a rebase begun by hand is in progress in .*; 'git edit --abort' cancels the replant with it$"
 # Another label's --skip is named as a skip
 GIT_EDIT_ACTOR=hf-b _ST_RUN --skip
 _ST_OUT_HAS "a refused --skip says skip" 'refusing to skip it as hf-b'
@@ -94,6 +96,9 @@ print -r -- $'1\nZ\n3' > h.txt && git add h.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD~2)" -- h.txt
 HF_WT=$(_ST_PZ_WT)
 _HF_HAND_FINISH "${HF_WT:-$ST_NO_WT}"
+_ST_RUN --status
+_ST_OUT_HAS "--status reads a fold finished by hand as finished, nothing applied" "^git-edit: paused – the replay in .* is finished, nothing applied"
+_ST_OUT_LACKS "never as a conflict" '^git-edit: conflict'
 _ST_RUN --continue
 _ST_EQ "a fold finished by hand with markers committed lands nothing" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "naming what carries them" 'committed conflict markers'
@@ -105,6 +110,10 @@ git -C "${HF_WT:-$ST_NO_WT}" rebase --abort && git -C "${HF_WT:-$ST_NO_WT}" chec
 _ST_RUN --continue
 _ST_EQ "a fold's worktree running a rebase begun by hand lands nothing" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "named as not the fold's" "is not this fold's"
+_ST_OUT_HAS "naming how to finish it" "rebase --continue') or abort it"
+_ST_RUN --status
+_ST_OUT_HAS "--status names it so, never a conflict" "^git-edit: paused – a rebase begun by hand is in progress in .*; finish or abort it there"
+_ST_OUT_LACKS "nor with a stop's detail" 'Currently failing on'
 _ST_RUN --abort
 git reset -q --hard
 _ST_RUN --reorder "$(git rev-parse HEAD)" "$(git rev-parse HEAD~1)"
@@ -114,6 +123,8 @@ git -C "${HF_WT:-$ST_NO_WT}" rebase --abort && git -C "${HF_WT:-$ST_NO_WT}" chec
 _ST_RUN --continue
 _ST_EQ "as does a reorder's" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "named as not the reorder's" "is not this reorder's"
+_ST_RUN --status
+_ST_OUT_HAS "as does --status" "^git-edit: paused – a rebase begun by hand is in progress in .*; finish or abort it there"
 _ST_RUN --abort
 # A gate pause whose result was amended refuses rather than restore it away,
 # while an inspect checkout of a commit the result holds is restored

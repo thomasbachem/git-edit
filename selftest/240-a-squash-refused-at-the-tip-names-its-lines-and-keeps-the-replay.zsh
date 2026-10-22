@@ -30,13 +30,22 @@ _ST_RUN --continue
 _ST_EQ "a resume finding the result untouched refuses again" "$RC:$(git rev-parse HEAD)" "1:$SQ_TIP"
 _ST_OUT_HAS "naming the commit again" "Rework ${SQ_AT:0:12} in the replay kept there"
 _ST_OUT_LACKS "at once, never read as a replay finished by hand" 'Rebase already completed'
-# Reworked in place – the target taking the squashed change, the later rewrite resolved on top
+# Reworked in place – the target taking the squashed change, the later rewrite resolved on top –
+# `--status` reading the rework as a rebase begun by hand, then the replay as finished
+[ -n "$SQ_WT" ] && [ -n "$SQ_AT" ] && GIT_SEQUENCE_EDITOR="sed -i.bak '1s/^pick/edit/'" git -C "$SQ_WT" rebase -i "$SQ_AT^" >/dev/null 2>&1
+_ST_RUN --status
+_ST_OUT_HAS "--status reads the rework as a rebase begun by hand" "^git-edit: paused – a rebase begun by hand is in progress in .*; finish or abort it there"
+_ST_OUT_LACKS "never with a stop's detail sending it on" 'Currently failing on'
+_ST_RUN --continue
+_ST_EQ "a resume amid it refuses" "$RC:$(git rev-parse HEAD)" "1:$SQ_TIP"
+_ST_OUT_HAS "naming how to finish it" "rebase --continue') or abort it"
 if [ -n "$SQ_WT" ] && [ -n "$SQ_AT" ]; then
-	GIT_SEQUENCE_EDITOR="sed -i.bak '1s/^pick/edit/'" git -C "$SQ_WT" rebase -i "$SQ_AT^" >/dev/null 2>&1
 	print -l x1z a b c d > "$SQ_WT/f" && git -C "$SQ_WT" add f && GIT_EDITOR=true git -C "$SQ_WT" commit -q --amend --no-edit
 	GIT_EDITOR=true git -C "$SQ_WT" rebase --continue >/dev/null 2>&1
 	print -l y1z a b c d > "$SQ_WT/f" && git -C "$SQ_WT" add f && GIT_EDITOR=true git -C "$SQ_WT" rebase --continue >/dev/null 2>&1
 fi
+_ST_RUN --status
+_ST_OUT_HAS "and the replay once finished as such" "^git-edit: paused – the replay in .* is finished, nothing applied"
 _ST_RUN --continue
 _ST_EQ "that commit reworked there, the resume lands the tip's content" \
 	"$RC:$(git log --format=%s | tr '\n' '|'):$(git rev-parse 'HEAD^{tree}')" \
