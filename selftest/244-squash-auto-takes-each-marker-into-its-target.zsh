@@ -238,6 +238,24 @@ _ST_RUN -s=auto HEAD~3 HEAD~1
 _ST_EQ "a stop past a fixup its commit holds resolves" \
 	"$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD~1:f | sed -n '1,3p;13p' | tr '\n' ' ')" \
 	"0:AU held later|AU held around|AU held target|:z1 the fixed line z3 other fixed "
+# A resume goes on resolving so, bar a stop whose parent a resolution by hand left otherwise
+_ST_PZ_NEW au-resume
+print -l y1 "the line" y3 > f && git add f && git commit -qm "AU resume target"
+print -l z1 "the line" z3 > f && git commit -qam "AU resume around"
+_ST_PZ_C g g1 "AU resume later"
+print -l z1 "the fixed line" z3 > f && git commit -qam "fixup! AU resume target"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN -s=auto HEAD
+AU_WT=$(_ST_PZ_WT)
+print -l y1 "the hand line" y3 > "${AU_WT:-$ST_NO_WT}/f" && git -C "${AU_WT:-$ST_NO_WT}" add f
+_ST_RUN --continue
+_ST_EQ "a resume pauses past a resolution made otherwise than the fixup" "$RC:$(git -C "${AU_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U)" "2:f"
+_ST_RUN --abort
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN -s=auto HEAD
+AU_WT=$(_ST_PZ_WT)
+print -l y1 "the fixed line" y3 > "${AU_WT:-$ST_NO_WT}/f" && git -C "${AU_WT:-$ST_NO_WT}" add f
+_ST_RUN --continue
+_ST_EQ "and resolves past one made as it makes it" "$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD~1:f | tr '\n' ' ')" \
+	"0:AU resume later|AU resume around|AU resume target|:z1 the fixed line z3 "
 _ST_PZ_NEW au-mixed
 print -l y1 "the line" y3 > f && git add f && git commit -qm "AU mixed target"
 print -l z1 "the line" z3 > f && git commit -qam "AU mixed around"

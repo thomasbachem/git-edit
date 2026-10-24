@@ -2,6 +2,8 @@
 # chain's target – an editor comments and cleans up as `git commit` would under the caller's
 # settings, and a rebuild ends at the tip the run read, refusing a move with the rerun it needs
 _ST_SCENARIO "\e[1;96m[150] messages keep their bytes, editors clean up as git commit, rebuilds end at the tip read\e[0m"
+# Every stop here is the resolver's, as the guards under test act on stops resolved by hand
+export GIT_EDIT_NO_SELF_RESOLVE=1
 local MB_WT MB_T MB_B MB_X MB_TIP
 local -a MB_OLD MB_NEW
 # Writes a commit on `HEAD` whose message is exactly <printf %b text>, its author zone `-0000`
@@ -87,13 +89,12 @@ _ST_EQ "and rebuilds the commit above it as it was" "$REPLY" "$MB_X"
 # C3-1 – a fixup chain resumed after a conflict keeps its target's own `#` line
 _ST_PZ_NEW mb2
 # The fold's line abuts the later commit's, so it conflicts on the target, resolved
-# to the target's own content plus the fold – the later commit keeping its change –
-# the line the fold adds to h keeping it from resolving its stops itself, as scenario 226's do
-print -l a b c d > f && print h > h && git add f h && git commit -qm "MB2 base"
+# to the target's own content plus the fold – the later commit keeping its change
+print -l a b c d > f && git add f && git commit -qm "MB2 base"
 print -l A b c d > f && git add f && printf 'MB2 target\n\n#123 issue ref\n' > "$TMP/mb-msg" && git commit -q --cleanup=verbatim -F "$TMP/mb-msg"
 print -l A b C d > f && print l > g && git add f g && git commit -qm "MB2 later"
-print -l A b C D > f && print -l h h2 > h && git add f h
-_ST_RUN --amend-into="$(git rev-parse HEAD~1)" -- f h
+print -l A b C D > f && git add f
+_ST_RUN --amend-into="$(git rev-parse HEAD~1)" -- f
 MB_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "$MB_WT" f $'A\nb\nc\nD'
 _ST_RUN --continue
@@ -221,4 +222,5 @@ MB_SUB=""
 
 unfunction _MB_MK _MB_BODY _MB_PEER _MB_FIXTURE
 unset MB_REAL MB_SUB MB_LAND MB_BACK MB_ACT MB_CNT
+unset GIT_EDIT_NO_SELF_RESOLVE
 cd "$TMP/repo"

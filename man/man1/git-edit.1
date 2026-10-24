@@ -358,7 +358,8 @@ changes does (see
 .BR \-\-amend\-into ):
 the commit a stop builds takes the replacements of the fixups folded at or
 below it, bar those it holds already, at a fixup its own, wherever it holds
-each old text exactly once.
+each old text exactly once,
+and a resume goes on so, bar a file a resolution by hand staged otherwise.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
@@ -1111,29 +1112,39 @@ A fold given as
 .BR \-\-edits ,
 alone or beside files taken whole, resolves its replay's stops itself: where the commit a stop builds holds
 each old text exactly once in every conflicted file \(em an edited one, under
-the name it had there, a rename followed \(em that file takes the edits in the
+the name it had there, a rename followed \(em and its parent as replayed differs
+there from the original by the edits alone, that file takes the edits in the
 commit's own content, which is what that commit holds with the fold made in it,
 and the replay goes on, so no later commit touching the lines beside them pauses
-it. At the first stop where that commit holds an old text other than once \(em
-one that changed that text \(em or another file conflicts, it pauses for
+it. At a stop where that commit holds an old text other than once \(em one
+that changed that text \(em or another file conflicts, it pauses for
 .B \-\-continue
 or
 .B \-\-abort
-as any fold does, and stops after it are left to the resolver too. A replay
+as any fold does, and the resume goes on resolving the stops after it the same
+way \(em bar one conflicting in a file a resolution by hand staged otherwise
+than the edits make it, which stays the resolver's, so no deviation made on
+purpose is undone. A replay
 running clean is the one it always was.
-A fold of staged changes or of files taken whole
+Any other fold \(em of staged changes, of files taken whole
 .RB ( \-\-whole ),
-given no input or beside
-.BR \-\-edits ,
-resolves its stops the same way where it only replaces lines:
-each hunk from the tip's file to the fold's is an edit, its old lines the old
-text, matched as whole lines. A line replaced by one is matched by its changed
-words too, a word on either side kept and more where those match more than
-once, where the line itself is wrapped otherwise there \(em never inside a
-longer line holding it whole \(em and the
-gate checks a commit so resolved as a resolver's own. One inserting a line
-anywhere, or changing more than a text file's lines \(em a file added, removed,
-renamed or given another mode \(em pauses at its stops as before.
+of
+.BR \-\-patch ,
+.B \-\-put
+or
+.BR \-\-tree ,
+or of the files beside
+.B \-\-edits
+\(em resolves its stops the same way, as does every resume, the edits
+derived from the fold's own change: each hunk from the tip's file to the
+fold's is an edit, its old lines the old text, matched as whole lines. A line
+replaced by one is matched by its changed words too, a word on either side
+kept and more where those match more than once, where the line itself is
+wrapped otherwise there \(em never inside a longer line holding it whole \(em
+and the gate checks a commit so resolved as a resolver's own. A file the fold
+inserts a line in, or changes more than a text file's lines of \(em adds,
+removes, renames or gives another mode \(em derives no edit, and a stop where
+it conflicts pauses as before.
 .IP
 In a checkout other callers share, a rewrite one of them lands (a drop, a
 fold built elsewhere) changes a file at the tip. The run brings the checkout
@@ -1549,7 +1560,7 @@ once, in order \(em one an earlier edit of the same file took its match from
 refuses, naming that edit, as the two overlap and want merging into one, and a
 fold of edits, alone or beside files taken whole, makes them itself at each
 stop of its replay whose commit
-holds every old text once, pausing at the first that doesn't; see
+holds every old text once, pausing at each that doesn't; see
 .BR MODES .
 It is for replacements made by hand \(em pairs generated from a diff of the
 checkout file take its other lines too, a peer's lines landing in a
@@ -3085,6 +3096,12 @@ interactive pauses.
 .B GIT_EDIT_NO_REPLAY
 If set, the plumbing modes rebuild descendants one \fBcommit\-tree\fR at a time
 instead of in one proven \fBgit replay\fR pass.
+.TP
+.B GIT_EDIT_NO_SELF_RESOLVE
+If set, a fold's or an
+.B \-s=auto
+replay's stops all pause for the resolver, none made by its line replacements;
+a fold's final step still resolves itself as the staged tree.
 .TP
 .B GIT_EDIT_PROGRESS
 If set, the verify gate names each commit as its check starts even where

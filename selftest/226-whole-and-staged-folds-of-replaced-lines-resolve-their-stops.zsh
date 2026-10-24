@@ -1,6 +1,7 @@
-# A fold taken whole or from the index that only replaces lines resolves its replay's stops as an
-# `--edits` fold does, each hunk its old lines to its new ones – while one inserting a line, or
-# stopping at a commit holding a replaced line twice or only inside a longer one, pauses as before
+# A fold that replaces lines resolves its replay's stops as an `--edits` fold does, each hunk
+# its old lines to its new ones – taken whole, staged, `--patch`, `--put` or `--tree` alike:
+# • A file it inserts a line in, or a commit holding a replaced line twice or in a longer one, stops
+# • A resume goes on so, bar a file a stop resolved by hand otherwise than the fold makes it
 _ST_SCENARIO "\e[1;96m[226] whole and staged folds of replaced lines resolve their stops by replacement\e[0m"
 local RL_T RL_O RL_WT
 local -a RL_C
@@ -136,4 +137,89 @@ print -l A B2 c D e > w.txt
 _ST_RUN --amend-into="$RL_T" --whole -- w.txt
 _ST_EQ "a whole fold of two lines a configured diff joins lands, each line replaced on its own" \
 	"$RC:$(git show HEAD~1:w.txt | tr '\n' ' '):$(git show HEAD:w.txt | tr '\n' ' ')" "0:A b c D e :A B2 c D e "
+# A fold of `--patch`, `--put` or `--tree` derives its replacements as a whole one does
+_RL_DOC rl8
+sed 's/^First paragraph, one line\.$/First paragraph, edited./' doc.md > doc.new
+git diff --no-index doc.md doc.new | sed 's#a/doc.md#a/doc.md#;s#b/doc.new#b/doc.md#' > "$TMP/rl8.patch"
+_ST_RUN --amend-into="$RL_T" --patch="$TMP/rl8.patch"
+_ST_EQ "a --patch fold resolves its stops" "$RC:$(_RL_AT HEAD~2)" "0:# Title||First paragraph, edited.||Last paragraph, as written.|"
+_RL_DOC rl9
+git show HEAD:doc.md | sed 's/^First paragraph, one line\.$/First paragraph, edited./' > "$TMP/rl9.md"
+_ST_RUN --amend-into="$RL_T" --put="doc.md=$TMP/rl9.md" --base="$(git rev-parse HEAD)"
+_ST_EQ "a --put fold resolves its stops" "$RC:$(_RL_AT HEAD~2)" "0:# Title||First paragraph, edited.||Last paragraph, as written.|"
+_RL_DOC rl10
+RL_WT=$(git show HEAD:doc.md | sed 's/^First paragraph, one line\.$/First paragraph, edited./' | git hash-object -w --stdin)
+GIT_INDEX_FILE="$TMP/rl10.idx" git read-tree HEAD && GIT_INDEX_FILE="$TMP/rl10.idx" git update-index --cacheinfo "100644,$RL_WT,doc.md"
+RL_WT=$(GIT_INDEX_FILE="$TMP/rl10.idx" git write-tree)
+_ST_RUN --amend-into="$RL_T" --tree="$RL_WT"
+_ST_EQ "a --tree fold resolves its stops" "$RC:$(_RL_AT HEAD~2)" "0:# Title||First paragraph, edited.||Last paragraph, as written.|"
+# A resume goes on resolving: past two stops its inserted line needs by hand,
+# the third its replaced one alone conflicts in resolves itself
+_ST_PZ_NEW rl11
+print -l g1 g2 > g && print -l h1 "the line" h3 > h && git add g h && git commit -qm "RL11 target"
+RL_T=$(git rev-parse HEAD)
+print -l g1 G2 > g && git commit -qam "RL11 changes g"
+print -l y1 "the line" y3 > h && git commit -qam "RL11 changes h"
+_ST_PZ_C k k1 "RL11 later"
+print -l g1 new G2 > g && print -l y1 "the fixed line" y3 > h
+_ST_RUN --amend-into="$RL_T" --whole -- g h
+RL_WT=$(_ST_PZ_WT)
+print -l g1 new g2 > "${RL_WT:-$ST_NO_WT}/g" && print -l h1 "the fixed line" h3 > "${RL_WT:-$ST_NO_WT}/h"
+git -C "${RL_WT:-$ST_NO_WT}" add g h
+_ST_RUN --continue
+print -l g1 new G2 > "${RL_WT:-$ST_NO_WT}/g" && git -C "${RL_WT:-$ST_NO_WT}" add g
+_ST_RUN --continue
+_ST_EQ "the stop after them resolves itself on resume" \
+	"$RC:$(git show HEAD~3:h | tr '\n' ' '):$(git show HEAD~1:h | tr '\n' ' '):$(git show HEAD:g | tr '\n' ' ')" \
+	"0:h1 the fixed line h3 :y1 the fixed line y3 :g1 new G2 "
+_ST_OUT_HAS "saying so" "Made the fold's line replacements in the 1 later commit(s)"
+# A fold adding a file besides derives the replacements of the others, their stops resolving
+_RL_DOC rl12
+sed 's/^First paragraph, one line\.$/First paragraph, edited./' doc.md > doc.new && mv doc.new doc.md
+print new > added.txt
+_ST_RUN --amend-into="$RL_T" --whole -- doc.md added.txt
+_ST_EQ "one adding a file resolves the stops of its replaced lines" \
+	"$RC:$(_RL_AT HEAD~2):$(git show HEAD~2:added.txt)" "0:# Title||First paragraph, edited.||Last paragraph, as written.|:new"
+# A file resolved by hand otherwise than the fold makes it – here at a target holding the replaced
+# line twice – keeps its later stops for the resolver, so the resume never undoes that resolution
+_ST_PZ_NEW rl13
+print -l a "the line" b "the line" c > f && git add f && git commit -qm "RL13 target"
+RL_T=$(git rev-parse HEAD)
+print -l a "the line" b c > f && git commit -qam "RL13 drops the twin"
+print -l a2 "the line" b2 c > f && git commit -qam "RL13 changes around it"
+_ST_PZ_C k k1 "RL13 later"
+print -l a2 "the fixed line" b2 c > f
+_ST_RUN --amend-into="$RL_T" --whole -- f
+RL_WT=$(_ST_PZ_WT)
+print -l a "the hand line" b "the line" c > "${RL_WT:-$ST_NO_WT}/f" && git -C "${RL_WT:-$ST_NO_WT}" add f
+_ST_RUN --continue
+_ST_EQ "its later stop pauses rather than replace its line" "$RC:$(git -C "${RL_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U)" "2:f"
+_ST_RUN --abort
+# As does one renamed between the stop resolved by hand and the next in it
+_ST_PZ_NEW rl14
+print -l l1 "the line" l3 > f && git add f && git commit -qm "RL14 target"
+RL_T=$(git rev-parse HEAD)
+git mv f g && git commit -qm "RL14 renames f"
+print -l m1 "the line" m3 > g && git commit -qam "RL14 changes around it"
+_ST_PZ_C k k1 "RL14 later"
+print -l m1 "the fixed line" m3 > g
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --amend-into="$RL_T" --whole -- g
+RL_WT=$(_ST_PZ_WT)
+print -l l1 "the hand line" l3 > "${RL_WT:-$ST_NO_WT}/f" && git -C "${RL_WT:-$ST_NO_WT}" add f
+_ST_RUN --continue
+_ST_EQ "a rename between them keeps that stop the resolver's too" "$RC:$(git -C "${RL_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U)" "2:g"
+_ST_RUN --abort
+# As does one a stop's resolution gave another mode, its text as the fold makes it
+_ST_PZ_NEW rl15
+print -l l1 "the line" l3 > f && git add f && git commit -qm "RL15 target"
+RL_T=$(git rev-parse HEAD)
+print -l m1 "the line" m3 > f && git commit -qam "RL15 changes around it"
+_ST_PZ_C k k1 "RL15 later"
+print -l m1 "the fixed line" m3 > f
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --amend-into="$RL_T" --whole -- f
+RL_WT=$(_ST_PZ_WT)
+print -l l1 "the fixed line" l3 > "${RL_WT:-$ST_NO_WT}/f" && chmod +x "${RL_WT:-$ST_NO_WT}/f" && git -C "${RL_WT:-$ST_NO_WT}" add f
+_ST_RUN --continue --allow-mode-change
+_ST_EQ "a mode it kept keeps the next stop the resolver's" "$RC:$(git -C "${RL_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U)" "2:f"
+_ST_RUN --abort
 cd "$TMP/repo"

@@ -77,7 +77,7 @@ _UNSET_OWN () {
 _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_KIND ARG_SCAN ARG_SHA C CHAIN COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
-	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
+	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EDITS_UNDERIVED EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
 	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
@@ -118,7 +118,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT
 
 # A switch set to 0, false, no or off is off, as most tools read one
-for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_PROGRESS; do
+for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
 	[[ "${(P)_V:l}" == (0|false|no|off) ]] && unset $_V
 done
 unset _V
@@ -8974,31 +8974,43 @@ _AUTO_SQUASH_MESSAGES () {
 
 # Resolves a `-s=auto` replay's stop in <worktree> as a fold's resolves itself – each
 # conflicted file taking the line replacements of the fixups folded at or below the commit it
-# builds bar those it holds already, each proven to make its change – failing, touching nothing
+# builds, each proven to make its fixup's change – failing, touching nothing, where any can't
 _AUTO_EDITS_RESOLVE_STOP () {
 	# Args: <worktree> <old tip>
-	setopt local_options no_multibyte
-	local WT=$1 TIP=$2 GD L M P TEXT AT
-	local -a STAGE MS DONE NAMES CONFLICTED A_PATH A_OLD A_NEW A_NOLD A_NNEW A_DERIVED
-	local -i K
+	local WT=$1 TIP=$2 AT
+	local -a STAGE CONFLICTED
 	_EDITS_STOP_STEP "$WT" || return 1
 	STAGE=("${reply[@]}") AT=${${REPLY#* }%% *}
-	if (( STAGE[1] == 2 )); then
-		MS=("$AT")
+	CONFLICTED=(${(0)"$(git -C "$WT" diff --name-only --diff-filter=U -z 2>/dev/null)"})
+	(( ${#CONFLICTED} )) || return 1
+	_AUTO_STOP_EDITS "$WT" "${STAGE[1]}" "$AT" "${CONFLICTED[@]}" && (( ${#EDITS_PATH} )) || return 1
+	_EDITS_STAGE_STOP "$WT" "${STAGE[@]}" "$TIP" || return 1
+	PRINT_TEXT "Made the fixups' line replacements at %s, the stop holding each once" 90 "${AT:0:7}"
+}
+
+# Fills `EDITS_*` with the line replacements of the `-s=auto` fixups bearing on the stop in
+# <worktree> at <commit> – at a fixup its own, at a pick each folded below it bar those it holds
+# already – those touching one of <path>s alone, failing unless each is proven to make its change
+_AUTO_STOP_EDITS () {
+	# Args: <worktree> <the stop's stage> <its commit> <path>...
+	setopt local_options no_multibyte
+	local WT=$1 GD L M P TEXT
+	local -a MS DONE NAMES WANT=("${@:4}") A_PATH A_OLD A_NEW A_NOLD A_NNEW A_DERIVED A_UNDERIVED
+	local -i K
+	if (( $2 == 2 )); then
+		MS=("$3")
 	else
 		_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
 		DONE=(${(f)"$(<"$GD/rebase-merge/done")"})
 		for L in "${(@)DONE[1,-2]}"; do [[ "$L" == (f|fixup)\ * ]] && MS+=("${${L#* }%% *}"); done
 	fi
-	(( ${#MS} )) || return 1
-	CONFLICTED=(${(0)"$(git -C "$WT" diff --name-only --diff-filter=U -z 2>/dev/null)"})
-	(( ${#CONFLICTED} )) || return 1
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_NOLD=() EDITS_NNEW=() EDITS_DERIVED=() EDITS_UNDERIVED=()
 	for M in "${MS[@]}"; do
-		# Those touching a conflicted file alone – any of them doing more than replacing lines, or
-		# whose replacements don't remake its own change, a line it replaced held twice say, can't
+		# One whose replacements don't remake its own change, a line it replaced held
+		# twice say, can't, nor a file it does more to than replace
 		NAMES=(${(0)"$(git diff-tree -r -z --no-renames --no-commit-id --name-only "$M^" "$M" 2>/dev/null)"})
-		(( ${#${NAMES:*CONFLICTED}} )) || continue
-		(( STAGE[1] == 3 )) && git merge-base --is-ancestor "$M" "$AT" 2>/dev/null && continue
+		(( ${#${NAMES:*WANT}} )) || continue
+		(( $2 == 3 )) && git merge-base --is-ancestor "$M" "$3" 2>/dev/null && continue
 		_EDITS_DERIVE "$M^" "$M" || return 1
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$M^:$P" 2>/dev/null; print -n x)
@@ -9009,13 +9021,11 @@ _AUTO_EDITS_RESOLVE_STOP () {
 			A_PATH+=("${EDITS_PATH[K]}") A_OLD+=("${EDITS_OLD[K]}") A_NEW+=("${EDITS_NEW[K]}")
 			A_NOLD+=("${EDITS_NOLD[K]}") A_NNEW+=("${EDITS_NNEW[K]}")
 		done
-		A_DERIVED+=("${EDITS_DERIVED[@]}")
+		A_DERIVED+=("${EDITS_DERIVED[@]}") A_UNDERIVED+=("${EDITS_UNDERIVED[@]}")
 	done
-	(( ${#A_PATH} )) || return 1
 	EDITS_PATH=("${A_PATH[@]}") EDITS_OLD=("${A_OLD[@]}") EDITS_NEW=("${A_NEW[@]}")
 	EDITS_NOLD=("${A_NOLD[@]}") EDITS_NNEW=("${A_NNEW[@]}") EDITS_DERIVED=("${(@u)A_DERIVED}")
-	_EDITS_STAGE_STOP "$WT" "${STAGE[@]}" "$TIP" || return 1
-	PRINT_TEXT "Made the fixups' line replacements at %s, the stop holding each once" 90 "${AT:0:7}"
+	EDITS_UNDERIVED=("${(@u)A_UNDERIVED}")
 }
 
 # Squashes `COMMITS` into the oldest by a rebase – `squash` given a message or `-m`, else `fixup`
@@ -12934,7 +12944,7 @@ SEQEOF
 	if (( EDIT_STOPS && ${#OPT_EDITS} )); then
 		PRINT_TEXT "Made the edits in the %s commit(s) the replay stopped at, each holding every old text once." 90 "$EDIT_STOPS"
 	elif (( EDIT_STOPS )); then
-		PRINT_TEXT "Made the fold's line replacements in the %s commit(s) the replay stopped at, each holding every replaced hunk once." 90 "$EDIT_STOPS"
+		PRINT_TEXT "Made the fold's line replacements in the %s commit(s) the replay stopped at, each holding every replaced hunk, or its changed words, once." 90 "$EDIT_STOPS"
 	fi
 	(( RC == 1 )) && _REFUSE_REBASE_FAILED "fold again – $(_FOLD_SOURCE) untouched."
 	if (( RC != 0 )) && \
@@ -13114,26 +13124,30 @@ _EDIT_NARROWED () {
 	reply=("${O[L+1,R]}" "${N[L+1,LN-LO+R]}")
 }
 
-# Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it – each
-# hunk one edit, line ends as stored, bar paths `--edits` gave – and `EDITS_DERIVED` with its paths,
-# failing, none added, unless each is a file changed in place, mode kept, every hunk replacing lines
+# Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it, each
+# hunk one edit, line ends as stored, bar paths `--edits` gave, and `EDITS_DERIVED` with their paths
+# – `EDITS_UNDERIVED` with each other one, not changed in place with its mode kept or adding lines
+# alone somewhere – failing only where the change can't be read
 _EDITS_DERIVE () {
 	# Args: <tip> <fold's tree>
 	setopt local_options no_multibyte
 	local H O N
 	local -a R M OL NL GIVEN
-	local -i I A B C D KEEP
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_NOLD EDITS_NNEW
+	local -i I A B C D K0
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_UNDERIVED EDITS_NOLD EDITS_NNEW
 	(( ${#OPT_EDITS} )) || EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
-	GIVEN=("${(@u)EDITS_PATH}") KEEP=${#EDITS_PATH} EDITS_DERIVED=() EDITS_NOLD=() EDITS_NNEW=()
+	GIVEN=("${(@u)EDITS_PATH}") EDITS_DERIVED=() EDITS_UNDERIVED=() EDITS_NOLD=() EDITS_NNEW=()
 	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
-	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"})
-	(( ${#R} && ${#R} % 2 == 0 )) || return 1
+	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"}) || return 1
+	(( ${#R} % 2 == 0 )) || return 1
 	for (( I = 1; I < ${#R}; I += 2 )); do
 		(( ${GIVEN[(Ie)${R[I+1]}]} )) && continue
 		M=(${=R[I]})
-		[[ "${M[1]}" == :100(644|755) && "${M[2]}" = "${M[1]#:}" && "${M[5]}" = M ]] || break
-		EDITS_DERIVED+=("${R[I+1]}")
+		if [[ "${M[1]}" != :100(644|755) || "${M[2]}" != "${M[1]#:}" || "${M[5]}" != M ]]; then
+			EDITS_UNDERIVED+=("${R[I+1]}")
+			continue
+		fi
+		K0=${#EDITS_PATH}
 		O=$(git cat-file blob "${M[3]}" 2>/dev/null; print -n x)
 		N=$(git cat-file blob "${M[4]}" 2>/dev/null; print -n x)
 		# Line k at element k, its line end there unless it is the last – stored without one
@@ -13155,18 +13169,23 @@ _EDITS_DERIVE () {
 			(( B == 1 && D == 1 )) && _EDIT_NARROWED "${OL[A]}" "${NL[C]}" && \
 				EDITS_NOLD[${#EDITS_PATH}]=${OL[A]} EDITS_NNEW[${#EDITS_PATH}]=${NL[C]}
 		done
-		(( B )) || break
+		if (( B )); then
+			EDITS_DERIVED+=("${R[I+1]}")
+		else
+			# A hunk adding lines alone, or none at all, as a binary file has – its edits taken back
+			EDITS_PATH=("${(@)EDITS_PATH[1,K0]}") EDITS_OLD=("${(@)EDITS_OLD[1,K0]}") EDITS_NEW=("${(@)EDITS_NEW[1,K0]}")
+			EDITS_NOLD=("${(@)EDITS_NOLD[1,K0]}") EDITS_NNEW=("${(@)EDITS_NNEW[1,K0]}")
+			EDITS_UNDERIVED+=("${R[I+1]}")
+		fi
 	done
-	(( I >= ${#R} )) && return 0
-	EDITS_PATH=("${(@)EDITS_PATH[1,KEEP]}") EDITS_OLD=("${(@)EDITS_OLD[1,KEEP]}") EDITS_NEW=("${(@)EDITS_NEW[1,KEEP]}")
-	EDITS_DERIVED=() EDITS_NOLD=() EDITS_NNEW=()
-	return 1
+	return 0
 }
 
 # Resolves the stop the replay in <worktree> is at by making the `--edits` in the content of the
 # commit the stop builds – stage 3 at a pick, the target's own, stage 2, at the fold's fixup – that
 # commit's original content plus the fold's change, what rebuilding it by replacement gives
-# • A whole or staged fold derives its edits from its own change, as do whole files beside them
+# • Every fold derives its edits from its own change – one given `--edits` for the paths they don't
+#   name, and a resume, holding no `--edits`, for all
 # • Returns 1, touching nothing, unless each conflicted file is an edited one in a conflict over its
 #   content, holding every old text exactly once there, and the edits made in the tip's text are
 #   what the fold composed, as a cleaning filter can make them otherwise
@@ -13174,16 +13193,9 @@ _EDITS_RESOLVE_STOP () {
 	# Args: <worktree> – reads the caller's `ORIG_HEAD`, `FOLD_SNAP` and `EDITS_TIP_OK`
 	setopt local_options no_multibyte
 	local WT=$1 P TEXT
-	if (( ${#OPT_EDITS} )); then
-		(( ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} )) || return 1
-	elif _INPUTS_GIVEN || { (( ! ${#OPT_WHOLE} )) && [ -n "$AMEND_TREE" ]; }; then
-		return 1
-	fi
 	if [ -z "$EDITS_TIP_OK" ]; then
 		EDITS_TIP_OK=1
-		# A whole or staged fold takes its edits from its own change, once a stop
-		# asks for them – one with `--edits` too, for the files it took whole
-		(( ${#OPT_EDITS} && ! _INPUT_WHOLE )) || _EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
+		_EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$ORIG_HEAD:$P" 2>/dev/null; print -n x)
 			_EDITS_REPLACED "$P" "${TEXT%x}" && \
@@ -13193,6 +13205,22 @@ _EDITS_RESOLVE_STOP () {
 	(( EDITS_TIP_OK )) || return 1
 	_EDITS_STOP_STEP "$WT" || return 1
 	_EDITS_STAGE_STOP "$WT" "${reply[@]}" "$ORIG_HEAD"
+}
+
+# Runs a fold's resume <command> in <worktree>, its output into `REPLY` – each later stop its line
+# replacements resolve going on, as on its first run – failing at the first they don't
+_EDITS_RESUME_RUN () {
+	# Args: <worktree> <old tip> <fold's tree> <command>
+	local ORIG_HEAD=$2 FOLD_SNAP=$3 EDITS_TIP_OK="" OUT
+	local -i STOPS=0 RC=0
+	until OUT=$(_RENORM_EVAL "$1" "$4" "$4"); do
+		_REBASE_RESOLVABLE "$1" "$OUT" && _EDITS_RESOLVE_STOP "$1" || { RC=1; break; }
+		[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE "$1"
+		STOPS+=1
+	done
+	(( STOPS )) && PRINT_TEXT "Made the fold's line replacements in the %s later commit(s) the replay stopped at, each holding every replaced hunk, or its changed words, once." 90 "$STOPS"
+	REPLY=$OUT
+	return RC
 }
 
 # Puts into `reply` the stage and the commit a replay's stop in <worktree> builds its content
@@ -13216,14 +13244,16 @@ _EDITS_STOP_STEP () {
 # Stages each file conflicted at the stop in <worktree> as <stage> holds it with the `--edits`
 # made in it, written out too – one renamed since read under its <tip> name – failing, touching
 # nothing, unless each is an edited one in a content conflict holding every old text once
+# – at a pick, its parent as replayed holding the base's text with those edits alone
 _EDITS_STAGE_STOP () {
 	# Args: <worktree> <stage> <rev> <tip>
 	setopt local_options no_multibyte
-	local WT=$1 STAGE=$2 REV=$3 TIP=$4 L P Q ID TEXT TAB=$'\t'
+	local WT=$1 STAGE=$2 REV=$3 TIP=$4 L P Q ID TEXT N TAB=$'\t'
 	local -i I
 	local -a U F INFO
 	local -A AT
 	_NARROWED=""
+	[ -n "$GIT_EDIT_NO_SELF_RESOLVE" ] && return 1
 	# "<mode> <id> <stage>\t<path>" – keyed by stage and path, as a path may hold a colon
 	for L in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
 		AT[${${L%%$TAB*}##* }$TAB${L#*$TAB}]="${L%% *} ${${L#* }%% *}"
@@ -13233,6 +13263,8 @@ _EDITS_STAGE_STOP () {
 	(( ${#U} )) || return 1
 	for P in "${U[@]}"; do
 		[[ -n "${AT[1$TAB$P]}" && "${AT[2$TAB$P]}" == 100(644|755)\ * && "${AT[3$TAB$P]}" == 100(644|755)\ * ]] || return 1
+		# One the change touches otherwise than by replacing lines is no edit's to make
+		(( ${EDITS_UNDERIVED[(Ie)$P]} )) && return 1
 		# A file the commit holds under the name it had before a later rename
 		# takes the tip name's edits, paired as the replay's merge pairs it
 		Q=$P
@@ -13245,6 +13277,15 @@ _EDITS_STAGE_STOP () {
 				done
 			fi
 			[ -n "$Q" ] || return 1
+		fi
+		# Building on the commit's own content drops the parent's, so that may differ from the base by
+		# the edits alone – a deviation a resolver staged at an earlier stop stays the resolver's
+		if (( STAGE == 3 )); then
+			[ "${AT[1$TAB$P]%% *}" = "${AT[2$TAB$P]%% *}" ] || return 1
+			TEXT=$(git -C "$WT" cat-file blob "${AT[1$TAB$P]#* }" 2>/dev/null; print -n x) N=$_NARROWED
+			_EDITS_REPLACED "$Q" "${TEXT%x}" || return 1
+			_NARROWED=$N
+			[ "$(print -rn -- "$REPLY" | git -C "$WT" hash-object --no-filters --stdin 2>/dev/null)" = "${AT[2$TAB$P]#* }" ] || return 1
 		fi
 		TEXT=$(git -C "$WT" cat-file blob "${AT[$STAGE$TAB$P]#* }" 2>/dev/null; print -n x)
 		_EDITS_REPLACED "$Q" "${TEXT%x}" || return 1
@@ -19309,7 +19350,8 @@ _CONTINUE_AMEND_INTO () {
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$(_RENORM_EVAL "$STATE_WORKTREE" "$CMD" "$CMD") && \
+		if ! _EDITS_RESUME_RUN "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_STAGEDTREE" "$CMD" && \
+		   { CONTINUE_OUTPUT=$REPLY; true } && \
 		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$STATE_STAGEDTREE" guard-empty && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "staged" }; then
 			# Another conflict downstream – keep state, keep worktree, exit
 			_CLEANUP_HOOK=""

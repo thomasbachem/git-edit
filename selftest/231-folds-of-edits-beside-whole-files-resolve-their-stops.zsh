@@ -1,6 +1,6 @@
 # A fold of `--edits` beside files taken whole resolves its replay's stops as either alone does
 # – the pairs given as given, inside a line too, the files taken whole as their replaced lines –
-# while one whose whole file inserts a line pauses as before
+# while one whose whole file inserts a line pauses only where that file conflicts
 _ST_SCENARIO "\e[1;96m[231] folds of --edits beside whole files resolve their stops by replacement\e[0m"
 local MX_T MX_O MX_WT
 
@@ -36,14 +36,20 @@ _ST_EQ "the tip holds both, the checkout's whole file clean" \
 	"$(git show HEAD:doc.md | sed -n 6p):$(git show HEAD:notes.md | sed -n 2p):$(git status --porcelain -- doc.md)" \
 	"Last paragraph, reworded.:Keep the setting at two seconds.:"
 
-# Its whole file inserting a line derives nothing – the stop pauses, and `--abort` leaves it all
+# Its whole file inserting a line derives nothing for that file – the stops the other file's
+# edits resolve go on while it merges clean, and one where it conflicts pauses
 _MX231_DOCS mx2
 print -l "# Title" "Subtitle." "" "First paragraph, one line." "Inserted paragraph." "" "Last paragraph, reworded." > doc.md
 _ST_RUN --amend-into="$MX_T" --edits '{"notes.md": [["at one second", "at two seconds"]]}' --whole -- doc.md
+_ST_EQ "one whose whole file inserts a line clean resolves its other file's stops" \
+	"$RC:$(git show HEAD~2:doc.md | sed -n 2p):$(git show HEAD~2:notes.md | sed -n 2p)" "0:Subtitle.:Keep the setting at two seconds."
+_MX231_DOCS mx3
+print -l "# Title" "" "First paragraph, one line." "Extra paragraph." "Inserted paragraph." "" "Last paragraph, reworded." > doc.md
+_ST_RUN --amend-into="$MX_T" --edits '{"notes.md": [["at one second", "at two seconds"]]}' --whole -- doc.md
 MX_WT=$(_ST_PZ_WT)
-_ST_EQ "one whose whole file inserts a line stops at its target" \
+_ST_EQ "one inserting a line where its file conflicts stops at its target" \
 	"$RC:$(git -C "${MX_WT:-$ST_NO_WT}" log -1 --format=%s HEAD 2>/dev/null):$(git rev-parse HEAD)" "2:MX target:$MX_O"
 _ST_OUT_LACKS "resolving none of it" "Made the"
 _ST_RUN --abort
-_ST_EQ "--abort leaves the branch and the checkout's file" "$RC:$(git rev-parse HEAD):$(sed -n 2p doc.md):$(_ST_PZ_WT)" "0:$MX_O:Subtitle.:"
+_ST_EQ "--abort leaves the branch and the checkout's file" "$RC:$(git rev-parse HEAD):$(sed -n 4p doc.md):$(_ST_PZ_WT)" "0:$MX_O:Extra paragraph.:"
 cd "$TMP/repo"

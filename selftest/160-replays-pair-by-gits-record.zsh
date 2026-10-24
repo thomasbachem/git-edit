@@ -4,6 +4,8 @@
 # line the stop's own fold rewrites never counts as taken in, a later rename of the file landing
 # – and a pick git left out, its whole change taken in at a stop, refuses too
 _ST_SCENARIO "\e[1;96m[160] replays pair by git's record, a stop's own lines are never taken in\e[0m"
+# Every stop here is the resolver's, as the guards under test act on stops resolved by hand
+export GIT_EDIT_NO_SELF_RESOLVE=1
 local RP_D="@1760000000 +0000" RP_T RP_B RP_WT RP_V
 # Commits <file> holding <line>... as <subject>, every one in the same second
 _RP_C () {
@@ -69,16 +71,15 @@ _ST_RUN --continue
 _ST_EQ "a drop's stop taking in a later commit whole refuses" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
 _ST_OUT_HAS "naming the commit git left out" 'RP9 W edit line 12 – f.txt (left out as emptied)'
 _ST_RUN --abort
-# The line a fold adds to h.txt keeps it from resolving its stops itself, as scenario 226's do
 _ST_PZ_NEW rp10
-print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "RP10 base"
+print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && git add f.txt && git commit -qm "RP10 base"
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 T14 > f.txt && git commit -qam "RP10 target"
 RP_B=$(git rev-parse HEAD)
 print -l -- 1 2 3 4 5 6 7 a8 9 10 11 a12 13 T14 > f.txt && git commit -qam "RP10 later only f"
 print g > g.txt && git add g.txt && git commit -qm "RP10 top"
 RP_T=$(git rev-parse HEAD)
-print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt && print -l h h2 > h.txt
-_ST_RUN --amend-into="$RP_B" --whole -- f.txt h.txt
+print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt
+_ST_RUN --amend-into="$RP_B" --whole -- f.txt
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14)"
 _ST_RUN --continue
@@ -87,7 +88,7 @@ _ST_RUN --continue
 _ST_EQ "a fold's stop taking in a later commit whole, its step skipped, refuses" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
 _ST_OUT_HAS "naming the commit left out" 'RP10 later only f – f.txt (left out as emptied)'
 _ST_RUN --abort
-git checkout -q -- f.txt h.txt
+git checkout -q -- f.txt
 # While a fold of the very change a later commit made,
 # no stop on its file, lands with that commit dropped as emptied
 _ST_PZ_NEW rp11
@@ -156,14 +157,13 @@ _ST_OUT_LACKS "never the commit bringing its own underline" 'README.rst'
 _ST_RUN --abort
 # A fold's stop resolved to the target with the fold, then a later commit renaming the file – its
 # replay removes the folded line where the original removed the old one – lands
-# Here and below, the line a fold adds to h.txt keeps it from resolving its stops, as 226's do
 _ST_PZ_NEW rp4
-_RP_W "" "" "" "" f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "RP4 base"
+_RP_W "" "" "" "" f.txt && git add f.txt && git commit -qm "RP4 base"
 _RP_W T "" "" "" f.txt && git commit -qam "RP4 T edit alpha"
 RP_B=$(git rev-parse HEAD)
 _RP_W T N "" "" f.txt && git commit -qam "RP4 N edit delta"
 git mv f.txt f2.txt && git commit -qm "RP4 L rename f to f2"
-_RP_W T N F "" f2.txt && print -l h h2 > h.txt && git add f2.txt h.txt
+_RP_W T N F "" f2.txt && git add f2.txt
 _ST_RUN --amend-into="$RP_B"
 RP_WT=$(_ST_PZ_WT)
 [ -n "$RP_WT" ] && _RP_W T "" F "" "$RP_WT/f.txt" && git -C "$RP_WT" add f.txt
@@ -176,12 +176,12 @@ _ST_EQ "a fold's stop file renamed by a later commit lands" "$RC:$(git log --for
 	"0:RP4 L rename f to f2|RP4 N edit delta|RP4 T edit alpha|RP4 base|:alphaT beta gamma deltaN epsilonF zeta "
 # As does one moving the file with an edit of its own
 _ST_PZ_NEW rp5
-_RP_W "" "" "" "" f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "RP5 base"
+_RP_W "" "" "" "" f.txt && git add f.txt && git commit -qm "RP5 base"
 _RP_W T "" "" "" f.txt && git commit -qam "RP5 T edit alpha"
 RP_B=$(git rev-parse HEAD)
 _RP_W T N "" "" f.txt && git commit -qam "RP5 N edit delta"
 git rm -q f.txt && _RP_W T N "" L f2.txt && git add f2.txt && git commit -qm "RP5 L move f to f2, edit gamma"
-_RP_W T N F L f2.txt && print -l h h2 > h.txt && git add f2.txt h.txt
+_RP_W T N F L f2.txt && git add f2.txt
 _ST_RUN --amend-into="$RP_B"
 RP_WT=$(_ST_PZ_WT)
 [ -n "$RP_WT" ] && _RP_W T "" F "" "$RP_WT/f.txt" && git -C "$RP_WT" add f.txt
@@ -192,13 +192,13 @@ _ST_EQ "as does one moving it with an edit of its own" "$RC:$(git show HEAD:f2.t
 	"0:alphaT beta gammaL deltaN epsilonF zeta :gone"
 # While a fold's stop taking in a later commit's line refuses, naming it, a rename following
 _ST_PZ_NEW rp6
-_RP_W "" "" "" "" f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "RP6 base"
+_RP_W "" "" "" "" f.txt && git add f.txt && git commit -qm "RP6 base"
 _RP_W T "" "" "" f.txt && git commit -qam "RP6 T edit alpha"
 RP_B=$(git rev-parse HEAD)
 _RP_W T N "" N f.txt && git commit -qam "RP6 N edit gamma and delta"
 git mv f.txt f2.txt && git commit -qm "RP6 L rename f to f2"
 RP_T=$(git rev-parse HEAD)
-_RP_W T N F N f2.txt && print -l h h2 > h.txt && git add f2.txt h.txt
+_RP_W T N F N f2.txt && git add f2.txt
 _ST_RUN --amend-into="$RP_B"
 RP_WT=$(_ST_PZ_WT)
 [ -n "$RP_WT" ] && _RP_W T N F "" "$RP_WT/f.txt" && git -C "$RP_WT" add f.txt
@@ -212,14 +212,14 @@ _ST_RUN --abort
 # A stop taking in a later commit's pure deletion refuses – a fold's, and a reorder's whose stop
 # put its own lines in place of a block the later commit deletes – while keeping the block lands
 _ST_PZ_NEW rp7
-print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && print h > h.txt && git add f.txt h.txt && git commit -qm "RP7 base"
+print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 14 > f.txt && git add f.txt && git commit -qm "RP7 base"
 print -l -- 1 2 3 4 5 6 7 8 9 10 11 12 13 T14 > f.txt && git commit -qam "RP7 target"
 RP_B=$(git rev-parse HEAD)
 print -l -- 1 2 3 4 8 9 10 L11 12 13 T14 > f.txt && git commit -qam "RP7 later deletes 5-7, edits 11"
 print g > g.txt && git add g.txt && git commit -qm "RP7 top"
 RP_T=$(git rev-parse HEAD)
-print -l -- 1 2 3 4 8 9 10 L11 E12 13 T14 > f.txt && print -l h h2 > h.txt
-_ST_RUN --amend-into="$RP_B" --whole -- f.txt h.txt
+print -l -- 1 2 3 4 8 9 10 L11 E12 13 T14 > f.txt
+_ST_RUN --amend-into="$RP_B" --whole -- f.txt
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 8 9 10 11 E12 13 T14)"
 _ST_RUN --continue
@@ -229,7 +229,7 @@ _ST_EQ "a fold's stop taking in a later commit's deletion refuses" "$RC:$(git re
 _ST_OUT_HAS "naming that commit" 'RP7 later deletes 5-7, edits 11 – f.txt'
 _ST_RUN --abort
 git checkout -q -- f.txt && print -l -- 1 2 3 4 8 9 10 L11 E12 13 T14 > f.txt
-_ST_RUN --amend-into="$RP_B" --whole -- f.txt h.txt
+_ST_RUN --amend-into="$RP_B" --whole -- f.txt
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 8 9 10 11 E12 13 T14)"
 _ST_RUN --continue
@@ -260,4 +260,5 @@ _ST_RUN --continue
 _ST_EQ "one keeping the block lands, each commit with its own change" "$RC:$(git log --format=%s | tr '\n' '|'):$(git diff HEAD~2 HEAD~1 -- f.txt | grep -c '^-d[1-4]$')" \
 	"0:RP8 top|RP8 A delete block, edit w|RP8 B insert where the block was|RP8 base|:4"
 unfunction _RP_C _RP_NO_RECORD _RP_W _RP_HAND
+unset GIT_EDIT_NO_SELF_RESOLVE
 cd "$TMP/repo"
