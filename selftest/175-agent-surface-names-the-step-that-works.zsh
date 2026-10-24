@@ -142,6 +142,26 @@ mkdir -p "$TMP/as9-empty"
 _ST_RUN -C="$TMP/as9-empty" -d -y HEAD~1
 _ST_OUT_HAS "-C on an existing directory that is no worktree names a path to give instead" 'Name a path that does not exist yet'
 
+# A paused squash names the commits it squashes into, as its resume does
+# – its fixups adding lines, which no replacement resolves
+_ST_PZ_NEW as9s
+print -l 1 2 > f && print g1 > g && git add f g && git commit -qm "AS9S base"
+print -l t 2 > f && git commit -qam "AS9S target" && AS_T=$(git rev-parse HEAD)
+print g2 > g && git commit -qam "AS9S other" && AS_O=$(git rev-parse HEAD)
+print -l t l > f && git commit -qam "AS9S later"
+print -l t a l > f && git commit -qam "fixup! AS9S target"
+print -l g2 g3 > g && git commit -qam "fixup! AS9S other"
+_ST_RUN -s="$AS_T" HEAD~1
+_ST_RUN --status
+_ST_OUT_HAS "--status names a paused squash by its target" "^In-flight operation: squash (target ${AS_T:0:7}, branch "
+_ST_RUN --continue
+_ST_OUT_HAS "as its resume does" "Continuing squash into ${AS_T:0:7}"
+_ST_RUN --abort
+_ST_RUN -s=auto HEAD~1 HEAD
+_ST_RUN --status
+_ST_OUT_HAS "and -s=auto's by each" "^In-flight operation: squash (targets ${AS_T:0:7}, ${AS_O:0:7}, branch "
+_ST_RUN --abort
+
 # A new `-C` path the late in-flight checks refuse is taken back out – kept only
 # where a pause in it holds work, a peer's that took the path while this run waited
 _ST_PZ_NEW asc

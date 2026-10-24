@@ -3920,9 +3920,16 @@ GIT_STATUS_REPORT () {
 		_LOAD_STATE
 		# Read, not taken up – a pause replaced meanwhile is reported as read, never refused as ended
 		_STATE_OWNED="" _STATE_ID=""
-		# A placement pauses as a reorder, under the name its run gave it,
-		# and a drop or squash as a rebase, named by its action
-		PRINT_TEXT "In-flight operation: %s (target %s, branch %s)" 33 "${${STATE_PLACE_LABEL:+placement – $STATE_PLACE_LABEL}:-${${STATE_ACTION:-$STATE_OPERATION}:-unknown}}" "${${STATE_TARGET:0:7}:-unknown}" "${STATE_BRANCH:-unknown}"
+		# A placement pauses as a reorder, under the name its run gave it, and a drop or squash
+		# as a rebase, named by its action – a squash's target the commits it squashes into
+		local TGT_WORD=target TGT_LIST=${${STATE_TARGET:0:7}:-unknown} TGT
+		if _PAUSED_SQUASH_INTO; then
+			TGT_LIST=""
+			for TGT in "${(@)reply[1,3]}"; do TGT_LIST+="${TGT_LIST:+, }${TGT:0:7}"; done
+			(( ${#reply} > 3 )) && TGT_LIST+=" and $(( ${#reply} - 3 )) more"
+			(( ${#reply} > 1 )) && TGT_WORD=targets
+		fi
+		PRINT_TEXT "In-flight operation: %s ($TGT_WORD %s, branch %s)" 33 "${${STATE_PLACE_LABEL:+placement – $STATE_PLACE_LABEL}:-${${STATE_ACTION:-$STATE_OPERATION}:-unknown}}" "$TGT_LIST" "${STATE_BRANCH:-unknown}"
 		# Whose it is, as the resume guard reads it – another label's,
 		# or one cut short, has its trailer then no step to take there
 		local OWNER="" FOREIGN=""
@@ -8889,6 +8896,19 @@ _SQUASH_GROUP_OF () {
 	local P
 	reply=()
 	for P in ${=_SQUASH_GROUPS}; do [ "${P#*:}" = "$1" ] && reply+=("${P%%:*}"); done
+}
+
+# Puts into `reply` the commits a paused squash squashes into, `-s=auto`'s each
+# – failing for any other pause, which its run's own commit names
+_PAUSED_SQUASH_INTO () {
+	[ "$STATE_ACTION" = squash ] || return 1
+	if [ -n "$STATE_SQUASH_GROUPS" ]; then
+		local _SQUASH_GROUPS=$STATE_SQUASH_GROUPS
+		_SQUASH_GROUP_TARGETS
+	else
+		reply=(${STATE_SQUASH_TARGET})
+	fi
+	(( ${#reply} ))
 }
 
 # Finds the commit a `-s=auto` replay made of each target, into `_SQUASHED_AT` – old and new line
@@ -16864,7 +16884,11 @@ _CONTINUE_REBASE () {
 	# Only a worktree this tool made goes – a `-C` path the caller named is theirs
 	_STATE_WT_OURS && _CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
-	PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
+	if _PAUSED_SQUASH_INTO; then
+		PRINT_ACTION "Continuing squash into %s..." "${reply[@]}"
+	else
+		PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
+	fi
 	# `-s=auto`'s pairs, for the messages and the report its landing gives each target
 	_SQUASH_GROUPS=$STATE_SQUASH_GROUPS
 
