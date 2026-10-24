@@ -47,7 +47,7 @@ Either way `man git-edit` works right away. Needs `zsh` and `git` 2.31 or later 
 | `git edit <commit>` | **Edit** its content. Pauses for your changes, then amends the commit and replays the descendants |
 | `git edit -M <commit>` | **Reword** only – pure plumbing, no checkout. `--text` skips the editor, `--subject` replaces the subject alone |
 | `git edit -d <commit>...` | **Drop** commits or ranges – their content leaves your checkout too, named with the way back |
-| `git edit -s <commit>...` | **Squash** into the oldest of them, a single commit into its parent – `-s=<target>` into a named one, `-S` to demand the plumbing path |
+| `git edit -s <commit>...` | **Squash** into the oldest of them, a single commit into its parent – `-s=<target>` into a named one, `-s=auto` each into the commit its `fixup!`, `amend!` or `squash!` names in one replay, `-S` to demand the plumbing path |
 | `git edit --amend-into=<sha>` | **Fold** the staged changes into a past commit |
 | `git edit --commit --text <msg> -- <path>...` | **Commit** files whole from the checkout, composed apart from the shared index – at the tip, or beside a commit with `--after=<anchor>` or `--before=<anchor>` |
 | `git edit --split=<sha>` | **Split** one commit into two |
@@ -167,14 +167,14 @@ Where the sync can't run – a checkout halfway through a merge or a rebase, its
 
 Where many sessions rewrite one branch, some lose the race. A run stops with nothing applied as soon as it can no longer land – its branch moved off the tip it read, or another run paused on that branch – rather than pause, run its gate or replay for nothing, and names who moved the branch. A pause wins over a run already in flight, which reruns with `--wait=540`; a resume refused keeps its resolution for `git edit --abort` and a redo, as `--status` names.
 
-When many sessions fold fixes into the same deep history at once, each fold replays everything above its target and collides with the next. Land each fix at the tip as its own commit instead, then have each owner squash its fixes into their target, one session at a time, and run the suite once on the result:
+When many sessions fold fixes into the same deep history at once, each fold replays everything above its target and collides with the next. Land each fix at the tip as its own commit instead, then have each owner squash its fixes into their targets, one session at a time, and run the suite once on the result:
 
 ```
 git edit --commit --text "fixup! <target's subject>" -- <paths>   # its gate may wait for the squash: --no-verify
-git edit -s=<target> <fixup commit>...                             # each owner in turn, gate on
+git edit -s=auto <fixup commit>...                                 # each owner in turn, gate on
 ```
 
-A fix rewording its target lands as `amend! <target's subject>` with the new message as its body, which the squash takes as git's autosquash would – a `squash!` one's body is added to the target's.
+`-s=auto` takes each fixup into the commit its marker names, every target in one replay. A fix rewording its target lands as `amend! <target's subject>` with the new message as its body, which the squash takes as git's autosquash would – a `squash!` one's body is added to the target's.
 
 A lost race, or a wait that ran out, points here when other callers landed on the branch 3 or more times in the last 10 minutes.
 

@@ -334,6 +334,31 @@ A squash ends on the tip's content \(em one whose resolutions add up to
 anything else refuses to land, naming the commits the differing lines came
 from, and keeps its replay paused for one of them to be reworked there
 before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo.
+.IP
+With
+.BR \-s=auto ,
+each \fIcommit\fR goes into the commit its \fBfixup!\fR, \fBamend!\fR or
+\fBsquash!\fR marker names, every pair in one replay from the oldest target,
+placed as git's autosquash places them. Below the marker on the first\-parent
+line, the target's whole subject names it, else a SHA or other name, among the
+unpushed commits as in git's own pass, then among the pushed; its opening words
+name it only where neither answers anywhere, and the run says so. A commit
+named outright without a marker that no marker names either, a marker naming
+no commit below it or several alike, and one whose target is pushed (without
+\fB\-\-allow\-pushed\fR) refuse the run, each named, as does one changing or
+removing a file a commit after its target adds, that commit named (without
+\fB\-\-allow\-new\-path\fR). A commit a range brings
+without a marker stays where it is, and may be a target \(em a range takes
+both its ends, so one starting at the tip a land began from takes that commit
+too. Each target takes the message
+its markers ask for, so \fB\-\-text\fR and \fB\-m\fR refuse, and the gate checks
+the commit each target became. Its replay resolves its own stops where every
+fixup touching a conflicted file only replaces lines, as a fold of staged
+changes does (see
+.BR \-\-amend\-into ):
+the commit a stop builds takes the replacements of the fixups folded at or
+below it, bar those it holds already, at a fixup its own, wherever it holds
+each old text exactly once.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
@@ -1465,7 +1490,10 @@ Let
 .B \-\-amend\-into
 fold a staged path into a commit that predates it, against the refusal
 above under
-.BR MODES .
+.BR MODES ,
+and
+.B \-s=auto
+a fixup's.
 .TP
 .B \-\-allow\-mode\-change
 Let
@@ -2776,19 +2804,20 @@ names for it too.
 When many sessions fold fixes into the same deep history at once, each fold
 replays everything above its target and collides with the next. Land each fix
 at the tip as its own commit instead, then have each owner squash its fixes
-into their target, one session at a time, and run the suite once on the
+into their targets, one session at a time, and run the suite once on the
 result:
 .PP
 .nf
 .RS
 git edit \-\-commit \-\-text "fixup! <target's subject>" \-\- <paths>
-git edit \-s=<target> <fixup commit>...
+git edit \-s=auto <fixup commit>...
 .RE
 .fi
 .PP
 The fixup's gate may wait for the squash
 .RB ( \-\-no\-verify ),
-and each squash runs gated. A fix rewording its target lands as
+and each squash runs gated, one replay taking every fixup into the target its
+marker names. A fix rewording its target lands as
 \fBamend! <target's subject>\fR with the new message as its body, which
 the squash takes as git's autosquash would. A lost race, or a wait that
 ran out, points here when other callers landed on the branch 3 or more

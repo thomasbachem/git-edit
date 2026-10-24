@@ -99,7 +99,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MARKED STATE_MESSAGE \
 	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
-	STATE_ACTOR_ID STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
+	STATE_ACTOR_ID STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
 	STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
@@ -107,13 +107,13 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
+	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAMED_ALONE _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
-	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
+	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT
 
@@ -911,6 +911,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
 	ECHO_E "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
+	ECHO_E "\e[0;94m       git edit -s=auto <commit>...                         # each into the commit its fixup!/amend!/squash! names, in one replay\e[0m"
 	ECHO_E "\e[0;94m       git edit [-M | --reword] [--text <msg> | --subject <line>] <commit>\e[0m"
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
@@ -949,7 +950,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       -m, --message                   Also edit <commit>'s message, at a terminal\e[0m"
 	ECHO_E "\e[0;94m       -M, --reword                    Alter only the message – plumbing, the working tree untouched\e[0m"
 	ECHO_E "\e[0;94m       -d, --drop                      Drop <commit>s or ranges, both ends included\e[0m"
-	ECHO_E "\e[0;94m       -s, --squash[=<target>]         Squash into the oldest, a single commit into its parent – or into <target>\e[0m"
+	ECHO_E "\e[0;94m       -s, --squash[=<target>|auto]    Squash into the oldest, a single commit into its parent – or into <target>, auto: each into the commit its marker names\e[0m"
 	ECHO_E "\e[0;94m       -S, --resquash                  Squash by plumbing only, never falling back to a rebase\e[0m"
 	ECHO_E "\e[0;94m       --amend-into=<sha>|auto         Fold staged changes into <sha> – auto: the unpushed commit owning the lines\e[0m"
 	ECHO_E "\e[0;94m       --commit --text <msg>           Commit files from the checkout, composed apart from the shared index\e[0m"
@@ -985,7 +986,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --subject <line>                With -M or an edit's --continue: replace the subject alone, the body kept\e[0m"
 	ECHO_E "\e[0;94m       -y, --yes                       Auto-confirm the drop/squash prompt\e[0m"
 	ECHO_E "\e[0;94m       --allow-pushed                  Rewrite commits already on a remote\e[0m"
-	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into fold a path into a commit that predates it\e[0m"
+	ECHO_E "\e[0;94m       --allow-new-path                Let --amend-into or -s=auto fold a path into a commit that predates it\e[0m"
 	ECHO_E "\e[0;94m       --allow-mode-change             Let a commit, fold or --continue take a file-mode change\e[0m"
 	ECHO_E "\e[0;94m       --allow-other-actor             Take on another GIT_EDIT_ACTOR caller's run or pause\e[0m"
 	ECHO_E ""
@@ -8362,7 +8363,7 @@ _PRINT_BUSY_HINT () {
 		[ "$BY" = "$_ACTOR_ID" ] || N+=1
 	done
 	(( N >= 3 )) || return 0
-	ECHO_E "\e[0;33m  ${1#refs/heads/} is busy – other callers landed on it $N times in the last 10 minutes. Where many sessions fold into one history, land each fix at the tip as its own 'fixup! <target's subject>' commit, squashed in later one session at a time – 'Many sessions at once' in the README, or git-edit(1).\e[0m" >&2
+	ECHO_E "\e[0;33m  ${1#refs/heads/} is busy – other callers landed on it $N times in the last 10 minutes. Where many sessions fold into one history, land each fix at the tip as its own 'fixup! <target's subject>' commit, squashed in later one session at a time by 'git edit -s=auto <fixup commit>...' – 'Many sessions at once' in the README, or git-edit(1).\e[0m" >&2
 }
 
 # Refuses a branch that moved under a resolution – a parallel session landed a commit,
@@ -8413,7 +8414,7 @@ _KEEP_TYPED_MESSAGE () {
 _SAVE_REBASE_STATE () {
 	_SAVE_STATE "operation=rebase" "action=$ACTION" "worktree=$WORKTREE_DIR" "wt_ours=${WT_OURS:-0}" \
 		"branch=refs/heads/$ORIG_BRANCH" "orig_head=$ORIG_HEAD" "target=$COMMIT" "targets=${(j: :)COMMITS}" \
-		"squash_target=$TARGET" "message=${OPT_MESSAGE:+editor}" || exit 1
+		"squash_target=$TARGET" "squash_groups=$_SQUASH_GROUPS" "message=${OPT_MESSAGE:+editor}" || exit 1
 	[ -n "$TEXT_VALUE" ] && print -r -- "$TEXT_VALUE" > "$(_TEXT_MSG_PATH)"
 	_CLEANUP_HOOK=""
 }
@@ -8472,7 +8473,7 @@ _AMEND_EMPTY_FOLD () {
 # is done, 2 at a conflict and 1 where it stopped any other way, its output in `REBASE_OUT`
 _REBASE_DRIVE () {
 	# Args: <command, eval'd> [<file holding --text>] [real – `-m` asked for the editor]
-	local CMD=$1 STATUS GITDIR OUTF=$(MKTEMP_FILE git-edit-rebase-out)
+	local CMD=$1 STATUS GITDIR AUTO_AT="" OUTF=$(MKTEMP_FILE git-edit-rebase-out)
 	local -i RENORM_N=0
 	_TEMP_FILES+=("$OUTF")
 	_RERERE_SCOPE_BEGIN
@@ -8487,6 +8488,14 @@ _REBASE_DRIVE () {
 		GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 		[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] || return 1
 		if [ -n "$(_UNMERGED_IN .)" ] || [[ "$REBASE_OUT" == *"CONFLICT ("* ]]; then
+			# A `-s=auto` stop its fixups' line replacements resolve goes on, once per step
+			# so one coming back pauses
+			if [ -n "$_SQUASH_GROUPS" ] && _EDITS_STOP_STEP . && [ "$REPLY" != "$AUTO_AT" ] && AUTO_AT=$REPLY && \
+			   _AUTO_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}"; then
+				_REBASE_CONTINUE_CMD --continue "$2" "$3"
+				CMD=$REPLY
+				continue
+			fi
 			return 2
 		fi
 		if (( ++RENORM_N <= 100 )) && _RENORM_STOPPED . "$REBASE_OUT"; then
@@ -8725,6 +8734,268 @@ _MARKER_NAMES () {
 	[[ "$2" == "$3"* ]]
 }
 
+# Pairs each commit `-s=auto` names with the commit its marker names, as git's autosquash matches
+# one, into `_SQUASH_GROUPS` – "<marker>:<target>" words, targets oldest first, each one's markers
+# oldest first – refusing, every commit it can't take named, where any is so
+# • Its whole subject, then a name resolving to it, among the unpushed commits below it as in git's
+#   own pass, then among the pushed – its opening words only where neither answers anywhere
+# • Several matching alike refuse, as which one the marker meant is no guess, and a pushed target
+#   refuses without `--allow-pushed`, the marker behind it named
+# • One with no marker may be a target – else it stays where it is where a range brought it,
+#   and refuses where named outright
+_AUTO_SQUASH_GROUPS () {
+	# Args: <commit>..., oldest first – `_ALONE` holds those named outright
+	local M C FIRST NAME SHA STEP HOW READ="" IX
+	local -a LINE SHAS SUBJS HITS MARKS LEFT NOMARK UNPLACED UNSURE PUSHED ABSENT NOTES PAIRS
+	local -A SELECTED MARKS_OF TARGET_OF NAME_OF POS AT_SUBJ
+	local -i U A B I FROM
+	for M in "$@"; do
+		FIRST=$(git log -1 --format=%s "$M" 2>/dev/null)
+		if _MARKER_NAME "$FIRST"; then
+			MARKS+=("$M") SELECTED[$M]=1 NAME_OF[$M]=$REPLY
+		elif (( ${_ALONE[(Ie)$M]} )); then
+			NOMARK+=("$M")
+		else
+			LEFT+=("$M")
+		fi
+	done
+	# The line newest first, its unpushed part alone until a marker needs more – every commit below
+	# a pushed one is pushed too – each commit's place and each subject's looked up, not walked
+	LINE=(${(f)"$(git log --first-parent --format='%H %s' HEAD --not --remotes 2>/dev/null)"})
+	SHAS=("${LINE[@]%% *}") SUBJS=("${LINE[@]#* }")
+	U=${#SHAS}
+	for (( I = 1; I <= U; I++ )); do POS[${SHAS[I]}]=$I AT_SUBJ[s:${SUBJS[I]}]+=" $I"; done
+	for M in "${MARKS[@]}"; do
+		NAME=${NAME_OF[$M]} SHA="" HOW=""
+		[[ -n "$NAME" && "$NAME" != *' '* ]] && SHA=-
+		HITS=()
+		for STEP in subject:unpushed subject:pushed prefix:unpushed prefix:pushed; do
+			if [ "${STEP#*:}" = pushed ]; then
+				if [ -z "$READ" ]; then
+					READ=1
+					LINE=(${(f)"$(git log --first-parent --format='%H %s' "${SHAS[U]:-HEAD}${SHAS[U]:+^}" 2>/dev/null)"})
+					SHAS+=("${LINE[@]%% *}") SUBJS+=("${LINE[@]#* }")
+					for (( I = U + 1; I <= ${#SHAS}; I++ )); do POS[${SHAS[I]}]=$I AT_SUBJ[s:${SUBJS[I]}]+=" $I"; done
+				fi
+				A=$(( U + 1 )) B=${#SHAS}
+			else
+				A=1 B=$U
+			fi
+			# Below the marker alone – one off the line pairs with nothing
+			FROM=${POS[$M]:-0}
+			(( FROM )) || continue
+			(( FROM >= A )) && A=$(( FROM + 1 ))
+			if [ "${STEP%%:*}" = subject ]; then
+				for IX in ${=AT_SUBJ[s:$NAME]}; do
+					(( IX >= A && IX <= B && ! ${+SELECTED[${SHAS[IX]}]} )) && HITS+=("${SHAS[IX]}")
+				done
+				# A name resolved once, and only where no subject answered
+				if (( ! ${#HITS} )) && [ -n "$SHA" ]; then
+					[ "$SHA" = - ] && SHA=$(git rev-parse -q --verify "$NAME^{commit}" 2>/dev/null)
+					I=${POS[$SHA]:-0}
+					(( I >= A && I <= B && ! ${+SELECTED[$SHA]} )) && HITS=("$SHA") HOW="a name resolving to it"
+				fi
+			elif [ -n "$NAME" ]; then
+				for (( I = A; I <= B; I++ )); do
+					[[ "${SUBJS[I]}" == "$NAME"* ]] && (( ! ${+SELECTED[${SHAS[I]}]} )) && HITS+=("${SHAS[I]}")
+				done
+				HOW="its opening words"
+			fi
+			(( ${#HITS} )) && break
+		done
+		case ${#HITS} in
+			0) UNPLACED+=("$M") ;;
+			1)
+				MARKS_OF[${HITS[1]}]+=" $M" TARGET_OF[$M]=${HITS[1]}
+				(( ${POS[${HITS[1]}]} > U )) && [ ${#OPT_ALLOW_PUSHED} -eq 0 ] && PUSHED+=("$M ${HITS[1]}")
+				[ -n "$HOW" ] && NOTES+=("$M ${HITS[1]} $HOW") ;;
+			*)
+				NAME=""
+				for C in "${(@)HITS[1,5]}"; do NAME+="${NAME:+, }${C:0:7}"; done
+				UNSURE+=("$M $NAME${HITS[6]:+, …}") ;;
+		esac
+	done
+	# One named outright that a marker named is its target, no marker missed
+	PAIRS=(${(k)MARKS_OF})
+	NOMARK=("${(@)NOMARK:|PAIRS}") PAIRS=()
+	# A fixup changing or removing a file a commit after its target adds would meet that add, or see
+	# it bring the file back – refused, as a fold of it is, a rename followed to the file's first name
+	if (( ! ${#OPT_ALLOW_NEW_PATH} )); then
+		for C in ${(k)MARKS_OF}; do
+			for M in ${=MARKS_OF[$C]}; do
+				LINE=(${(0)"$(git diff-tree -r -z --no-renames --no-commit-id --name-status --diff-filter=MD "$M^" "$M" 2>/dev/null)"})
+				for (( I = 1; I < ${#LINE}; I += 2 )); do
+					git cat-file -e "$C:${LINE[I+1]}" 2>/dev/null && continue
+					SHA=$(git log --follow --diff-filter=A --format=%H "$C..$M^" -- ":(literal)${LINE[I+1]}" 2>/dev/null | tail -1)
+					# An add by a fixup of this target or an older one replays ahead of it
+					[ -n "$SHA" ] && (( ! ${+TARGET_OF[$SHA]} || ${POS[${TARGET_OF[$SHA]}]:-0} < ${POS[$C]} )) && \
+						ABSENT+=("$M ${${LINE[I]/M/changes}/D/removes} $SHA ${LINE[I+1]}")
+				done
+			done
+		done
+	fi
+	# Each commit counted once, though it may name a pushed target and change several files
+	HITS=("${NOMARK[@]}" "${UNPLACED[@]}" "${(@)UNSURE%% *}" "${(@)PUSHED%% *}" "${(@)ABSENT%% *}")
+	HITS=("${(@u)HITS}")
+	if (( ${#HITS} )); then
+		PRINT_ERR "-s=auto can't take ${#HITS} of its commits – nothing was changed"
+		{
+			for M in "${NOMARK[@]}"; do print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – carries no fixup!, amend! or squash! marker"; done
+			for M in "${UNPLACED[@]}"; do print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – names no commit below it"; done
+			for C in "${UNSURE[@]}"; do print -r -- "${C:0:7} $(git log -1 --format=%s "${C%% *}") – names ${C#* } alike"; done
+			for C in "${PUSHED[@]}"; do print -r -- "${C:0:7} $(git log -1 --format=%s "${C%% *}") – names ${${C#* }:0:7}, already pushed"; done
+			for C in "${ABSENT[@]}"; do
+				HITS=(${=C})
+				print -r -- "${HITS[1]:0:7} $(git log -1 --format=%s "${HITS[1]}") – ${HITS[2]} ${C#* * * }, which ${HITS[3]:0:7} $(git log -1 --format=%s "${HITS[3]}") adds after its target"
+			done
+		} | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		ECHO_E "\e[0;31m  Leave each out, or name its target outright: git edit -s=<target> <commit>...\e[0m" >&2
+		(( ${#PUSHED} )) && ECHO_E "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
+		(( ${#ABSENT} )) && ECHO_E "\e[0;31m  A fixup of a file a later commit adds goes into that commit or one after it – or pass --allow-new-path to replay it anyway.\e[0m" >&2
+		exit 1
+	fi
+	if (( ! ${#MARKS} )); then
+		PRINT_ERR "-s=auto was given no fixup!, amend! or squash! commit – nothing was changed"
+		exit 1
+	fi
+	# Pairings beyond a whole subject, which git's own pass would take too, said as such
+	for C in "${NOTES[@]}"; do
+		M=${C%% *} C=${C#* }
+		PRINT_TEXT "%s pairs with %s by %s" 33 "${M:0:7}" "${C:0:7} ($(git log -1 --format=%s "${C%% *}"))" "${C#* }"
+	done
+	# What a range brought besides, bar the targets among it
+	PAIRS=(${(k)MARKS_OF})
+	LEFT=("${(@)LEFT:|PAIRS}") PAIRS=()
+	(( ${#LEFT} )) && PRINT_TEXT "%s commit(s) in the range carry no marker and stay where they are" 33 "${#LEFT}"
+	for (( I = ${#SHAS}; I >= 1; I-- )); do
+		C=${SHAS[I]}
+		(( ${+MARKS_OF[$C]} )) || continue
+		for M in ${=MARKS_OF[$C]}; do PAIRS+=("$M:$C"); done
+	done
+	_SQUASH_GROUPS=${(j: :)PAIRS}
+}
+
+# Puts into `reply` the targets `_SQUASH_GROUPS` pairs markers with, oldest first
+_SQUASH_GROUP_TARGETS () {
+	local P
+	local -aU T=()
+	for P in ${=_SQUASH_GROUPS}; do T+=("${P#*:}"); done
+	reply=("${T[@]}")
+}
+
+# Puts into `reply` the markers `_SQUASH_GROUPS` pairs with <target>, oldest first
+_SQUASH_GROUP_OF () {
+	# Args: <target>
+	local P
+	reply=()
+	for P in ${=_SQUASH_GROUPS}; do [ "${P#*:}" = "$1" ] && reply+=("${P%%:*}"); done
+}
+
+# Finds the commit a `-s=auto` replay made of each target, into `_SQUASHED_AT` – old and new line
+# walked side by side, past markers and commits dropped gone empty, a target matched by the
+# authorship a fold keeps, others by their subject too – empty for a target its fixups emptied
+_AUTO_SQUASHED_INTO () {
+	# Args: <old tip> <new tip>
+	local OLD=$1 NEW=$2 BASE C P F=$'\x01'
+	local -a OLDS NEWS OKEYS NKEYS
+	local -A IS_MARK IS_TGT
+	local -i I K=1
+	typeset -gA _SQUASHED_AT
+	_SQUASHED_AT=()
+	for P in ${=_SQUASH_GROUPS}; do IS_MARK[${P%%:*}]=1 IS_TGT[${P#*:}]=1; done
+	_SQUASH_GROUP_TARGETS
+	BASE=$(git rev-parse -q --verify "${reply[1]}^" 2>/dev/null)
+	OLDS=(${(f)"$(git rev-list --reverse ${BASE:+$BASE..}"$OLD" 2>/dev/null)"})
+	NEWS=(${(f)"$(git rev-list --reverse ${BASE:+$BASE..}"$NEW" 2>/dev/null)"})
+	(( ${#OLDS} )) && OKEYS=("${(@f)$(git log --no-walk=unsorted --format="%an$F%ae$F%ad$F%s" --date=raw "${OLDS[@]}" 2>/dev/null)}")
+	(( ${#NEWS} )) && NKEYS=("${(@f)$(git log --no-walk=unsorted --format="%an$F%ae$F%ad$F%s" --date=raw "${NEWS[@]}" 2>/dev/null)}")
+	for (( I = 1; I <= ${#OLDS}; I++ )); do
+		C=${OLDS[I]}
+		(( ${+IS_MARK[$C]} )) && continue
+		if (( ${+IS_TGT[$C]} )); then
+			# Its subject an `amend!` may have changed
+			if (( K <= ${#NEWS} )) && [ "${OKEYS[I]%$F*}" = "${NKEYS[K]%$F*}" ]; then
+				_SQUASHED_AT[$C]=${NEWS[K]}
+				K+=1
+			else
+				_SQUASHED_AT[$C]=""
+			fi
+		elif (( K <= ${#NEWS} )) && [ "${OKEYS[I]}" = "${NKEYS[K]}" ]; then
+			K+=1
+		fi
+	done
+}
+
+# Gives each commit a `-s=auto` replay made of a target the message its markers ask for, as git's
+# autosquash would, by plumbing over a result whose fixups kept each target's own – newest first,
+# so no rebuild moves one already reworded – and puts the tip it ends on into `REPLY`
+_AUTO_SQUASH_MESSAGES () {
+	# Args: <old tip> <new tip>
+	local OLD=$1 TIP=$2 T AT WANT
+	local -i DONE=0
+	local -a TGTS
+	_SQUASH_GROUP_TARGETS
+	TGTS=("${reply[@]}")
+	_AUTO_SQUASHED_INTO "$OLD" "$TIP"
+	for T in "${(Oa)TGTS[@]}"; do
+		_SQUASH_GROUP_OF "$T"
+		_SQUASH_MARKED_MESSAGE "$T" "${reply[@]}" || continue
+		WANT=$REPLY AT=${_SQUASHED_AT[$T]}
+		# One already so – a resume past a gate's pause – or gone emptied stays as it is
+		[ -n "$AT" ] || continue
+		[ "$(git log -1 --format=%B "$AT" 2>/dev/null | git stripspace)" = "$WANT" ] && continue
+		_REWORD_AND_REBUILD "$AT" "$WANT" "$TIP"
+		TIP=$_REWORDED_TIP DONE=1
+	done
+	(( DONE )) && _AUTO_SQUASHED_INTO "$OLD" "$TIP"
+	REPLY=$TIP
+}
+
+# Resolves a `-s=auto` replay's stop in <worktree> as a fold's resolves itself – each
+# conflicted file taking the line replacements of the fixups folded at or below the commit it
+# builds bar those it holds already, each proven to make its change – failing, touching nothing
+_AUTO_EDITS_RESOLVE_STOP () {
+	# Args: <worktree> <old tip>
+	setopt local_options no_multibyte
+	local WT=$1 TIP=$2 GD L M P TEXT AT
+	local -a STAGE MS DONE NAMES CONFLICTED A_PATH A_OLD A_NEW A_DERIVED
+	local -i K
+	_EDITS_STOP_STEP "$WT" || return 1
+	STAGE=("${reply[@]}") AT=${${REPLY#* }%% *}
+	if (( STAGE[1] == 2 )); then
+		MS=("$AT")
+	else
+		_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+		DONE=(${(f)"$(<"$GD/rebase-merge/done")"})
+		for L in "${(@)DONE[1,-2]}"; do [[ "$L" == (f|fixup)\ * ]] && MS+=("${${L#* }%% *}"); done
+	fi
+	(( ${#MS} )) || return 1
+	CONFLICTED=(${(0)"$(git -C "$WT" diff --name-only --diff-filter=U -z 2>/dev/null)"})
+	(( ${#CONFLICTED} )) || return 1
+	for M in "${MS[@]}"; do
+		# Those touching a conflicted file alone – any of them doing more than replacing lines, or
+		# whose replacements don't remake its own change, a line it replaced held twice say, can't
+		NAMES=(${(0)"$(git diff-tree -r -z --no-renames --no-commit-id --name-only "$M^" "$M" 2>/dev/null)"})
+		(( ${#${NAMES:*CONFLICTED}} )) || continue
+		(( STAGE[1] == 3 )) && git merge-base --is-ancestor "$M" "$AT" 2>/dev/null && continue
+		_EDITS_DERIVE "$M^" "$M" || return 1
+		for P in "${(@u)EDITS_PATH}"; do
+			TEXT=$(git cat-file blob "$M^:$P" 2>/dev/null; print -n x)
+			_EDITS_REPLACED "$P" "${TEXT%x}" && \
+				[ "${REPLY}x" = "$(git cat-file blob "$M:$P" 2>/dev/null; print -n x)" ] || return 1
+		done
+		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
+			A_PATH+=("${EDITS_PATH[K]}") A_OLD+=("${EDITS_OLD[K]}") A_NEW+=("${EDITS_NEW[K]}")
+		done
+		A_DERIVED+=("${EDITS_DERIVED[@]}")
+	done
+	(( ${#A_PATH} )) || return 1
+	EDITS_PATH=("${A_PATH[@]}") EDITS_OLD=("${A_OLD[@]}") EDITS_NEW=("${A_NEW[@]}")
+	EDITS_DERIVED=("${(@u)A_DERIVED}")
+	_EDITS_STAGE_STOP "$WT" "${STAGE[@]}" "$TIP" || return 1
+	PRINT_TEXT "Made the fixups' line replacements at %s, the stop holding each once" 90 "${AT:0:7}"
+}
+
 # Squashes `COMMITS` into the oldest by a rebase – `squash` given a message or `-m`, else `fixup`
 GIT_REBASE_SQUASH () {
 	_CAPTURE_BEGIN
@@ -8746,11 +9017,21 @@ GIT_REBASE_SQUASH () {
 		CMD=(-c commit.status=false ${(q)_MSG_PIN[@]} "${CMD[@]}")
 	fi
 	PRINT_CMD "git ${CMD[*]} # -> reorder+$OP"
-	local SED_SCRIPT="" APPEND="" C
-	for C in "${COMMITS[@]}"; do
-		[[ "$C" == "$TARGET" ]] && continue
-		SED_SCRIPT+=" -e '/^pick $C/d'"
-		APPEND+=$'\\\n'"$OP $C"
+	local SED_SCRIPT="" APPEND="" C T
+	local -a TGTS=("$TARGET")
+	# `-s=auto` puts each marker after its own target, as git's autosquash does
+	if [ -n "$_SQUASH_GROUPS" ]; then
+		_SQUASH_GROUP_TARGETS
+		TGTS=("${reply[@]}")
+	fi
+	for T in "${TGTS[@]}"; do
+		APPEND=""
+		if [ -n "$_SQUASH_GROUPS" ]; then _SQUASH_GROUP_OF "$T"; else reply=("${(@)COMMITS:#$T}"); fi
+		for C in "${reply[@]}"; do
+			SED_SCRIPT+=" -e '/^pick $C/d'"
+			APPEND+=$'\\\n'"$OP $C"
+		done
+		SED_SCRIPT+=" -e '/^pick $T/a$APPEND'"
 	done
 	local TEXT_FILE=""
 	if [ -n "$TEXT_VALUE" ]; then
@@ -8758,7 +9039,7 @@ GIT_REBASE_SQUASH () {
 		_TEMP_FILES+=("$TEXT_FILE")
 		printf '%s\n' "$TEXT_VALUE" > "$TEXT_FILE"
 	fi
-	_REBASE_FROM_START "LC_ALL=C sed -i.git-edit$SED_SCRIPT -e '/^pick $TARGET/a$APPEND'" "$TEXT_FILE" "${OPT_MESSAGE:+real}" "${CMD[@]}"
+	_REBASE_FROM_START "LC_ALL=C sed -i.git-edit$SED_SCRIPT" "$TEXT_FILE" "${OPT_MESSAGE:+real}" "${CMD[@]}"
 }
 
 # Puts into `REPLY` how many commits a drop or squash left empty and its rebase dropped, and into
@@ -8785,8 +9066,9 @@ _EMPTIED_COMMITS () {
 		SHARED[k:${LINE#* }]=$(( ${SHARED[k:${LINE#* }]:-0} + 1 ))
 	done
 	local -i AFTER=$(git rev-list --count ${MB:+$MB..}$NEW 2>/dev/null)
-	# The squash's target is the one named commit left standing
-	[ -n "$TGT" ] && AFTER=$(( AFTER - 1 ))
+	# The squash's targets are the named commits left standing
+	local -a TGTS=(${=TGT})
+	AFTER=$(( AFTER - ${#TGTS} ))
 	(( ${#BEFORE} > AFTER )) || return 1
 	while IFS= read -r KEY; do
 		SURVIVING[k:$KEY]=$(( ${SURVIVING[k:$KEY]:-0} + 1 ))
@@ -8946,9 +9228,15 @@ _PRINT_TIP_REWORK () {
 _LAND_REBASE () {
 	# Args: <worktree> <branch ref> <old tip> <drop|squash> <commit naming
 	# the run> <squash target or empty> <commit the caller named>...
-	local WT=$1 REF=$2 OLD=$3 ACT=$4 LBL=$5 TGT=$6 NEW T
+	local WT=$1 REF=$2 OLD=$3 ACT=$4 LBL=$5 TGT=$6 NEW T AUTO=""
 	shift 6
-	local -a NAMED=("$@")
+	local -a NAMED=("$@") TGTS=("$TGT") AT
+	# `-s=auto` keeps every target it squashes into, the oldest naming the run's replay
+	if [ "$ACT" = squash ] && [ -n "$_SQUASH_GROUPS" ]; then
+		AUTO=1
+		_SQUASH_GROUP_TARGETS
+		TGTS=("${reply[@]}")
+	fi
 	NEW=$(git -C "$WT" rev-parse HEAD)
 	# A drop undoes its commits' own mode changes at the tip, the one rebase action that means one
 	local MEANT=""
@@ -8957,7 +9245,7 @@ _LAND_REBASE () {
 	fi
 	# A drop or squash takes the commits it names out of the branch, emptied ones besides – a replay
 	# taking fewer out did neither, its todo edit gone unmatched or a rebase begun there by hand
-	local -aU OUT_N=("${(@)NAMED:#$TGT}")
+	local -aU OUT_N=("${(@)NAMED:|TGTS}")
 	local -i GONE=$(( $(git -C "$WT" rev-list --count "$OLD") - $(git -C "$WT" rev-list --count "$NEW") ))
 	if (( GONE < ${#OUT_N} )); then
 		PRINT_ERR "The $ACT would leave $(( ${#OUT_N} - GONE )) of its ${#OUT_N} commit(s) in the branch – its replay never took them out, so nothing was applied"
@@ -8972,13 +9260,26 @@ _LAND_REBASE () {
 	# A squash keeps the tip's content by construction – a replay that changed it,
 	# through a resolution say, lands nothing, told before a gate runs on what can't land
 	[ "$ACT" = squash ] && ! _SAME_TREE "$NEW" "$OLD" && _REFUSE_SQUASH_TIP "$WT" "$OLD" "$NEW" "$TGT"
+	# Each target's message as its markers ask, set on what the replay built
+	# – the gate then checks the commit each target became
+	if [ -n "$AUTO" ]; then
+		_AUTO_SQUASH_MESSAGES "$OLD" "$NEW"
+		if [ "$REPLY" != "$NEW" ]; then
+			NEW=$REPLY
+			git -C "$WT" update-ref --no-deref HEAD "$NEW" || exit 1
+			# The reword's map held where the rebase's is, as a gate's pause would lose it from memory
+			[ "$_CAPTURE_REWRITES" = true ] && _CAPTURE_HOLD_PAIRS
+		fi
+		for T in "${TGTS[@]}"; do [ -n "${_SQUASHED_AT[$T]}" ] && AT+=("${_SQUASHED_AT[$T]}"); done
+	fi
 	# A message `-m`'s editor took is kept for the rerun
 	local TYPED="" RERUN="git edit -s${TGT:+=$TGT}"
+	[ -n "$AUTO" ] && RERUN="git edit -s=auto"
 	[ "$ACT" = squash ] && [ -s "$_MSG_TYPED" ] && TYPED=$(<"$_MSG_TYPED")
-	for T in "${NAMED[@]}"; do [ "$T" = "$TGT" ] || RERUN+=" $T"; done
+	for T in "${NAMED[@]}"; do (( ${TGTS[(Ie)$T]} )) || RERUN+=" $T"; done
 	_TYPED_KEEP=("$TYPED" "$RERUN")
 	_VERIFY_CONFIGURED && _REQUIRE_CURRENT "$REF" "$OLD" "$TYPED" "$RERUN"
-	if ! _GUARD_TIP_MODES "$WT" "$NEW" "$OLD" "$MEANT" || ! _VERIFY_REWRITE "$WT" "$NEW" "$OLD" ""; then
+	if ! _GUARD_TIP_MODES "$WT" "$NEW" "$OLD" "$MEANT" || ! _VERIFY_REWRITE "$WT" "$NEW" "$OLD" "${AT[*]}"; then
 		[ -n "$_STATE_OWNED" ] || _SAVE_REBASE_STATE
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$WT" "$NEW"
@@ -8990,6 +9291,11 @@ _LAND_REBASE () {
 	_RUN_FATES=()
 	if [ "$ACT" = drop ]; then
 		for T in "${NAMED[@]}"; do _RUN_FATES[$T]=dropped; done
+	elif [ -n "$AUTO" ]; then
+		for T in ${=_SQUASH_GROUPS}; do
+			INTO=${_SQUASHED_AT[${T#*:}]}
+			[ -n "$INTO" ] && _IS_ANCESTOR "$INTO" "$NEW" && _RUN_FATES[${T%%:*}]="squashed $INTO"
+		done
 	elif [ "$ACT" = squash ] && [ -n "$TGT" ]; then
 		INTO=$(_SQUASHED_INTO "$OLD" "$NEW" "$TGT" "${NAMED[@]}")
 		if _IS_ANCESTOR "$INTO" "$NEW"; then
@@ -8997,7 +9303,7 @@ _LAND_REBASE () {
 		fi
 	fi
 	# One the rebase dropped as emptied is gone as surely as one named
-	if _EMPTIED_COMMITS --sure "$OLD" "$NEW" "$TGT" "${NAMED[@]}"; then
+	if _EMPTIED_COMMITS --sure "$OLD" "$NEW" "${TGTS[*]}" "${NAMED[@]}"; then
 		for T in "${reply[@]}"; do _RUN_FATES[${T%% *}]=dropped; done
 	fi
 	# Only where the ref still holds the tip the run read, so a concurrent commit,
@@ -9015,10 +9321,12 @@ _LAND_REBASE () {
 	_PRINT_REWRITE_APPLY_HINT "${REF#refs/heads/}" "$OLD" "$NEW" "$ACT"
 	_PRINT_MODE_CHANGES "$OLD" "$NEW"
 	_PRINT_TREE_IDENTITY "$OLD" "$NEW"
-	_PRINT_EMPTIED "$OLD" "$NEW" "$TGT" "${NAMED[@]}"
+	_PRINT_EMPTIED "$OLD" "$NEW" "${TGTS[*]}" "${NAMED[@]}"
 	_PRINT_TODO early
 	# What the caller selected names the bodies, and the commit the target became the line after
-	if [ "$ACT" = squash ] && [ -n "$TGT" ]; then
+	if [ -n "$AUTO" ]; then
+		for T in "${AT[@]}"; do _PRINT_COMMIT_LINE "$T" '  squashed into: %h %s'; done
+	elif [ "$ACT" = squash ] && [ -n "$TGT" ]; then
 		_PRINT_DROPPED_BODIES "$TGT" "${NAMED[@]}"
 		_PRINT_COMMIT_LINE "$INTO" '  squashed into: %h %s'
 	elif [ "$ACT" = drop ]; then
@@ -9037,6 +9345,9 @@ _LAND_REBASE () {
 _RESQUASH_ELIGIBLE () {
 	local OLDEST=${COMMITS[1]}
 	local NEWEST=${COMMITS[-1]}
+
+	# Markers squashed into their targets, `-s=auto`, take the replay that places each
+	[ -n "$_SQUASH_GROUPS" ] && return 1
 
 	# Target must equal oldest – any other target requires reordering, which
 	# the plumbing path can't do
@@ -12799,10 +13110,7 @@ _EDITS_DERIVE () {
 _EDITS_RESOLVE_STOP () {
 	# Args: <worktree> – reads the caller's `ORIG_HEAD`, `FOLD_SNAP` and `EDITS_TIP_OK`
 	setopt local_options no_multibyte
-	local WT=$1 GD STEP REV L P Q ID TEXT TAB=$'\t'
-	local -i I STAGE
-	local -a U F INFO
-	local -A AT
+	local WT=$1 P TEXT
 	if (( ${#OPT_EDITS} )); then
 		(( ${#EDITS_PATH} && ! ${#OPT_PATCH} && ! ${#OPT_PUT} && ! ${#OPT_RM} && ! ${#OPT_CHMOD} )) || return 1
 	elif _INPUTS_GIVEN || { (( ! ${#OPT_WHOLE} )) && [ -n "$AMEND_TREE" ]; }; then
@@ -12820,15 +13128,38 @@ _EDITS_RESOLVE_STOP () {
 		done
 	fi
 	(( EDITS_TIP_OK )) || return 1
-	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null && [ -f "$GD/rebase-merge/done" ] || return 1
+	_EDITS_STOP_STEP "$WT" || return 1
+	_EDITS_STAGE_STOP "$WT" "${reply[@]}" "$ORIG_HEAD"
+}
+
+# Puts into `reply` the stage and the commit a replay's stop in <worktree> builds its content
+# from – stage 3 and the commit at a pick, stage 2 and `HEAD` at a fixup, the target's own –
+# and into `REPLY` the step itself, failing at any other step
+_EDITS_STOP_STEP () {
+	# Args: <worktree>
+	local GD
+	local -a U
+	_FACT GD -C "$1" rev-parse --absolute-git-dir 2>/dev/null && [ -f "$GD/rebase-merge/done" ] || return 1
 	U=(${(f)"$(<"$GD/rebase-merge/done")"})
 	U=(${U:#\#*})
-	STEP=${U[-1]} U=()
-	case ${STEP%% *} in
-		p|pick) STAGE=3 REV=${${STEP#* }%% *} ;;
-		f|fixup) STAGE=2 REV=HEAD ;;
+	REPLY=${U[-1]}
+	case ${REPLY%% *} in
+		p|pick) reply=(3 ${${REPLY#* }%% *}) ;;
+		f|fixup) reply=(2 HEAD) ;;
 		*) return 1 ;;
 	esac
+}
+
+# Stages each file conflicted at the stop in <worktree> as <stage> holds it with the `--edits`
+# made in it, written out too – one renamed since read under its <tip> name – failing, touching
+# nothing, unless each is an edited one in a content conflict holding every old text once
+_EDITS_STAGE_STOP () {
+	# Args: <worktree> <stage> <rev> <tip>
+	setopt local_options no_multibyte
+	local WT=$1 STAGE=$2 REV=$3 TIP=$4 L P Q ID TEXT TAB=$'\t'
+	local -i I
+	local -a U F INFO
+	local -A AT
 	# "<mode> <id> <stage>\t<path>" – keyed by stage and path, as a path may hold a colon
 	for L in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
 		AT[${${L%%$TAB*}##* }$TAB${L#*$TAB}]="${L%% *} ${${L#* }%% *}"
@@ -12844,7 +13175,7 @@ _EDITS_RESOLVE_STOP () {
 		if (( ! ${EDITS_PATH[(Ie)$P]} )); then
 			Q=""
 			if _MERGE_DETECTS_RENAMES; then
-				(( ${#F} )) || F=("${(@0)$(git -C "$WT" diff-tree -r -z -M -l"$(git config --get merge.renameLimit || git config --get diff.renameLimit || echo 7000)" --diff-filter=R --name-status "$REV" "$ORIG_HEAD" 2>/dev/null)}")
+				(( ${#F} )) || F=("${(@0)$(git -C "$WT" diff-tree -r -z -M -l"$(git config --get merge.renameLimit || git config --get diff.renameLimit || echo 7000)" --diff-filter=R --name-status "$REV" "$TIP" 2>/dev/null)}")
 				for (( I = 1; I + 2 <= ${#F}; I += 3 )); do
 					[ "${F[I+1]}" = "$P" ] && (( ${EDITS_PATH[(Ie)${F[I+2]}]} )) && { Q=${F[I+2]}; break; }
 				done
@@ -16534,6 +16865,8 @@ _CONTINUE_REBASE () {
 	_STATE_WT_OURS && _CLEANUP_HOOK="git worktree remove --force ${(q-)STATE_WORKTREE} 2>/dev/null; rm -rf ${(q-)STATE_WORKTREE}"
 
 	PRINT_ACTION "Continuing $STATE_ACTION of %s..." "${STATE_TARGET:0:7}"
+	# `-s=auto`'s pairs, for the messages and the report its landing gives each target
+	_SQUASH_GROUPS=$STATE_SQUASH_GROUPS
 
 	local GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 	# Every squash member a side, as one applied past the stop brings lines of its own
@@ -17314,6 +17647,7 @@ _LOAD_STATE () {
 	STATE_MODE_STRAY=""
 	STATE_RESOLVED=""
 	STATE_SQUASH_TARGET=""
+	STATE_SQUASH_GROUPS=""
 	STATE_MESSAGE=""
 	STATE_NO_VERIFY=""
 	STATE_ACTOR=""
@@ -17380,6 +17714,7 @@ _LOAD_STATE () {
 			mode_stray)      STATE_MODE_STRAY=$VAL ;;
 			resolved)        STATE_RESOLVED=$VAL ;;
 			squash_target)   STATE_SQUASH_TARGET=$VAL ;;
+			squash_groups)   STATE_SQUASH_GROUPS=$VAL ;;
 			message)         STATE_MESSAGE=$VAL ;;
 			no_verify)       STATE_NO_VERIFY=$VAL ;;
 			actor)           STATE_ACTOR=$VAL STATE_ACTOR_SET=1 ;;
@@ -21173,10 +21508,12 @@ _RESOLVE_ACTION () {
 	# Validate before sorting, while the SHAs are still as the caller gave them
 	# – the sort's fallback below drops anything git cannot resolve, and each commit comes
 	# back as its current identity, so a SHA staled by an earlier rewrite is carried forward
-	COMMITS_RESOLVED=()
+	COMMITS_RESOLVED=() _ALONE=()
 	for COMMIT in "${COMMITS[@]}"; do
 		_GUARD_REACHABLE "$COMMIT"
 		COMMITS_RESOLVED+=("$_RESOLVED_SHA")
+		# Those named outright, apart from a range's, by their current identities
+		(( ${_NAMED_ALONE[(Ie)$COMMIT]} )) && _ALONE+=("$_RESOLVED_SHA")
 	done
 	COMMITS=("${COMMITS_RESOLVED[@]}")
 	# A commit named twice – outright, inside a range or stale beside its live SHA – counts once, as
@@ -21241,6 +21578,25 @@ _RESOLVE_ACTION () {
 	elif [ ${#OPT_SQUASH} -gt 0 ]; then
 		# Explicit Squash (-s)
 		ACTION="squash"
+		_SQUASH_GROUPS=""
+
+		# `-s=auto` takes each commit into the one its marker names, all of them in one replay
+		# – the oldest target leads the span, as an explicit one does below
+		if [ "$TARGET" = auto ]; then
+			if [ -n "$TEXT_VALUE" ] || [ ${#OPT_MESSAGE} -gt 0 ]; then
+				PRINT_ERR "-s=auto gives each target the message its markers ask for – --text and -m have none to set"
+				ECHO_E "\e[0;31m  Reword a target after: git edit -M --text \"…\" <sha>\e[0m" >&2
+				exit 1
+			fi
+			_AUTO_SQUASH_GROUPS "${COMMITS[@]}"
+			# Its markers and their targets alone – a commit with no marker stays out of the replay
+			local SQ_P
+			local -aU SQ_TAKEN=()
+			for SQ_P in ${=_SQUASH_GROUPS}; do SQ_TAKEN+=("${SQ_P%%:*}" "${SQ_P#*:}"); done
+			COMMITS=("${SQ_TAKEN[@]}")
+			_SQUASH_GROUP_TARGETS
+			TARGET=${reply[1]}
+		fi
 
 		# `TARGET` is the value the pre-processing block extracted, pinned – set if the user
 		# used `-s=<target>`, or if `-sX`/`-s X` was used and the value wasn't
@@ -21332,7 +21688,18 @@ _RESOLVE_ACTION () {
 
 	# A squash given no message follows the `amend!` and `squash!` markers it folds in,
 	# as git's autosquash would – passed on as `--text` is, which every route and a pause carry
-	if [[ "$ACTION" == (squash|resquash) ]] && [ -z "$TEXT_VALUE" ] && [ ${#OPT_MESSAGE} -eq 0 ] && \
+	# – `-s=auto`'s, one per target, set once its replay is through
+	if [ -n "$_SQUASH_GROUPS" ]; then
+		local SQ_T
+		local -a SQ_TGTS
+		_SQUASH_GROUP_TARGETS
+		SQ_TGTS=("${reply[@]}")
+		for SQ_T in "${SQ_TGTS[@]}"; do
+			_SQUASH_GROUP_OF "$SQ_T"
+			_SQUASH_MARKED_MESSAGE "$SQ_T" "${reply[@]}" && \
+				PRINT_TEXT "The message of %s follows %s, as git's autosquash would" 33 "${SQ_T:0:7}" "${(j:, :)reply}"
+		done
+	elif [[ "$ACTION" == (squash|resquash) ]] && [ -z "$TEXT_VALUE" ] && [ ${#OPT_MESSAGE} -eq 0 ] && \
 	   _SQUASH_MARKED_MESSAGE "${TARGET:-${COMMITS[1]}}" "${COMMITS[@]}"; then
 		TEXT_VALUE=$REPLY
 		PRINT_TEXT "The message follows %s, as git's autosquash would" 33 "${(j:, :)reply}"
@@ -23135,6 +23502,7 @@ for ARG in "$@"; do
 			exit 1
 		fi
 		COMMITS+=("$ARG_SHA")
+		_NAMED_ALONE+=("$ARG_SHA")
 	fi
 done
 
@@ -23147,6 +23515,8 @@ fi
 # Decided on the commits as named, then again on their SHAs where a wait for another caller's pause
 # moved the tip – every refusal an argument earns comes before that wait
 PINNED=("$(_PINNED_REV "$TARGET")" "${COMMITS[@]}")
+# `-s=auto` a keyword before any ref of that name, as `--amend-into=auto` is
+[[ ${#OPT_SQUASH} -gt 0 && "$TARGET" == auto && "$SQUASH_HAS_EQUALS" == true ]] && PINNED[1]=auto
 _RESOLVE_ACTION "${PINNED[@]}"
 _AWAIT_PAUSE _RESOLVE_ACTION "${PINNED[@]}"
 
@@ -23214,6 +23584,12 @@ fi
 
 if [[ "$ACTION" == "drop" ]]; then
 	PRINT_ACTION "Dropping %s" "${COMMITS[@]}"
+elif [ -n "$_SQUASH_GROUPS" ]; then
+	_SQUASH_GROUP_TARGETS
+	for T in "${reply[@]}"; do
+		_SQUASH_GROUP_OF "$T"
+		PRINT_ACTION "Merging %s -> %t" "$T" "${reply[@]}"
+	done
 else
 	PRINT_ACTION "Merging %s -> %t" "$TARGET" "${COMMITS[@]:#$TARGET}"
 fi
