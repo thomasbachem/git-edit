@@ -77,7 +77,7 @@ _UNSET_OWN () {
 _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_KIND ARG_SCAN ARG_SHA C CHAIN COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
-	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
+	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
 	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
@@ -109,7 +109,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
-	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAMED_ALONE _NAP_PID _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
+	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAMED_ALONE _NAP_PID _NARROWED _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
@@ -8496,9 +8496,10 @@ _REBASE_DRIVE () {
 		[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] || return 1
 		if [ -n "$(_UNMERGED_IN .)" ] || [[ "$REBASE_OUT" == *"CONFLICT ("* ]]; then
 			# A `-s=auto` stop its fixups' line replacements resolve goes on, once per step
-			# so one coming back pauses
+			# so one coming back pauses – the gate checking one made by changed words alone
 			if [ -n "$_SQUASH_GROUPS" ] && _EDITS_STOP_STEP . && [ "$REPLY" != "$AUTO_AT" ] && AUTO_AT=$REPLY && \
 			   _AUTO_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}"; then
+				[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE .
 				_REBASE_CONTINUE_CMD --continue "$2" "$3"
 				CMD=$REPLY
 				continue
@@ -8978,7 +8979,7 @@ _AUTO_EDITS_RESOLVE_STOP () {
 	# Args: <worktree> <old tip>
 	setopt local_options no_multibyte
 	local WT=$1 TIP=$2 GD L M P TEXT AT
-	local -a STAGE MS DONE NAMES CONFLICTED A_PATH A_OLD A_NEW A_DERIVED
+	local -a STAGE MS DONE NAMES CONFLICTED A_PATH A_OLD A_NEW A_NOLD A_NNEW A_DERIVED
 	local -i K
 	_EDITS_STOP_STEP "$WT" || return 1
 	STAGE=("${reply[@]}") AT=${${REPLY#* }%% *}
@@ -9006,12 +9007,13 @@ _AUTO_EDITS_RESOLVE_STOP () {
 		done
 		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 			A_PATH+=("${EDITS_PATH[K]}") A_OLD+=("${EDITS_OLD[K]}") A_NEW+=("${EDITS_NEW[K]}")
+			A_NOLD+=("${EDITS_NOLD[K]}") A_NNEW+=("${EDITS_NNEW[K]}")
 		done
 		A_DERIVED+=("${EDITS_DERIVED[@]}")
 	done
 	(( ${#A_PATH} )) || return 1
 	EDITS_PATH=("${A_PATH[@]}") EDITS_OLD=("${A_OLD[@]}") EDITS_NEW=("${A_NEW[@]}")
-	EDITS_DERIVED=("${(@u)A_DERIVED}")
+	EDITS_NOLD=("${A_NOLD[@]}") EDITS_NNEW=("${A_NNEW[@]}") EDITS_DERIVED=("${(@u)A_DERIVED}")
 	_EDITS_STAGE_STOP "$WT" "${STAGE[@]}" "$TIP" || return 1
 	PRINT_TEXT "Made the fixups' line replacements at %s, the stop holding each once" 90 "${AT:0:7}"
 }
@@ -12919,6 +12921,8 @@ SEQEOF
 	local EDITS_TIP_OK="" EDITS_CONTINUE=""
 	while (( RC == 2 )) && _EDITS_RESOLVE_STOP "$WT"; do
 		EDIT_STOPS+=1
+		# One made by changed words alone is checked by the gate as a resolver's own
+		[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE "$WT"
 		# Resumed as a caller's continue resumes, each step's own message written back over git's
 		if [ -z "$EDITS_CONTINUE" ]; then
 			_RESUME_EDITOR "$WT"
@@ -13055,7 +13059,7 @@ _EDITS_REPLACED () {
 	# Args: <path from the top> <text>
 	setopt local_options no_multibyte
 	local TEXT=$2 OLD NEW
-	local -i K ANCHOR=${EDITS_DERIVED[(Ie)$1]}
+	local -i K W ANCHOR=${EDITS_DERIVED[(Ie)$1]}
 	# Edits a fold derived from its own change replace whole lines – each old text read
 	# with the line end before it, and with the text's end where it has none of its own
 	(( ANCHOR )) && TEXT=$'\n'$TEXT$'\0'
@@ -13068,11 +13072,46 @@ _EDITS_REPLACED () {
 			[[ "$OLD" == *$'\n' ]] || OLD+=$'\0' NEW+=$'\0'
 		fi
 		_EDIT_MATCHES "$TEXT" "$OLD"
+		# A line wrapped otherwise there takes its changed words alone, where they match once
+		# – never where it stands inside a longer one, whose own words those would be
+		if (( ANCHOR && REPLY != 1 )) && [ -n "${EDITS_NOLD[K]}" ] && [[ "$TEXT" != *"${EDITS_OLD[K]%$'\n'}"* ]]; then
+			# Widened a word at a time on either side until they match once, or nothing does
+			for (( W = 1; W <= 50; W++ )); do
+				_EDIT_NARROWED "${EDITS_NOLD[K]}" "${EDITS_NNEW[K]}" $W || break
+				_EDIT_MATCHES "$TEXT" "${reply[1]}"
+				(( REPLY == 1 )) && { OLD=${reply[1]} NEW=${reply[2]} _NARROWED=1; break; }
+				(( REPLY )) || break
+			done
+		fi
 		(( REPLY == 1 )) || return 1
 		TEXT=${TEXT/$OLD/$NEW}
 	done
 	(( ANCHOR )) && TEXT=${${TEXT#$'\n'}%$'\0'}
 	REPLY=$TEXT
+}
+
+# Puts into `reply` the span <old line> and <new line> differ in, widened to whole words and <n>
+# words on either side, 1 by default, out of each line – failing where that leaves none of it out
+_EDIT_NARROWED () {
+	# Args: <old line> <new line> [<n>]
+	setopt local_options no_multibyte
+	local O=$1 N=$2
+	local -i P=0 S=0 L R I LO=${#1} LN=${#2}
+	[[ -n "$O" && "$O" != "$N" ]] || return 1
+	while (( P < LO && P < LN )) && [ "${O[P+1]}" = "${N[P+1]}" ]; do P+=1; done
+	while (( S < LO - P && S < LN - P )) && [ "${O[LO-S]}" = "${N[LN-S]}" ]; do S+=1; done
+	# Out to the word's edge, then over the spaces beyond it and one more word, <n> times a side
+	L=$P R=$(( LO - S ))
+	while (( L > 0 )) && [[ "${O[L]}" != [[:space:]] ]]; do L+=-1; done
+	while (( R < LO )) && [[ "${O[R+1]}" != [[:space:]] ]]; do R+=1; done
+	for (( I = 0; I < ${3:-1}; I++ )); do
+		while (( L > 0 )) && [[ "${O[L]}" == [[:space:]] ]]; do L+=-1; done
+		while (( L > 0 )) && [[ "${O[L]}" != [[:space:]] ]]; do L+=-1; done
+		while (( R < LO )) && [[ "${O[R+1]}" == [[:space:]] ]]; do R+=1; done
+		while (( R < LO )) && [[ "${O[R+1]}" != [[:space:]] ]]; do R+=1; done
+	done
+	(( L > 0 || R < LO )) || return 1
+	reply=("${O[L+1,R]}" "${N[L+1,LN-LO+R]}")
 }
 
 # Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it – each
@@ -13084,9 +13123,9 @@ _EDITS_DERIVE () {
 	local H O N
 	local -a R M OL NL GIVEN
 	local -i I A B C D KEEP
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_NOLD EDITS_NNEW
 	(( ${#OPT_EDITS} )) || EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
-	GIVEN=("${(@u)EDITS_PATH}") KEEP=${#EDITS_PATH} EDITS_DERIVED=()
+	GIVEN=("${(@u)EDITS_PATH}") KEEP=${#EDITS_PATH} EDITS_DERIVED=() EDITS_NOLD=() EDITS_NNEW=()
 	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
 	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"})
 	(( ${#R} && ${#R} % 2 == 0 )) || return 1
@@ -13111,12 +13150,16 @@ _EDITS_DERIVE () {
 			(( A + B - 1 < ${#OL} )) && O+=$'\n'
 			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
 			EDITS_PATH+=("${R[I+1]}") EDITS_OLD+=("$O") EDITS_NEW+=("$N")
+			# A line replaced by one keeps both lines besides, whose changed words `_EDITS_REPLACED`
+			# takes where the line itself doesn't match once, as a commit wrapping it otherwise has it
+			(( B == 1 && D == 1 )) && _EDIT_NARROWED "${OL[A]}" "${NL[C]}" && \
+				EDITS_NOLD[${#EDITS_PATH}]=${OL[A]} EDITS_NNEW[${#EDITS_PATH}]=${NL[C]}
 		done
 		(( B )) || break
 	done
 	(( I >= ${#R} )) && return 0
 	EDITS_PATH=("${(@)EDITS_PATH[1,KEEP]}") EDITS_OLD=("${(@)EDITS_OLD[1,KEEP]}") EDITS_NEW=("${(@)EDITS_NEW[1,KEEP]}")
-	EDITS_DERIVED=()
+	EDITS_DERIVED=() EDITS_NOLD=() EDITS_NNEW=()
 	return 1
 }
 
@@ -13180,6 +13223,7 @@ _EDITS_STAGE_STOP () {
 	local -i I
 	local -a U F INFO
 	local -A AT
+	_NARROWED=""
 	# "<mode> <id> <stage>\t<path>" – keyed by stage and path, as a path may hold a colon
 	for L in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
 		AT[${${L%%$TAB*}##* }$TAB${L#*$TAB}]="${L%% *} ${${L#* }%% *}"

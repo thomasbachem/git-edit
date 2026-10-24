@@ -1127,9 +1127,13 @@ given no input or beside
 .BR \-\-edits ,
 resolves its stops the same way where it only replaces lines:
 each hunk from the tip's file to the fold's is an edit, its old lines the old
-text, matched as whole lines. One inserting a line anywhere, or changing more than a text file's lines
-\(em a file added, removed, renamed or given another mode \(em pauses at its
-stops as before.
+text, matched as whole lines. A line replaced by one is matched by its changed
+words too, a word on either side kept and more where those match more than
+once, where the line itself is wrapped otherwise there \(em never inside a
+longer line holding it whole \(em and the
+gate checks a commit so resolved as a resolver's own. One inserting a line
+anywhere, or changing more than a text file's lines \(em a file added, removed,
+renamed or given another mode \(em pauses at its stops as before.
 .IP
 In a checkout other callers share, a rewrite one of them lands (a drop, a
 fold built elsewhere) changes a file at the tip. The run brings the checkout
