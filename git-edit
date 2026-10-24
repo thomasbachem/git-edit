@@ -8480,7 +8480,7 @@ _AMEND_EMPTY_FOLD () {
 # is done, 2 at a conflict and 1 where it stopped any other way, its output in `REBASE_OUT`
 _REBASE_DRIVE () {
 	# Args: <command, eval'd> [<file holding --text>] [real – `-m` asked for the editor]
-	local CMD=$1 STATUS GITDIR AUTO_AT="" OUTF=$(MKTEMP_FILE git-edit-rebase-out)
+	local CMD=$1 STATUS GITDIR SQUASH_AT="" OUTF=$(MKTEMP_FILE git-edit-rebase-out)
 	local -i RENORM_N=0
 	_TEMP_FILES+=("$OUTF")
 	_RERERE_SCOPE_BEGIN
@@ -8495,10 +8495,10 @@ _REBASE_DRIVE () {
 		GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 		[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] || return 1
 		if [ -n "$(_UNMERGED_IN .)" ] || [[ "$REBASE_OUT" == *"CONFLICT ("* ]]; then
-			# A `-s=auto` stop its fixups' line replacements resolve goes on, once per step
+			# A squash's stop its commits' line replacements resolve goes on, once per step
 			# so one coming back pauses – the gate checking one made by changed words alone
-			if [ -n "$_SQUASH_GROUPS" ] && _EDITS_STOP_STEP . && [ "$REPLY" != "$AUTO_AT" ] && AUTO_AT=$REPLY && \
-			   _AUTO_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}"; then
+			if _EDITS_STOP_STEP . && [ "$REPLY" != "$SQUASH_AT" ] && SQUASH_AT=$REPLY && \
+			   _SQUASH_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}"; then
 				[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE .
 				_REBASE_CONTINUE_CMD --continue "$2" "$3"
 				CMD=$REPLY
@@ -8972,10 +8972,10 @@ _AUTO_SQUASH_MESSAGES () {
 	REPLY=$TIP
 }
 
-# Resolves a `-s=auto` replay's stop in <worktree> as a fold's resolves itself – each
-# conflicted file taking the line replacements of the fixups folded at or below the commit it
-# builds, each proven to make its fixup's change – failing, touching nothing, where any can't
-_AUTO_EDITS_RESOLVE_STOP () {
+# Resolves a squash's stop in <worktree> as a fold's resolves itself – each conflicted
+# file taking the line replacements of the commits folded at or below the commit it builds,
+# each proven to make its own change – failing, touching nothing, where any can't
+_SQUASH_EDITS_RESOLVE_STOP () {
 	# Args: <worktree> <old tip>
 	local WT=$1 TIP=$2 AT
 	local -a STAGE CONFLICTED
@@ -8983,15 +8983,15 @@ _AUTO_EDITS_RESOLVE_STOP () {
 	STAGE=("${reply[@]}") AT=${${REPLY#* }%% *}
 	CONFLICTED=(${(0)"$(git -C "$WT" diff --name-only --diff-filter=U -z 2>/dev/null)"})
 	(( ${#CONFLICTED} )) || return 1
-	_AUTO_STOP_EDITS "$WT" "${STAGE[1]}" "$AT" "${CONFLICTED[@]}" && (( ${#EDITS_PATH} )) || return 1
+	_SQUASH_STOP_EDITS "$WT" "${STAGE[1]}" "$AT" "${CONFLICTED[@]}" && (( ${#EDITS_PATH} )) || return 1
 	_EDITS_STAGE_STOP "$WT" "${STAGE[@]}" "$TIP" || return 1
 	PRINT_TEXT "Made the fixups' line replacements at %s, the stop holding each once" 90 "${AT:0:7}"
 }
 
-# Fills `EDITS_*` with the line replacements of the `-s=auto` fixups bearing on the stop in
-# <worktree> at <commit> – at a fixup its own, at a pick each folded below it bar those it holds
-# already – those touching one of <path>s alone, failing unless each is proven to make its change
-_AUTO_STOP_EDITS () {
+# Fills `EDITS_*` with the line replacements of the squashed commits bearing on the stop in
+# <worktree> at <commit> – at a fixup or squash its own, at a pick each folded below it bar those
+# it holds already – those touching one of <path>s alone, failing unless each proves its change
+_SQUASH_STOP_EDITS () {
 	# Args: <worktree> <the stop's stage> <its commit> <path>...
 	setopt local_options no_multibyte
 	local WT=$1 GD L M P TEXT
@@ -9002,7 +9002,7 @@ _AUTO_STOP_EDITS () {
 	else
 		_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
 		DONE=(${(f)"$(<"$GD/rebase-merge/done")"})
-		for L in "${(@)DONE[1,-2]}"; do [[ "$L" == (f|fixup)\ * ]] && MS+=("${${L#* }%% *}"); done
+		for L in "${(@)DONE[1,-2]}"; do [[ "$L" == (f|fixup|s|squash)\ * ]] && MS+=("${${L#* }%% *}"); done
 	fi
 	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_NOLD=() EDITS_NNEW=() EDITS_DERIVED=() EDITS_UNDERIVED=()
 	for M in "${MS[@]}"; do
@@ -13223,8 +13223,8 @@ _EDITS_RESUME_RUN () {
 	return RC
 }
 
-# Puts into `reply` the stage and the commit a replay's stop in <worktree> builds its content
-# from – stage 3 and the commit at a pick, stage 2 and `HEAD` at a fixup, the target's own –
+# Puts into `reply` the stage and the commit a replay's stop in <worktree> builds its content from
+# – stage 3 and the commit at a pick, stage 2 and `HEAD` at a fixup or squash, the target's own –
 # and into `REPLY` the step itself, failing at any other step
 _EDITS_STOP_STEP () {
 	# Args: <worktree>
@@ -13236,7 +13236,7 @@ _EDITS_STOP_STEP () {
 	REPLY=${U[-1]}
 	case ${REPLY%% *} in
 		p|pick) reply=(3 ${${REPLY#* }%% *}) ;;
-		f|fixup) reply=(2 HEAD) ;;
+		f|fixup|s|squash) reply=(2 HEAD) ;;
 		*) return 1 ;;
 	esac
 }

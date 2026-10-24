@@ -42,7 +42,9 @@ _ST_PZ_C a a "MK target" && MK_T=$(git rev-parse HEAD)
 print a2 > a && git commit -qam "amend! MK target" -m "MK target reworded" && MK_M=$(git rev-parse HEAD)
 _ST_RUN -s="$MK_T" "$MK_M" --text "MK given"
 _ST_EQ "--text overrides an amend!" "$RC:$(git log -1 --format=%B HEAD)" "0:MK given"
-# Across a pause – the target and a later commit both stopping, each on a line beside the other's
+# Across a pause – the target and a later commit both stopping,
+# each on a line beside the other's, their stops left to the resolver
+export GIT_EDIT_NO_SELF_RESOLVE=1
 _ST_PZ_NEW mk-pause
 print -l 1 2 > f && git add f && git commit -qm "MK base"
 print -l t 2 > f && git commit -qam "MK target" && MK_T=$(git rev-parse HEAD)
@@ -60,4 +62,5 @@ done
 _ST_EQ "an amend! squashed across its pauses takes the target's message" \
 	"$MK_STOPS:$RC:$(git log --format=%s | tr '\n' '|'):$(git log -1 --format=%B HEAD~1)" \
 	"2:0:MK later|MK target reworded across a pause|MK base|:MK target reworded across a pause"
+unset GIT_EDIT_NO_SELF_RESOLVE
 cd "$TMP/repo"

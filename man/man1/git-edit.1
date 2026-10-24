@@ -334,6 +334,13 @@ A squash ends on the tip's content \(em one whose resolutions add up to
 anything else refuses to land, naming the commits the differing lines came
 from, and keeps its replay paused for one of them to be reworked there
 before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo.
+Its replay resolves its own stops where every commit it folds touching a
+conflicted file only replaces lines, as a fold of staged changes does (see
+.BR \-\-amend\-into ):
+the commit a stop builds takes the replacements of the commits folded at or
+below it, bar those it holds already, at a folded commit's own step its own,
+wherever it holds each old text exactly once, and a resume goes on so, bar a
+file a resolution by hand staged otherwise.
 .IP
 With
 .BR \-s=auto ,
@@ -352,14 +359,7 @@ without a marker stays where it is, and may be a target \(em a range takes
 both its ends, so one starting at the tip a land began from takes that commit
 too. Each target takes the message
 its markers ask for, so \fB\-\-text\fR and \fB\-m\fR refuse, and the gate checks
-the commit each target became. Its replay resolves its own stops where every
-fixup touching a conflicted file only replaces lines, as a fold of staged
-changes does (see
-.BR \-\-amend\-into ):
-the commit a stop builds takes the replacements of the fixups folded at or
-below it, bar those it holds already, at a fixup its own, wherever it holds
-each old text exactly once,
-and a resume goes on so, bar a file a resolution by hand staged otherwise.
+the commit each target became.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
