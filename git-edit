@@ -99,12 +99,12 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MARKED STATE_MESSAGE \
 	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
-	STATE_ACTOR_ID STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
+	STATE_ACTOR_ID STATE_ACTOR_NAME STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
 	STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
 	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNBROUGHT UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
-	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _AT_PROMPT _BANNER_REPO \
+	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _ACTOR_NAME _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
 	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
@@ -530,6 +530,11 @@ if [ -n "$GIT_EDIT_ACTOR" ]; then
 	_REFLOG_TAG=" [$_ACTOR]"
 	[ "$_ACTOR" = "$GIT_EDIT_ACTOR" ] || { _ACTOR_MAPPED=true; _ACTOR_ID=${(qqqq)GIT_EDIT_ACTOR}; }
 fi
+# And a name for that label – a session's title, say – which a pause records for every message
+# naming its owner – on one line, as the state file keeps one key a line, capped, none if blank
+_ACTOR_NAME=""
+[ -n "$_ACTOR" ] && _ACTOR_NAME=${${GIT_EDIT_ACTOR_NAME//[[:cntrl:]]/ }:0:100}
+[[ "$_ACTOR_NAME" == *[^[:space:]]* ]] || _ACTOR_NAME=""
 
 # Temp files to remove however the run ends – a conflict exits straight from the handler,
 # past whatever `rm` followed the call that made them, and the pause clears the hook above
@@ -1024,10 +1029,10 @@ USAGE () {
 	ECHO_E "\e[0;94m                           (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'\e[0m"
 	ECHO_E "\e[0;94m         git-edit: paused – mode change at <sha> in <worktree>; then 'git edit --continue' (re-check),\e[0m"
 	ECHO_E "\e[0;94m                           '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'\e[0m"
-	ECHO_E "\e[0;94m         git-edit: paused – <operation> <sha> is <label>'s, not yours: leave it to that caller, or wait for it\e[0m"
-	ECHO_E "\e[0;94m                           ('--allow-other-actor' takes it on)\e[0m"
-	ECHO_E "\e[0;94m         git-edit: paused – a pause with no operation on record is <label>'s, not yours: leave it to\e[0m"
-	ECHO_E "\e[0;94m                           that caller, or clear it with 'git edit --abort --allow-other-actor'\e[0m"
+	ECHO_E "\e[0;94m         git-edit: paused – <operation> <sha> is <label>'s[ (\"<name>\")], not yours: leave it to that caller,\e[0m"
+	ECHO_E "\e[0;94m                           or wait for it ('--allow-other-actor' takes it on)\e[0m"
+	ECHO_E "\e[0;94m         git-edit: paused – a pause with no operation on record is <label>'s[ (\"<name>\")], not yours:\e[0m"
+	ECHO_E "\e[0;94m                           leave it to that caller, or clear it with 'git edit --abort --allow-other-actor'\e[0m"
 }
 
 # Prints the man page's entry for each <topic> – a flag, with or without its dashes or a value, or a
@@ -8194,16 +8199,18 @@ _PINNED_REV () {
 	fi
 }
 
-# Names whose pause <state file> holds into `REPLY` – empty where
-# it predates labels, the label as given where the file keeps it
+# Names whose pause <state file> holds into `REPLY` – empty where it predates labels,
+# the label as given where the file keeps it, and the name its caller gave beside it
 _PAUSE_OWNER () {
 	# Args: <state file>
 	local LINE=$(LC_ALL=C grep -a '^actor=' "$1" 2>/dev/null | tail -1) ID=$(LC_ALL=C grep -a '^actor_id=' "$1" 2>/dev/null | tail -1)
+	local NAME=$(LC_ALL=C grep -a '^actor_name=' "$1" 2>/dev/null | tail -1)
 	REPLY=
 	[ -n "$LINE" ] || return 0
 	LINE=${LINE#actor=}
 	[ -n "$ID" ] && LINE=${ID#actor_id=}
-	REPLY="${${LINE:+$LINE's}:-an unlabeled caller's}"
+	NAME=${NAME#actor_name=}
+	REPLY="${${LINE:+$LINE's}:-an unlabeled caller's}${NAME:+ (\"$NAME\")}"
 }
 
 # Names the loaded pause into `REPLY` as its caller knows it – a placement by what
@@ -17644,6 +17651,7 @@ _SAVE_STATE () {
 		print -r -- "actor=$_ACTOR"
 		# And the label as given, which ownership goes by – one lacking it predates it
 		print -r -- "actor_id=$_ACTOR_ID"
+		if [ -n "$_ACTOR_NAME" ]; then print -r -- "actor_name=$_ACTOR_NAME"; fi
 		for KV in "$@"; do print -r -- "$KV"; done
 		# A mark of this one pause – the same run redone in the same `-C` path writes keys alike,
 		# and a resume must still tell its own pause from the one taken after an abort
@@ -17761,6 +17769,7 @@ _LOAD_STATE () {
 	STATE_NO_VERIFY=""
 	STATE_ACTOR=""
 	STATE_ACTOR_ID=""
+	STATE_ACTOR_NAME=""
 	STATE_ACTOR_SET=""
 	local ID_SET=""
 	STATE_STOP_HEAD=""
@@ -17828,6 +17837,7 @@ _LOAD_STATE () {
 			no_verify)       STATE_NO_VERIFY=$VAL ;;
 			actor)           STATE_ACTOR=$VAL STATE_ACTOR_SET=1 ;;
 			actor_id)        STATE_ACTOR_ID=$VAL ID_SET=1 ;;
+			actor_name)      STATE_ACTOR_NAME=$VAL ;;
 			stop_head)       STATE_STOP_HEAD=$VAL ;;
 			stops)           STATE_STOPS=$VAL ;;
 			marked)          STATE_MARKED=$VAL ;;
@@ -22614,7 +22624,7 @@ _ADOPT_PAUSE_ACTOR () {
 			ECHO_E "\e[0;31m  Leave it to whoever paused it – or clear it with 'git edit --abort --allow-other-actor', as no run resumes a pause with no operation on record.\e[0m" >&2
 		else
 			_PAUSE_NAME
-			PRINT_ERR "The paused $REPLY is ${${STATE_ACTOR_ID:+$STATE_ACTOR_ID's}:-an unlabeled caller's} – refusing to $1 it as $_ACTOR_ID"
+			PRINT_ERR "The paused $REPLY is ${${STATE_ACTOR_ID:+$STATE_ACTOR_ID's}:-an unlabeled caller's}${STATE_ACTOR_NAME:+ (\"$STATE_ACTOR_NAME\")} – refusing to $1 it as $_ACTOR_ID"
 			ECHO_E "\e[0;31m  Leave it to that caller – or pass --allow-other-actor to $1 it anyway.\e[0m" >&2
 		fi
 		exit 1
@@ -22622,6 +22632,9 @@ _ADOPT_PAUSE_ACTOR () {
 	if [ -n "$STATE_ACTOR" ]; then
 		_ACTOR=$STATE_ACTOR
 		_ACTOR_ID=$STATE_ACTOR_ID
+		# And its name – a resume noting its next stop into the file
+		# keeps the one there, so one writing the file anew keeps it too
+		_ACTOR_NAME=$STATE_ACTOR_NAME
 		_REFLOG_TAG=" [$_ACTOR]"
 	fi
 }

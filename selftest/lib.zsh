@@ -43,7 +43,8 @@ GIT_SELFTEST () {
 
 	# A caller's label would close every reflog message the checks compare – set empty rather than
 	# unset, so a startup file filling in a default only where it is unset leaves it alone
-	export GIT_EDIT_ACTOR=
+	# – and its name would join every message naming a pause's owner
+	export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME=
 
 	# Deterministic clock – every git call takes a unique ascending timestamp via the `:-`
 	# fallbacks, since real-time fixtures landed up to 8 commits per wall-clock second and
@@ -344,7 +345,7 @@ GIT_SELFTEST () {
 			continue
 		fi
 		# A label one scenario set would close every reflog message the next compares
-		export GIT_EDIT_ACTOR=
+		export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME=
 		source "$ST_FILE"
 	done
 

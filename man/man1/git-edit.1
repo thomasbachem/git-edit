@@ -2257,8 +2257,8 @@ git\-edit: conflict \(en resolve in <worktree> (<files>); then 'git edit --conti
 git\-edit: paused \(en <operation> <sha> in <worktree>; then 'git edit --continue' or 'git edit --abort'
 git\-edit: paused \(en verify failed at <sha> in <worktree>; output in <path>; then 'git edit --continue' (re-verify), '--no-verify --continue' (apply anyway), or 'git edit --abort'
 git\-edit: paused \(en mode change at <sha> in <worktree>; then 'git edit --continue' (re-check), '--allow-mode-change --continue' (apply anyway), or 'git edit --abort'
-git\-edit: paused \(en <operation> <sha> is <label>'s, not yours: leave it to that caller, or wait for it ('--allow-other-actor' takes it on)
-git\-edit: paused \(en a pause with no operation on record is <label>'s, not yours: leave it to that caller, or clear it with 'git edit --abort --allow-other-actor'
+git\-edit: paused \(en <operation> <sha> is <label>'s[ ("<name>")], not yours: leave it to that caller, or wait for it ('--allow-other-actor' takes it on)
+git\-edit: paused \(en a pause with no operation on record is <label>'s[ ("<name>")], not yours: leave it to that caller, or clear it with 'git edit --abort --allow-other-actor'
 .RE
 .fi
 .PP
@@ -2266,6 +2266,10 @@ git\-edit: paused \(en a pause with no operation on record is <label>'s, not you
 says what left the ref as it was \(em a dry run, a branch already landed or
 with nothing to land, a run that landed or replanted nothing, or another run
 that moved it meanwhile, with its move.
+.I <name>
+is the
+.B GIT_EDIT_ACTOR_NAME
+the pause recorded beside its label, where its caller gave one.
 .SH "TERMINAL RUNS"
 A person at a terminal gets a prompt where a pause would end the run: Enter
 resumes it as
@@ -3071,6 +3075,18 @@ its landing printed, which still takes it back \(em and for the
 landing guard to tell another caller's landing from the caller's own: runs
 under the caller's label never count, so for an unlabeled caller every
 unlabeled run is its own, and a file may take any of them back.
+.TP
+.B GIT_EDIT_ACTOR_NAME
+A name for the
+.B GIT_EDIT_ACTOR
+label \(em an agent session's title, say \(em which a pause records, so every
+message naming its owner shows the name beside the label: to a run the pause
+is in the way of, while one waits for it, in
+.B \-\-status
+and in a refused resume. It is kept to one line, any control character
+becoming a space, and cut to 100 characters. A run with no label records
+none, nor does a blank name, and a resume keeps the name the pause was
+taken under.
 .TP
 .B GIT_EDIT_WORKTREE_LINK
 Colon\-separated paths to link into temporary worktrees, added to whatever
