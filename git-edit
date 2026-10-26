@@ -107,14 +107,14 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _ACTOR_NAME _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DEPS_PATHS _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
+	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DEPS_PATHS _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _HUNKS_AT _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
 	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAMED_ALONE _NAP_PID _NARROWED _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
-	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
+	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END
 
 # A switch set to 0, false, no or off is off, as most tools read one
@@ -701,6 +701,7 @@ _GLOBAL_EXIT_TRAP () {
 		git update-ref -d "$R" >/dev/null 2>&1
 	done
 	_TEMP_REFS=()
+	[ -n "$_LINES_DIR" ] && rm -rf "$_LINES_DIR"
 	[ -n "$_JOURNAL_HELD" ] && _JOURNAL_UNLOCK "$_JOURNAL_HELD"
 	[ -n "$_SYNC_HELD" ] && _SYNC_HOLD_RELEASE
 	[ -n "$_RUN_LOCK_HELD" ] && _RUN_WORKTREE_UNLOCK
@@ -9454,7 +9455,7 @@ _SQUASH_STOP_EDITS () {
 		_EDITS_DERIVE "$M^" "$M" || return 1
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$M^:$P" 2>/dev/null; print -n x)
-			_EDITS_REPLACED "$P" "${TEXT%x}" && \
+			_EDITS_REPLACED "$P" "${TEXT%x}" "$(git rev-parse -q --verify "$M^^{commit}" 2>/dev/null)" && \
 				[ "${REPLY}x" = "$(git cat-file blob "$M:$P" 2>/dev/null; print -n x)" ] || return 1
 		done
 		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
@@ -13570,17 +13571,33 @@ _FOLD_TREE () {
 	fi
 }
 
-# Puts into `REPLY` <text> with the `--edits` for <path> made in turn, as composing them on the
-# tip made them – failing where an old text matches anything but once, or one read from a change
-# anywhere but on the lines its hunk stands at, as `_EDIT_AT_ITS_LINES` traces them
+# Puts into `REPLY` how many line ends <text> holds – split apart, as counting
+# what stripping all else leaves takes time growing with the square of its length
+_NL_COUNT () {
+	# Args: <text>
+	local -a P=("${(@ps:\n:)1}")
+	REPLY=$(( ${#P} - 1 ))
+}
+
+# Puts into `REPLY` <text> with the `--edits` for <path> made in turn, as composing them
+# on the tip made them – failing where an old text matches anything but once, or, given the
+# commit that holds <text>, one read from a change anywhere but where `_EDIT_TRACED` leads
 _EDITS_REPLACED () {
-	# Args: <path from the top> <text>
+	# Args: <path from the top> <text> [<commit holding it> [<its path there>]]
 	setopt local_options no_multibyte
-	local TEXT=$2 OLD NEW ZID CUR
-	local -i K W NOFF ANCHOR=${EDITS_DERIVED[(Ie)$1]}
+	local TEXT=$2 OLD NEW
+	local -i K W NOFF N ANCHOR=${EDITS_DERIVED[(Ie)$1]}
+	local -a ZM
 	# Edits a fold derived from its own change replace whole lines – each old text read
 	# with the line end before it, and with the text's end where it has none of its own
 	(( ANCHOR )) && TEXT=$'\n'$TEXT$'\0'
+	# Where each line came from – line k of the commit's file as `zk`, line o edit k made as `ek.o`
+	if [ -n "$3" ]; then
+		_NL_COUNT "$2"
+		N=$REPLY
+		[[ -z "$2" || "$2" == *$'\n' ]] || N+=1
+		(( N )) && ZM=({1..$N}) && ZM=(${ZM/#/z})
+	fi
 	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 		[ "${EDITS_PATH[K]}" = "$1" ] || continue
 		OLD=${EDITS_OLD[K]} NEW=${EDITS_NEW[K]}
@@ -13603,13 +13620,7 @@ _EDITS_REPLACED () {
 			done
 		fi
 		(( REPLY == 1 )) || return 1
-		# Read in the text as the edits before it left it, as each earlier one may have changed it
-		if [ -n "${EDITS_AT[K]}" ]; then
-			CUR=$TEXT
-			(( ANCHOR )) && CUR=${${CUR#$'\n'}%$'\0'}
-			ZID=$(print -rn -- "$CUR" | git hash-object -w --no-filters --stdin 2>/dev/null) && [ -n "$ZID" ] || return 1
-			_EDIT_AT_ITS_LINES "$CUR" "$ZID" "${EDITS_AT[K]}" "$OLD" $ANCHOR $NOFF || return 1
-		fi
+		[ -z "$3" ] || _EDIT_TRACED "$TEXT" $ANCHOR "$OLD" "$NEW" $NOFF $K "$1" "$3" "${4:-$1}" || return 1
 		TEXT=${TEXT/$OLD/$NEW}
 	done
 	(( ANCHOR )) && TEXT=${${TEXT#$'\n'}%$'\0'}
@@ -13640,28 +13651,24 @@ _EDIT_NARROWED () {
 	reply=("${O[L+1,R]}" "${N[L+1,LN-LO+R]}" $L)
 }
 
-# Tells whether <old>, matched once in <text>, stands on the lines its hunk changed, each traced
-# from the side <at> names by `_ALIGN_SPAN` – changed words on the word they were traced to through
-# a diff of their run's words – failing where any can't be, so a stop takes no unplaced replacement
-_EDIT_AT_ITS_LINES () {
-	# Args: <text> <its blob> <"<blob> <first line> <lines>" read from>
-	#       <old as matched> <1 – a whole line's, led by a line end>
-	#       <changed words' offset in the hunk's line, -1 for none>
+# Tells whether edit <k>'s <old>, matched once in <text>, stands where its own lines lead
+# – each followed by `_TRACE` from the commit it was read from to <commit>, then past the edits
+# made before it, as the caller's `ZM` records them – and notes the lines it makes in `ZM`
+_EDIT_TRACED () {
+	# Args: <text> <1 – led by a line end, as whole lines are> <old as matched> <new>
+	#       <changed words' offset in their line, -1 for none> <k> <path> <commit> <path there>
 	setopt local_options no_multibyte
-	local T=$1 OLD=$4 XT LINE
-	local -a AT=(${=3}) H XW ZW XL ZL
-	local -i S E M1 M2 NOFF=$6 I X0 Z0 WX WZ N
-	(( ${AT[2]:-0} > 0 && ${AT[3]:-0} > 0 )) || return 1
+	local IFS=$' \t\n\0\r' T=$1 OLD=$3 NEW=$4 LINE TOK
+	local -a AT=(${=EDITS_AT[$6]}) TOKS NEWM PRE
+	local -i S E M1 M2 NOFF=$5 I J N
+	[ -n "${AT[1]}" ] && [ "${AT[1]}" != - ] || return 1
 	# Where it matched, as offsets into the text led by a line end
 	# – so a character's line is the count of line ends before it
-	(( $5 )) && T=$'\n'$T$'\0'
-	_EDIT_MATCHES "$T" "$OLD"
-	(( REPLY == 1 )) || return 1
-	if (( $5 && NOFF < 0 )); then
+	if (( $2 && NOFF < 0 )); then
 		LINE=${T%%$OLD*}
 		S=$(( ${#LINE} + 2 )) E=$(( ${#LINE} + ${#OLD} - 1 ))
 		(( E < S )) && E=S
-	elif (( $5 )); then
+	elif (( $2 )); then
 		LINE=${T%%$OLD*}
 		S=$(( ${#LINE} + 1 )) E=$(( ${#LINE} + ${#OLD} ))
 	else
@@ -13669,49 +13676,652 @@ _EDIT_AT_ITS_LINES () {
 		T=$'\n'$T
 		S=$(( ${#LINE} + 2 )) E=$(( ${#LINE} + ${#OLD} + 1 ))
 	fi
-	LINE=${T[1,S-1]//[^$'\n']} M1=${#LINE}
-	LINE=${T[1,E-1]//[^$'\n']} M2=${#LINE}
-	_ALIGN_HUNKS "${AT[1]}" "$2" || return 1
-	H=("${reply[@]}")
-	if (( NOFF < 0 )); then
-		_ALIGN_SPAN "${AT[2]}" $(( AT[2] + AT[3] - 1 )) "" "${H[@]}" || return 1
-		(( reply[1] <= M1 && M2 <= reply[2] ))
+	_NL_COUNT "${T[1,S-1]}"
+	M1=$REPLY
+	_NL_COUNT "${T[1,E-1]}"
+	M2=$REPLY
+	# The lines it was read from – a hunk's, or a given one's as `_EDITS_DERIVE` noted them
+	if (( ${#AT} > 6 )); then
+		TOKS=("${(@)AT[7,-1]}")
+	else
+		(( AT[4] > 0 )) || return 1
+		for (( I = AT[3]; I < AT[3] + AT[4]; I++ )); do TOKS+=(x$I); done
+	fi
+	if (( NOFF >= 0 )); then
+		# Changed words – the one line's words followed, the match at the word they reach
+		(( ${#TOKS} == 1 && M1 == M2 )) || return 1
+		LINE=${EDITS_NOLD[$6][1,NOFF]}
+		_TRACE "${AT[1]}" "$7" "$8" "$9" words ${TOKS[1]#x} $(( ${#${=LINE}} + 1 )) ${#${=OLD}} || return 1
+		[ "${ZM[M1]}" = "z${reply[1]}" ] || return 1
+		LINE=${T[1,S-1]}
+		LINE=${LINE##*$'\n'}
+		(( ${#${=LINE}} + 1 == reply[2] )) || return 1
+	else
+		(( ${#TOKS} == M2 - M1 + 1 )) || return 1
+		for (( I = 1; I <= ${#TOKS}; I++ )); do
+			TOK=${TOKS[I]}
+			if [[ "$TOK" == x* ]]; then
+				# A line an edit before it made, read from the commit it was read from – an earlier
+				# commit's change these edits are made in turn after, as a block of moved commits has it
+				for (( J = 1; J < $6; J++ )); do
+					[ "${EDITS_PATH[J]}" = "$7" ] || continue
+					PRE=(${=EDITS_AT[J]})
+					[ "${PRE[2]}" = "${AT[1]}" ] && (( PRE[5] <= ${TOK#x} && ${TOK#x} < PRE[5] + PRE[6] )) && break
+				done
+				if (( J < $6 )); then
+					TOK=e$J.$(( ${TOK#x} - PRE[5] + 1 ))
+				else
+					_TRACE "${AT[1]}" "$7" "$8" "$9" lines ${TOK#x} || return 1
+					TOK=z${reply[1]}
+				fi
+			else
+				TOK=e$(( $6 - ${${TOK#e}%%.*} )).${TOK#*.}
+			fi
+			[ "${ZM[M1+I-1]}" = "$TOK" ] || return 1
+		done
+	fi
+	# The lines it makes, as `ek.o`
+	_NL_COUNT "$NEW"
+	N=$(( M2 - M1 + 1 + REPLY ))
+	_NL_COUNT "$OLD"
+	N+=-REPLY
+	for (( I = 1; I <= N; I++ )); do NEWM+=(e$6.$I); done
+	ZM[M1,M2]=("${NEWM[@]}")
+}
+
+# Puts into `reply` where line <line> of <path> as <from> holds it stands in <to>'s file,
+# through each commit's own change – where it went, or its place in a run of as many lines,
+# as `_PAIR_CERTAIN` vouches – and for <words>, where its <n> words from <w> went, a CR no word
+_TRACE () {
+	# Args: <from> <path there> <to> <path there> <lines|words> <line> [<w> <n>]
+	typeset -gA _TRACE_MAP _STEP_RENAMED
+	local IFS=$' \t\n\0\r' STEP KEY BK N1 N2
+	local -a ST S3 H HW RW1 RW2
+	local -i L=$6 W=${7:-0} NW=${8:-0} I A B C D P Q Z
+	_TRACE_STEPS "$1" "$2" "$3" "$4" || return 1
+	ST=("${reply[@]}")
+	for STEP in "${ST[@]}"; do
+		# Each step's mapping read once a run, as every stop of a long replay walks the same ones
+		KEY="$STEP $L $W $NW"
+		if (( ${+_TRACE_MAP[$KEY]} )); then
+			[ "${_TRACE_MAP[$KEY]}" != - ] || return 1
+			L=${_TRACE_MAP[$KEY]% *} W=${_TRACE_MAP[$KEY]#* }
+			continue
+		fi
+		_TRACE_MAP[$KEY]=-
+		# "<b|f> <parent's blob> <commit's blob>", a step back read as the commit's change undone
+		S3=(${=STEP})
+		_ALIGN_HUNKS "${S3[2]}" "${S3[3]}" || return 1
+		H=("${reply[@]}")
+		_BLOB_LINES "${S3[2]}" && N1=$REPLY && _BLOB_LINES "${S3[3]}" && N2=$REPLY || return 1
+		# A change that rewrites the file, as git's break detection reads it, keeps no line's identity
+		BK="$STEP brk"
+		if (( ! ${+_TRACE_MAP[$BK]} )); then
+			_TRACE_MAP[$BK]=0
+			# Bar a rename, which git pairs by likeness alone and never weighs for a break
+			(( ${+_STEP_RENAMED[${S3[2]}:${S3[3]}]} )) || { _STEP_BREAKS "${S3[2]}" "${S3[3]}" $N1 $N2 "${H[@]}" && _TRACE_MAP[$BK]=1; }
+		fi
+		[ "${_TRACE_MAP[$BK]}" = 0 ] || return 1
+		[ "${S3[1]}" = b ] && _HUNKS_FLIPPED "${H[@]}" && H=("${reply[@]}")
+		[ "${S3[1]}" = b ] && { REPLY=$N1 N1=$N2 N2=$REPLY; }
+		for (( I = 1; I <= ${#H}; I += 4 )); do
+			(( H[I+1] && H[I] <= L && L <= H[I] + H[I+1] - 1 )) && break
+		done
+		if (( I <= ${#H} && NW )); then
+			# Rewritten, its words followed through the run's own change to its words
+			A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+			(( D )) || return 1
+			RW1=(${=${(pj:\n:)${(@)${(P)N1}[A,A+B-1]}}}) RW2=(${=${(pj:\n:)${(@)${(P)N2}[C,C+D-1]}}})
+			P=$(( ${#${=${(pj:\n:)${(@)${(P)N1}[A,L-1]}}}} + W ))
+			_LINES_HUNKS RW1 RW2 "${S3[1]}" || return 1
+			HW=("${reply[@]}")
+			_ALIGN_SPAN $P $(( P + NW - 1 )) exact "${HW[@]}" || return 1
+			(( reply[2] - reply[1] == NW - 1 )) || return 1
+			Z=${reply[1]}
+			for (( Q = 0; Q < NW; Q++ )); do _PAIR_CERTAIN RW1 RW2 $(( P + Q )) $(( Z + Q )) "${HW[@]}" || return 1; done
+			P=$Z
+			# The run's line it lands on, whole
+			for (( Q = C; Q < C + D; Q++ )); do
+				(( P <= ${#${=${${(P)N2}[Q]}}} )) && break
+				P+=-${#${=${${(P)N2}[Q]}}}
+			done
+			(( Q < C + D && P + NW - 1 <= ${#${=${${(P)N2}[Q]}}} )) || return 1
+			L=$Q W=$P
+		else
+			_ALIGN_SPAN $L $L "" "${H[@]}" || return 1
+			Z=${reply[1]}
+			_PAIR_CERTAIN $N1 $N2 $L $Z "${H[@]}" || return 1
+			L=$Z
+		fi
+		_TRACE_MAP[$KEY]="$L $W"
+	done
+	reply=($L $W)
+}
+
+# Tells whether git's break detection at its default score splits the change from blob <from> to
+# blob <to>, its <hunk>s between arrays <from lines> and <to lines>, into a deletion and a creation
+# – or, below the 400 bytes git never breaks, whether it keeps under a third of either side's words
+_STEP_BREAKS () {
+	# Args: <from blob> <to blob> <from lines> <to lines> <hunk numbers>...
+	setopt local_options no_multibyte
+	local -a H=("${@:5}")
+	local -A CS CD
+	local -i SS=${_BL_SEEN[$1]:-0} DS=${_BL_SEEN[$2]:-0} I A=0 B=0 C D V DEL=0 ADD=0 COMMON=0 RM BASE KEPT=0
+	local LN K
+	(( SS )) || return 1
+	# The byte score would break nearly any change this small, its lines changed whole
+	# – so the words both sides hold, as a swap's or copy's few coincide while an edit's mostly stay
+	if (( (SS > DS ? SS : DS) < 400 )); then
+		local IFS=$' \t\n\0\r'
+		for LN in ${=${(pj:\n:)${(@P)3}}}; do V=${CS[k$LN]:-0}; CS[k$LN]=$(( V + 1 )); A+=1; done
+		for LN in ${=${(pj:\n:)${(@P)4}}}; do
+			V=${CS[k$LN]:-0} B+=1
+			(( V )) && { CS[k$LN]=$(( V - 1 )); KEPT+=1; }
+		done
+		(( KEPT * 3 < (A < B ? A : B) ))
 		return
 	fi
-	# Changed words – the hunk's one line in a changed run, the match inside its other side
+	# Lines outside the hunks count alike on both sides, so only the hunks' own are weighed – bar
+	# a CRLF's CR, which git hashes into no chunk, so the source's every one counts as removed
+	local -i N1=${#${(P)3}} N2=${#${(P)4}} EOL1 EOL2 CR J
+	EOL1=$(( SS == ${#${(pj::)${(@P)3}}} + N1 )) EOL2=$(( DS == ${#${(pj::)${(@P)4}}} + N2 ))
+	CR=${#${(M)${(@P)3}:#*$'\r'}}
+	(( ! EOL1 )) && [[ "${${(P)3}[-1]}" == *$'\r' ]] && CR+=-1
 	for (( I = 1; I <= ${#H}; I += 4 )); do
-		(( H[I+1] && H[I] <= AT[2] && AT[2] <= H[I] + H[I+1] - 1 )) && break
+		A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+		for (( J = A; B && J < A + B; J++ )); do
+			_STEP_CHUNKS "${${(P)3}[J]}" $(( J < N1 || EOL1 ))
+			for K in "${reply[@]}"; do V=${CS[$K]:-0}; CS[$K]=$(( V + ${#K} - 1 )); DEL+=$(( ${#K} - 1 )); done
+		done
+		for (( J = C; D && J < C + D; J++ )); do
+			_STEP_CHUNKS "${${(P)4}[J]}" $(( J < N2 || EOL2 ))
+			for K in "${reply[@]}"; do V=${CD[$K]:-0}; CD[$K]=$(( V + ${#K} - 1 )); ADD+=$(( ${#K} - 1 )); done
+		done
 	done
-	(( I <= ${#H} && H[I+3] && H[I+2] <= M1 && M2 <= H[I+2] + H[I+3] - 1 )) || return 1
-	XT=$(git cat-file blob "${AT[1]}" 2>/dev/null; print -n x)
-	XT=${XT%x}
-	X0=${H[I]} Z0=${H[I+2]}
-	XL=("${(@ps:\n:)XT}") ZL=("${(@ps:\n:)1}")
-	# Each run's words a line each, and where the matched ones start among them
-	XW=(${=${(pj:\n:)XL[X0,X0+H[I+1]-1]}}) ZW=(${=${(pj:\n:)ZL[Z0,Z0+H[I+3]-1]}})
-	LINE="${(pj:\n:)XL[X0,AT[2]-1]} ${XL[AT[2]][1,NOFF]}"
-	WX=$(( ${#${=LINE}} + 1 ))
-	LINE=${T[1,S-1]}
-	LINE="${(pj:\n:)ZL[Z0,M1-1]} ${LINE##*$'\n'}"
-	WZ=$(( ${#${=LINE}} + 1 ))
-	N=${#${=OLD}}
-	_ALIGN_HUNKS "$(print -rl -- "${XW[@]}" | git hash-object -w --no-filters --stdin 2>/dev/null)" \
-		"$(print -rl -- "${ZW[@]}" | git hash-object -w --no-filters --stdin 2>/dev/null)" || return 1
-	_ALIGN_SPAN $WX $(( WX + N - 1 )) exact "${reply[@]}" || return 1
-	(( reply[1] == WZ && reply[2] == WZ + N - 1 ))
+	# Read out of arithmetic, where a chunk's text would be evaluated
+	for K in "${(@k)CS}"; do
+		A=${CS[$K]} B=${CD[$K]:-0}
+		COMMON+=$(( A < B ? A : B ))
+	done
+	# Removed past half the source, or removed and added together past half the larger side
+	RM=$(( DEL + CR - COMMON )) BASE=$(( SS > DS ? SS : DS ))
+	(( RM * 60000 / SS > 30000 )) && return 0
+	# Under 1% removed the source stays whole however much was added, as git merges it back
+	(( RM * 60000 / SS < 600 )) && return 1
+	(( (RM + ADD - COMMON) * 60000 / BASE >= 30000 ))
+}
+
+# Puts into `reply` the chunks of <line> as git hashes them, each led by `k` – up to 64 bytes,
+# the last ending at its line end where one follows, a CR before it skipped
+_STEP_CHUNKS () {
+	# Args: <line> <1 where a line end follows it>
+	setopt local_options no_multibyte
+	local T=$1
+	(( $2 )) && T=${T%$'\r'}$'\n'
+	reply=()
+	while (( ${#T} )); do
+		reply+=("k${T[1,64]}") T=${T[65,-1]}
+	done
+}
+
+# Tells whether line <x> of array <from> and line <z> of array <to> pair with no other of their
+# text in any least change of the whole – nor, unchanged, with a changed line beside them
+# holding all their words, as moving them would leave it – failing where it can't rule one out
+_PAIR_CERTAIN () {
+	# Args: <from array> <to array> <x> <z> <hunk numbers>...
+	setopt local_options no_multibyte
+	local IFS=$' \t\n\0\r'
+	local -a H=("${@:5}") CI CJ SL SA SB2
+	local -i X=$3 Z=$4 N=${#${(P)1}} M=${#${(P)2}} I J K A B C D V LCS PRE SUF LO HI LP LS SB SB0 D0
+	local TX=${${(P)1}[X]} TZ=${${(P)2}[Z]} LN DIR OWN OUT
+	local -A DEL DL G
+	if [ "$TX" = "$TZ" ] && (( ${#${=TX}} )); then
+		for (( I = 1; I <= ${#H}; I += 4 )); do
+			A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+			(( (B && (A + B == X || A == X + 1)) || (!B && (A == X - 1 || A == X)) )) || continue
+			# A count 0 slices nothing – its first line 0 would slice all
+			SL=()
+			(( B )) && SL+=("${(@)${(P)1}[A,A+B-1]}")
+			(( D )) && SL+=("${(@)${(P)2}[C,C+D-1]}")
+			for LN in "${SL[@]}"; do
+				_WORDS_HELD "$LN" "$TX" && return 1
+			done
+		done
+	fi
+	# The least change's length, and the lines alike at either end
+	LCS=N PRE=N SUF=0
+	for (( I = 1; I <= ${#H}; I += 4 )); do
+		A=${H[I]} B=${H[I+1]}
+		LCS+=-B
+		(( I == 1 )) && PRE=$(( B ? A - 1 : A ))
+		SUF=$(( N - (B ? A + B - 1 : A) ))
+	done
+	(( ${#H} )) || return 0
+	# Every least change keeps a line no further from its place than the lines it drops one way
+	# and adds the other – and changes at least as often before and after a pairing as the texts
+	# there differ in count, past the whole's ruling the pairing out: `DL` the count each text
+	# drops less the count it adds, `_PAIR_SWEEP` moving along the counts up to each pairing
+	D0=$(( N + M - 2 * LCS )) SB0=0
+	for (( I = 1; I <= ${#H}; I += 4 )); do
+		A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+		(( B )) && for LN in "${(@)${(P)1}[A,A+B-1]}"; do V=${DL[k$LN]:-0}; DL[k$LN]=$(( V + 1 )); done
+		(( D )) && for LN in "${(@)${(P)2}[C,C+D-1]}"; do V=${DL[k$LN]:-0}; DL[k$LN]=$(( V - 1 )); done
+	done
+	for V in "${(@v)DL}"; do SB0+=$(( V < 0 ? -V : V )); done
+	LO=$(( X - (N - LCS) )) HI=$(( X + M - LCS ))
+	(( LO < 1 )) && LO=1
+	(( HI > M )) && HI=M
+	SB=SB0
+	_PAIR_BASE $1 $2 rows $(( X - 1 )) "${H[@]}"
+	_PAIR_SWEEP $1 $2 cols $REPLY $LO $HI $X $Z "$TX"
+	LO=$(( Z - (M - LCS) )) HI=$(( Z + N - LCS ))
+	(( LO < 1 )) && LO=1
+	(( HI > N )) && HI=N
+	SB=SB0
+	_PAIR_BASE $1 $2 cols $(( Z - 1 )) "${H[@]}"
+	_PAIR_SWEEP $1 $2 rows $REPLY $LO $HI $Z $X "$TZ"
+	(( ${#CI} )) || return 0
+	# Before git 2.50, `--minimal` still drops frequent lines beside unmatched ones, so a diff
+	# could undercount a least change and vouch for a pairing with another – a pause instead
+	[[ "$_GIT_VERSION" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 50 )) && return 1
+	# Each candidate's lines before and after it, bar those alike at either end, written and
+	# diffed – past 3M lines, a few seconds' work on a 1 MB file, a pause, always safe
+	SA=() SB2=() V=0
+	for (( K = 1; K <= ${#CI}; K++ )); do
+		I=${CI[K]} J=${CJ[K]}
+		A=$(( PRE < I - 1 ? PRE : I - 1 )) B=$(( SUF < N - I ? SUF : N - I ))
+		(( A > J - 1 )) && A=$(( J - 1 ))
+		(( B > M - J )) && B=$(( M - J ))
+		SA+=($A) SB2+=($B) V+=$(( N + M - 2 - 2 * (A + B) ))
+	done
+	(( V <= 3000000 )) || return 1
+	# Each the length of a least change through it, before and after it apart, in one diff of all
+	# – none as long as the whole leaves the pairing alone, a binary or a failed one rules nothing out
+	_LINES_DIR || return 1
+	DIR=$REPLY OWN=${reply[1]}
+	for (( K = 1; K <= ${#CI}; K++ )); do
+		I=${CI[K]} J=${CJ[K]} A=${SA[K]} B=${SB2[K]}
+		_LINES_WRITE $1 $(( A + 1 )) $(( I - 1 )) "$DIR/a/p$K" && _LINES_WRITE $2 $(( A + 1 )) $(( J - 1 )) "$DIR/b/p$K" &&
+			_LINES_WRITE $1 $(( I + 1 )) $(( N - B )) "$DIR/a/s$K" && _LINES_WRITE $2 $(( J + 1 )) $(( M - B )) "$DIR/b/s$K" ||
+			{ [ -n "$OWN" ] && rm -rf "$OWN"; return 1; }
+	done
+	# Files an earlier check left emptied, so they differ in nothing
+	for LN in "$DIR"/[ab]/[ps]<->(N.L+0); do (( ${LN:t:s/p//:s/s//} > ${#CI} )) && : >"$LN"; done
+	OUT=$(git -C "$DIR" -c core.autocrlf=false -c core.attributesFile=/dev/null diff --no-index --numstat --no-renames \
+		--diff-algorithm=minimal --no-ext-diff --no-textconv --no-color -- a b 2>/dev/null)
+	(( $? <= 1 )) || { [ -n "$OWN" ] && rm -rf "$OWN"; return 1; }
+	[ -n "$OWN" ] && rm -rf "$OWN"
+	# "<added>\t<removed>\t<path>", the path ending in the file's name, "-" for a binary
+	for LN in ${(f)OUT}; do
+		[[ "$LN" == [0-9]*$'\t'[0-9]*$'\t'* ]] || return 1
+		OUT=${${LN##*/}%\"}
+		DEL[$OUT]=${${LN#*$'\t'}%%$'\t'*}
+	done
+	for (( K = 1; K <= ${#CI}; K++ )); do
+		I=${CI[K]} J=${CJ[K]}
+		LP=$(( I - 1 - ${DEL[p$K]:-0} )) LS=$(( N - I - ${DEL[s$K]:-0} ))
+		(( LP + 1 + LS >= LCS )) && return 1
+	done
+	return 0
+}
+
+# Fills `G` through `_PAIR_ADJ` with how many more times each text stands in <from>'s first <n>
+# lines than in <to>'s up to where the least change of <hunk>s reaches with them, `REPLY` that
+# line of <to> – or, <cols>, with <to>'s first <n> lines, `REPLY` the line of <from>
+_PAIR_BASE () {
+	# Args: <from array> <to array> <rows|cols> <n> <hunk numbers>...
+	local -a H=("${@:5}")
+	local -i R=$4 I A B C D FE TE
+	local LN
+	G=() REPLY=$R
+	for (( I = 1; I <= ${#H}; I += 4 )); do
+		A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+		FE=$(( B ? A + B - 1 : A )) TE=$(( D ? C + D - 1 : C ))
+		if [ "$3" = rows ]; then
+			# Within a run it drops, before the lines it adds
+			if (( FE > R )); then
+				(( B && A <= R )) || break
+				for LN in "${(@)${(P)1}[A,R]}"; do _PAIR_ADJ "k$LN" 1; done
+				REPLY=$(( D ? C - 1 : C ))
+				break
+			fi
+			REPLY=$(( TE + R - FE ))
+		else
+			# Within a run it adds, after the lines it drops
+			if (( TE > R )); then
+				(( D && C <= R )) || break
+				(( B )) && for LN in "${(@)${(P)1}[A,A+B-1]}"; do _PAIR_ADJ "k$LN" 1; done
+				for LN in "${(@)${(P)2}[C,R]}"; do _PAIR_ADJ "k$LN" -1; done
+				REPLY=$FE
+				break
+			fi
+			REPLY=$(( FE + R - TE ))
+		fi
+		(( B )) && for LN in "${(@)${(P)1}[A,A+B-1]}"; do _PAIR_ADJ "k$LN" 1; done
+		(( D )) && for LN in "${(@)${(P)2}[C,C+D-1]}"; do _PAIR_ADJ "k$LN" -1; done
+	done
+}
+
+# Adds to `CI` and `CJ` each line of <text> in <to> within <lo>..<hi> but <skip>, paired with line
+# <fixed> of <from>, that the count bound `SB` leaves possible – or, <rows>, each such line of
+# <from>, paired with <to>'s – moving both ways from `G` as `_PAIR_BASE` left it at <base>
+_PAIR_SWEEP () {
+	# Args: <from array> <to array> <rows|cols> <base> <lo> <hi> <fixed> <skip> <text>
+	local -A G0=("${(@kv)G}")
+	local -i P=$4 K SG=-1 S0=SB
+	local ARR=$2
+	[ "$3" = rows ] && ARR=$1 SG=1
+	# Line k standing first past the lines counted
+	while (( P < $6 )); do
+		K=P+1
+		if (( K >= $5 && K != $8 && SB <= D0 )) && [ "${${(P)ARR}[K]}" = "$9" ]; then
+			if [ "$3" = rows ]; then CI+=($K) CJ+=($7); else CI+=($7) CJ+=($K); fi
+		fi
+		_PAIR_ADJ "k${${(P)ARR}[K]}" $SG
+		P=K
+	done
+	G=("${(@kv)G0}") SB=S0 P=$4
+	while (( P >= $5 )); do
+		_PAIR_ADJ "k${${(P)ARR}[P]}" $(( -SG ))
+		if (( P <= $6 && P != $8 && SB <= D0 )) && [ "${${(P)ARR}[P]}" = "$9" ]; then
+			if [ "$3" = rows ]; then CI+=($P) CJ+=($7); else CI+=($7) CJ+=($P); fi
+		fi
+		P+=-1
+	done
+}
+
+# Moves text <key>'s count in `G` by <by>, keeping in `SB` the sum over all texts of that count
+# and its difference from the one in `DL` – each a change no least change of either part spares
+_PAIR_ADJ () {
+	# Args: <key> <by>
+	local -i V=${G[$1]:-0} W=${DL[$1]:-0}
+	SB+=$(( - (V < 0 ? -V : V) - (W - V < 0 ? V - W : W - V) ))
+	V+=$2
+	G[$1]=$V
+	SB+=$(( (V < 0 ? -V : V) + (W - V < 0 ? V - W : W - V) ))
+}
+
+# Writes lines <first>..<last> of array <lines> to <file>, one line end each
+_LINES_WRITE () {
+	# Args: <lines> <first> <last> <file>
+	if (( $3 >= $2 )); then
+		print -rl -- "${(@)${(P)1}[$2,$3]}" >"$4"
+	else
+		: >"$4"
+	fi
+}
+
+# Puts into `REPLY` the directory this run diffs lines in, made once – and into `reply` the same,
+# when a subshell made it, for its caller to remove, as the exit trap removes the run's
+_LINES_DIR () {
+	reply=()
+	if [[ -z "$_LINES_DIR" || ! -d "$_LINES_DIR/a" ]]; then
+		_LINES_DIR=$(MKTEMP_DIR git-edit-lines 2>/dev/null) && [ -n "$_LINES_DIR" ] && mkdir "$_LINES_DIR/a" "$_LINES_DIR/b" 2>/dev/null || { _LINES_DIR=""; return 1; }
+		(( ZSH_SUBSHELL )) && reply=("$_LINES_DIR")
+	fi
+	REPLY=$_LINES_DIR
+}
+
+# Tells whether <line> other than <text> holds each of its words, as often
+# – a line end's carriage return no word, so a CRLF line reads as its LF twin
+_WORDS_HELD () {
+	# Args: <line> <text>
+	local IFS=$' \t\n\0\r' W
+	local -a IN=(${=1})
+	[ "$1" != "$2" ] || return 1
+	for W in ${=2}; do
+		(( ${IN[(Ie)$W]} )) || return 1
+		IN[${IN[(Ie)$W]}]=()
+	done
+	return 0
+}
+
+# Puts into `REPLY` the name of an array holding blob <blob>'s lines, read once a run
+_BLOB_LINES () {
+	# Args: <blob>
+	setopt local_options no_multibyte
+	typeset -gA _BL_SEEN
+	local T
+	REPLY=_BL_$1
+	(( ${+_BL_SEEN[$1]} )) && return 0
+	T=$(git cat-file blob "$1" 2>/dev/null; print -n x) || return 1
+	typeset -ga $REPLY
+	# Its size, as `_STEP_BREAKS` weighs it
+	_BL_SEEN[$1]=$(( ${#T} - 1 ))
+	# A last line end leaves no line after it
+	if [ "$T" = x ]; then
+		set -A $REPLY
+	elif [[ "$T" == *$'\n'x ]]; then
+		set -A $REPLY "${(@ps:\n:)${T%$'\n'x}}"
+	else
+		set -A $REPLY "${(@ps:\n:)${T%x}}"
+	fi
+	return 0
+}
+
+# Puts into `reply` the hunks between the lines of arrays <from> and <to>
+# – read the other way round, <b>, as a commit's change undone
+_LINES_HUNKS () {
+	# Args: <from array> <to array> <f|b>
+	local DIR OWN OUT
+	local -a FT=(f t)
+	local -i RC
+	_LINES_DIR || return 1
+	DIR=$REPLY OWN=${reply[1]}
+	[ "$3" = b ] && FT=(t f)
+	_LINES_WRITE $1 1 ${#${(P)1}} "$DIR/f" && _LINES_WRITE $2 1 ${#${(P)2}} "$DIR/t" || return 1
+	OUT=$(git -C "$DIR" -c core.autocrlf=false -c core.attributesFile=/dev/null diff --no-index -U0 --inter-hunk-context=0 \
+		--diff-algorithm=minimal --no-ext-diff --no-textconv --no-color -- "${FT[@]}" 2>/dev/null)
+	RC=$?
+	[ -n "$OWN" ] && rm -rf "$OWN"
+	(( RC <= 1 )) && _HUNKS_READ "$OUT" || return 1
+	[ "$3" != b ] || _HUNKS_FLIPPED "${reply[@]}"
+}
+
+# Puts into `reply` <hunk>s with their sides swapped, a change read the other way round
+_HUNKS_FLIPPED () {
+	# Args: <hunk numbers>...
+	local -i I
+	reply=()
+	for (( I = 1; I <= $#; I += 4 )); do reply+=(${@[I+2]} ${@[I+3]} ${@[I]} ${@[I+1]}); done
+}
+
+# Puts into `reply` each commit's own change to <path> from <from> back to their merge base, then on
+# to <to>'s <path there>, as "<b|f> <parent's blob> <commit's blob>" – failing where the file comes
+# or goes on the way, bar where it comes on both, as a target's rebuilt copy has it
+_TRACE_STEPS () {
+	# Args: <from> <path there> <to> <path there>
+	typeset -gA _TRACE_AT
+	local KEY="$1 $3 $2"$'\0'"$4" MB NB NF
+	local -a BL FL F BS FS
+	local -i I J
+	if (( ${+_TRACE_AT[$KEY]} )); then
+		[ "${_TRACE_AT[$KEY]}" != - ] || return 1
+		reply=("${(@ps:\n:)_TRACE_AT[$KEY]}")
+		reply=("${(@)reply:#}")
+		return 0
+	fi
+	_TRACE_AT[$KEY]=-
+	# <to> on the first parents already walked from <from> its own base, as a fold's stops are
+	MB=$1
+	while [ -n "$MB" ] && [ "$MB" != "$3" ] && (( ${+_FP_UP[$MB]} )); do MB=${_FP_UP[$MB]}; done
+	# Histories with no commit in common, as a squash into the root rebuilds it, meet before both
+	[ "$MB" = "$3" ] || MB=$(git merge-base "$1" "$3" 2>/dev/null)
+	_TRACE_WALK "$1" "$MB" "$2" || return 1
+	NB=$REPLY BL=("${(@)reply/#/b }")
+	_TRACE_WALK "$3" "$MB" "${4:-$2}" || return 1
+	NF=$REPLY FL=("${(@Oa)reply}")
+	FL=("${(@)FL/#/f }")
+	# The file as it stands after each step back, then after each step on – the same content on
+	# both ways leaves each line where it was, as a reword's or a squash's rebuilt commits make it
+	(( ${+_TRACE_AT[$1:$2]} )) || _TRACE_AT[$1:$2]=$(git rev-parse -q --verify "$1:$2" 2>/dev/null)
+	BS=(${_TRACE_AT[$1:$2]})
+	(( ${#BS} )) || return 1
+	for (( I = 1; I <= ${#BL}; I++ )); do F=(${=BL[I]}) BS+=(${F[2]}); done
+	(( ${#FL} )) && { F=(${=FL[1]}) FS=(${F[2]}); }
+	for (( I = 1; I <= ${#FL}; I++ )); do F=(${=FL[I]}) FS+=(${F[3]}); done
+	for (( I = 1; I <= ${#BS}; I++ )); do
+		[ "${BS[I]}" != 0 ] || break
+		for (( J = ${#FS}; J >= 1; J-- )); do
+			[ "${BS[I]}" = "${FS[J]}" ] || continue
+			BL=("${(@)BL[1,I-1]}") FL=("${(@)FL[J,-1]}")
+			break 2
+		done
+	done
+	# Both ways reaching where the file came, as a squash's rebuilt target does
+	# – one step from the one it came as to the other
+	if [[ $I -gt ${#BS} || "${BS[I]}" == 0 ]] && (( ${#BL} && ${#FL} )) && [[ "${BL[-1]}" == "b 0 "* && "${FL[1]}" == "f 0 "* ]]; then
+		BL[-1]="f ${BL[-1]#b 0 } ${FL[1]#f 0 }" FL[1]=()
+	elif [ "$NB" != "$NF" ]; then
+		return 1
+	fi
+	[[ -z ${(M)${BL[@]}:#(* 0 *|* 0)} && -z ${(M)${FL[@]}:#(* 0 *|* 0)} ]] || return 1
+	_TRACE_AT[$KEY]=${(pj:\n:)BL}$'\n'${(pj:\n:)FL}
+	reply=("${BL[@]}" "${FL[@]}")
+}
+
+# Puts into `reply` each commit's own change to <path> back along first parents from <from>
+# to <base> or where the file came, "<parent's blob> <commit's blob>", `0` where it came
+# – and into `REPLY` its name there, failing where the walk ends elsewhere
+_TRACE_WALK () {
+	# Args: <from> <base, empty for none> <path there>
+	typeset -gA _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED
+	local C=$1 NAME=$3 E
+	local -a OUT
+	while [ "$C" != "$2" ]; do
+		[ -n "$C" ] || { [ -z "$2" ] && break; return 1; }
+		(( ${+_FP_STEP[$C $NAME]} )) || _TRACE_FETCH "$C" "$2" "$NAME" || return 1
+		E=${_FP_STEP[$C $NAME]}
+		[ "$E" != x ] || return 1
+		[ "$E" = - ] || OUT+=("$E")
+		# Where it came – nothing older holds it
+		[[ "$E" == "0 "* ]] && break
+		NAME=${_FP_NAME[$C $NAME]-$NAME} C=${_FP_UP[$C]}
+	done
+	reply=("${OUT[@]}") REPLY=$NAME
+}
+
+# Notes in `_FP_UP`, `_FP_STEP` and `_FP_NAME` each first parent from <from> down to <base>, its
+# commit's own change to <path> – "-" for none, "x" where it went – and its name before a rename
+_TRACE_FETCH () {
+	# Args: <from> <base, empty for none> <path there>
+	local NAME=$3 META CM LINE K STOP=""
+	local -a TOK F R BLOBS
+	local -i I J
+	for LINE in ${(f)"$(git rev-list --first-parent --parents ${2:+"^$2"} "$1" 2>/dev/null)"}; do
+		F=(${=LINE}) K="${F[1]} $NAME"
+		# One an earlier fetch walked, as a later stop's commit comes on the last – those below too
+		[ "${F[1]}" != "$1" ] && (( ${+_FP_STEP[$K]} )) && { STOP=${F[1]}; break; }
+		_FP_UP[${F[1]}]=${F[2]}
+		(( ${+_FP_STEP[$K]} )) || _FP_STEP[$K]=-
+	done
+	(( ${+_FP_UP[$1]} )) || return 1
+	# Each change's hunks from the same walk, as `_ALIGN_HUNKS` reads them, one diff a step otherwise
+	typeset -gA _HUNKS_AT
+	# A log following renames, as `log.follow` makes it, would read one as R, which reads nothing
+	for LINE in "${(@f)$(git -c log.follow=false -c log.showSignature=false log --first-parent -p -U0 --inter-hunk-context=0 --diff-algorithm=minimal --full-index --no-ext-diff --no-textconv --no-color --format='C %H' ${2:+"^$2"} ${STOP:+"^$STOP"} "$1" -- ":(literal)$NAME" 2>/dev/null)}"; do
+		case $LINE in
+			'index '*)
+				K=${${LINE#index }%% *} K="${K%%..*} ${K#*..}"
+				(( ${+_HUNKS_AT[$K]} )) && K="" || _HUNKS_AT[$K]="" ;;
+			'Binary files '*) [ -n "$K" ] && _HUNKS_AT[$K]=- ;;
+			'@@ -'*)
+				[ -n "$K" ] || continue
+				LINE=${${LINE#@@ -}%% @@*}
+				F=(${${LINE%% *}%%,*} 1 ${${LINE#* +}%%,*} 1)
+				[[ "${LINE%% *}" == *,* ]] && F[2]=${${LINE%% *}#*,}
+				[[ "$LINE" == *+*,* ]] && F[4]=${LINE##*,}
+				_HUNKS_AT[$K]+="${_HUNKS_AT[$K]:+ }${F[*]}" ;;
+			'C '*|'diff '*) K="" ;;
+		esac
+	done
+	TOK=("${(@0)$(git -c log.follow=false -c log.showSignature=false log --first-parent -M --raw --no-abbrev -z --format='C %H' ${2:+"^$2"} ${STOP:+"^$STOP"} "$1" -- ":(literal)$NAME" 2>/dev/null)}")
+	for (( I = 1; I <= ${#TOK}; I++ )); do
+		[[ "${TOK[I]}" == "C "* ]] && { CM=${TOK[I]#C }; continue; }
+		META=${TOK[I]#$'\n'}
+		[[ "$META" == :* ]] || continue
+		F=(${=META})
+		[[ "${F[5]}" == [RC]* ]] && { I+=2; continue; }
+		I+=1
+		[ "${TOK[I]}" = "$NAME" ] || continue
+		K="$CM $NAME"
+		case ${F[5]} in
+			[MT]*) [ "${F[3]}" = "${F[4]}" ] || { _FP_STEP[$K]="${F[3]} ${F[4]}"; BLOBS+=(${F[3]} ${F[4]}); } ;;
+			A*)
+				# Come by a rename, its source read from that commit alone
+				R=("${(@0)$(git diff-tree -r -M --raw --no-abbrev -z "$CM" 2>/dev/null)}")
+				_FP_STEP[$K]="0 ${F[4]}"
+				for (( J = 1; J + 2 <= ${#R}; J++ )); do
+					[[ "${R[J]#$'\n'}" == :*\ R* && "${R[J+2]}" == "$NAME" ]] || continue
+					F=(${=${R[J]#$'\n'}})
+					_FP_STEP[$K]="${F[3]} ${F[4]}" _FP_NAME[$K]=${R[J+1]} _STEP_RENAMED[${F[3]}:${F[4]}]=1 BLOBS+=(${F[3]} ${F[4]})
+					break
+				done ;;
+			# Gone there – a walk reaching it reads nothing on
+			*) _FP_STEP[$K]=x ;;
+		esac
+	done
+	# And every blob those changes hold, in one read
+	_BLOBS_FETCH "${(@u)BLOBS}"
+	return 0
+}
+
+# Fills each array `_BLOB_LINES` names for <blob>s not read yet, all in one `git cat-file`
+_BLOBS_FETCH () {
+	# Args: <blob>...
+	setopt local_options no_multibyte
+	typeset -gA _BL_SEEN
+	local SHA TYPE SIZE BODY B
+	local -a WANT
+	for B; do [[ "$B" == 0 || -n "${_BL_SEEN[$B]}" ]] || WANT+=($B); done
+	(( ${#WANT} )) || return 0
+	print -rl -- "${WANT[@]}" | git cat-file --batch 2>/dev/null | while read -r SHA TYPE SIZE; do
+		[ "$TYPE" = blob ] || continue
+		BODY=""
+		(( SIZE )) && IFS= read -r -u 0 -k $SIZE BODY
+		IFS= read -r -u 0 -k 1 B
+		(( ${#BODY} == SIZE )) || return 1
+		typeset -ga _BL_$SHA
+		_BL_SEEN[$SHA]=$SIZE
+		if [ -z "$BODY" ]; then
+			set -A _BL_$SHA
+		elif [[ "$BODY" == *$'\n' ]]; then
+			set -A _BL_$SHA "${(@ps:\n:)${BODY%$'\n'}}"
+		else
+			set -A _BL_$SHA "${(@ps:\n:)BODY}"
+		fi
+	done
+	return 0
 }
 
 # Puts into `reply` the hunks of a diff from blob <from> to blob <to>, four numbers each – the
 # first line and the count on each side, a count 0 starting after its line – failing on a binary
 _ALIGN_HUNKS () {
 	# Args: <from> <to>
-	local H OUT
+	typeset -gA _HUNKS_AT
+	local OUT KEY="$1 $2"
 	reply=()
 	[ -n "$1" ] && [ -n "$2" ] || return 1
 	[ "$1" = "$2" ] && return 0
-	OUT=$(git diff -U0 --inter-hunk-context=0 --diff-algorithm=myers --no-ext-diff --no-textconv --no-color "$1" "$2" 2>/dev/null) || return 1
-	[[ -n "$OUT" && "$OUT" != *$'\n@@ -'* ]] && return 1
-	for H in ${(M)${(f)OUT}:#@@ -*}; do
+	if (( ${+_HUNKS_AT[$KEY]} )); then
+		[ "${_HUNKS_AT[$KEY]}" != - ] || return 1
+		reply=(${=_HUNKS_AT[$KEY]})
+		return 0
+	fi
+	_HUNKS_AT[$KEY]=-
+	OUT=$(git diff -U0 --inter-hunk-context=0 --diff-algorithm=minimal --no-ext-diff --no-textconv --no-color "$1" "$2" 2>/dev/null) || return 1
+	_HUNKS_READ "$OUT" || return 1
+	_HUNKS_AT[$KEY]="${reply[*]}"
+	return 0
+}
+
+# Puts into `reply` the hunks of a `-U0` diff's <output>, as `_ALIGN_HUNKS` gives them
+_HUNKS_READ () {
+	# Args: <output>
+	local H
+	reply=()
+	[[ -n "$1" && "$1" != *$'\n@@ -'* ]] && return 1
+	for H in ${(M)${(f)1}:#@@ -*}; do
 		H=${${H#@@ -}%% @@*}
 		reply+=(${${H%% *}%%,*} 1 ${${H#* +}%%,*} 1)
 		[[ "${H%% *}" == *,* ]] && reply[-3]=${${H%% *}#*,}
@@ -13720,36 +14330,26 @@ _ALIGN_HUNKS () {
 	return 0
 }
 
-# Puts into `reply` the span lines <first>..<last> of a diff's from side lead to, read from its
-# <hunk>s – an unchanged one where it went, bar one a hunk beside it could pair with another line,
-# one in a changed run its place there from either end – or, <exact>, unchanged ones alone
+# Puts into `reply` the span lines <first>..<last> of a diff's from side lead to, by its <hunk>s
+# – an unchanged one where it went, one in a run of as many lines its place there, bar <exact>
 _ALIGN_SPAN () {
 	# Args: <first> <last> <exact, or empty> <hunk numbers>...
 	local -a H=("${@:4}")
-	local -i X I A B C D OFF XB ZB XA ZA Z1 Z2 LO=0 HI=0 IN
+	local -i X I A B C D OFF Z1 LO=0 HI=0 IN
 	for (( X = $1; X <= $2; X++ )); do
-		OFF=0 XB=0 ZB=0 XA=0 ZA=0 IN=0
+		OFF=0 IN=0
 		for (( I = 1; I <= ${#H}; I += 4 )); do
 			A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
 			if (( B && A <= X && X <= A + B - 1 )); then
-				[ -z "$3" ] && (( D )) || return 1
-				Z1=$(( C + X - A )) Z2=$(( C + D - 1 - (A + B - 1 - X) ))
-				(( Z1 > C + D - 1 )) && Z1=$(( C + D - 1 ))
-				(( Z2 < C )) && Z2=C
-				(( Z1 > Z2 )) && { A=Z1 Z1=Z2 Z2=A; }
-				IN=1
+				[ -z "$3" ] && (( B == D )) || return 1
+				Z1=$(( C + X - A )) IN=1
 				break
 			fi
 			(( (B && A + B - 1 < X) || (!B && A < X) )) && OFF+=$(( D - B ))
-			(( (B && A + B == X) || (!B && A == X - 1) )) && XB=B ZB=D
-			(( (B && A == X + 1) || (!B && A == X) )) && XA=B ZA=D
 		done
-		if (( ! IN )); then
-			Z1=$(( X + OFF )) Z2=$(( X + OFF ))
-			[ -n "$3" ] || { (( XB == ZB || XB > ZB + ZA )) && (( XA == ZA || XA > ZA + ZB )) } || return 1
-		fi
+		(( IN )) || Z1=$(( X + OFF ))
 		(( LO == 0 || Z1 < LO )) && LO=Z1
-		(( Z2 > HI )) && HI=Z2
+		(( Z1 > HI )) && HI=Z1
 	done
 	(( LO > 0 )) || return 1
 	reply=($LO $HI)
@@ -13807,19 +14407,44 @@ _EDITS_DERIVE () {
 	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_UNDERIVED EDITS_NOLD EDITS_NNEW EDITS_AT
 	(( ${#OPT_EDITS} )) || EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
 	GIVEN=("${(@u)EDITS_PATH}") EDITS_DERIVED=() EDITS_UNDERIVED=() EDITS_NOLD=() EDITS_NNEW=() EDITS_AT=()
-	# Where each given one stands in <tip> as the ones before it on its path left it, its lines
-	# found as it matches once there
-	local -A GT
+	# The commits read from, and each given one's lines in <tip> as the ones before it on its path
+	# left them – line k of <tip>'s file as `xk`, line o an earlier one made as `ed.o`, d edits back
+	local XC=$(git rev-parse -q --verify "$1^{commit}" 2>/dev/null) YC=$(git rev-parse -q --verify "$2^{commit}" 2>/dev/null)
+	local -A GT GM
+	local -a XM
+	local -i L1 L2 J
 	for (( I = 1; I <= ${#EDITS_PATH}; I++ )); do
-		(( ${+GT[${EDITS_PATH[I]}]} )) || GT[${EDITS_PATH[I]}]=$(git cat-file blob "$1:${EDITS_PATH[I]}" 2>/dev/null; print -n x)
-		N=${GT[${EDITS_PATH[I]}]%x}
-		O=$(print -rn -- "$N" | git hash-object -w --no-filters --stdin 2>/dev/null)
-		EDITS_AT[I]="- 0 0"
-		[ -n "$O" ] && [ -n "${EDITS_OLD[I]}" ] && _EDIT_MATCHES "$N" "${EDITS_OLD[I]}" && (( REPLY == 1 )) || continue
-		H=${N%%${EDITS_OLD[I]}*}
-		A=$(( ${#${H//[^$'\n']}} + 1 ))
-		H=${EDITS_OLD[I][1,-2]//[^$'\n']}
-		EDITS_AT[I]="$O $A $(( ${#H} + 1 ))"
+		if (( ! ${+GT[${EDITS_PATH[I]}]} )); then
+			GT[${EDITS_PATH[I]}]=$(git cat-file blob "$1:${EDITS_PATH[I]}" 2>/dev/null; print -n x)
+			N=${GT[${EDITS_PATH[I]}]%x}
+			_NL_COUNT "$N"
+			A=$REPLY
+			[[ -z "$N" || "$N" == *$'\n' ]] || A+=1
+			XM=()
+			(( A )) && XM=({1..$A}) && XM=(${XM/#/x})
+			GM[${EDITS_PATH[I]}]=${XM[*]}
+		fi
+		N=${GT[${EDITS_PATH[I]}]%x} XM=(${=GM[${EDITS_PATH[I]}]})
+		EDITS_AT[I]="- - 0 0 0 0"
+		[ -n "$XC" ] && [ -n "${EDITS_OLD[I]}" ] && _EDIT_MATCHES "$N" "${EDITS_OLD[I]}" && (( REPLY == 1 )) || continue
+		_NL_COUNT "${N%%${EDITS_OLD[I]}*}"
+		L1=$(( REPLY + 1 ))
+		_NL_COUNT "${EDITS_OLD[I][1,-2]}"
+		L2=$(( L1 + REPLY ))
+		EDITS_AT[I]="$XC - 0 0 0 0"
+		for (( J = L1; J <= L2; J++ )); do
+			H=${XM[J]}
+			[[ "$H" == e* ]] && H=e$(( I - ${${H#e}%%.*} )).${H#*.}
+			EDITS_AT[I]+=" $H"
+		done
+		_NL_COUNT "${EDITS_NEW[I]}"
+		A=$(( L2 - L1 + 1 + REPLY ))
+		_NL_COUNT "${EDITS_OLD[I]}"
+		A+=-REPLY
+		H=""
+		for (( J = 1; J <= A; J++ )); do H+=" e$I.$J"; done
+		XM[L1,L2]=(${=H})
+		GM[${EDITS_PATH[I]}]=${XM[*]}
 		GT[${EDITS_PATH[I]}]=${N/${EDITS_OLD[I]}/${EDITS_NEW[I]}}x
 	done
 	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
@@ -13850,7 +14475,7 @@ _EDITS_DERIVE () {
 			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
 			EDITS_PATH+=("${R[I+1]}") EDITS_OLD+=("$O") EDITS_NEW+=("$N")
 			# Where its old lines stood and where its new ones stand, as reversing it reads them
-			EDITS_AT[${#EDITS_PATH}]="${M[3]} $A $B ${M[4]} $C $D"
+			EDITS_AT[${#EDITS_PATH}]="${XC:--} ${YC:--} $A $B $C $D"
 			# A line replaced by one keeps both lines besides, whose changed words `_EDITS_REPLACED`
 			# takes where the line itself doesn't match once, as a commit wrapping it otherwise has it
 			(( B == 1 && D == 1 )) && _EDIT_NARROWED "${OL[A]}" "${NL[C]}" && \
@@ -13885,7 +14510,7 @@ _EDITS_RESOLVE_STOP () {
 		_EDITS_DERIVE "$ORIG_HEAD" "$FOLD_SNAP" || EDITS_TIP_OK=0
 		for P in "${(@u)EDITS_PATH}"; do
 			TEXT=$(git cat-file blob "$ORIG_HEAD:$P" 2>/dev/null; print -n x)
-			_EDITS_REPLACED "$P" "${TEXT%x}" && \
+			_EDITS_REPLACED "$P" "${TEXT%x}" "$(git rev-parse -q --verify "$ORIG_HEAD^{commit}" 2>/dev/null)" && \
 				[ "${REPLY}x" = "$(git cat-file blob "$FOLD_SNAP:$P" 2>/dev/null; print -n x)" ] || { EDITS_TIP_OK=0; break; }
 		done
 	fi
@@ -13935,12 +14560,15 @@ _EDITS_STOP_STEP () {
 _EDITS_STAGE_STOP () {
 	# Args: <worktree> <stage> <rev> <tip>
 	setopt local_options no_multibyte
-	local WT=$1 STAGE=$2 REV=$3 TIP=$4 L P Q ID TEXT N TAB=$'\t'
+	local WT=$1 STAGE=$2 REV=$3 TIP=$4 L P Q ID TEXT N PC PP TAB=$'\t'
 	local -i I
-	local -a U F INFO
+	local -a U F R INFO
 	local -A AT
 	_NARROWED=""
 	[ -n "$GIT_EDIT_NO_SELF_RESOLVE" ] && return 1
+	# The commit whose content the stage holds, which each edit's lines are followed to
+	local ZC=$(git -C "$WT" rev-parse -q --verify "$REV^{commit}" 2>/dev/null)
+	[ -n "$ZC" ] || return 1
 	# "<mode> <id> <stage>\t<path>" – keyed by stage and path, as a path may hold a colon
 	for L in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
 		AT[${${L%%$TAB*}##* }$TAB${L#*$TAB}]="${L%% *} ${${L#* }%% *}"
@@ -13969,13 +14597,23 @@ _EDITS_STAGE_STOP () {
 		# the edits alone – a deviation a resolver staged at an earlier stop stays the resolver's
 		if (( STAGE == 3 )); then
 			[ "${AT[1$TAB$P]%% *}" = "${AT[2$TAB$P]%% *}" ] || return 1
+			# The parent's content under its own name – one the commit renames held it under another
+			PC=$(git -C "$WT" rev-parse -q --verify "$REV^^{commit}" 2>/dev/null) PP=$P
+			if [ -n "$PC" ] && ! git -C "$WT" cat-file -e "$PC:$P" 2>/dev/null; then
+				PP=""
+				R=("${(@0)$(git -C "$WT" diff-tree -r -z -M --diff-filter=R --name-status "$PC" "$ZC" 2>/dev/null)}")
+				for (( I = 1; I + 2 <= ${#R}; I += 3 )); do
+					[ "${R[I+2]}" = "$P" ] && { PP=${R[I+1]}; break; }
+				done
+				[ -n "$PP" ] || return 1
+			fi
 			TEXT=$(git -C "$WT" cat-file blob "${AT[1$TAB$P]#* }" 2>/dev/null; print -n x) N=$_NARROWED
-			_EDITS_REPLACED "$Q" "${TEXT%x}" || return 1
+			_EDITS_REPLACED "$Q" "${TEXT%x}" "$PC" "$PP" || return 1
 			_NARROWED=$N
 			[ "$(print -rn -- "$REPLY" | git -C "$WT" hash-object --no-filters --stdin 2>/dev/null)" = "${AT[2$TAB$P]#* }" ] || return 1
 		fi
 		TEXT=$(git -C "$WT" cat-file blob "${AT[$STAGE$TAB$P]#* }" 2>/dev/null; print -n x)
-		_EDITS_REPLACED "$Q" "${TEXT%x}" || return 1
+		_EDITS_REPLACED "$Q" "${TEXT%x}" "$ZC" "$P" || return 1
 		ID=$(print -rn -- "$REPLY" | git -C "$WT" hash-object -w --no-filters --stdin 2>/dev/null) && [ -n "$ID" ] || return 1
 		INFO+=("${AT[$STAGE$TAB$P]%% *} $ID$TAB$P")
 	done

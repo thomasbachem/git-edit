@@ -1178,13 +1178,24 @@ pauses at that step as before, naming the commit and the line, as does a
 squash's stop.
 .IP
 An edit read from a change, its hunk's or the tip's, takes only the lines that
-hunk changed, traced into the stop's content through a diff of the two: an
-unchanged line to where it went, a line in a run both changed to its place in
-that run, changed words to the words a diff of the run's words traces them
-to. The same text elsewhere \(em a line a later commit rewrote and wrote again
-further down, words a neighboring line holds too \(em is never taken for it,
-nor is a line a run of added or removed lines beside it could as well pair
-with another, so such a stop pauses.
+hunk changed, followed into the stop's content through each commit's own
+change on the way, never one diff across them: an unchanged line to where it
+went, a line a commit rewrote in a run of as many lines to its place in that
+run, changed words to where that run's own change to its words took them. A
+given text follows its line only through runs of as many lines, and a target
+rebuilt from where the file came, as a squash's, from where it came on both
+ways. The same text elsewhere \(em a line a later commit wrote anew, words a
+neighboring line holds too \(em is never taken for it, nor is a line or word
+that another of its text anywhere in the file could as well pair with in a
+least change, or one whose candidates take more lines to check than it
+writes, or one only that check settles on git before 2.50, or a line beside a
+changed one holding all its words, as moving them leaves it, nor any line
+across a commit whose change rewrites the file as
+.B git diff \-B
+reads it, or, in a file below the 400 bytes it never breaks, keeps under a
+third of the words before and after, so such a stop pauses. A CRLF line's
+words read as its LF twin's. Any other line is followed whatever was added
+or removed beside it.
 .IP
 In a checkout other callers share, a rewrite one of them lands (a drop, a
 fold built elsewhere) changes a file at the tip. The run brings the checkout
