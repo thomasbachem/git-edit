@@ -125,12 +125,24 @@ _ST_RUN --onto=onto-main
 _ST_OUT_HAS "a guessed fork point is flagged" 'could not answer'
 _ST_OUT_HAS "and warns the span may be too wide" 'may be too wide'
 
+# The header names both branches as given – cut to seven letters a branch read as a commit
+# – and one named like a directory it tracks is no ambiguous argument
+git checkout -q -B onto-named onto-main
+mkdir -p onto-named && printf 'named\n' > onto-named/n.txt && git add onto-named && git commit -qm "ON in a dir"
+git checkout -q onto-main
+printf 'on up\n' > on-up.txt && git add on-up.txt && git commit -qm "ON upstream"
+git checkout -q onto-named
+_ST_RUN --onto=onto-main
+_ST_EQ "a branch named like its directory replants" "$RC" "0"
+_ST_OUT_HAS "the header names both branches" 'Replanting onto-named onto onto-main...'
+_ST_OUT_LACKS "never as an ambiguous revision" 'ambiguous argument'
+
 # `--skip` belongs to this mode alone – elsewhere the paused commit is the point
 git checkout -q -B onto-skip onto-main
 _ST_RUN --skip
 _ST_EQ "a skip with nothing in flight is refused" "$RC" "1"
 git checkout -q onto-main
 git push -q origin --delete onto-pushed 2>/dev/null
-git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase onto-dirty onto-clean onto-noreflog 2>/dev/null
+git branch -q -D onto-feature onto-orphan onto-dup onto-skip onto-pushed onto-merge onto-mergebase onto-dirty onto-clean onto-noreflog onto-named 2>/dev/null
 git checkout -q main
 git reset -q --hard

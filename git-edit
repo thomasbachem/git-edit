@@ -1258,7 +1258,7 @@ PRINT_ACTION () {
 	local TARGET_RENDER=""
 	if [[ "$MSG" == *%t ]]; then
 		local TGT=$1; shift
-		local TSUB=$(git log -1 --pretty=format:'%s' "$TGT")
+		local TSUB=$(git log -1 --pretty=format:'%s' "$TGT" --)
 		TSUB=${TSUB//\\/$_LITB}
 		TARGET_RENDER="${TGT:0:7}\e[22m (${TSUB})"
 		MSG="${MSG%\%t}"
@@ -1268,7 +1268,12 @@ PRINT_ACTION () {
 	local ARGS=()
 	local COMMIT
 	for COMMIT in "${COMMITS[@]}"; do
-		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT")
+		# A ref by its name – a branch cut to seven letters reads as a commit, its subject the tip's
+		if [[ ${#COMMIT} -lt 40 || $COMMIT == *[^0-9a-f]* ]] && [ -n "$(git rev-parse -q --verify --symbolic-full-name "$COMMIT" 2>/dev/null)" ]; then
+			ARGS+=("${COMMIT//\\/$_LITB}\e[22m")
+			continue
+		fi
+		local SUBJECT=$(git log -1 --pretty=format:'%s' "$COMMIT" --)
 		# `ECHO_E` renders the `\e[22m` here, the subject's backslashes marked as data
 		ARGS+=("${COMMIT:0:7}\e[22m (${SUBJECT//\\/$_LITB})")
 	done
