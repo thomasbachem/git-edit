@@ -1602,13 +1602,13 @@ EMIT_GATE_PAUSED () {
 	fi
 }
 
-# Puts a rebase todo line into `REPLY`, its commit's subject added where
-# the line names none – the reorder and drop todos carry full SHAs alone
+# Puts a rebase todo line into `REPLY`, its commit's subject added where the line is a command
+# and a full SHA alone, as reorder and drop todos are – git writes its own, bare or after `#`
 _TODO_LINE_NAMED () {
 	# Args: <worktree> <todo line>
 	local -a W=(${=2})
 	REPLY=$2
-	[[ "$2" != *' # '* && "${W[2]}" =~ '^[0-9a-f]{40,64}$' ]] || return 0
+	(( ${#W} == 2 )) && [[ "${W[2]}" =~ '^[0-9a-f]{40,64}$' ]] || return 0
 	REPLY+=" # $(git -C "$1" log -1 --format=%s "${W[2]}" 2>/dev/null)"
 }
 

@@ -17,6 +17,7 @@ _ST_OUT_HAS "naming the one touching the file below" '^    [0-9a-f]\{7,\} RC tou
 _ST_RUN --status
 # Each subject bare where an older git writes the todo, behind a `#` elsewhere
 _ST_EQ "--status lists every step left" "$(print -r -- "$OUT" | grep -c '^  pick [0-9a-f]* \(# \)\{0,1\}RC ')" "14"
+_ST_OUT_LACKS "naming each step's subject once" 'RC other 1 # RC other 1$'
 _ST_OUT_HAS "and still names the one touching the file" '^    [0-9a-f]\{7,\} RC touch f$'
 _ST_RUN --abort
 git restore --staged f.txt && git checkout -q f.txt
