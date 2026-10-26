@@ -98,6 +98,7 @@ _ST_PZ_C cf.txt 3 "RS cf two"
 _ST_PZ_C cg.txt g "RS cf three"
 print -r -- x > cf.txt && git add cf.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD~2)" -- cf.txt
+_ST_RUN --status
 _ST_OUT_HAS "a fold conflicting downstream lists what remains" 'RS cf three'
 _ST_OUT_LACKS "in the default form" 'RS cf three \[P\]'
 _ST_RUN --abort
@@ -111,6 +112,7 @@ _ST_RUN HEAD~2
 RS_WT=$(_ST_PZ_WT)
 print -r -- x > "${RS_WT:-$ST_NO_WT}/ef.txt"
 _ST_RUN --continue
+_ST_RUN --status
 _ST_OUT_HAS "an edit conflicting downstream lists what remains" 'RS ef three'
 _ST_OUT_LACKS "in the default form too" 'RS ef three \[P\]'
 _ST_RUN --abort

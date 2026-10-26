@@ -1595,6 +1595,9 @@ _PRINT_CONFLICT_DETAIL () {
 	# The failed continue's captured output, passed by the resume paths
 	# – shown where no unmerged file explains the failure
 	local CONTINUE_OUTPUT=$3
+	# `full` from `--status`, listing every remaining step where a pause counts them
+	local FULL=""
+	[ "$4" = full ] && FULL=1
 	local GITDIR=$(git -C "$WT" rev-parse --git-dir 2>/dev/null)
 
 	# Unmerged paths (files with conflict markers)
@@ -1641,18 +1644,9 @@ _PRINT_CONFLICT_DETAIL () {
 	fi
 
 	# Remaining rebase steps (after the conflict resolves)
+	# – printed once the walk below tells which touch a conflicted file
 	local REMAINING=""
-	if [ -f "$GITDIR/rebase-merge/git-rebase-todo" ]; then
-		REMAINING=$(_REBASE_TODO_LEFT "$GITDIR")
-		if [ -n "$REMAINING" ]; then
-			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
-			local STEP
-			while IFS= read -r STEP; do
-				_TODO_LINE_NAMED "$WT" "$STEP"
-				ECHO_E "\e[0;33m  ${REPLY//\\/$_LITB}\e[0m" >&2
-			done <<< "$REMAINING"
-		fi
-	fi
+	[ -f "$GITDIR/rebase-merge/git-rebase-todo" ] && REMAINING=$(_REBASE_TODO_LEFT "$GITDIR")
 
 	# Which remaining steps touch a conflicted file – each reapplies its own change on top, so
 	# the resolution is the content before they replay, never their result folded in early
@@ -1698,18 +1692,41 @@ _PRINT_CONFLICT_DETAIL () {
 			done
 			# Every remaining step walked, so a file none of them touches is known untouched
 			(( WALKED_N == ${#TODO_SHAS} )) && WALK_OK=1
-			if [ ${#TOUCHED_BY[@]} -gt 0 ]; then
-				PRINT_TEXT "Remaining steps also touch a conflicted file – each replays its own change on top, so resolve to what this stop's commit holds, before them:" 33 >&2
-				local FILE_KEY TOUCHER
-				for FILE_KEY in "${UNMERGED[@]}"; do
-					[ -z "${TOUCHED_BY[$FILE_KEY]}" ] && continue
-					ECHO_E "\e[0;33m  ${FILE_KEY//\\/$_LITB}\e[0m" >&2
-					for TOUCHER in ${(f)TOUCHED_BY[$FILE_KEY]}; do
-						ECHO_E "\e[0;33m    ${TOUCHER//\\/$_LITB}\e[0m" >&2
-					done
-				done
+		fi
+	fi
+	# A pause counts them alone, as a deep replay leaves hundreds – the steps touching a conflicted
+	# file named below, all of them by `--status` or wherever the walk missed one
+	if [ -n "$REMAINING" ]; then
+		local -a LEFT=(${(f)REMAINING})
+		if [ -n "$FULL" ] || { (( ${#UNMERGED} )) && [ -z "$WALK_OK" ]; }; then
+			PRINT_TEXT "Remaining steps (after resolution):" 33 >&2
+			local STEP
+			for STEP in "${LEFT[@]}"; do
+				_TODO_LINE_NAMED "$WT" "$STEP"
+				ECHO_E "\e[0;33m  ${REPLY//\\/$_LITB}\e[0m" >&2
+			done
+		else
+			# Distinct steps, as one touching two conflicted files is named under each
+			local -aU TOUCHERS=(${(f)${(pj:\n:)TOUCHED_BY}})
+			if (( ${#TOUCHERS} )); then
+				PRINT_TEXT "Remaining steps (after resolution): %s – the %s touching a conflicted file listed below, all in 'git edit --status'" 33 "${#LEFT}" "${#TOUCHERS}" >&2
+			elif (( ${#UNMERGED} )); then
+				PRINT_TEXT "Remaining steps (after resolution): %s – none touching a conflicted file, all listed in 'git edit --status'" 33 "${#LEFT}" >&2
+			else
+				PRINT_TEXT "Remaining steps (after resolution): %s – listed in 'git edit --status'" 33 "${#LEFT}" >&2
 			fi
 		fi
+	fi
+	if [ ${#TOUCHED_BY[@]} -gt 0 ]; then
+		PRINT_TEXT "Remaining steps also touch a conflicted file – each replays its own change on top, so resolve to what this stop's commit holds, before them:" 33 >&2
+		local FILE_KEY TOUCHER
+		for FILE_KEY in "${UNMERGED[@]}"; do
+			[ -z "${TOUCHED_BY[$FILE_KEY]}" ] && continue
+			ECHO_E "\e[0;33m  ${FILE_KEY//\\/$_LITB}\e[0m" >&2
+			for TOUCHER in ${(f)TOUCHED_BY[$FILE_KEY]}; do
+				ECHO_E "\e[0;33m    ${TOUCHER//\\/$_LITB}\e[0m" >&2
+			done
+		done
 	fi
 
 	# Reordering preserves the tree, so its final step has one determined result
@@ -4013,7 +4030,7 @@ GIT_STATUS_REPORT () {
 				{ [ -d "$STATUS_GITDIR/rebase-merge" ] || [ -d "$STATUS_GITDIR/rebase-apply" ]; } && ! _PAUSE_OWNS_REBASE && STATUS_HAND=begun
 			# Its guidance is the owner's to follow
 			local UNMERGED_LIST=""
-			[ -z "$OWNER" ] && [ -z "$STATUS_HAND" ] && UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP")
+			[ -z "$OWNER" ] && [ -z "$STATUS_HAND" ] && UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$STATUS_PREOP" "" full)
 			# A paused edit or split with no rebase running is authoring, not resolving, so
 			# it reports as the pause it is rather than as a conflict
 			local STATUS_AUTHORING=false

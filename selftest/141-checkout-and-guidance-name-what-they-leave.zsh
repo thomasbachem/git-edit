@@ -88,6 +88,7 @@ _ST_RUN --move=HEAD --before=HEAD~2
 _ST_RESOLVE "$(_ST_PZ_WT)" run.sh $'#!/bin/sh\necho run\necho end Y'
 _ST_RUN --continue
 _ST_OUT_HAS "a step no later one touches names the pre-op content as its answer" "No later step touches run.sh"
+_ST_RUN --status
 _ST_OUT_HAS "each remaining step with its subject" 'pick [0-9a-f]* # CG6 notes 2'
 # A resolution there that changes what the tip holds lands nothing – a reorder only moves commits
 _ST_RESOLVE "$(_ST_PZ_WT)" run.sh $'#!/bin/sh\necho run X\necho end Y X'

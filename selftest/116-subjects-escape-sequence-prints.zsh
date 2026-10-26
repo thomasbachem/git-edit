@@ -57,8 +57,9 @@ printf '1\nL\n3\n' > 'te\e[0mc.txt' && git commit -qam 'TE-C later \e[0m kept'
 printf '1\nS\n3\n' > 'te\e[0mc.txt' && git add -- ':(literal)te\e[0mc.txt'
 _ST_RUN --amend-into="$TE_CB" -- ':(literal)te\e[0mc.txt'
 _ST_OUT_HAS "a conflicted name lists as itself" '^  - te\\e\[0mc\.txt$'
-_ST_OUT_HAS "as does a remaining step's subject" '^  pick [0-9a-f]* .*TE-C later \\e\[0m kept$'
-_ST_OUT_HAS "and the step touching the name, listed under it" '^    [0-9a-f]* TE-C later \\e\[0m kept$'
+_ST_OUT_HAS "as does the step touching the name, listed under it" '^    [0-9a-f]* TE-C later \\e\[0m kept$'
+_ST_RUN --status
+_ST_OUT_HAS "and the remaining step --status lists" '^  pick [0-9a-f]* .*TE-C later \\e\[0m kept$'
 _ST_RUN --abort
 git reset -q --hard "$TE_BASE"
 rm -f 'te\e[0mc.txt'

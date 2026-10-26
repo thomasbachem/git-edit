@@ -91,8 +91,11 @@ OP_OLD=$(printf 'tree %s\nparent %s\nauthor P <p@x.invalid> 1700000000 +0000\nco
 	"$(git rev-parse 'HEAD^{tree}')" "$(git rev-parse HEAD~1)" | git hash-object -t commit -w --stdin)
 git reset -q --hard "$OP_OLD"
 OUT=$(LC_ALL=en_US.UTF-8 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" -d HEAD~2 </dev/null 2>&1)
-_ST_OUT_HAS "a remaining step with a non-UTF-8 subject is listed in a UTF-8 locale" 'Remaining steps'
+_ST_OUT_HAS "a remaining step with a non-UTF-8 subject is counted in a UTF-8 locale" '^Remaining steps (after resolution): 1 '
 _ST_OUT_LACKS "with no sed dying on it" 'illegal byte'
+OUT=$(LC_ALL=en_US.UTF-8 GIT_EDIT_NO_AUTO_OPEN=1 "$SELF" --status </dev/null 2>&1)
+_ST_OUT_HAS "and listed by --status" '^  pick [0-9a-f]* \(# \)\{0,1\}OP raw'
+_ST_OUT_LACKS "with none dying there either" 'illegal byte'
 _ST_RUN --abort
 _ST_EQ "every ls-tree naming a path reads it from the top" "$(grep -n 'git ls-tree [^|]* -- ' "$SELF" | grep -v -e '--full-tree' -e 'ECHO_E')" ""
 # A function defined twice runs as the later one everywhere, the earlier one's callers included
