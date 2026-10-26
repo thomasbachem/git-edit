@@ -78,7 +78,8 @@ if [ "$(git config --type=bool core.ignorecase)" = true ]; then
 	_ST_OUT_HAS "as carried onto the new name" 'merged onto what landed: readme.md → README.md'
 fi
 # A reorder's step that last touches a file names its exact answer, every step its commit's
-# subject – abutting edits, each stop resolved to its own commit's change alone
+# subject – abutting edits, each stop resolved to its own commit's change alone, by hand
+export GIT_EDIT_NO_SELF_RESOLVE=1
 _ST_PZ_NEW cg6
 _ST_PZ_C run.sh $'#!/bin/sh\necho run\necho end' "CG6 base" && _ST_PZ_C notes.txt n "CG6 notes"
 _ST_PZ_C run.sh $'#!/bin/sh\necho run X\necho end' "CG6 X" && _ST_PZ_C notes.txt $'n\nline 2' "CG6 notes 2"
@@ -96,6 +97,7 @@ _ST_RUN --continue
 _ST_EQ "a reorder whose resolution changed the tree refuses, nothing landed" "${RC}:$(git rev-parse HEAD)" "1:$CG_PRE"
 _ST_OUT_HAS "naming the file it changed" 'no longer ends on the tree it began with – a resolution changed run.sh'
 _ST_RUN --abort
+unset GIT_EDIT_NO_SELF_RESOLVE
 # A later step renaming the conflicted file away touches it, so no exact answer is claimed for it
 _ST_PZ_NEW cg6b
 _ST_PZ_C f.txt $'old 1\nold 2\nold 3\nold 4' "CG6b A" && _ST_PZ_C z.txt z "CG6b Z"

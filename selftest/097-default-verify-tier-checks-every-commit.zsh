@@ -1,6 +1,8 @@
 # A later commit can heal a wrong resolution before the tip shows it – so a run stepped down
 # from the span still checks what was resolved at a stop, both stops here, and says so
 _ST_SCENARIO "\e[1;96m[97] the default verify tier checks every commit a resolution wrote\e[0m"
+# Every stop here is the resolver's, as the gate under test checks stops resolved by hand
+export GIT_EDIT_NO_SELF_RESOLVE=1
 # Abutting edits, x on line 2 and y on line 3, independent but stopping when y moves below x – each
 # stop resolved to its own commit's change alone, as one taking the other's in would be refused
 print -l 1 2 3 4 > rv.txt && git add rv.txt && git commit -qm "RV base"
@@ -65,3 +67,4 @@ _ST_RUN --abort
 git reset -q --hard
 git config --unset edit.verifySpan
 git config --unset edit.verifyCmd
+unset GIT_EDIT_NO_SELF_RESOLVE

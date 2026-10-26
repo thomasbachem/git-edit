@@ -97,7 +97,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	SPLIT_NEW_HEAD SPLIT_REF SPLIT_TARGET SQUASH_HAS_EQUALS ST STATE_ACTION STATE_ACTOR SUBJECT_APART SUBJECT_GOT SUBJECT_VALUE \
 	STATE_ALLOW_MODE_CHANGE STATE_ALLOW_PUSHED STATE_AMENDED STATE_BELOW STATE_BRANCH STATE_CAPTURE STATE_CAUGHT STATE_DEPTH STATE_DROPPED STATE_FILES \
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MARKED STATE_MESSAGE \
-	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
+	STATE_MODE_STRAY STATE_MOVED STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
 	STATE_ACTOR_ID STATE_ACTOR_NAME STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
 	STATE_ABSORBED STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
@@ -10168,6 +10168,16 @@ _EXEC_PLACE () {
 	_RERERE_SCOPE_BEGIN
 	_REBASE_FIRST_RUN "$REBASE_CMD"
 	local RC=$?
+	# Its stops the placed commits' line replacements resolve go on, as a fold's do
+	# – a `--commit` given `--edits` making those where they bear, as composed on the tip
+	local PLACED_GIVEN=""
+	local -a GIVEN_PATH GIVEN_OLD GIVEN_NEW
+	(( ${#OPT_EDITS} && ${#ADDED} == 1 )) && \
+		PLACED_GIVEN=${ADDED[1]} GIVEN_PATH=("${EDITS_PATH[@]}") GIVEN_OLD=("${EDITS_OLD[@]}") GIVEN_NEW=("${EDITS_NEW[@]}")
+	if (( RC == 2 )); then
+		_RESOLVE_STOPS_ON "$WT" "" "" "the placed commits'" _PLACED_RESOLVE_STOP "${ADDED[@]}"
+		RC=$?
+	fi
 	(( RC == 1 )) && _REFUSE_REBASE_FAILED "run it again."
 	if (( RC != 0 )) && \
 	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$BUILT" && _FINISH_AUTO_RESOLVED_STEP "$WT" "built" }; then
@@ -14519,20 +14529,122 @@ _EDITS_RESOLVE_STOP () {
 	_EDITS_STAGE_STOP "$WT" "${reply[@]}" "$ORIG_HEAD"
 }
 
-# Runs a fold's resume <command> in <worktree>, its output into `REPLY` – each later stop its line
-# replacements resolve going on, as on its first run – failing at the first they don't
+# Runs a fold's resume <command> in <worktree>, its output into `REPLY`
+# – each later stop its line replacements resolve going on, as on its first run,
+# another replay's through <resolver> – failing at the first they don't
 _EDITS_RESUME_RUN () {
-	# Args: <worktree> <old tip> <fold's tree> <command>
-	local ORIG_HEAD=$2 FOLD_SNAP=$3 EDITS_TIP_OK="" OUT
+	# Args: [--stopped – at a stop already, its output in `REBASE_OUT`] <worktree> <old tip>
+	#       <fold's tree> <command> [<whose edits, "the fold's" by default> [<resolver> <arg>...]]
+	local OUT="" STOPPED="" LATER=" later"
+	[ "$1" = --stopped ] && { STOPPED=1 OUT=$REBASE_OUT LATER=""; shift; }
+	local ORIG_HEAD=$2 FOLD_SNAP=$3 EDITS_TIP_OK="" WHOSE=${5:-"the fold's"}
+	local -a RESOLVER=("${@:6}")
 	local -i STOPS=0 RC=0
-	until OUT=$(_RENORM_EVAL "$1" "$4" "$4"); do
-		_REBASE_RESOLVABLE "$1" "$OUT" && _EDITS_RESOLVE_STOP "$1" || { RC=1; break; }
+	(( ${#RESOLVER} )) || RESOLVER=(_EDITS_RESOLVE_STOP)
+	until [ -z "$STOPPED" ] && OUT=$(_RENORM_EVAL "$1" "$4" "$4"); do
+		STOPPED=""
+		_REBASE_RESOLVABLE "$1" "$OUT" && "${RESOLVER[1]}" "$1" "${(@)RESOLVER[2,-1]}" || { RC=1; break; }
 		[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE "$1"
 		STOPS+=1
 	done
-	(( STOPS )) && PRINT_TEXT "Made the fold's line replacements in the %s later commit(s) the replay stopped at, each holding every replaced hunk, or its changed words, once." 90 "$STOPS"
+	(( STOPS )) && PRINT_TEXT "Made %s line replacements in the %s$LATER commit(s) the replay stopped at, each holding every replaced hunk, or its changed words, once." 90 "$WHOSE" "$STOPS"
 	REPLY=$OUT
 	return RC
+}
+
+# Goes on with a replay its first run left at a stop in <worktree>, past each stop the edits of
+# <whose> resolve, as `_EDITS_RESUME_RUN` takes them – returning as `_REBASE_FIRST_RUN` does
+_RESOLVE_STOPS_ON () {
+	# Args: <worktree> <old tip> <fold's tree> <whose edits> [<resolver> <arg>...] – sets `REBASE_OUT`
+	_REBASE_RESOLVABLE "$1" "$REBASE_OUT" || return 1
+	_RESUME_EDITOR "$1"
+	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
+	_EDITS_RESUME_RUN --stopped "${@[1,3]}" "$CMD" "${@:4}" && { REBASE_OUT=$REPLY; return 0; }
+	REBASE_OUT=$REPLY
+	_REBASE_RESOLVABLE "$1" "$REBASE_OUT" && return 2
+	return 1
+}
+
+# Resolves the stop a placement's or move's replay in <worktree> is at as a fold's resolves itself
+# – a placed commit's own step by its change made in what now precedes it, any other pick by each
+# placed one moved across it, made in its content or taken back – touching nothing where one can't
+_PLACED_RESOLVE_STOP () {
+	# Args: <worktree> <placed commit, oldest first>...
+	local WT=$1 GD C M L
+	local -a PLACED=("${@:2}") STEPS DONE CONFLICTED CROSSED
+	(( ${#PLACED} )) && _EDITS_STOP_STEP "$WT" && (( ${reply[1]} == 3 )) || return 1
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+	# Never the final step, which the tree the run began with or built proves
+	STEPS=(${=$(_REBASE_STEP "$GD")})
+	(( ${STEPS[1]:-0} < ${STEPS[2]:-0} )) || return 1
+	C=$(git -C "$WT" rev-parse -q --verify "${reply[2]}^{commit}" 2>/dev/null) || return 1
+	CONFLICTED=(${(0)"$(git -C "$WT" diff --name-only --diff-filter=U -z 2>/dev/null)"})
+	(( ${#CONFLICTED} )) || return 1
+	if (( ${PLACED[(Ie)$C]} )); then
+		_CROSSED_EDITS "$WT" "+$C" -- "${CONFLICTED[@]}" && _EDITS_STAGE_STOP "$WT" 2 HEAD "$C"
+		return
+	fi
+	# The placed ones picked before it, its own the last step – a todo SHA matched as a prefix
+	for L in "${(@)${(@f)$(<"$GD/rebase-merge/done")}[1,-2]}"; do
+		[[ "$L" == (p|pick)\ * ]] || continue
+		L=${${L#* }%% *}
+		for M in "${PLACED[@]}"; do [[ ${#L} -ge 7 && "$M" == "$L"* ]] && DONE+=("$M"); done
+	done
+	# Each one it held that now follows it taken back, newest first, then each now before it made
+	for M in "${(Oa)PLACED[@]}"; do
+		(( ! ${DONE[(Ie)$M]} )) && git -C "$WT" merge-base --is-ancestor "$M" "$C" 2>/dev/null && CROSSED+=("-$M")
+	done
+	for M in "${PLACED[@]}"; do
+		(( ${DONE[(Ie)$M]} )) && ! git -C "$WT" merge-base --is-ancestor "$M" "$C" 2>/dev/null && CROSSED+=("+$M")
+	done
+	(( ${#CROSSED} )) && _CROSSED_EDITS "$WT" "${CROSSED[@]}" -- "${CONFLICTED[@]}" || return 1
+	_EDITS_STAGE_STOP "$WT" 3 "$C" "${CROSSED[-1]:1}"
+}
+
+# Fills `EDITS_*` with the line replacements of each <commit> on <path>s, in turn – `+` making
+# its change, `-` taking it back – failing unless each remakes its own change on those paths,
+# made on its parent or taken back from it, the caller's `PLACED_GIVEN` taking `GIVEN_*` as given
+_CROSSED_EDITS () {
+	# Args: <worktree> <+|-><commit>... `--` <path>...
+	setopt local_options no_multibyte
+	local WT=$1 M P TEXT FROM TO
+	local -a MS WANT T A_PATH A_OLD A_NEW A_NOLD A_NNEW A_AT A_DERIVED A_UNDERIVED
+	local -i K
+	shift
+	MS=("${(@)@[1,${@[(i)--]}-1]}") WANT=("${(@)@[${@[(i)--]}+1,-1]}")
+	for M in "${MS[@]}"; do
+		FROM=${M:1}^ TO=${M:1}
+		EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+		[ -n "$PLACED_GIVEN" ] && [ "${M:1}" = "$PLACED_GIVEN" ] && \
+			EDITS_PATH=("${GIVEN_PATH[@]}") EDITS_OLD=("${GIVEN_OLD[@]}") EDITS_NEW=("${GIVEN_NEW[@]}")
+		_EDITS_DERIVE "$FROM" "$TO" || return 1
+		if [[ "$M" == -* ]]; then
+			T=("${EDITS_OLD[@]}") EDITS_OLD=("${EDITS_NEW[@]}") EDITS_NEW=("${T[@]}")
+			T=("${EDITS_NOLD[@]}") EDITS_NOLD=("${EDITS_NNEW[@]}") EDITS_NNEW=("${T[@]}")
+			for (( K = 1; K <= ${#EDITS_AT}; K++ )); do
+				T=(${=EDITS_AT[K]})
+				EDITS_AT[K]="- - 0 0 0 0"
+				(( ${#T} == 6 )) && [ "${T[2]}" != - ] && EDITS_AT[K]="${T[2]} ${T[1]} ${T[5]} ${T[6]} ${T[3]} ${T[4]}"
+			done
+			FROM=${M:1} TO=${M:1}^
+		fi
+		for P in "${(@u)EDITS_PATH}"; do
+			(( ${WANT[(Ie)$P]} )) || continue
+			TEXT=$(git -C "$WT" cat-file blob "$FROM:$P" 2>/dev/null; print -n x)
+			_EDITS_REPLACED "$P" "${TEXT%x}" "$(git -C "$WT" rev-parse -q --verify "$FROM^{commit}" 2>/dev/null)" && \
+				[ "${REPLY}x" = "$(git -C "$WT" cat-file blob "$TO:$P" 2>/dev/null; print -n x)" ] || return 1
+		done
+		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
+			(( ${WANT[(Ie)${EDITS_PATH[K]}]} )) || continue
+			A_PATH+=("${EDITS_PATH[K]}") A_OLD+=("${EDITS_OLD[K]}") A_NEW+=("${EDITS_NEW[K]}")
+			A_NOLD+=("${EDITS_NOLD[K]}") A_NNEW+=("${EDITS_NNEW[K]}") A_AT+=("${EDITS_AT[K]}")
+		done
+		A_DERIVED+=("${EDITS_DERIVED[@]}") A_UNDERIVED+=("${EDITS_UNDERIVED[@]}")
+	done
+	EDITS_PATH=("${A_PATH[@]}") EDITS_OLD=("${A_OLD[@]}") EDITS_NEW=("${A_NEW[@]}")
+	EDITS_NOLD=("${A_NOLD[@]}") EDITS_NNEW=("${A_NNEW[@]}") EDITS_AT=("${A_AT[@]}") EDITS_DERIVED=("${(@u)A_DERIVED}")
+	EDITS_UNDERIVED=("${(@u)A_UNDERIVED}")
+	(( ${#EDITS_PATH} ))
 }
 
 # Puts into `reply` the stage and the commit a replay's stop in <worktree> builds its content from
@@ -16017,6 +16129,11 @@ GIT_REORDER () {
 	_RERERE_SCOPE_BEGIN
 	_REBASE_FIRST_RUN "$REBASE_CMD"
 	local RC=$?
+	# A move's stops the moved commits' line replacements resolve go on, as a fold's do
+	if (( RC == 2 && ${#OPT_MOVE} )); then
+		_RESOLVE_STOPS_ON "$WT" "" "" "the moved commits'" _PLACED_RESOLVE_STOP "${MOVE_SET[@]}"
+		RC=$?
+	fi
 	(( RC == 1 )) && _REFUSE_REBASE_FAILED "run the ${${OPT_MOVE:+move}:-reorder} again."
 	if (( RC != 0 )) && \
 	   ! { _AUTO_RESOLVE_FINAL_STEP "$WT" "$ORIG_HEAD" && _FINISH_AUTO_RESOLVED_STEP "$WT" "pre-op" }; then
@@ -16028,7 +16145,8 @@ GIT_REORDER () {
 			"worktree=$WT" \
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
-			"target=$OLDEST"
+			"target=$OLDEST" \
+			${OPT_MOVE:+"moved=${MOVE_SET[*]}"}
 		_CLEANUP_HOOK=""
 
 		PRINT_ERR "Conflict while reordering – resolve in worktree, then 'git edit --continue'"
@@ -18225,7 +18343,11 @@ _CONTINUE_REORDER () {
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$(_RENORM_EVAL "$STATE_WORKTREE" "$CMD" "$CMD") && \
+		# Each later stop the placed or moved commits' line replacements resolve going on
+		local -a PLACED=(${=STATE_MOVED})
+		[ -n "$STATE_PLACED" ] && PLACED=(${(f)"$(git rev-list --reverse "$STATE_ORIG_HEAD..$STATE_PLACED" 2>/dev/null)"})
+		if ! _EDITS_RESUME_RUN "$STATE_WORKTREE" "" "" "$CMD" "the ${${STATE_PLACED:+placed}:-moved} commits'" _PLACED_RESOLVE_STOP "${PLACED[@]}" && \
+		   { CONTINUE_OUTPUT=$REPLY; true } && \
 		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$BUILT" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "${${STATE_PLACED:+built}:-pre-op}" }; then
 			_CLEANUP_HOOK=""
 			REBASE_OUT=$CONTINUE_OUTPUT
@@ -18447,7 +18569,9 @@ _EDIT_START_REPLAY () {
 	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false -c rebase.instructionFormat= $_CAPTURE_PINS rebase $_CAPTURE_EXEC --empty=drop --onto $STATE_AMENDED $STATE_TARGET $TIP"
 	PRINT_CMD "git rebase --onto ${STATE_AMENDED:0:7} ${STATE_TARGET:0:7} ${TIP:0:7}" 90
 	_RENORM_RESUME_CMD
-	if ! REBASE_OUT=$(_RENORM_EVAL "$STATE_WORKTREE" "$CMD" "$REPLY"); then
+	# Each stop the edit's own change resolves going on, as a fold's – the paused commit to its amend
+	if ! REBASE_OUT=$(_RENORM_EVAL "$STATE_WORKTREE" "$CMD" "$REPLY") && \
+	   ! _RESOLVE_STOPS_ON "$STATE_WORKTREE" "$STATE_TARGET" "$STATE_AMENDED" "the edit's"; then
 		_CLEANUP_HOOK=""
 		# A hook's veto or a failed signature – the pause, the amend in it, stays for a retry
 		_REBASE_RESOLVABLE "$STATE_WORKTREE" "$REBASE_OUT" || _REFUSE_REBASE_FAILED resume
@@ -18609,7 +18733,8 @@ _CONTINUE_EDIT () {
 		local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
 		PRINT_CMD "$CMD"
 		local CONTINUE_OUTPUT
-		if ! CONTINUE_OUTPUT=$(_RENORM_EVAL "$STATE_WORKTREE" "$CMD" "$CMD"); then
+		if ! _EDITS_RESUME_RUN "$STATE_WORKTREE" "$STATE_TARGET" "$STATE_AMENDED" "$CMD" "the edit's"; then
+			CONTINUE_OUTPUT=$REPLY
 			_CLEANUP_HOOK=""
 			REBASE_OUT=$CONTINUE_OUTPUT
 			_REBASE_RESOLVABLE "$STATE_WORKTREE" "$REBASE_OUT" || _REFUSE_REBASE_FAILED resume
@@ -19110,6 +19235,7 @@ _LOAD_STATE () {
 	STATE_FLAG_SKIPS=""
 	STATE_PLACED=""
 	STATE_PLACE_LABEL=""
+	STATE_MOVED=""
 	STATE_TIP_REFUSED=""
 	STATE_ABSORBED=""
 	# One read, kept – a resume holding the pause's worktree only after
@@ -19177,6 +19303,7 @@ _LOAD_STATE () {
 			flag_skips)      STATE_FLAG_SKIPS=$VAL ;;
 			placed)          STATE_PLACED=$VAL ;;
 			place_label)     STATE_PLACE_LABEL=$VAL ;;
+			moved)           STATE_MOVED=$VAL ;;
 			tip_refused)     STATE_TIP_REFUSED=$VAL ;;
 			absorbed)        STATE_ABSORBED=$VAL ;;
 		esac

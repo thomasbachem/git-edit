@@ -112,13 +112,13 @@ _ST_OUT_HAS "naming that commit and file" 'ZK4 A edit 4 – f\.txt$'
 _ST_RUN --abort
 
 # Its neighbor: abutting edits that build on nothing of each other,
-# the stop resolved to its own change alone, land in the new order
+# the stop resolved by hand to its own change alone, land in the new order
 _ST_PZ_NEW zk5
 git config rerere.enabled false
 _ZK_C "ZK5 base" 1 2 3 4 5 6 7 8
 _ZK_C "ZK5 A edit 4" 1 2 3 4a 5 6 7 8 && ZK_A=$(git rev-parse HEAD)
 _ZK_C "ZK5 B edit 5" 1 2 3 4a 5b 6 7 8 && ZK_B=$(git rev-parse HEAD)
-_ST_RUN --move="$ZK_B" --before="$ZK_A"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --move="$ZK_B" --before="$ZK_A"
 _ST_EQ "a move of abutting edits stops" "$RC" "2"
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'1\n2\n3\n4\n5b\n6\n7\n8'
 _ST_RUN --continue

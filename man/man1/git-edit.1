@@ -225,6 +225,13 @@ to replace the subject alone), or press Enter at a terminal's prompt. That
 amends, replays, prints the net history change, and CAS\-applies. The branch
 never moves before the final apply.
 .IP
+The replay resolves its own stops as a fold's does (see
+.BR \-\-amend\-into ),
+the change from the paused commit to what it became playing the fold's: a
+later commit whose parent as replayed differs by that change alone takes it
+in its own content wherever it holds each old text exactly once, on the
+continue that amends and on every resume after a stop resolved by hand.
+.IP
 The edit was authored in that worktree, and once it lands the main checkout
 comes along as after any landing \(em see
 .BR "THE CHECKOUT" .
@@ -652,6 +659,16 @@ otherwise be a hand\-built span reorder or a
 .B "git rebase \-\-onto"
 chain. Moving in either direction works; a commit already in position is a
 clean no\-op.
+.IP
+Its replay resolves its own stops as a fold's does (see
+.BR \-\-amend\-into ),
+the moved commits' changes playing the fold's, on a resume too: at a moved
+commit's own step its change is made in what now precedes it, and a commit
+it moved across makes that change in its own content, or takes it back where
+it moved past it \(em each wherever the file holds every old text exactly
+once. A plain
+.B \-\-reorder
+pauses as before.
 .TP
 .B \-\-move=\fIa\fR \-\-move=\fIb\fR... {\fB\-\-after=\fR\fIanchor\fR | \fB\-\-before=\fR\fIanchor\fR}
 Given more than once, move every commit it names to \fIanchor\fR together,
@@ -1082,7 +1099,13 @@ With
 the commit lands right after or before that commit instead of at the tip, in
 the same run \(em built on the tip, then replayed into place in the run's
 worktree, so the branch never holds it at the tip and the gate checks it where
-it lands. A conflict placing it pauses as
+it lands. A stop placing it resolves itself where its line replacements make
+it, as a move's does, those
+.B \-\-edits
+gave where it took them \(em a resume, holding no
+.BR \-\-edits ,
+derives them from the placed commit's change, as a fold's resume does. Any
+other conflict pauses as
 .B \-\-move
 does, with nothing landed, so
 .B \-\-abort
@@ -3232,9 +3255,8 @@ If set, the plumbing modes rebuild descendants one \fBcommit\-tree\fR at a time
 instead of in one proven \fBgit replay\fR pass.
 .TP
 .B GIT_EDIT_NO_SELF_RESOLVE
-If set, a fold's or an
-.B \-s=auto
-replay's stops all pause for the resolver, none made by its line replacements;
+If set, the stops of a fold's, a squash's, a placement's, a move's or an
+edit's replay all pause for the resolver, none made by its line replacements;
 a fold's final step still resolves itself as the staged tree.
 .TP
 .B GIT_EDIT_PROGRESS

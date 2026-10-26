@@ -48,6 +48,8 @@ _ST_EQ "placing below a pushed commit refuses, nothing landed" "${RC}:$(git rev-
 _ST_OUT_HAS "naming it" 'already pushed'
 # A conflict placing it pauses as a move does, with nothing landed – the tip it read is
 # what the resume lands against, and what was built on it what a clean replay reproduces
+# Every stop from here on is the resolver's, as the pauses under test are resolved by hand
+export GIT_EDIT_NO_SELF_RESOLVE=1
 _ST_PZ_NEW pl2
 _ST_PZ_C f.txt $'1\n2\n3\n4' "PL2 A"
 _ST_PZ_C f.txt $'1\n2b\n3\n4' "PL2 B"
@@ -124,4 +126,5 @@ _ST_RUN --continue
 _ST_EQ "a move whose resolution added a file refuses, nothing landed" "${RC}:$(git show HEAD:g.txt 2>/dev/null)" "1:"
 _ST_OUT_HAS "naming the file" 'a resolution changed g.txt'
 _ST_RUN --abort
+unset GIT_EDIT_NO_SELF_RESOLVE
 cd "$TMP/repo"
