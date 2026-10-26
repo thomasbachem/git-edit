@@ -2859,16 +2859,14 @@ lands it.
 .PP
 A hand\-authored fold stays on
 .B \-\-amend\-into
-while its replay runs clean. Where later commits rewrote its lines, the
-replay stops at each of them for a state written by hand. Then
+\(em its replay itself resolves each stop a later commit makes, wherever the
+fold's own line replacements apply on the lines its hunks changed. A stop left
+over needs a judgement: resolve it by hand, or
 .B \-\-abort
 and fold with
 .B \-\-snapshot
-instead, which stops once per distinct content of the file, or restate the fold
-as
-.B \-\-edits
-that every commit from its target up holds exactly once, whose replay resolves
-each of those stops itself. Prove the tip against the result intended,
+instead, which stops once per distinct content of the file but resolves none
+itself. Prove the tip against the result intended,
 and read each patch the range\-diff marks changed beyond the targets rather than
 counting them: each is a later commit the fold's text reached.
 .SS Many sessions at once
