@@ -1145,6 +1145,14 @@ and the gate checks a commit so resolved as a resolver's own. A file the fold
 inserts a line in, or changes more than a text file's lines of \(em adds,
 removes, renames or gives another mode \(em derives no edit, and a stop where
 it conflicts pauses as before.
+Where the target lacks a line the fold replaces \(em held nowhere there, nor
+its changed words, as a later commit wrote it \(em no edit resolves the fold's
+own step, as that change belongs in the commit writing the line or a later one.
+A fold of
+.B \-\-edits
+refuses before replaying, naming each such edit and that commit; any other
+pauses at that step as before, naming the commit and the line, as does a
+squash's stop.
 .IP
 An edit read from a change, its hunk's or the tip's, takes only the lines that
 hunk changed, traced into the stop's content through a diff of the two: an

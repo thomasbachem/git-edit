@@ -1634,8 +1634,10 @@ _PRINT_CONFLICT_DETAIL () {
 				# Named by its pick – past a chain's first step, `HEAD` is git's
 				# interim commit, its message the squash template's comment lines
 				BUILDS=$(_STOP_BUILDS "$WT")
+				local BUILDS_SHA=$BUILDS
 				BUILDS=$(git -C "$WT" log -1 --format='%h %s' "${BUILDS:-HEAD}" 2>/dev/null)
 				[ -n "$BUILDS" ] && PRINT_TEXT "This stop folds into %s itself – resolve to what that commit holds with the fold applied, not to what later commits make of it." 33 "$BUILDS" >&2
+				[ -n "$BUILDS_SHA" ] && (( ${#UNMERGED} )) && _PRINT_LACKED_AT_STOP "$WT" "$BUILDS_SHA" "$LAST_STEP" "${UNMERGED[@]}"
 			elif [[ "${STEP_WORDS[1]}" == (p|pick|r|reword|e|edit) ]]; then
 				BUILDS=$(git -C "$WT" log -1 --format='%h %s' "${STEP_WORDS[2]}" 2>/dev/null)
 				[ -n "$BUILDS" ] && PRINT_TEXT "This stop builds %s – resolve to what that commit holds, not to what later commits make of it." 33 "$BUILDS" >&2
@@ -1813,6 +1815,64 @@ _PRINT_CONFLICT_DETAIL () {
 
 	# The unmerged list on stdout for the trailer
 	print -r -- "${(F)UNMERGED}"
+}
+
+# Names the later commits writing lines a fold's or squash's step replaces that the commit it
+# folds into holds nowhere – whole, or by a replaced line's changed words, as the resolver
+# matches them – a stop no resolution settles, as that change belongs in the writer or later
+_PRINT_LACKED_AT_STOP () {
+	# Args: <worktree> <commit the stop folds into> <step line> <conflicted file>...
+	setopt local_options no_multibyte
+	local WT=$1 INTO=$2 WORD FIX P H O N AT OLD SHA
+	local -i A B C D I
+	local -a OL NL LACKS OUT
+	local -A SUBJECT
+	for WORD in ${=3}; do
+		[[ "$WORD" =~ '^[0-9a-f]{7,}$' ]] && { FIX=$WORD; break; }
+	done
+	[ -n "$FIX" ] && git -C "$WT" rev-parse -q --verify "$FIX^{commit}" >/dev/null 2>&1 || return 0
+	shift 3
+	for P in "$@"; do
+		O=$(git -C "$WT" rev-parse -q --verify "$FIX^:$P" 2>/dev/null) && N=$(git -C "$WT" rev-parse -q --verify "$FIX:$P" 2>/dev/null) && \
+			git -C "$WT" rev-parse -q --verify ":2:$P" >/dev/null 2>&1 || continue
+		AT=$(git -C "$WT" cat-file blob ":2:$P" 2>/dev/null; print -n x)
+		H=$(git -C "$WT" cat-file blob "$O" 2>/dev/null; print -n x)
+		OL=("${(@ps:\n:)${H%x}}")
+		H=$(git -C "$WT" cat-file blob "$N" 2>/dev/null; print -n x)
+		NL=("${(@ps:\n:)${H%x}}")
+		LACKS=()
+		# Each hunk as `_EDITS_DERIVE` reads it, its replaced lines checked as the resolver matches them
+		for H in ${(M)${(f)"$(git -C "$WT" diff -U0 --inter-hunk-context=0 --no-ext-diff --no-textconv --no-color "$O" "$N" 2>/dev/null)"}:#@@ -*}; do
+			H=${${H#@@ -}%% @@*}
+			A=${${H%% *}%%,*} B=1 C=${${H#* +}%%,*} D=1
+			[[ "${H%% *}" == *,* ]] && B=${${H%% *}#*,}
+			[[ "$H" == *+*,* ]] && D=${H##*,}
+			(( B )) || continue
+			OLD=${(pj:\n:)OL[A,A+B-1]}
+			if (( B == 1 && D == 1 )); then
+				_LINES_LACKED "${AT%x}" "$OLD" "${OL[A]}" "${NL[C]}"
+			else
+				_LINES_LACKED "${AT%x}" "$OLD"
+			fi
+			for I in "${reply[@]}"; do LACKS+=($(( A + I - 1 ))); done
+		done
+		(( ${#LACKS} )) || continue
+		_LINES_WRITERS "$WT" "$FIX^" "$INTO" "$P" "${LACKS[@]}"
+		for H in "${reply[@]}"; do
+			SHA=${H%% *} I=${H#* }
+			(( ${+SUBJECT[$SHA]} )) || SUBJECT[$SHA]=$(git -C "$WT" log -1 --format=%s "$SHA" 2>/dev/null)
+			_EDIT_SHOWN "${OL[I]}"
+			OUT+=("${SHA:0:7} ${SUBJECT[$SHA]} – $P:$I $REPLY")
+		done
+	done
+	(( ${#OUT} )) || return 0
+	PRINT_TEXT "%s lacks lines this step's change replaces – later commits write them, so no resolution here holds the change to them, which belongs in the commit writing them or a later one:" 33 "${INTO:0:7}" >&2
+	for H in "${OUT[@]:0:6}"; do
+		_CARET "$H"
+		ECHO_E "\e[0;33m  ${REPLY//\\/$_LITB}\e[0m" >&2
+	done
+	(( ${#OUT} > 6 )) && ECHO_E "\e[0;33m  … and $(( ${#OUT} - 6 )) more line(s)\e[0m" >&2
+	return 0
 }
 
 # Names the files a reorder's or placement's stop starts from at their pre-op
@@ -12742,6 +12802,60 @@ _GUARD_NAMED_PATHS () {
 	fi
 }
 
+# Refuses `--edits` whose old text <target> lacks where a later commit wrote it, naming that commit
+# – the replay would stop at the fold's own step, which no edit resolves – a line counting only
+# where the target holds it nowhere, as an old text held otherwise stops for a resolver
+_REFUSE_EDITS_WRITTEN_LATER () {
+	# Args: <target> <tip> <worktree top>
+	setopt local_options no_multibyte
+	local TARGET=$1 TIP=$2 P OLD AT TEXT LEAD W SHOWN
+	local -i K I FIRST
+	local -a LACKS OUT
+	local -aU WS
+	local -A NTH AT_OF TIP_OF BLOB_OF
+	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
+		P=${EDITS_PATH[K]} OLD=${EDITS_OLD[K]}
+		NTH[$P]=$(( ${NTH[$P]:-0} + 1 ))
+		# Each file read once, as a sweep's edits come many to a file – `-` marking one the target lacks
+		(( ${+AT_OF[$P]} )) || AT_OF[$P]=$(git cat-file blob "$TARGET:$P" 2>/dev/null && print -n x || print -n -)
+		[ "${AT_OF[$P]}" = - ] && continue
+		AT=${AT_OF[$P]}
+		_EDIT_MATCHES "${AT%x}" "$OLD"
+		(( REPLY )) && continue
+		_LINES_LACKED "${AT%x}" "$OLD"
+		(( ${#reply} )) || continue
+		LACKS=("${reply[@]}")
+		# Placed on the tip's own text – one an earlier input of this run wrote has no writer to name
+		(( ${+TIP_OF[$P]} )) || TIP_OF[$P]=$(git cat-file blob "$TIP:$P" 2>/dev/null; print -n x)
+		TEXT=${TIP_OF[$P]}
+		_EDIT_MATCHES "${TEXT%x}" "$OLD"
+		(( REPLY == 1 )) || continue
+		# Only an edit whose change conflicts there – one bringing such lines back to what the target
+		# holds, as one taking back a peer's landing does, merges clean and dissolves in the replay
+		(( ${+BLOB_OF[$P]} )) || BLOB_OF[$P]="$(git rev-parse -q --verify "$TARGET:$P") $(git rev-parse -q --verify "$TIP:$P")"
+		W=$(print -rn -- "${${TEXT%x}/$OLD/${EDITS_NEW[K]}}" | git hash-object -w --no-filters --stdin 2>/dev/null)
+		[ -n "$W" ] && _MERGE_LANDING ${=BLOB_OF[$P]} "$W" >/dev/null && continue
+		LEAD=${TEXT%%"$OLD"*}
+		FIRST=${#${LEAD//[^$'\n']}}
+		for (( I = 1; I <= ${#LACKS}; I++ )); do LACKS[I]=$(( FIRST + LACKS[I] )); done
+		_LINES_WRITERS "$3" "$TIP" "$TARGET" "$P" "${LACKS[@]}"
+		WS=(${reply%% *})
+		(( ${#WS} )) || continue
+		_EDIT_SHOWN "$OLD"
+		SHOWN=$REPLY
+		W=$(git log --no-walk=unsorted --format='%h (%s)' "${WS[@]}" 2>/dev/null)
+		OUT+=("$P: edit ${NTH[$P]} ($SHOWN) – written by ${W//$'\n'/, }")
+	done
+	(( ${#OUT} )) || return 0
+	PRINT_ERR "--edits: ${#OUT} edit(s) replace text ${TARGET:0:7} lacks – a later commit writes it, so the fold would stop at its own step, where no edit resolves it"
+	_CARET "${(F)OUT}"
+	print -r -- "$REPLY" | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	W=""
+	(( ${#EDITS_PATH} > ${#OUT} )) && W=", the rest into ${TARGET:0:7} apart"
+	ECHO_E "\e[0;31m  Nothing landed – fold those edits into the commit named or a later one$W.\e[0m" >&2
+	exit 1
+}
+
 # Folds currently-staged changes from the main index (or a `--tree` composed apart from it) into
 # a target commit, leaving unstaged files alone – fixup plus autosquash in one operation,
 # snapshotting the source as a fixup object, running the autosquash isolated and CAS-updating
@@ -12940,6 +13054,9 @@ GIT_AMEND_INTO () {
 			exit 1
 		fi
 	fi
+
+	# Pre-flight – an edit's old text a later commit wrote stops the fold at its own step
+	(( ${#OPT_EDITS} )) && _REFUSE_EDITS_WRITTEN_LATER "$TARGET_FULL" "$ORIG_HEAD" "$MAIN_DIR"
 
 	if [ ${#OPT_SNAPSHOT} -gt 0 ]; then
 		_AMEND_INTO_SNAPSHOT
@@ -13340,6 +13457,45 @@ _ALIGN_SPAN () {
 	done
 	(( LO > 0 )) || return 1
 	reply=($LO $HI)
+}
+
+# Puts into `reply` the index of each line of <old> that <text> holds nowhere, bar blank ones
+# – a replaced line <old line> whose changed words <text> holds counts as held, as the resolver
+# takes those words where the line itself has gone
+_LINES_LACKED () {
+	# Args: <text> <old> [<old line> <new line>]
+	setopt local_options no_multibyte
+	local L
+	local -i I=0
+	local -a LACKED
+	for L in "${(@ps:\n:)2}"; do
+		I+=1
+		[[ "$L" == *[^[:space:]]* && "$1" != *"$L"* ]] || continue
+		_EDIT_NARROWED "$3" "$4" && [[ "$1" == *"${reply[1]}"* ]] && continue
+		LACKED+=($I)
+	done
+	reply=("${LACKED[@]}")
+}
+
+# Puts into `reply` "<commit> <line>" for each line <n> of <path> at <rev> that a commit
+# in <base>..<rev> wrote – one older than that span, or a blame that fails, names none
+_LINES_WRITERS () {
+	# Args: <worktree top> <rev> <base> <path from the top> <n>...
+	local D=$1 REV=$2 BASE=$3 P=$4 N OUT
+	local -a LARGS
+	shift 4
+	for N in "$@"; do LARGS+=(-L "$N,$N"); done
+	reply=()
+	(( ${#LARGS} )) || return 0
+	# Whatever ignore-revs files skip, as `_BLAME_AMEND_TARGETS` reads it – a missing
+	# one failing the first blame, the second reads no user or system config
+	OUT=$(git -C "$D" blame --no-textconv --ignore-revs-file= "${LARGS[@]}" --porcelain "$BASE..$REV" -- "$P" 2>/dev/null) || \
+		OUT=$(HOME=/nonexistent XDG_CONFIG_HOME=/nonexistent GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+			git -C "$D" -c safe.directory="$D" blame --no-textconv --ignore-revs-file= "${LARGS[@]}" --porcelain "$BASE..$REV" -- "$P" 2>/dev/null) || return 0
+	reply=(${(f)"$(print -r -- "$OUT" | LC_ALL=C awk '$1 ~ /^[0-9a-f]+$/ && length($1) >= 40 && NF >= 3 { sha = $1; ln = $3 }
+		$0 == "boundary" { b[sha] = 1 }
+		/^\t/ { n++; S[n] = sha; L[n] = ln }
+		END { for (i = 1; i <= n; i++) if (!(S[i] in b)) print S[i], L[i] }')"})
 }
 
 # Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it, each

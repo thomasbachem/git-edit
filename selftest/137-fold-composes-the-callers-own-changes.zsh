@@ -146,15 +146,18 @@ _ST_PZ_C f.txt $'a\nB2\nc\nx\ny\nz' "FI5 B"
 print -r -- $'a\nB2\nc\nx\ny\nPEER' > f.txt && git add f.txt
 _ST_RUN --amend-into="$(git rev-parse HEAD)" --edits '{"f.txt": [["a\n", "A\n"]]}'
 _ST_EQ "a peer's staging on a path a fold changes stays staged" "${RC}:$(git show HEAD:f.txt | head -1):$(git show :f.txt | tail -1)" "0:A:PEER"
-_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --edits '{"f.txt": [["B2\n", "B3\n"]]}'
+# An edit beside the line the later commit changed, each stop left to a resolver
+export GIT_EDIT_NO_SELF_RESOLVE=1
+_ST_RUN --amend-into="$(git rev-parse HEAD~1)" --edits '{"f.txt": [["c\n", "C\n"]]}'
 _ST_EQ "a fold into the older commit pauses on its replay" "$RC" "2"
-# Each stop resolved to what its own commit holds – the fold's B3 on the older commit, then the
-# later one's A on top – as taking the later A in early is an absorption the replay refuses
+# Each stop resolved to what its own commit holds – the fold's C on the older commit, then
+# the later one's A and B2 on top – as taking them in early is an absorption the replay refuses
 local FI_N
-for FI_N in $'a\nB3\nc\nx\ny\nz' $'A\nB3\nc\nx\ny\nz'; do
+for FI_N in $'a\nb\nC\nx\ny\nz' $'A\nB2\nC\nx\ny\nz'; do
 	[ "$RC" = 2 ] || break
 	_ST_RESOLVE "$(_ST_PZ_WT)" f.txt "$FI_N"
 	_ST_RUN --continue
 done
-_ST_EQ "and through a resume" "${RC}:$(git show HEAD:f.txt | sed -n 2p):$(git show :f.txt | tail -1)" "0:B3:PEER"
+unset GIT_EDIT_NO_SELF_RESOLVE
+_ST_EQ "and through a resume" "${RC}:$(git show HEAD:f.txt | sed -n 3p):$(git show :f.txt | tail -1)" "0:C:PEER"
 cd "$TMP/repo"
