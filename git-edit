@@ -77,7 +77,7 @@ _UNSET_OWN () {
 _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_KIND ARG_SCAN ARG_SHA C CHAIN COMMIT COMMITS COMMITS_DESIRED \
 	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
-	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EDITS_UNDERIVED EXEC_BASE \
+	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_AT EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EDITS_UNDERIVED EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
 	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
@@ -9006,7 +9006,7 @@ _SQUASH_STOP_EDITS () {
 	# Args: <worktree> <the stop's stage> <its commit> <path>...
 	setopt local_options no_multibyte
 	local WT=$1 GD L M P TEXT
-	local -a MS DONE NAMES WANT=("${@:4}") A_PATH A_OLD A_NEW A_NOLD A_NNEW A_DERIVED A_UNDERIVED
+	local -a MS DONE NAMES WANT=("${@:4}") A_PATH A_OLD A_NEW A_NOLD A_NNEW A_AT A_DERIVED A_UNDERIVED
 	local -i K
 	if (( $2 == 2 )); then
 		MS=("$3")
@@ -9015,7 +9015,7 @@ _SQUASH_STOP_EDITS () {
 		DONE=(${(f)"$(<"$GD/rebase-merge/done")"})
 		for L in "${(@)DONE[1,-2]}"; do [[ "$L" == (f|fixup|s|squash)\ * ]] && MS+=("${${L#* }%% *}"); done
 	fi
-	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_NOLD=() EDITS_NNEW=() EDITS_DERIVED=() EDITS_UNDERIVED=()
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_NOLD=() EDITS_NNEW=() EDITS_AT=() EDITS_DERIVED=() EDITS_UNDERIVED=()
 	for M in "${MS[@]}"; do
 		# One whose replacements don't remake its own change, a line it replaced held
 		# twice say, can't, nor a file it does more to than replace
@@ -9030,12 +9030,12 @@ _SQUASH_STOP_EDITS () {
 		done
 		for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 			A_PATH+=("${EDITS_PATH[K]}") A_OLD+=("${EDITS_OLD[K]}") A_NEW+=("${EDITS_NEW[K]}")
-			A_NOLD+=("${EDITS_NOLD[K]}") A_NNEW+=("${EDITS_NNEW[K]}")
+			A_NOLD+=("${EDITS_NOLD[K]}") A_NNEW+=("${EDITS_NNEW[K]}") A_AT+=("${EDITS_AT[K]}")
 		done
 		A_DERIVED+=("${EDITS_DERIVED[@]}") A_UNDERIVED+=("${EDITS_UNDERIVED[@]}")
 	done
 	EDITS_PATH=("${A_PATH[@]}") EDITS_OLD=("${A_OLD[@]}") EDITS_NEW=("${A_NEW[@]}")
-	EDITS_NOLD=("${A_NOLD[@]}") EDITS_NNEW=("${A_NNEW[@]}") EDITS_DERIVED=("${(@u)A_DERIVED}")
+	EDITS_NOLD=("${A_NOLD[@]}") EDITS_NNEW=("${A_NNEW[@]}") EDITS_AT=("${A_AT[@]}") EDITS_DERIVED=("${(@u)A_DERIVED}")
 	EDITS_UNDERIVED=("${(@u)A_UNDERIVED}")
 }
 
@@ -10553,8 +10553,8 @@ _EDITS_PARSE () {
 		items "'[' or ']'" pair "'['" old 'a string' comma "','" new 'a string' close "']'"
 		more "',' or ']'" after "',' or '}'")
 	local -i K
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
-	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_AT
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_AT=()
 	# Raw control characters are JSON nowhere, which frees two to hold the escaped `\` and `"`
 	if [[ "$J" == *$'\0'* || "$J" == *[$'\x01'-$'\x08'$'\x0b'$'\x0c'$'\x0e'-$'\x1f']* ]]; then
 		PRINT_ERR "--edits takes $SHAPE – a raw control character, which JSON escapes"
@@ -10831,8 +10831,8 @@ _COMPOSE_INPUTS () {
 		PRINT_ERR "A ${${${reply[5]%_HEAD}//_/-}:l} is in progress – finish it with git commit before committing your own changes apart"
 		exit 1
 	fi
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW
-	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_AT
+	EDITS_PATH=() EDITS_OLD=() EDITS_NEW=() EDITS_AT=()
 	if ! WHOLE_HEAD=$(git rev-parse --verify -q HEAD); then
 		PRINT_ERR "No commit to build on – the branch has none yet"
 		exit 1
@@ -13074,13 +13074,14 @@ _FOLD_TREE () {
 	fi
 }
 
-# Puts into `REPLY` <text> with the `--edits` for <path> made in turn, as composing
-# them on the tip made them – failing where an old text matches anything but once
+# Puts into `REPLY` <text> with the `--edits` for <path> made in turn, as composing them on the
+# tip made them – failing where an old text matches anything but once, or one read from a change
+# anywhere but on the lines its hunk stands at, as `_EDIT_AT_ITS_LINES` traces them
 _EDITS_REPLACED () {
 	# Args: <path from the top> <text>
 	setopt local_options no_multibyte
-	local TEXT=$2 OLD NEW
-	local -i K W ANCHOR=${EDITS_DERIVED[(Ie)$1]}
+	local TEXT=$2 OLD NEW ZID CUR
+	local -i K W NOFF ANCHOR=${EDITS_DERIVED[(Ie)$1]}
 	# Edits a fold derived from its own change replace whole lines – each old text read
 	# with the line end before it, and with the text's end where it has none of its own
 	(( ANCHOR )) && TEXT=$'\n'$TEXT$'\0'
@@ -13093,6 +13094,7 @@ _EDITS_REPLACED () {
 			[[ "$OLD" == *$'\n' ]] || OLD+=$'\0' NEW+=$'\0'
 		fi
 		_EDIT_MATCHES "$TEXT" "$OLD"
+		NOFF=-1
 		# A line wrapped otherwise there takes its changed words alone, where they match once
 		# – never where it stands inside a longer one, whose own words those would be
 		if (( ANCHOR && REPLY != 1 )) && [ -n "${EDITS_NOLD[K]}" ] && [[ "$TEXT" != *"${EDITS_OLD[K]%$'\n'}"* ]]; then
@@ -13100,11 +13102,18 @@ _EDITS_REPLACED () {
 			for (( W = 1; W <= 50; W++ )); do
 				_EDIT_NARROWED "${EDITS_NOLD[K]}" "${EDITS_NNEW[K]}" $W || break
 				_EDIT_MATCHES "$TEXT" "${reply[1]}"
-				(( REPLY == 1 )) && { OLD=${reply[1]} NEW=${reply[2]} _NARROWED=1; break; }
+				(( REPLY == 1 )) && { OLD=${reply[1]} NEW=${reply[2]} NOFF=${reply[3]} _NARROWED=1; break; }
 				(( REPLY )) || break
 			done
 		fi
 		(( REPLY == 1 )) || return 1
+		# Read in the text as the edits before it left it, as each earlier one may have changed it
+		if [ -n "${EDITS_AT[K]}" ]; then
+			CUR=$TEXT
+			(( ANCHOR )) && CUR=${${CUR#$'\n'}%$'\0'}
+			ZID=$(print -rn -- "$CUR" | git hash-object -w --no-filters --stdin 2>/dev/null) && [ -n "$ZID" ] || return 1
+			_EDIT_AT_ITS_LINES "$CUR" "$ZID" "${EDITS_AT[K]}" "$OLD" $ANCHOR $NOFF || return 1
+		fi
 		TEXT=${TEXT/$OLD/$NEW}
 	done
 	(( ANCHOR )) && TEXT=${${TEXT#$'\n'}%$'\0'}
@@ -13132,7 +13141,122 @@ _EDIT_NARROWED () {
 		while (( R < LO )) && [[ "${O[R+1]}" != [[:space:]] ]]; do R+=1; done
 	done
 	(( L > 0 || R < LO )) || return 1
-	reply=("${O[L+1,R]}" "${N[L+1,LN-LO+R]}")
+	reply=("${O[L+1,R]}" "${N[L+1,LN-LO+R]}" $L)
+}
+
+# Tells whether <old>, matched once in <text>, stands on the lines its hunk changed, each traced
+# from the side <at> names by `_ALIGN_SPAN` – changed words on the word they were traced to through
+# a diff of their run's words – failing where any can't be, so a stop takes no unplaced replacement
+_EDIT_AT_ITS_LINES () {
+	# Args: <text> <its blob> <"<blob> <first line> <lines>" read from>
+	#       <old as matched> <1 – a whole line's, led by a line end>
+	#       <changed words' offset in the hunk's line, -1 for none>
+	setopt local_options no_multibyte
+	local T=$1 OLD=$4 XT LINE
+	local -a AT=(${=3}) H XW ZW XL ZL
+	local -i S E M1 M2 NOFF=$6 I X0 Z0 WX WZ N
+	(( ${AT[2]:-0} > 0 && ${AT[3]:-0} > 0 )) || return 1
+	# Where it matched, as offsets into the text led by a line end
+	# – so a character's line is the count of line ends before it
+	(( $5 )) && T=$'\n'$T$'\0'
+	_EDIT_MATCHES "$T" "$OLD"
+	(( REPLY == 1 )) || return 1
+	if (( $5 && NOFF < 0 )); then
+		LINE=${T%%$OLD*}
+		S=$(( ${#LINE} + 2 )) E=$(( ${#LINE} + ${#OLD} - 1 ))
+		(( E < S )) && E=S
+	elif (( $5 )); then
+		LINE=${T%%$OLD*}
+		S=$(( ${#LINE} + 1 )) E=$(( ${#LINE} + ${#OLD} ))
+	else
+		LINE=${T%%$OLD*}
+		T=$'\n'$T
+		S=$(( ${#LINE} + 2 )) E=$(( ${#LINE} + ${#OLD} + 1 ))
+	fi
+	LINE=${T[1,S-1]//[^$'\n']} M1=${#LINE}
+	LINE=${T[1,E-1]//[^$'\n']} M2=${#LINE}
+	_ALIGN_HUNKS "${AT[1]}" "$2" || return 1
+	H=("${reply[@]}")
+	if (( NOFF < 0 )); then
+		_ALIGN_SPAN "${AT[2]}" $(( AT[2] + AT[3] - 1 )) "" "${H[@]}" || return 1
+		(( reply[1] <= M1 && M2 <= reply[2] ))
+		return
+	fi
+	# Changed words – the hunk's one line in a changed run, the match inside its other side
+	for (( I = 1; I <= ${#H}; I += 4 )); do
+		(( H[I+1] && H[I] <= AT[2] && AT[2] <= H[I] + H[I+1] - 1 )) && break
+	done
+	(( I <= ${#H} && H[I+3] && H[I+2] <= M1 && M2 <= H[I+2] + H[I+3] - 1 )) || return 1
+	XT=$(git cat-file blob "${AT[1]}" 2>/dev/null; print -n x)
+	XT=${XT%x}
+	X0=${H[I]} Z0=${H[I+2]}
+	XL=("${(@ps:\n:)XT}") ZL=("${(@ps:\n:)1}")
+	# Each run's words a line each, and where the matched ones start among them
+	XW=(${=${(pj:\n:)XL[X0,X0+H[I+1]-1]}}) ZW=(${=${(pj:\n:)ZL[Z0,Z0+H[I+3]-1]}})
+	LINE="${(pj:\n:)XL[X0,AT[2]-1]} ${XL[AT[2]][1,NOFF]}"
+	WX=$(( ${#${=LINE}} + 1 ))
+	LINE=${T[1,S-1]}
+	LINE="${(pj:\n:)ZL[Z0,M1-1]} ${LINE##*$'\n'}"
+	WZ=$(( ${#${=LINE}} + 1 ))
+	N=${#${=OLD}}
+	_ALIGN_HUNKS "$(print -rl -- "${XW[@]}" | git hash-object -w --no-filters --stdin 2>/dev/null)" \
+		"$(print -rl -- "${ZW[@]}" | git hash-object -w --no-filters --stdin 2>/dev/null)" || return 1
+	_ALIGN_SPAN $WX $(( WX + N - 1 )) exact "${reply[@]}" || return 1
+	(( reply[1] == WZ && reply[2] == WZ + N - 1 ))
+}
+
+# Puts into `reply` the hunks of a diff from blob <from> to blob <to>, four numbers each – the
+# first line and the count on each side, a count 0 starting after its line – failing on a binary
+_ALIGN_HUNKS () {
+	# Args: <from> <to>
+	local H OUT
+	reply=()
+	[ -n "$1" ] && [ -n "$2" ] || return 1
+	[ "$1" = "$2" ] && return 0
+	OUT=$(git diff -U0 --inter-hunk-context=0 --diff-algorithm=myers --no-ext-diff --no-textconv --no-color "$1" "$2" 2>/dev/null) || return 1
+	[[ -n "$OUT" && "$OUT" != *$'\n@@ -'* ]] && return 1
+	for H in ${(M)${(f)OUT}:#@@ -*}; do
+		H=${${H#@@ -}%% @@*}
+		reply+=(${${H%% *}%%,*} 1 ${${H#* +}%%,*} 1)
+		[[ "${H%% *}" == *,* ]] && reply[-3]=${${H%% *}#*,}
+		[[ "$H" == *+*,* ]] && reply[-1]=${H##*,}
+	done
+	return 0
+}
+
+# Puts into `reply` the span lines <first>..<last> of a diff's from side lead to, read from its
+# <hunk>s – an unchanged one where it went, bar one a hunk beside it could pair with another line,
+# one in a changed run its place there from either end – or, <exact>, unchanged ones alone
+_ALIGN_SPAN () {
+	# Args: <first> <last> <exact, or empty> <hunk numbers>...
+	local -a H=("${@:4}")
+	local -i X I A B C D OFF XB ZB XA ZA Z1 Z2 LO=0 HI=0 IN
+	for (( X = $1; X <= $2; X++ )); do
+		OFF=0 XB=0 ZB=0 XA=0 ZA=0 IN=0
+		for (( I = 1; I <= ${#H}; I += 4 )); do
+			A=${H[I]} B=${H[I+1]} C=${H[I+2]} D=${H[I+3]}
+			if (( B && A <= X && X <= A + B - 1 )); then
+				[ -z "$3" ] && (( D )) || return 1
+				Z1=$(( C + X - A )) Z2=$(( C + D - 1 - (A + B - 1 - X) ))
+				(( Z1 > C + D - 1 )) && Z1=$(( C + D - 1 ))
+				(( Z2 < C )) && Z2=C
+				(( Z1 > Z2 )) && { A=Z1 Z1=Z2 Z2=A; }
+				IN=1
+				break
+			fi
+			(( (B && A + B - 1 < X) || (!B && A < X) )) && OFF+=$(( D - B ))
+			(( (B && A + B == X) || (!B && A == X - 1) )) && XB=B ZB=D
+			(( (B && A == X + 1) || (!B && A == X) )) && XA=B ZA=D
+		done
+		if (( ! IN )); then
+			Z1=$(( X + OFF )) Z2=$(( X + OFF ))
+			[ -n "$3" ] || { (( XB == ZB || XB > ZB + ZA )) && (( XA == ZA || XA > ZA + ZB )) } || return 1
+		fi
+		(( LO == 0 || Z1 < LO )) && LO=Z1
+		(( Z2 > HI )) && HI=Z2
+	done
+	(( LO > 0 )) || return 1
+	reply=($LO $HI)
 }
 
 # Fills `EDITS_PATH`, `EDITS_OLD` and `EDITS_NEW` with a fold's change as `--edits` gives it, each
@@ -13145,9 +13269,24 @@ _EDITS_DERIVE () {
 	local H O N
 	local -a R M OL NL GIVEN
 	local -i I A B C D K0
-	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_UNDERIVED EDITS_NOLD EDITS_NNEW
+	typeset -ga EDITS_PATH EDITS_OLD EDITS_NEW EDITS_DERIVED EDITS_UNDERIVED EDITS_NOLD EDITS_NNEW EDITS_AT
 	(( ${#OPT_EDITS} )) || EDITS_PATH=() EDITS_OLD=() EDITS_NEW=()
-	GIVEN=("${(@u)EDITS_PATH}") EDITS_DERIVED=() EDITS_UNDERIVED=() EDITS_NOLD=() EDITS_NNEW=()
+	GIVEN=("${(@u)EDITS_PATH}") EDITS_DERIVED=() EDITS_UNDERIVED=() EDITS_NOLD=() EDITS_NNEW=() EDITS_AT=()
+	# Where each given one stands in <tip> as the ones before it on its path left it, its lines
+	# found as it matches once there
+	local -A GT
+	for (( I = 1; I <= ${#EDITS_PATH}; I++ )); do
+		(( ${+GT[${EDITS_PATH[I]}]} )) || GT[${EDITS_PATH[I]}]=$(git cat-file blob "$1:${EDITS_PATH[I]}" 2>/dev/null; print -n x)
+		N=${GT[${EDITS_PATH[I]}]%x}
+		O=$(print -rn -- "$N" | git hash-object -w --no-filters --stdin 2>/dev/null)
+		EDITS_AT[I]="- 0 0"
+		[ -n "$O" ] && [ -n "${EDITS_OLD[I]}" ] && _EDIT_MATCHES "$N" "${EDITS_OLD[I]}" && (( REPLY == 1 )) || continue
+		H=${N%%${EDITS_OLD[I]}*}
+		A=$(( ${#${H//[^$'\n']}} + 1 ))
+		H=${EDITS_OLD[I][1,-2]//[^$'\n']}
+		EDITS_AT[I]="$O $A $(( ${#H} + 1 ))"
+		GT[${EDITS_PATH[I]}]=${N/${EDITS_OLD[I]}/${EDITS_NEW[I]}}x
+	done
 	# ":<mode> <mode> <id> <id> M" and the path, in turn – a rename the fold made reads as D and A
 	R=(${(0)"$(git diff-tree -r -z --no-renames "$1" "$2" 2>/dev/null)"}) || return 1
 	(( ${#R} % 2 == 0 )) || return 1
@@ -13175,6 +13314,8 @@ _EDITS_DERIVE () {
 			(( A + B - 1 < ${#OL} )) && O+=$'\n'
 			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
 			EDITS_PATH+=("${R[I+1]}") EDITS_OLD+=("$O") EDITS_NEW+=("$N")
+			# Where its old lines stood and where its new ones stand, as reversing it reads them
+			EDITS_AT[${#EDITS_PATH}]="${M[3]} $A $B ${M[4]} $C $D"
 			# A line replaced by one keeps both lines besides, whose changed words `_EDITS_REPLACED`
 			# takes where the line itself doesn't match once, as a commit wrapping it otherwise has it
 			(( B == 1 && D == 1 )) && _EDIT_NARROWED "${OL[A]}" "${NL[C]}" && \
@@ -13185,7 +13326,7 @@ _EDITS_DERIVE () {
 		else
 			# A hunk adding lines alone, or none at all, as a binary file has – its edits taken back
 			EDITS_PATH=("${(@)EDITS_PATH[1,K0]}") EDITS_OLD=("${(@)EDITS_OLD[1,K0]}") EDITS_NEW=("${(@)EDITS_NEW[1,K0]}")
-			EDITS_NOLD=("${(@)EDITS_NOLD[1,K0]}") EDITS_NNEW=("${(@)EDITS_NNEW[1,K0]}")
+			EDITS_NOLD=("${(@)EDITS_NOLD[1,K0]}") EDITS_NNEW=("${(@)EDITS_NNEW[1,K0]}") EDITS_AT=("${(@)EDITS_AT[1,K0]}")
 			EDITS_UNDERIVED+=("${R[I+1]}")
 		fi
 	done
