@@ -113,7 +113,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
-	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
+	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END
 
@@ -933,7 +933,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       git edit <commit> <commit>...                        # squash multiple commits\e[0m"
 	ECHO_E "\e[0;94m       git edit [-m | --message | -s | --squash] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit -s=<target> <commit>...                     # explicit squash target\e[0m"
-	ECHO_E "\e[0;94m       git edit -s=auto <commit>...                         # each into the commit its fixup!/amend!/squash! names, in one replay\e[0m"
+	ECHO_E "\e[0;94m       git edit -s=auto [<commit>...]                       # each into the commit its fixup!/amend!/squash! names, in one replay – bare, your pending ones\e[0m"
 	ECHO_E "\e[0;94m       git edit [-M | --reword] [--text <msg> | --subject <line>] <commit>\e[0m"
 	ECHO_E "\e[0;94m       git edit [-S | --resquash] [--text <msg>] <commit>...\e[0m"
 	ECHO_E "\e[0;94m       git edit [-d | --drop] [-y] <commit>...\e[0m"
@@ -4019,6 +4019,7 @@ _STATUS_UNBROUGHT () {
 GIT_STATUS_REPORT () {
 	_NAME_ORPHANED_WORKTREES
 	_STATUS_UNBROUGHT
+	_STATUS_PENDING_FIXUPS
 	if _STATE_EXISTS; then
 		_LOAD_STATE
 		# Read, not taken up – a pause replaced meanwhile is reported as read, never refused as ended
@@ -8524,7 +8525,7 @@ _PRINT_BUSY_HINT () {
 		[ "$BY" = "$_ACTOR_ID" ] || N+=1
 	done
 	(( N >= 3 )) || return 0
-	ECHO_E "\e[0;33m  ${1#refs/heads/} is busy – other callers landed on it $N times in the last 10 minutes. Where many sessions fold into one history, land each fix at the tip as its own 'fixup! <target's subject>' commit, squashed in later one session at a time by 'git edit -s=auto <fixup commit>...' – 'Many sessions at once' in the README, or git-edit(1).\e[0m" >&2
+	ECHO_E "\e[0;33m  ${1#refs/heads/} is busy – other callers landed on it $N times in the last 10 minutes. Where many sessions fold into one history, land each fix at the tip as its own 'fixup! <target's subject>' commit, each session squashing its own in later, one at a time, by a bare 'git edit -s=auto' – 'Many sessions at once' in the README, or git-edit(1).\e[0m" >&2
 }
 
 # Refuses a branch that moved under a resolution – a parallel session landed a commit,
@@ -9003,7 +9004,14 @@ _AUTO_SQUASH_GROUPS () {
 		PRINT_ERR "-s=auto can't take ${#HITS} of its commits – nothing was changed"
 		{
 			for M in "${NOMARK[@]}"; do print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – carries no fixup!, amend! or squash! marker"; done
-			for M in "${UNPLACED[@]}"; do print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – names no commit below it"; done
+			# A target reworded or rewritten since orphans its markers, the one it became named
+			for M in "${UNPLACED[@]}"; do
+				if _MARKER_TARGET_NOW "$M" "${NAME_OF[$M]}"; then
+					print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – names no commit below it, its target ${reply[1]} since as ${REPLY:0:7} (${REPLY#* }): git edit -s=${REPLY:0:7} ${M:0:7}"
+				else
+					print -r -- "${M:0:7} $(git log -1 --format=%s "$M") – names no commit below it"
+				fi
+			done
 			for C in "${UNSURE[@]}"; do print -r -- "${C:0:7} $(git log -1 --format=%s "${C%% *}") – names ${C#* } alike"; done
 			for C in "${PUSHED[@]}"; do print -r -- "${C:0:7} $(git log -1 --format=%s "${C%% *}") – names ${${C#* }:0:7}, already pushed"; done
 			for C in "${ABSENT[@]}"; do
@@ -9011,7 +9019,16 @@ _AUTO_SQUASH_GROUPS () {
 				print -r -- "${HITS[1]:0:7} $(git log -1 --format=%s "${HITS[1]}") – ${HITS[2]} ${C#* * * }, which ${HITS[3]:0:7} $(git log -1 --format=%s "${HITS[3]}") adds after its target"
 			done
 		} | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
-		ECHO_E "\e[0;31m  Leave each out, or name its target outright: git edit -s=<target> <commit>...\e[0m" >&2
+		if [ -n "$_SQUASH_OWN" ]; then
+			# Taken whole or not at all, the rest named for a run of their own
+			(( ${#UNPLACED} + ${#UNSURE} )) && ECHO_E "\e[0;31m  Name each one's target outright: git edit -s=<target> <commit>\e[0m" >&2
+			LEFT=("${(@)MARKS:|HITS}") C=""
+			for M in "${LEFT[@]}"; do C+=" ${M:0:12}"; done
+			[ -n "$C" ] && ECHO_E "\e[0;31m  Your other pending fixups alone: git edit -s=auto$C\e[0m" >&2
+			(( ${#PUSHED} )) && ECHO_E "\e[0;31m  One whose target is pushed stays a commit of its own once its marker is reworded away: git edit -M --subject=\"…\" <commit>\e[0m" >&2
+		else
+			ECHO_E "\e[0;31m  Leave each out, or name its target outright: git edit -s=<target> <commit>...\e[0m" >&2
+		fi
 		(( ${#PUSHED} )) && ECHO_E "\e[0;31m  Rewriting pushed history disrupts collaborators – pass --allow-pushed to override.\e[0m" >&2
 		(( ${#ABSENT} )) && ECHO_E "\e[0;31m  A fixup of a file a later commit adds goes into that commit or one after it – or pass --allow-new-path to replay it anyway.\e[0m" >&2
 		exit 1
@@ -9051,6 +9068,198 @@ _SQUASH_GROUP_OF () {
 	local P
 	reply=()
 	for P in ${=_SQUASH_GROUPS}; do [ "${P#*:}" = "$1" ] && reply+=("${P%%:*}"); done
+}
+
+# Puts into `reply` a line per commit `git log <arg>...` lists, "<head>\t<key>" – <head> as <format>
+# spells it, the key "<author date> <author>\t<subject>\t<paths it changes>", which a rewrite keeps
+# and whose paths tell apart two sessions' fixups of one target landing in one second
+_KEYED_LOG () {
+	# Args: <format> <git log arg>...
+	local R H
+	reply=()
+	for R in "${(@ps:\0:)$(git log --format="%x00$1%x09%at %ae%x09%s" --name-only "${@:2}" 2>/dev/null)}"; do
+		[ -n "$R" ] || continue
+		H=${R%%$'\n'*}
+		reply+=("$H"$'\t'"${(j: :)${(f)${R#"$H"}}}")
+	done
+}
+
+# Puts into `reply` the unpushed `fixup!`, `amend!` and `squash!` commits on <ref>'s first-parent
+# line, oldest first, each followed by who landed it as the journal reads it – `@<label>`,
+# a bare `@` for an unlabeled run, empty for one made outside git-edit
+# • Known by `_KEYED_LOG`'s key, so a landing since that gave one a new SHA
+#   leaves the run that brought it in
+# • That run is the first since the commit was made to bring it onto <ref> – a commit, land, undo,
+#   exec or edit – one bringing it back later counting not
+_PENDING_FIXUPS () {
+	# Args: <ref>
+	local L K JF BY OLD NEW
+	local -a PEND F JL NEWS CAME MARKS
+	local -A WANT BY_OF PARENT_OF KEY_OF GONE
+	local -i SINCE=0 LEFT
+	MARKS=(--grep='^fixup! ' --grep='^amend! ' --grep='^squash! ')
+	_KEYED_LOG %H --first-parent --reverse "${MARKS[@]}" "$1" --not --remotes
+	for L in "${reply[@]}"; do
+		K=${L#*$'\t'}
+		_MARKER_NAME "${${K#*$'\t'}%%$'\t'*}" || continue
+		PEND+=("$L") WANT[$K]=1
+		(( SINCE && ${K%% *} >= SINCE )) || SINCE=${K%% *}
+	done
+	reply=()
+	(( ${#PEND} )) || return 0
+	JF=$(_JOURNAL_FILE_PATH)
+	if [ -s "$JF" ]; then
+		JL=(${(f)"$(LC_ALL=C awk -v r="$1" -v s=$(( SINCE - 5 )) '$1 >= s + 0 && $2 == r && $5 ~ /^(commit|land|undo|exec|edit)$/' "$JF" 2>/dev/null)"})
+		for L in "${JL[@]}"; do F=(${=${L%%$'\t'*}}); NEWS+=("${F[4]}"); done
+		# Each new tip's parents and key in one pass – one atop the old tip brought in itself alone
+		if (( ${#NEWS} )); then
+			_KEYED_LOG '%H %P' --ignore-missing --no-walk=unsorted "${(@u)NEWS}"
+			for L in "${reply[@]}"; do
+				K=${L%%$'\t'*}
+				PARENT_OF[${K%% *}]=${K#* } KEY_OF[${K%% *}]=${L#*$'\t'}
+			done
+		fi
+		LEFT=${#WANT}
+		for L in "${JL[@]}"; do
+			BY=@
+			[[ "$L" == *$'\t'* ]] && BY=@${L#*$'\t'}
+			F=(${=${L%%$'\t'*}})
+			OLD=${F[3]} NEW=${F[4]}
+			CAME=() GONE=()
+			if (( ${+PARENT_OF[$NEW]} )) && [ "${PARENT_OF[$NEW]}" = "$OLD" ]; then
+				CAME=("${KEY_OF[$NEW]}")
+			else
+				# What its new side holds and its old side lacks
+				_KEYED_LOG %m --left-right "${MARKS[@]}" "$OLD...$NEW"
+				for K in "${reply[@]}"; do
+					(( ${+WANT[${K#*$'\t'}]} )) || continue
+					if [ "${K%%$'\t'*}" = '<' ]; then GONE[${K#*$'\t'}]=1; else CAME+=("${K#*$'\t'}"); fi
+				done
+			fi
+			for K in "${CAME[@]}"; do
+				(( ${+WANT[$K]} && ! ${+GONE[$K]} && ! ${+BY_OF[$K]} )) || continue
+				BY_OF[$K]=$BY
+				LEFT=LEFT-1
+			done
+			(( LEFT > 0 )) || break
+		done
+	fi
+	reply=()
+	for L in "${PEND[@]}"; do reply+=("${L%%$'\t'*}" "${BY_OF[${L#*$'\t'}]}"); done
+}
+
+# Tells whether a pending fixup <who> landed, as `_PENDING_FIXUPS` puts it, is the caller's own
+# – its label's, or to a caller with none, an unlabeled run's or one made outside git-edit
+_FIXUP_OWN () {
+	# Args: <who>
+	if [ -n "$_ACTOR_ID" ]; then [ "$1" = "@$_ACTOR_ID" ]; else [[ "$1" == (|@) ]]; fi
+}
+
+# Plans a bare `-s=auto` on the caller's own pending fixups as they stand,
+# another caller's left to it as squashing a fix takes its context – again after a wait,
+# as the landing that ended it may have squashed or rewritten them – ending the run on none
+_SQUASH_OWN_PLAN () {
+	local REF
+	local -i I OTHERS=0
+	local -a OWN
+	if ! _FACT REF symbolic-ref -q HEAD 2>/dev/null || [ -z "$REF" ]; then
+		PRINT_ERR "squash requires being on a branch (got detached HEAD)"
+		ECHO_E "\e[0;31m  Make one where you are first: git switch -c <name>\e[0m" >&2
+		exit 1
+	fi
+	_PENDING_FIXUPS "$REF"
+	for (( I = 1; I < ${#reply}; I += 2 )); do
+		if _FIXUP_OWN "${reply[I+1]}"; then OWN+=("${reply[I]}"); else OTHERS+=1; fi
+	done
+	if (( ! ${#OWN} )); then
+		PRINT_TEXT "No pending fixups of yours on %s – nothing to squash" 32 "${REF#refs/heads/}"
+		(( OTHERS )) && PRINT_TEXT "%s other pending fixup(s) there are other callers' to squash – %s lists them" 33 "$OTHERS" "git edit --status"
+		PRINT_COMPLETED "$(git rev-parse HEAD)" "$REF" false "no pending fixups of yours"
+		exit 0
+	fi
+	if (( OTHERS )); then
+		PRINT_TEXT "%s pending fixup(s) of yours on %s – other callers' %s left to them" 33 "${#OWN}" "${REF#refs/heads/}" "$OTHERS"
+	else
+		PRINT_TEXT "%s pending fixup(s) of yours on %s" 33 "${#OWN}" "${REF#refs/heads/}"
+	fi
+	_NAMED_ALONE=("${OWN[@]}")
+	_RESOLVE_ACTION auto "${OWN[@]}"
+}
+
+# Puts into `REPLY` what became of the commit a marker's <name> named – reworded, or a SHA it names
+# rewritten – as "<sha> <subject>" below <marker>, and which into `reply`, failing on none found
+# • A reword since <marker> was made on its branch, newest first, as the journal holds it – its old
+#   side's commit the name answered, then its new side's of that author and date, subject changed
+# • Below <marker>, the commit of that author, date and subject
+_MARKER_TARGET_NOW () {
+	# Args: <marker> <name>
+	local JF L K AT R WAS=""
+	local -a JL F HITS OLD NEW
+	[ -n "$2" ] || return 1
+	reply=(rewritten)
+	if [[ "$2" != *' '* ]] && K=$(git rev-parse -q --verify "$2^{commit}" 2>/dev/null); then
+		WAS=$(git log -1 --format='%at %ae%x09%s' "$K" 2>/dev/null)
+	else
+		reply=(reworded)
+		JF=$(_JOURNAL_FILE_PATH) && [ -s "$JF" ] && _FACT R symbolic-ref -q HEAD 2>/dev/null || return 1
+		AT=$(git log -1 --format=%at "$1" 2>/dev/null)
+		JL=(${(Oa)${(f)"$(LC_ALL=C awk -v r="$R" -v s=$(( ${AT:-0} - 5 )) '$1 >= s + 0 && $2 == r && $5 == "reword"' "$JF" 2>/dev/null)"}})
+		for L in "${JL[@]}"; do
+			F=(${=${L%%$'\t'*}})
+			OLD=() NEW=()
+			for K in ${(f)"$(git log --left-right --format='%m%at %ae%x09%s' "${F[3]}...${F[4]}" 2>/dev/null)"}; do
+				if [ "${K[1]}" = '<' ]; then OLD+=("${K:1}"); else NEW+=("${K:1}"); fi
+			done
+			for K in "${OLD[@]}"; do
+				[[ "${K#*$'\t'}" == "$2"* ]] || continue
+				HITS=("${(@M)NEW:#${(b)K%%$'\t'*}$'\t'*}")
+				HITS=("${(@)HITS:|OLD}")
+				(( ${#HITS} == 1 )) && WAS=${HITS[1]} && break
+			done
+			[ -n "$WAS" ] && break
+		done
+	fi
+	[ -n "$WAS" ] || return 1
+	HITS=()
+	for L in ${(f)"$(git log --first-parent --format='%H %at %ae%x09%s' "$1^" 2>/dev/null)"}; do
+		[ "${L#* }" = "$WAS" ] && HITS+=("$L")
+	done
+	(( ${#HITS} == 1 )) || return 1
+	REPLY="${HITS[1]%% *} ${HITS[1]#*$'\t'}"
+}
+
+# Lists the pending fixups on the checked-out branch and who landed each, as a push would
+# carry one along unsquashed – the caller's own a bare `-s=auto` squashes
+_STATUS_PENDING_FIXUPS () {
+	local REF WHO
+	local -i I N OWN=0
+	local -a SUBJ SHAS
+	_FACT REF symbolic-ref -q HEAD 2>/dev/null && [ -n "$REF" ] || return 0
+	_PENDING_FIXUPS "$REF"
+	N=$(( ${#reply} / 2 ))
+	(( N )) || return 0
+	for (( I = 2; I <= ${#reply}; I += 2 )); do _FIXUP_OWN "${reply[I]}" && OWN+=1; done
+	if (( OWN )); then
+		PRINT_TEXT "Pending fixups on %s, unpushed: %s – %s of them yours, squashed into their targets by %s" 33 "${REF#refs/heads/}" "$N" "$OWN" "git edit -s=auto"
+	else
+		PRINT_TEXT "Pending fixups on %s, unpushed: %s – none yours, each its own caller's to squash" 33 "${REF#refs/heads/}" "$N"
+	fi
+	for (( I = 1; I < ${#reply} && I < 20; I += 2 )); do SHAS+=("${reply[I]}"); done
+	SUBJ=("${(@f)$(git log --no-walk=unsorted --format=%s "${SHAS[@]}" 2>/dev/null)}")
+	for (( I = 1; I < ${#reply} && I < 20; I += 2 )); do
+		if _FIXUP_OWN "${reply[I+1]}"; then
+			WHO=yours
+		else
+			case ${reply[I+1]} in
+				('') WHO="made outside git-edit" ;;
+				(@) WHO="an unlabeled run's" ;;
+				(*) WHO="${reply[I+1]#@}'s" ;;
+			esac
+		fi
+		ECHO_E "\e[0;33m  ${reply[I]:0:7} $(_LIT "${SUBJ[(I+1)/2]}") – $(_LIT "$WHO")\e[0m"
+	done
+	(( N > 10 )) && ECHO_E "\e[0;33m  … and $(( N - 10 )) more\e[0m"
+	return 0
 }
 
 # Puts into `reply` the commits a paused squash squashes into, `-s=auto`'s each
@@ -24225,7 +24434,11 @@ fi
 
 COMMITS=()
 
-if [ $# -eq 0 ]; then
+# A bare `-s=auto` takes the caller's own pending fixups, found once any pause is waited out
+_SQUASH_OWN=""
+[ $# -eq 0 ] && [ ${#OPT_SQUASH} -gt 0 ] && [ "$SQUASH_HAS_EQUALS" = true ] && [ "$TARGET" = auto ] && _SQUASH_OWN=1
+
+if [ $# -eq 0 ] && [ -z "$_SQUASH_OWN" ]; then
 	# Records-mode reword – `--- <commit>` messages on stdin or `--text`, targets
 	# named inline rather than positionally, detected before the missing-target
 	# error since this is the one action carrying its commits in the text
@@ -24345,7 +24558,7 @@ for ARG in "$@"; do
 done
 
 # Abort if no commits were found
-if [ ${#COMMITS[@]} -eq 0 ]; then
+if [ ${#COMMITS[@]} -eq 0 ] && [ -z "$_SQUASH_OWN" ]; then
 	PRINT_ERR "No valid commits found."
 	exit 1
 fi
@@ -24355,10 +24568,15 @@ fi
 PINNED=("$(_PINNED_REV "$TARGET")" "${COMMITS[@]}")
 # `-s=auto` a keyword before any ref of that name, as `--amend-into=auto` is
 [[ ${#OPT_SQUASH} -gt 0 && "$TARGET" == auto && "$SQUASH_HAS_EQUALS" == true ]] && PINNED[1]=auto
-_RESOLVE_ACTION "${PINNED[@]}"
-# An edit pauses at once, so another branch's pause is in its way as well
-[ "$ACTION" = edit ] && _SLOT_NEEDED=1
-_AWAIT_PAUSE _RESOLVE_ACTION "${PINNED[@]}"
+if [ -n "$_SQUASH_OWN" ]; then
+	_SQUASH_OWN_PLAN
+	_AWAIT_PAUSE _SQUASH_OWN_PLAN
+else
+	_RESOLVE_ACTION "${PINNED[@]}"
+	# An edit pauses at once, so another branch's pause is in its way as well
+	[ "$ACTION" = edit ] && _SLOT_NEEDED=1
+	_AWAIT_PAUSE _RESOLVE_ACTION "${PINNED[@]}"
+fi
 
 
 # ------------------------------------------- CORE LOGIC -------------------------------------------

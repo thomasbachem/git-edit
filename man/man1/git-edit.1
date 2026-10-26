@@ -18,6 +18,7 @@ which then emits backspace\-overstruck text.
 \fBgit edit\fR [\fB\-M\fR | \fB\-\-reword\fR] [\fB\-\-text\fR \fImsg\fR | \fB\-\-subject\fR \fIline\fR] \fIcommit\fR
 \fBgit edit\fR [\fB\-s\fR | \fB\-\-squash\fR | \fB\-d\fR | \fB\-\-drop\fR] \fIcommit\fR...
 \fBgit edit\fR [\fB\-s=\fR\fItarget\fR] \fIcommit\fR...
+\fBgit edit\fR \fB\-s=auto\fR [\fIcommit\fR...]
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
@@ -354,12 +355,34 @@ named outright without a marker that no marker names either, a marker naming
 no commit below it or several alike, and one whose target is pushed (without
 \fB\-\-allow\-pushed\fR) refuse the run, each named, as does one changing or
 removing a file a commit after its target adds, that commit named (without
-\fB\-\-allow\-new\-path\fR). A commit a range brings
+\fB\-\-allow\-new\-path\fR). A marker naming no commit below it because its
+target was reworded since, or a SHA it names rewritten, names the commit that
+became of it. A commit a range brings
 without a marker stays where it is, and may be a target \(em a range takes
 both its ends, so one starting at the tip a land began from takes that commit
 too. Each target takes the message
 its markers ask for, so \fB\-\-text\fR and \fB\-m\fR refuse, and the gate checks
 the commit each target became.
+.IP
+A bare
+.B \-s=auto
+takes the caller's own pending fixups: the unpushed \fBfixup!\fR, \fBamend!\fR
+and \fBsquash!\fR commits on the branch's first\-parent line that the journal
+names its
+.B GIT_EDIT_ACTOR
+label as landing \(em to a caller with none, those an unlabeled run or no
+git\-edit run landed. A commit is known there by its author, author date and
+subject, which a rewrite keeps, so a landing since that gave it a new SHA
+still leaves the run that brought it in: the first since it was made to bring
+it onto the branch, by a commit, land, undo, exec or edit. Another caller's are
+left to it, as squashing a fix takes its context, and
+.B \-\-status
+lists them. With none of its own the run ends
+.BR "ok \(en \fIref\fP unchanged, no pending fixups of yours" ;
+one it can't take refuses the run as above, naming the
+.B \-s=auto
+taking the rest alone, and for one whose target is pushed, the reword that
+keeps it a commit of its own.
 .TP
 .B \-S, \-\-resquash
 Strict squash: plumbing only; errors instead of falling back to a rebase.
@@ -2178,6 +2201,12 @@ steps its raw
 .B "git update\-ref"
 form leaves, as under
 .BR \-\-undo .
+It lists the branch's pending fixups too \(em unpushed \fBfixup!\fR,
+\fBamend!\fR and \fBsquash!\fR commits, ten at most, each with who landed it as
+a bare
+.B \-s=auto
+reads it: the caller's own, another label's, an unlabeled run's, or one made
+outside git\-edit \(em as a push would carry each along unsquashed.
 It names a checkout left behind as well \(em one whose last sync stopped
 below the tip, landings since on record, or files a run's sync left
 unbrought that still lack what landed \(em with the
@@ -2847,23 +2876,25 @@ and a redo, the step
 .B \-\-status
 names for it too.
 .PP
-When many sessions fold fixes into the same deep history at once, each fold
-replays everything above its target and collides with the next. Land each fix
-at the tip as its own commit instead, then have each owner squash its fixes
-into their targets, one session at a time, and run the suite once on the
-result:
+When many sessions fold fixes into the same deep history at once \(em or one
+sweeps fixes into many older commits \(em each fold replays everything above
+its target and collides with the next. Land each fix at the tip as its own
+commit instead, then have each session squash its own fixes into their targets
+once it's done, one session at a time, and run the suite once on the result:
 .PP
 .nf
 .RS
 git edit \-\-commit \-\-text "fixup! <target's subject>" \-\- <paths>
-git edit \-s=auto <fixup commit>...
+git edit \-s=auto
 .RE
 .fi
 .PP
 The fixup's gate may wait for the squash
 .RB ( \-\-no\-verify ),
-and each squash runs gated, one replay taking every fixup into the target its
-marker names. A fix rewording its target lands as
+and each squash runs gated, one replay taking every fixup of the caller's own
+into the target its marker names, another session's left to it;
+.B \-\-status
+lists every pending one and who landed it. A fix rewording its target lands as
 \fBamend! <target's subject>\fR with the new message as its body, which
 the squash takes as git's autosquash would. A lost race, or a wait that
 ran out, points here when other callers landed on the branch 3 or more
