@@ -2971,7 +2971,9 @@ deliberately does not track \(em a
 .IR node_modules ,
 a virtualenv \(em and a fresh worktree has none of it. Links rather than
 copies, so a check there cannot diverge from what the real checkout has
-installed. A pattern written for a directory
+installed \(em where a commit locks something else,
+\fBedit.\fIpath\fB.installCmd\fR checks it on its own install. A pattern
+written for a directory
 .RI ( node_modules/ )
 does not match the symlink that stands in for it, so such a link would land
 untracked where the directory was ignored \(em and the amend at
@@ -2984,7 +2986,13 @@ Link only what is regenerable \(em never the root of irreplaceable shared
 data. A symlinked root is followed by anything that walks it: on BSD/macOS,
 .B "rm \-rf <link>/"
 with a trailing slash resolves through it and deletes the shared tree
-behind it. For a corpus or fixtures tree, name the specific subdirectory
+behind it. So does an install a check runs there \(em
+.B "npm ci"
+empties the checkout's own
+.I node_modules
+through the link \(em which
+\fBedit.\fIpath\fB.installCmd\fR runs safely instead. For a corpus or
+fixtures tree, name the specific subdirectory
 .RI ( data/corpus
 rather than
 .IR data )
@@ -2994,6 +3002,31 @@ worktree on \fB\-\-continue\fR. A value the checkout has nothing at is named
 rather than skipped silently, as a check needing it fails on that alone. So
 is one below a path the commit itself tracks as a symlink or a file: the
 commit's entry stays, and a link through it would land outside the worktree.
+.TP
+.B edit.\fIpath\fB.installCmd\fR, \fBedit.\fIpath\fB.lockfile
+How a linked
+.I path
+is installed, and from what: a command run in the directory holding it, such as
+.BR "npm ci \-\-prefer\-offline" ,
+and the files beside it that it installs from, such as
+.IR package\-lock.json ,
+one per value (repeatable). A link holds what the checkout installed from its own lockfile, so a check
+at a commit below a dependency change fails on that alone. With both set, a
+check at a commit whose lockfile differs from the one beside what the link
+points at runs on an install of that commit's own, and one failing on the
+link runs again on one before it counts, as the checkout's install may lag
+its own lockfile. An install is kept while the commits checked next lock the
+same, replaces the link rather than writing through it, and gives way to it
+again when the check ends. One that fails leaves the check on the link, said once per
+lockfile, as does one leaving nothing at
+.I path
+or nothing ignored there, which the amend at
+.B \-\-continue
+would commit, for the rest of that check. A
+.I path
+leaving the worktree is refused, as an install removes what stands there.
+Where a path is not linked, or has only one of the two set, nothing is
+installed, and the check says so.
 .TP
 .B edit.verifyCmd
 Standing verification command, applied as if every operation passed

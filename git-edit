@@ -107,7 +107,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	WHOLE_TREE WORKTREE_DIR WT_DEFAULT WT_HASH WT_OURS _ACTOR _ACTOR_ID _ACTOR_MAPPED _ACTOR_NAME _AT_PROMPT _BANNER_REPO \
 	_CALLER_ENV _CALLER_GCP _CALLER_GCP_SET _CAPTURE_DIR _CAPTURE_EXEC _CAPTURE_EXEC_ARGS \
 	_CAPTURE_PINS _CAPTURE_PIN_ARGS _CAPTURE_REWRITES _CLEANUP_HOOK _COLOR _CONFIG_ADOPTED \
-	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
+	_ALONE _CANCELLED_PAUSE _DEFERRED_SIGNAL _DEPS_PATHS _DIM _EXPECT_PAUSE _FACTS _FACTS_OFF _FACT_ID _FACT_KEY _GIT_VERSION _HELD_SIGNAL _HOOK_RUN_PROBED _IN_LANDED_STEP _IN_WRITE _INDEX_LOCK_OWN _INPUT_FLIPS _INPUT_WHOLE _JOURNAL_HELD _LANDED_INPUTS _LANDED_OWN _LANDED_PUTS _FOLD_READ \
 	_LANDED_MOVE _LANDING _LAND_ALIKE _LAND_CAUGHT _LAND_FORK _LAND_FORK_HOW _LAND_GONE _LAND_HELD_FORM _LAND_OWN _LAST_ERROR _LITB _LOCK_MARK _JOURNALED_MOVE _MODE_STRAY_AT \
 	_ANCESTRY _MOVE_JOURNAL _MOVE_MARK _MOVING_REF _NAMED_ALONE _NAP_PID _NARROWED _RENORM_FLAGGED _STEP_FILES _STEP_HELD _STEP_TTY _TRAILER_CODE _MERGE_AHEAD_OFF _MERGES _MERGE_FILE_IDS _MISS_FILES _MISS_VERDICTS _MSG_CC _MSG_CLEANUP _MSG_PATH _MSG_PIN _MSG_TYPED _OFF _ONTO_FORK_HINT _OTHERS_RESYNCED _UNDONE_LINE _ONTO_FORK _ONTO_FORK_GUESSED _PAD _PAUSE_AT_START _PT_RAW _RACE_LOST _REAL_EDITOR _USAGE_POINT _TYPED_KEEP _UNWIND_PATH \
 	_REBUILT_VIA_REPLAY _RED _REFLOG_TAG _REF_STORAGE _REPLAY_FLAGS _REPLAY_PROBED _RERERE_DIR _RERERE_OPTOUT \
@@ -1359,6 +1359,7 @@ _LINK_WORKTREE_EXTRAS () {
 	local FROM=$2
 	[ -z "$WT" ] || [ ! -d "$WT" ] && return 0
 	_RENORM_SETTLE "$WT"
+	_DEPS_CLEAR "$WT"
 	[ -z "$FROM" ] && _FACT FROM rev-parse --show-toplevel 2>/dev/null
 	[ -z "$FROM" ] || [ ! -d "$FROM" ] && return 0
 	_ADOPT_CHECKOUT_CONFIG "$WT" "$FROM"
@@ -18962,6 +18963,220 @@ _VERIFY_NOTE_LITTER () {
 	return 0
 }
 
+# Reads which linked paths say how they are installed – `edit.<path>.installCmd`, run
+# where the path sits, from the `edit.<path>.lockfile` files beside it – into the `_DEPS_*`
+# the gate scopes, refusing once a path whose removal could reach past the worktree
+_DEPS_READ () {
+	local -a EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}") NOTED
+	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
+	local P CMD LOCKS K
+	# A setting no install can come of is named, as it would otherwise read as one in force
+	for K in ${(f)"$(git config --name-only --get-regexp '^edit\..*\.(installcmd|lockfile)$' 2>/dev/null)"}; do
+		P=${${K#edit.}%.*}
+		(( ${EXTRAS[(Ie)$P]} + ${NOTED[(Ie)$P]} )) && continue
+		NOTED+=("$P")
+		PRINT_TEXT "Not installing %s – %s does not name it, and only a linked path is installed" 33 "$P" "edit.worktreeLink"
+	done
+	for P in "${EXTRAS[@]}"; do
+		[ -n "$P" ] && (( ! ${_DEPS_PATHS[(Ie)$P]} )) || continue
+		CMD=$(git config --get "edit.$P.installCmd" 2>/dev/null)
+		LOCKS=$(git config --get-all "edit.$P.lockfile" 2>/dev/null)
+		if [ -z "$CMD" ] || [ -z "$LOCKS" ]; then
+			[ -n "$CMD$LOCKS" ] && PRINT_TEXT "Not installing %s – %s needs %s beside it" 33 "$P" \
+				"edit.$P.${CMD:+installCmd}${LOCKS:+lockfile}" "edit.$P.${CMD:+lockfile}${LOCKS:+installCmd}"
+			continue
+		fi
+		if [[ "/$P/" == *(//|/./|/../)* || "$P" == *$'\n'* ]]; then
+			PRINT_TEXT "Not installing %s – an install replaces what stands there, so it takes a plain path below the repo root" 33 "$P"
+			continue
+		fi
+		_DEPS_PATHS+=("$P")
+		_DEPS_CMD[$P]=$CMD
+		_DEPS_LOCKS[$P]=$LOCKS
+	done
+}
+
+# Puts each `_DEPS_READ` path on <commit>'s own install where its lockfile there differs from the
+# one beside the link's target – with `--own` regardless – keeping an install while that holds
+# • `REPLY` – whether a path stays on a link an install could replace
+# • `reply` – the links `--own` replaced
+_VERIFY_DEPS () {
+	# Args: <worktree> <commit> [--own]
+	local WT=$1 C=$2 OWN=$3
+	local P D L B KEY ORIGIN RERUN=""
+	local -a REPLACED=()
+	REPLY=""
+	reply=()
+	[ -n "$WT" ] && [ -d "$WT" ] || return 0
+	for P in "${_DEPS_PATHS[@]}"; do
+		# What the commit tracks there, or above it, stays as the worktree holds it
+		git -C "$WT" cat-file -e "$C:$P" 2>/dev/null && continue
+		_LEADING_NON_DIR "$WT" "$P" && continue
+		D=${P:h}
+		[ "$D" = . ] && D=""
+		# The link standing at the first check is what an install replaces and gives way to again
+		# – its lockfile read where it resolves, as a checkout's own may link on in turn
+		if (( ! ${+_DEPS_ORIGIN[$P]} )); then
+			ORIGIN=""
+			[ -L "$WT/$P" ] && ORIGIN=$(readlink "$WT/$P")
+			_DEPS_ORIGIN[$P]=$ORIGIN
+			KEY=""
+			if [ -n "$ORIGIN" ]; then
+				for L in "${(@f)_DEPS_LOCKS[$P]}"; do
+					# Hashed as the worktree's repo would store it there – its object format, its attributes
+					[ -f "${ORIGIN:A:h}/$L" ] || { KEY=""; break; }
+					B=$(git -C "$WT" hash-object --path="${D:+$D/}$L" --stdin <"${ORIGIN:A:h}/$L" 2>/dev/null) || { KEY=""; break; }
+					KEY+="$B "
+				done
+			fi
+			_DEPS_OKEY[$P]=$KEY
+		fi
+		# Anything else standing there is the worktree's own, which no install replaces
+		[ -e "$WT/$P" ] && [ ! -L "$WT/$P" ] && [ -z "${_DEPS_HAVE[$P]}" ] && continue
+		KEY=""
+		for L in "${(@f)_DEPS_LOCKS[$P]}"; do
+			B=$(git -C "$WT" rev-parse -q --verify "$C:${D:+$D/}$L" 2>/dev/null) || { KEY=""; break; }
+			KEY+="$B "
+		done
+		[ -n "$KEY" ] && [ "$KEY" = "${_DEPS_HAVE[$P]}" ] && continue
+		# The link where the commit locks nothing, its install failed, or it locks what the link
+		# was installed from – which a check failing there puts to the test
+		if [ -z "$KEY" ] || [[ "${_DEPS_FAILED[$P]}" == *"|$KEY|"* ]] \
+			|| { [ -z "$OWN" ] && [ -n "${_DEPS_ORIGIN[$P]}" ] && [ "$KEY" = "${_DEPS_OKEY[$P]}" ]; }; then
+			[ -n "${_DEPS_HAVE[$P]}" ] && _DEPS_DROP "$WT" "$P"
+			[ -n "$KEY" ] && [ -z "$OWN" ] && [ -L "$WT/$P" ] && [[ "${_DEPS_FAILED[$P]}" != *"|$KEY|"* ]] && RERUN=1
+			continue
+		fi
+		_DEPS_INSTALL "$WT" "$C" "$P" "$KEY" && [ -n "$OWN" ] && REPLACED+=("${_DEPS_ORIGIN[$P]}")
+	done
+	# Answered last, as the helpers above answer through `REPLY` too
+	REPLY=$RERUN
+	reply=("${REPLACED[@]}")
+	return 0
+}
+
+# Installs <path> as <commit>'s lockfile names it, in place of the link or an earlier install
+# – named in the worktree's stamp first, so a run cut off midway leaves nothing a setup keeps
+_DEPS_INSTALL () {
+	# Args: <worktree> <commit> <path> <key>
+	local WT=$1 C=$2 P=$3 KEY=$4
+	local D=${P:h} STAMP OUT_FILE OUT WHY LOCKS=${(j:, :)${(@f)_DEPS_LOCKS[$3]}}
+	local -i T0 RC
+	[ "$D" = . ] && D=""
+	OUT_FILE=$(MKTEMP_FILE git-edit-install) || return 1
+	_TEMP_FILES+=("$OUT_FILE")
+	if [ -L "$WT/$P" ]; then
+		rm -f "${WT:?}/$P"
+	elif [ -n "${_DEPS_HAVE[$P]}" ]; then
+		rm -rf "${WT:?}/$P"
+	fi
+	unset "_DEPS_HAVE[$P]"
+	STAMP=$(git -C "$WT" rev-parse --path-format=absolute --git-path git-edit-installed 2>/dev/null)
+	[ -n "$STAMP" ] && { LC_ALL=C grep -qxF -- "$P" "$STAMP" 2>/dev/null || print -r -- "$P" >>"$STAMP"; }
+	T0=$SECONDS
+	(cd "$WT${D:+/$D}" && _CALLER_ENV_BACK && eval "${_DEPS_CMD[$P]}" </dev/null) >"$OUT_FILE" 2>&1
+	RC=$?
+	# The commit's own files as it holds them, whatever the install rewrote
+	git -C "$WT" checkout -qf --detach "$C" 2>/dev/null
+	OUT=$(<"$OUT_FILE")
+	rm -f "$OUT_FILE"
+	if [ $RC -ne 0 ]; then
+		WHY="exit $RC"
+		_DEPS_FAILED[$P]="${_DEPS_FAILED[$P]:-|}$KEY|"
+	else
+		# Ignored, or the amend at `--continue` would commit what it put there
+		if [ ! -e "$WT/$P" ] || [ -L "$WT/$P" ]; then
+			WHY="it put nothing there"
+		elif ! git -C "$WT" check-ignore -q -- "$P" 2>/dev/null; then
+			WHY="it is not ignored there, so an amend would commit it"
+		else
+			_DEPS_HAVE[$P]=$KEY
+			PRINT_TEXT "Installed %s from %s's %s in %ss" 90 "$P" "${C:0:7}" "$LOCKS" "$(( SECONDS - T0 ))"
+			return 0
+		fi
+		# Neither turns on the lockfile, so the path keeps its link for the rest of the gate
+		_DEPS_PATHS=("${(@)_DEPS_PATHS:#${(b)P}}")
+	fi
+	_DEPS_DROP "$WT" "$P"
+	PRINT_TEXT "Could not install %s from %s's %s (%s) – checking %s instead" 33 "$P" "${C:0:7}" "$LOCKS" "$WHY" \
+		"${${_DEPS_ORIGIN[$P]:+on the link}:-without it}"
+	[ $RC -ne 0 ] && [ -n "$OUT" ] && print -r -- "$OUT" | tail -3 | _CARET_LINES --crlf | LC_ALL=C sed "s/^/${_DIM}  | /;s/\$/${_OFF}/"
+	return 1
+}
+
+# Takes what the gate installed at <path> out of <worktree>, putting back the link it replaced
+_DEPS_DROP () {
+	# Args: <worktree> <path>
+	local WT=$1 P=$2 STAMP
+	local -a KEEP
+	[ -n "$WT" ] && [ -d "$WT" ] || return 0
+	if [ -L "$WT/$P" ]; then
+		rm -f "${WT:?}/$P"
+	elif [ -e "$WT/$P" ]; then
+		rm -rf "${WT:?}/$P"
+	fi
+	unset "_DEPS_HAVE[$P]"
+	[ -n "${_DEPS_ORIGIN[$P]}" ] && ln -sfn "${_DEPS_ORIGIN[$P]}" "$WT/$P"
+	STAMP=$(git -C "$WT" rev-parse --path-format=absolute --git-path git-edit-installed 2>/dev/null)
+	[ -n "$STAMP" ] && [ -f "$STAMP" ] || return 0
+	KEEP=("${(@f)$(<"$STAMP")}")
+	KEEP=("${(@)KEEP:#${(b)P}}")
+	if [ -n "${(j::)KEEP}" ]; then
+		print -rl -- "${KEEP[@]}" >"$STAMP"
+	else
+		rm -f "$STAMP"
+	fi
+}
+
+# Puts back every link the gate's installs replaced in <worktree>, as it ends
+_VERIFY_DEPS_RESET () {
+	# Args: <worktree>
+	local P
+	for P in ${(k)_DEPS_HAVE}; do
+		_DEPS_DROP "$1" "$P"
+	done
+}
+
+# Takes out what a gate cut off midway installed in <worktree>, as its stamp names
+# – every setup and resume then starts on the link
+_DEPS_CLEAR () {
+	# Args: <worktree>
+	local WT=$1 STAMP P
+	[ -n "$WT" ] && [ -d "$WT" ] || return 0
+	STAMP=$(git -C "$WT" rev-parse --path-format=absolute --git-path git-edit-installed 2>/dev/null)
+	[ -n "$STAMP" ] && [ -f "$STAMP" ] || return 0
+	for P in "${(@f)$(<"$STAMP")}"; do
+		[ -n "$P" ] && [[ "/$P/" != *(//|/./|/../)* ]] || continue
+		[ -e "$WT/$P" ] && [ ! -L "$WT/$P" ] && rm -rf "${WT:?}/$P"
+	done
+	rm -f "$STAMP"
+}
+
+# Runs <cmd> at <commit> in <worktree> into <out>, on the commit's own installs where they apply
+# – a failure on a link an install could replace reruns on that install, whose failure counts
+_VERIFY_RUN () {
+	# Args: <worktree> <commit> <cmd> <out>
+	local -i RC
+	local AGAIN
+	local -a ON
+	_VERIFY_DEPS "$1" "$2"
+	AGAIN=$REPLY
+	(cd "$1" && export GIT_EDIT_VERIFY_COMMIT=$2 && _CALLER_ENV_BACK && eval "$3" </dev/null) >"$4" 2>&1
+	RC=$?
+	[ $RC -eq 0 ] || [ -z "$AGAIN" ] && return $RC
+	_VERIFY_CLEAN "$1"
+	git -C "$1" checkout -qf --detach "$2" 2>/dev/null || return $RC
+	_VERIFY_DEPS "$1" "$2" --own
+	(( ${#reply} )) || return $RC
+	ON=("${reply[@]}")
+	(cd "$1" && export GIT_EDIT_VERIFY_COMMIT=$2 && _CALLER_ENV_BACK && eval "$3" </dev/null) >"$4" 2>&1
+	RC=$?
+	# The gate passes, while the checkout's own check fails on what it installed
+	[ $RC -eq 0 ] && PRINT_TEXT "%s passed on its own install after failing on the link to %s – that install may lag its lockfile" 33 \
+		"${2:0:7}" "${(j:, :)ON}"
+	return $RC
+}
+
 # Says who broke the check and where it heals, the two questions a failure raises – the
 # counterpart run attributes it, since a check already failing at the commit this one replaces,
 # or below a new one, was failing before the rewrite, and otherwise the walk climbs the span
@@ -18994,7 +19209,7 @@ _VERIFY_DIAGNOSE () {
 		git -C "$WT" cat-file -e "$CP:$P" 2>/dev/null || CP=""
 	done
 	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
-		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$CP && _CALLER_ENV_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1
+		_VERIFY_RUN "$WT" "$CP" "$CMD" /dev/null
 		local CP_RC=$?
 		_VERIFY_CLEAN "$WT"
 		if [ $CP_RC -ne 0 ]; then
@@ -19048,7 +19263,7 @@ _VERIFY_DIAGNOSE () {
 		[ "$SKIP" = "true" ] && continue
 		git -C "$WT" checkout -qf --detach "$X" 2>/dev/null || continue
 		CHECKED+=1
-		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$X && _CALLER_ENV_BACK && eval "$CMD" </dev/null) >/dev/null 2>&1 && FOUND=$X
+		_VERIFY_RUN "$WT" "$X" "$CMD" /dev/null && FOUND=$X
 		_VERIFY_CLEAN "$WT"
 	done
 	if [ -n "$FOUND" ]; then
@@ -19158,6 +19373,10 @@ _VERIFY_REWRITE () {
 		[ -n "$P" ] && git -C "$WT" cat-file -e "$NEW_HEAD:$P" 2>/dev/null && CMD_PATHS+=("$P")
 	done
 	PRINT_CMD "$VERIFY_CMD # verify ${#COMMITS[@]} commit(s)" 90
+	# The linked paths each check installs from its commit's own lockfile, and what stands where
+	local -a _DEPS_PATHS=()
+	local -A _DEPS_CMD _DEPS_LOCKS _DEPS_ORIGIN _DEPS_OKEY _DEPS_HAVE _DEPS_FAILED
+	_DEPS_READ
 	local C
 	local OUT
 	local OUT_FILE
@@ -19192,6 +19411,7 @@ _VERIFY_REWRITE () {
 		fi
 		if ! git -C "$WT" checkout -qf --detach "$C" 2>/dev/null; then
 			PRINT_ERR "Cannot check out ${C:0:7} for verification"
+			_VERIFY_DEPS_RESET "$WT"
 			_VERIFY_FAILED=$C
 			return 1
 		fi
@@ -19210,7 +19430,7 @@ _VERIFY_REWRITE () {
 		OUT_FILE=$(MKTEMP_FILE git-edit-verify-out) || exit 1
 		_TEMP_FILES+=("$OUT_FILE")
 		RUN_T0=$SECONDS
-		(cd "$WT" && export GIT_EDIT_VERIFY_COMMIT=$C && _CALLER_ENV_BACK && eval "$VERIFY_CMD" </dev/null) >"$OUT_FILE" 2>&1
+		_VERIFY_RUN "$WT" "$C" "$VERIFY_CMD" "$OUT_FILE"
 		RC=$?
 		OUT=$(<"$OUT_FILE")
 		rm -f "$OUT_FILE"
@@ -19229,6 +19449,7 @@ _VERIFY_REWRITE () {
 			# and one left at a walked commit would land that commit as the new tip
 			_VERIFY_DIAGNOSE "$WT" "$VERIFY_CMD" "$C" "$ORIG_HEAD" "$NEW_HEAD" "$RUN_SECS" -- "${CMD_PATHS[@]}"
 			_VERIFY_NOTE_LITTER
+			_VERIFY_DEPS_RESET "$WT"
 			git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 			# A mode with no pause keeps neither the worktree nor a resume, so both hints
 			# would point at what its exit is about to remove – it names its own recourse
@@ -19246,6 +19467,7 @@ _VERIFY_REWRITE () {
 	done
 	local -i VERIFY_SECS=$(( SECONDS - VERIFY_T0 ))
 	_VERIFY_NOTE_LITTER
+	_VERIFY_DEPS_RESET "$WT"
 	# End at the tip, so the worktree a later step or reader sees is the result
 	git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
 	# One line for the whole outcome, since that is the line a caller greps: a bare "Verified 2

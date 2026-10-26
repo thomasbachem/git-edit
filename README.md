@@ -195,6 +195,13 @@ Pair it with `edit.worktreeLink`. A fresh worktree holds none of what the repo d
 git config --add edit.worktreeLink node_modules
 ```
 
+A link holds what your checkout installed, though, and a commit below a dependency upgrade locks something else. Name how the path is installed and from what, and a check at a commit whose lockfile differs runs on that commit's own install – as does one failing on the link, in case your install lags its lockfile:
+
+```
+git config edit.node_modules.lockfile package-lock.json
+git config edit.node_modules.installCmd 'npm ci --prefer-offline'
+```
+
 ## Driving it from a script or an agent
 
 Every run ends with a single status line, written as prose and anchored by `git-edit: <outcome>`:
@@ -249,7 +256,7 @@ Worth putting in an agent's own instructions verbatim: *with `GIT_EDIT_ACTOR` se
 | `--undo`, `--status`, `--carry[=<old tip>]` | Take back the last run – report the one in flight, else the last – bring the checkout along to what landed |
 | `-h [<topic>...]`, `--version`, `--selftest[=<ids>]`, `--jobs[=<n>]` | The usage or a flag's entry (prefer it to `--help`, which git routes through `man`), the version, the suite |
 
-Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_NO_SELF_RESOLVE`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them. Every temp worktree reads the config your checkout reads, too – an `onbranch` include's identity or signing key, and a relative `core.hooksPath` such as husky's.
+Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.<path>.installCmd` and `edit.<path>.lockfile` (how a linked path is installed, and from what), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_NO_SELF_RESOLVE`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them. Every temp worktree reads the config your checkout reads, too – an `onbranch` include's identity or signing key, and a relative `core.hooksPath` such as husky's.
 
 ## A run, as an agent sees it
 
