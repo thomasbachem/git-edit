@@ -3026,7 +3026,10 @@ would commit, for the rest of that check. A
 .I path
 leaving the worktree is refused, as an install removes what stands there.
 Where a path is not linked, or has only one of the two set, nothing is
-installed, and the check says so.
+installed, and the check says so. A pause whose worktree locks something
+else than what the link was installed from says so too, as a check run
+there gets the link and the install command run there would reach through
+it \(em at a verify pause, for the commit that failed.
 .TP
 .B edit.verifyCmd
 Standing verification command, applied as if every operation passed

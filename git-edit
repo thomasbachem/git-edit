@@ -1501,6 +1501,7 @@ EMIT_DRY_RUN () {
 # Emits the conflict trailer, naming the worktree to resolve in and its unmerged files
 EMIT_CONFLICT () {
 	# Args: <worktree-path> [<unmerged files, one per line>]
+	_DEPS_NOTE_PAUSE "$1"
 	local FILES_PART=""
 	if [ -n "$2" ]; then
 		FILES_PART=" (${(j:, :)${(f)2}})"
@@ -1513,6 +1514,7 @@ EMIT_CONFLICT () {
 # on a conflict – nothing is unmerged, there is just authoring left to do
 EMIT_PAUSED () {
 	# Args: <operation> <sha> <worktree-path>
+	_DEPS_NOTE_PAUSE "$3"
 	_EMIT_TRAILER "git-edit: paused – $1 ${2:0:7} in $3; then 'git edit --continue' or 'git edit --abort'"
 	_STATUS_EMITTED=true
 }
@@ -1526,6 +1528,7 @@ EMIT_VERIFY_PAUSED () {
 	# conflict, and `verify_result` records what a resume applies, the worktree's `HEAD` being
 	[ "$STATE_VERIFY_FAILED" != "$1" ] && _STATE_NOTE "verify_failed=$1"
 	[ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ] && _STATE_NOTE "verify_result=$3"
+	_DEPS_NOTE_PAUSE "$2" "$1"
 	# A driver greps the trailer, commonly through a `| tail -N` that cuts off
 	# the run's own output printed above it – so the trailer carries the path
 	local VLOG=$(_VERIFY_LOG_PATH)
@@ -18967,6 +18970,8 @@ _VERIFY_NOTE_LITTER () {
 # where the path sits, from the `edit.<path>.lockfile` files beside it – into the `_DEPS_*`
 # the gate scopes, refusing once a path whose removal could reach past the worktree
 _DEPS_READ () {
+	# Args: [--quiet] – naming none of the settings it skips
+	local QUIET=$1
 	local -a EXTRAS=("${(@f)$(git config --get-all edit.worktreeLink 2>/dev/null)}") NOTED
 	[ -n "$GIT_EDIT_WORKTREE_LINK" ] && EXTRAS+=("${(@s.:.)GIT_EDIT_WORKTREE_LINK}")
 	local P CMD LOCKS K
@@ -18975,19 +18980,19 @@ _DEPS_READ () {
 		P=${${K#edit.}%.*}
 		(( ${EXTRAS[(Ie)$P]} + ${NOTED[(Ie)$P]} )) && continue
 		NOTED+=("$P")
-		PRINT_TEXT "Not installing %s – %s does not name it, and only a linked path is installed" 33 "$P" "edit.worktreeLink"
+		[ -n "$QUIET" ] || PRINT_TEXT "Not installing %s – %s does not name it, and only a linked path is installed" 33 "$P" "edit.worktreeLink"
 	done
 	for P in "${EXTRAS[@]}"; do
 		[ -n "$P" ] && (( ! ${_DEPS_PATHS[(Ie)$P]} )) || continue
 		CMD=$(git config --get "edit.$P.installCmd" 2>/dev/null)
 		LOCKS=$(git config --get-all "edit.$P.lockfile" 2>/dev/null)
 		if [ -z "$CMD" ] || [ -z "$LOCKS" ]; then
-			[ -n "$CMD$LOCKS" ] && PRINT_TEXT "Not installing %s – %s needs %s beside it" 33 "$P" \
+			[ -n "$CMD$LOCKS" ] && [ -z "$QUIET" ] && PRINT_TEXT "Not installing %s – %s needs %s beside it" 33 "$P" \
 				"edit.$P.${CMD:+installCmd}${LOCKS:+lockfile}" "edit.$P.${CMD:+lockfile}${LOCKS:+installCmd}"
 			continue
 		fi
 		if [[ "/$P/" == *(//|/./|/../)* || "$P" == *$'\n'* ]]; then
-			PRINT_TEXT "Not installing %s – an install replaces what stands there, so it takes a plain path below the repo root" 33 "$P"
+			[ -n "$QUIET" ] || PRINT_TEXT "Not installing %s – an install replaces what stands there, so it takes a plain path below the repo root" 33 "$P"
 			continue
 		fi
 		_DEPS_PATHS+=("$P")
@@ -19015,21 +19020,12 @@ _VERIFY_DEPS () {
 		D=${P:h}
 		[ "$D" = . ] && D=""
 		# The link standing at the first check is what an install replaces and gives way to again
-		# – its lockfile read where it resolves, as a checkout's own may link on in turn
 		if (( ! ${+_DEPS_ORIGIN[$P]} )); then
 			ORIGIN=""
 			[ -L "$WT/$P" ] && ORIGIN=$(readlink "$WT/$P")
 			_DEPS_ORIGIN[$P]=$ORIGIN
-			KEY=""
-			if [ -n "$ORIGIN" ]; then
-				for L in "${(@f)_DEPS_LOCKS[$P]}"; do
-					# Hashed as the worktree's repo would store it there – its object format, its attributes
-					[ -f "${ORIGIN:A:h}/$L" ] || { KEY=""; break; }
-					B=$(git -C "$WT" hash-object --path="${D:+$D/}$L" --stdin <"${ORIGIN:A:h}/$L" 2>/dev/null) || { KEY=""; break; }
-					KEY+="$B "
-				done
-			fi
-			_DEPS_OKEY[$P]=$KEY
+			_DEPS_ORIGIN_KEY "$ORIGIN" "$P" "$WT"
+			_DEPS_OKEY[$P]=$REPLY
 		fi
 		# Anything else standing there is the worktree's own, which no install replaces
 		[ -e "$WT/$P" ] && [ ! -L "$WT/$P" ] && [ -z "${_DEPS_HAVE[$P]}" ] && continue
@@ -19052,6 +19048,66 @@ _VERIFY_DEPS () {
 	# Answered last, as the helpers above answer through `REPLY` too
 	REPLY=$RERUN
 	reply=("${REPLACED[@]}")
+	return 0
+}
+
+# Puts into `REPLY` the blobs of <path>'s lockfiles beside where the link <origin> resolves
+# – a checkout's own may link on in turn – empty where one is missing there
+_DEPS_ORIGIN_KEY () {
+	# Args: <origin> <path> <worktree> – whose repo hashes them, in its object format and attributes
+	local L B D=${2:h}
+	REPLY=""
+	[ -n "$1" ] || return 0
+	[ "$D" = . ] && D=""
+	for L in "${(@f)_DEPS_LOCKS[$2]}"; do
+		[ -f "${1:A:h}/$L" ] || { REPLY=""; return 0; }
+		B=$(git -C "$3" hash-object --path="${D:+$D/}$L" --stdin <"${1:A:h}/$L" 2>/dev/null) || { REPLY=""; return 0; }
+		REPLY+="$B "
+	done
+}
+
+# Names each linked path a pause leaves on an install its worktree's lockfile – or with <commit>,
+# that commit's – does not match, as a check run there can fail on that alone, and the install
+# a caller might run there instead would reach through the link
+_DEPS_NOTE_PAUSE () {
+	# Args: <worktree> [<commit>]
+	local WT=$1 C=$2 P D L B KEY ORIGIN
+	local FMT="Checks run here get %s from %s, installed from another %s than this worktree's – a failure can be that alone, and \`%s\` run here would reach through the link into it"
+	local -a _DEPS_PATHS=()
+	local -A _DEPS_CMD _DEPS_LOCKS
+	[ -n "$WT" ] && [ -d "$WT" ] || return 0
+	_DEPS_READ --quiet
+	(( ${#_DEPS_PATHS} )) || return 0
+	# The gate a plain `--continue` runs, whatever this run declined
+	local -a OPT_NO_VERIFY=()
+	_VERIFY_CONFIGURED && FMT+=", while the gate at --continue installs what its commits lock"
+	for P in "${_DEPS_PATHS[@]}"; do
+		# Only a link of git-edit's own, never one the worktree tracks there or above
+		[ -L "$WT/$P" ] && [ -z "$(git -C "$WT" --literal-pathspecs ls-files -- "$P" 2>/dev/null)" ] || continue
+		_LEADING_NON_DIR "$WT" "$P" && continue
+		ORIGIN=$(readlink "$WT/$P")
+		D=${P:h}
+		[ "$D" = . ] && D=""
+		KEY=""
+		for L in "${(@f)_DEPS_LOCKS[$P]}"; do
+			if [ -n "$C" ]; then
+				B=$(git -C "$WT" rev-parse -q --verify "$C:${D:+$D/}$L" 2>/dev/null)
+			else
+				B=$(git -C "$WT" hash-object -- "${D:+$D/}$L" 2>/dev/null)
+			fi
+			[ -n "$B" ] || { KEY=""; break; }
+			KEY+="$B "
+		done
+		# Said only where both sides are known, a link from no lockfile being no claim to make
+		_DEPS_ORIGIN_KEY "$ORIGIN" "$P" "$WT"
+		[ -n "$KEY" ] && [ -n "$REPLY" ] && [ "$KEY" != "$REPLY" ] || continue
+		if [ -n "$C" ]; then
+			PRINT_TEXT "Checks run there at %s get %s from %s, installed from another %s than that commit's – a failure can be that alone, and \`%s\` run there would reach through the link into it" 33 \
+				"${C:0:7}" "$P" "$ORIGIN" "${(j:, :)${(@f)_DEPS_LOCKS[$P]}}" "${_DEPS_CMD[$P]}"
+		else
+			PRINT_TEXT "$FMT" 33 "$P" "$ORIGIN" "${(j:, :)${(@f)_DEPS_LOCKS[$P]}}" "${_DEPS_CMD[$P]}"
+		fi
+	done
 	return 0
 }
 
