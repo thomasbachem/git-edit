@@ -8169,9 +8169,41 @@ _REQUIRE_NO_INFLIGHT () {
 		[ -n "$SB" ] && _RACE_LOST=("refs/heads/$SB" "$(_JOURNAL_FILE_PATH)")
 		exit 1
 	fi
-	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB}, paused for its resolution${REPLY:+ – $REPLY}"
+	local OWNER=$REPLY
+	_INFLIGHT_SUBJECT "$SF" && OWNER=""
+	PRINT_ERR "$REPLY is in flight${SB:+ on $SB}, paused for its resolution${OWNER:+ – $OWNER}"
 	_ECHO_INFLIGHT_STEP "$SF"
 	exit 1
+}
+
+# Opens a refusal over the pause <state file> into `REPLY` – the labeled caller's own by what it
+# paused, as its label would read as another's, else "Another git-edit operation"
+# Returns 1 for one not the caller's, whose owner the refusal names
+_INFLIGHT_SUBJECT () {
+	# Args: <state file>
+	_PAUSE_WHOSE "$1"
+	if [ "$REPLY" = own ] && [ -n "$_ACTOR_ID" ]; then
+		_PAUSE_FILE_NAME "$1"
+		REPLY="Your own $REPLY"
+		return 0
+	fi
+	REPLY="Another git-edit operation"
+	return 1
+}
+
+# Names the pause <state file> holds into `REPLY` – its action or operation with its target,
+# a placement by what it placed, as `_PAUSE_NAME` names it
+_PAUSE_FILE_NAME () {
+	# Args: <state file>
+	local ID=$(LC_ALL=C sed -n 's/^target=//p' "$1" 2>/dev/null | tail -1)
+	local PLACED=$(LC_ALL=C sed -n 's/^place_label=//p' "$1" 2>/dev/null | tail -1)
+	REPLY=$(LC_ALL=C sed -n 's/^action=//p' "$1" 2>/dev/null | tail -1)
+	[ -n "$REPLY" ] || REPLY=$(LC_ALL=C sed -n 's/^operation=//p' "$1" 2>/dev/null | tail -1)
+	if [ -n "$PLACED" ]; then
+		REPLY="${PLACED%% *} placed ${PLACED#* }"
+	else
+		REPLY="${REPLY:-operation}${ID:+ ${ID:0:7}}"
+	fi
 }
 
 # Prints the step a refusal over the pause <state file> holds names – another caller's
@@ -8183,6 +8215,8 @@ _ECHO_INFLIGHT_STEP () {
 	_PAUSE_WHOSE "$1"
 	if [ "$REPLY" = other ] && [ -n "$_ACTOR_ID" ] && _PAUSE_OWNER "$1" && [ -n "$REPLY" ]; then
 		ECHO_E "\e[0;31m  Leave it to that caller, or wait for it to clear: run this again with --wait=<secs>${2:+ – $2} ('git edit --status' shows it).\e[0m" >&2
+	elif [ "$REPLY" = own ] && [ -n "$_ACTOR_ID" ]; then
+		ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again${2:+ – $2} ('git edit --status' shows where it stopped and why).\e[0m" >&2
 	else
 		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it – if another session's, wait for it ('git edit --status' shows it)${2:+, $2}.\e[0m" >&2
 	fi
@@ -8267,7 +8301,7 @@ _AWAIT_SLOT () {
 # `REPLY` holding the seconds waited where it ran out, empty where it never waited
 _WAIT_OUT_PAUSE () {
 	# Args: [--stop – at the run's own stop, which then pauses]
-	local SF=$(_STATE_FILE_PATH) SB ID WHAT AGE PLACED THEN=running
+	local SF=$(_STATE_FILE_PATH) SB WHAT AGE THEN=running
 	local -i T WAITED
 	# Counted to the fraction, as a start floored to its second overshoots a short bound by nearly one
 	local -F START=$EPOCHREALTIME LEFT
@@ -8291,19 +8325,15 @@ _WAIT_OUT_PAUSE () {
 		if [ -z "$_WAITING" ]; then
 			_PAUSE_OWNER "$SF"
 			_WAITING=${REPLY:-"another run's"}
-			WHAT=$(LC_ALL=C sed -n 's/^action=//p' "$SF" 2>/dev/null | tail -1)
-			[ -n "$WHAT" ] || WHAT=$(LC_ALL=C sed -n 's/^operation=//p' "$SF" 2>/dev/null | tail -1)
-			ID=$(LC_ALL=C sed -n 's/^target=//p' "$SF" 2>/dev/null | tail -1)
-			# A placement by what it placed, as `_PAUSE_NAME` names it – its anchor in that name
-			PLACED=$(LC_ALL=C sed -n 's/^place_label=//p' "$SF" 2>/dev/null | tail -1)
-			[ -n "$PLACED" ] && WHAT="${PLACED%% *} placed ${PLACED#* }" ID=""
+			_PAUSE_FILE_NAME "$SF"
+			WHAT=$REPLY
 			# Stood since the pause was written – its nonce's clock, else the file's
 			T=$(LC_ALL=C sed -n 's/^nonce=[0-9]*\.\([0-9]*\).*/\1/p' "$SF" 2>/dev/null | tail -1)
 			(( T > 1000000000 )) || T=$(zmodload -F zsh/stat b:zstat 2>/dev/null && zstat +mtime -- "$SF" 2>/dev/null)
 			AGE=""
 			(( T > 0 && EPOCHSECONDS >= T )) && AGE=$(_AGO $(( EPOCHSECONDS - T )))
 			PRINT_TEXT "Waiting up to %s for %s paused %s to clear – re-checking every 2s, then %s" 33 \
-				"${WAIT_SECS}s" "$_WAITING" "${WHAT:-operation}${ID:+ ${ID:0:7}}${SB:+ on $SB}${AGE:+ (paused $AGE ago)}" "$THEN"
+				"${WAIT_SECS}s" "$_WAITING" "$WHAT${SB:+ on $SB}${AGE:+ (paused $AGE ago)}" "$THEN"
 			START=$EPOCHREALTIME
 		fi
 		LEFT=$(( WAIT_SECS - (EPOCHREALTIME - START) ))
@@ -8403,7 +8433,7 @@ _PAUSE_FOREIGN () {
 _REFUSE_PEER_PAUSE () {
 	# Args: [<ref this run moves> [<message typed in an editor> <command rerunning with it>
 	# [<seconds waited at the run's stop>]]]
-	local SF=$(_STATE_FILE_PATH) SB WHOSE
+	local SF=$(_STATE_FILE_PATH) SB WHOSE OWNER
 	SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
 	SB=${SB#refs/heads/}
 	local ASIDE=""
@@ -8414,15 +8444,23 @@ _REFUSE_PEER_PAUSE () {
 	_PAUSE_WHOSE "$SF"
 	WHOSE=$REPLY
 	_PAUSE_OWNER "$SF"
+	OWNER=$REPLY
+	_INFLIGHT_SUBJECT "$SF" && OWNER="" WHOSE=mine
 	# An undo never waits for a pause – the wording its own start check gives
 	if [ ${#OPT_UNDO} -gt 0 ]; then
-		PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this undo ran, so nothing was undone"
-		ECHO_E "\e[0;31m  Wait for it to clear, then undo ('git edit --status' shows it).\e[0m" >&2
+		PRINT_ERR "$REPLY is in flight${SB:+ on $SB} (paused for resolution${OWNER:+ – $OWNER}) – it paused while this undo ran, so nothing was undone"
+		if [ "$WHOSE" = mine ]; then
+			ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then undo ('git edit --status' shows where it stopped and why).\e[0m" >&2
+		else
+			ECHO_E "\e[0;31m  Wait for it to clear, then undo ('git edit --status' shows it).\e[0m" >&2
+		fi
 		exit 1
 	fi
 	if [ -n "$ASIDE" ]; then
-		PRINT_ERR "Another git-edit operation is ${4:+still }in flight on $SB${4:+ after waiting ${4}s at this run's stop} (paused for resolution${REPLY:+ – $REPLY}) – this run must pause too, and the repository holds one pause at a time, so nothing was applied"
-		if [ -n "$4" ]; then
+		PRINT_ERR "$REPLY is ${4:+still }in flight on $SB${4:+ after waiting ${4}s at this run's stop} (paused for resolution${OWNER:+ – $OWNER}) – this run must pause too, and the repository holds one pause at a time, so nothing was applied"
+		if [ "$WHOSE" = mine ]; then
+			ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again ('git edit --status' shows where it stopped and why).\e[0m" >&2
+		elif [ -n "$4" ]; then
 			ECHO_E "\e[0;31m  Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run ('git edit --status' shows the pause).\e[0m" >&2
 		elif [ "$WHOSE" = other ]; then
 			ECHO_E "\e[0;31m  Rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there ('git edit --status' shows it).\e[0m" >&2
@@ -8432,8 +8470,10 @@ _REFUSE_PEER_PAUSE () {
 		_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 		exit 1
 	fi
-	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this one ran, so nothing was applied"
-	if [ "$WHOSE" = other ]; then
+	PRINT_ERR "$REPLY is in flight${SB:+ on $SB} (paused for resolution${OWNER:+ – $OWNER}) – it paused while this one ran, so nothing was applied"
+	if [ "$WHOSE" = mine ]; then
+		ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again ('git edit --status' shows where it stopped and why).\e[0m" >&2
+	elif [ "$WHOSE" = other ]; then
 		ECHO_E "\e[0;31m  Its resolution lands only on the tip it read – rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
 	else
 		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
@@ -22421,7 +22461,9 @@ _REQUIRE_PATH_UNPAUSED () {
 	WT=$(LC_ALL=C sed -n 's/^worktree=//p' "$SF" 2>/dev/null | tail -1)
 	[ -n "$WT" ] && [ "$(git -C "$WT" rev-parse --absolute-git-dir 2>/dev/null)" = "$1" ] || return 0
 	_PAUSE_OWNER "$SF"
-	PRINT_ERR "Another git-edit operation is in flight in -C/--dir path '$WORKTREE_DIR', paused there as this run started${REPLY:+ – $REPLY} – nothing ran"
+	local OWNER=$REPLY
+	_INFLIGHT_SUBJECT "$SF" && OWNER=""
+	PRINT_ERR "$REPLY is in flight in -C/--dir path '$WORKTREE_DIR', paused there as this run started${OWNER:+ – $OWNER} – nothing ran"
 	_ECHO_INFLIGHT_STEP "$SF" "or name another path"
 	exit 1
 }

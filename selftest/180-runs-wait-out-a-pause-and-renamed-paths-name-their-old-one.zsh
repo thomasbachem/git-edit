@@ -117,7 +117,7 @@ WT_T=$EPOCHSECONDS
 _W180_BG w6 GIT_EDIT_ACTOR=w-peer -- -M --text="WT c own" --wait=30 HEAD
 _W180_END w6
 _ST_EQ "a pause under the caller's own label refuses at once" "$RC:$(( EPOCHSECONDS - WT_T < 15 ))" "1:1"
-_ST_OUT_HAS "naming its continue and abort" "If it is yours, 'git edit --continue' or 'git edit --abort' it"
+_ST_OUT_HAS "naming its continue and abort" "Finish it first with 'git edit --continue', or 'git edit --abort' it"
 _ST_OUT_LACKS "never waited for" 'Waiting up to'
 export GIT_EDIT_ACTOR=w-peer
 _ST_RUN --abort

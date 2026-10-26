@@ -161,8 +161,8 @@ _ST_EQ "as does a reword, needing no pause itself" "$RC:$(git log -1 --format=%s
 git checkout -q wc-paused
 echo pz2 > wc-pz2.txt
 _ST_RUN --commit --text "x" -- wc-pz2.txt
-_ST_OUT_HAS "and --commit on the paused branch refuses" 'operation is in flight on wc-paused'
-_ST_OUT_HAS "saying whose call it is" "if another session's, wait for it"
+_ST_OUT_HAS "and --commit on the paused branch refuses" 'Your own amend-into [0-9a-f]* is in flight on wc-paused'
+_ST_OUT_HAS "saying whose call it is" "Finish it first with 'git edit --continue'"
 rm -f wc-pz2.txt
 _ST_RUN --abort
 git checkout -q "$WC_BR"

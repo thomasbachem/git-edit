@@ -108,7 +108,9 @@ _ST_OUT_LACKS "never offered to continue" 'If it is yours'
 _ST_RUN -M --text "SO4 C reworded" HEAD
 _ST_OUT_HAS "while an unlabeled caller, which may resume it, is named its continue and abort" "If it is yours, 'git edit --continue' or 'git edit --abort' it"
 _S197_RUN so-peer -M --text "SO4 C reworded" --wait=0 HEAD
-_ST_OUT_HAS "while the caller's own names its continue and abort" "If it is yours, 'git edit --continue' or 'git edit --abort' it"
+_ST_OUT_HAS "while the caller's own is named its own, by what it paused" "Your own edit $(git rev-parse --short=7 HEAD~1) is in flight on "
+_ST_OUT_LACKS "never by its label, as another's would be" "so-peer's"
+_ST_OUT_HAS "and names its continue and abort as the step" "Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again"
 _S197_STRIP 'actor|actor_id'
 _S197_RUN so-self -M --text "SO4 C reworded" --wait=0 HEAD
 _ST_OUT_HAS "as does one from before labels" "If it is yours, 'git edit --continue' or 'git edit --abort' it"
