@@ -80,6 +80,15 @@ if [ -f "$MANPAGE" ]; then
 	_ST_CHECK "-h M is the reword, by case" grep -qE '^-M, --reword$' <<<"$("$SELF" -h M 2>&1)"
 	_ST_CHECK "-h m the message flag" grep -qE '^-m, --message$' <<<"$("$SELF" -h m 2>&1)"
 	_ST_CHECK "-h fold the --amend-into entry" grep -qE '^--amend-into=' <<<"$("$SELF" -h fold 2>&1)"
+	# Topics guessed from the usage's own words – a placeholder, git's term, a config key
+	_ST_CHECK "-h '<sha>' the plain edit" grep -qE '^-e, --edit$' <<<"$("$SELF" -h '<sha>' 2>&1)"
+	_ST_CHECK "-h fixup the squash, -s=auto in it" grep -qE '^  With -s=auto, ' <<<"$("$SELF" -h fixup 2>&1)"
+	_ST_CHECK "-h --tier the span tier" grep -qE '^--verify-span$' <<<"$("$SELF" -h --tier 2>&1)"
+	_ST_CHECK "-h commit the --commit entry still" grep -qE '^--commit ' <<<"$("$SELF" -h commit 2>&1)"
+	_ST_CHECK "-h --worktree-link the config key's entry" grep -qE '^edit\.worktreeLink$' <<<"$("$SELF" -h --worktree-link 2>&1)"
+	_ST_CHECK "-h verifyCmd too" grep -qE '^edit\.verifyCmd$' <<<"$("$SELF" -h verifyCmd 2>&1)"
+	_ST_CHECK "-h edit.verifySpan the key, not the flag" grep -qE '^edit\.verifySpan$' <<<"$("$SELF" -h edit.verifySpan 2>&1)"
+	_ST_CHECK "-h lockfile the key's shared entry" grep -qE '^edit\.<path>\.installCmd, edit\.<path>\.lockfile$' <<<"$("$SELF" -h lockfile 2>&1)"
 	_ST_CHECK "-h checkout the section of that title" grep -qE '^THE CHECKOUT$' <<<"$("$SELF" -h checkout 2>&1)"
 	# Every section reads as plain text, no roff escape left over
 	local HSECT HLEFT=""

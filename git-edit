@@ -1020,7 +1020,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --carry[=<old tip>]             Bring the checkout along to what landed, your edits merged onto it\e[0m"
 	ECHO_E "\e[0;94m       --selftest[=<ids>]              Run the end-to-end suite, or just those scenarios\e[0m"
 	ECHO_E "\e[0;94m       --jobs[=<n>]                    With --selftest: run <n> scenarios at a time, one a core by default\e[0m"
-	ECHO_E "\e[0;94m       -h [<topic>...]                 This usage – or each flag's or section's entry of the manual (--help goes to man)\e[0m"
+	ECHO_E "\e[0;94m       -h [<topic>...]                 This usage – or each flag's, config key's or section's entry of the manual (--help goes to man)\e[0m"
 	ECHO_E "\e[0;94m       --version                       Print the version this copy ships as\e[0m"
 	ECHO_E ""
 	ECHO_E "\e[0;94mnotes: An edit, drop or squash runs in a temp worktree, and every run that lands brings the\e[0m"
@@ -1069,11 +1069,14 @@ _HELP_TOPICS () {
 	for T in "$@"; do
 		# An empty one names nothing – none at all is the usage
 		[ -n "$T" ] || continue
-		# A mode by its everyday name
-		case $T in
-			fold)   T=--amend-into ;;
-			place)  T=--after ;;
-			*help)  T=-h ;;
+		# A mode by its everyday name or its usage placeholder – a tier by the flag that names one
+		case ${${${T#-}#-}%%=*} in
+			fold)              T=--amend-into ;;
+			place)             T=--after ;;
+			*help)             T=-h ;;
+			'<sha>'|'<commit>'|sha) T=--edit ;;
+			fixup|autosquash)  T=-s ;;
+			tier)              T=--verify-span ;;
 		esac
 		# Through the environment, as `-v` would read a backslash in it as an escape
 		OUT=$(GIT_EDIT_HELP_TOPIC=$T LC_ALL=C awk '
@@ -1122,7 +1125,7 @@ _HELP_TOPICS () {
 			}
 			return t
 		}
-		function emit(k, v) { K[++R] = k; V[R] = v }
+		function emit(k, v) { K[++R] = k; V[R] = v; SEC[R] = sec }
 		function flush() { if (para != "") emit("P", para); para = "" }
 		function add(t) {
 			if (t == "") return
@@ -1130,7 +1133,12 @@ _HELP_TOPICS () {
 			para = para (para == "" ? "" : " ") t
 		}
 		/^\.\\"/ { next }
-		/^\.(SH|SS)( |$)/ { flush(); wanttag = 0; emit(substr($0, 2, 2) == "SH" ? "S" : "s", unesc(joined(margs($0), " ", 0))); next }
+		/^\.(SH|SS)( |$)/ {
+			flush(); wanttag = 0
+			emit(substr($0, 2, 2) == "SH" ? "S" : "s", unesc(joined(margs($0), " ", 0)))
+			if (K[R] == "S") sec = V[R]
+			next
+		}
 		/^\.TP( |$)/ { flush(); wanttag = 1; next }
 		/^\.(PP|LP|P|sp|br)( |$)/ { flush(); next }
 		/^\.IP( |$)/ { flush(); if (margs($0) >= 1) para = unesc(ARG[1]); next }
@@ -1161,12 +1169,24 @@ _HELP_TOPICS () {
 				under = K[i] == "T"
 			} else print (under ? "  " : "") (K[i] == "X" ? "  " : "") V[i]
 		}
-		# Prints every entry naming <w>, each through its paragraphs
-		function entries(w, any,   i, j) {
+		# Prints entry <i> through its paragraphs
+		function entry(i,   j) {
+			show(i)
+			for (j = i + 1; j <= R && K[j] != "T" && K[j] != "S" && K[j] != "s"; j++) show(j)
+		}
+		# Prints every entry naming <w>
+		function entries(w, any,   i) {
+			for (i = 1; i <= R; i++) if (K[i] == "T" && names(V[i], w, any)) entry(i)
+		}
+		# Folds a config key to its last part, case and dashes dropped
+		# – `worktree-link` names `edit.worktreeLink`
+		function key(s) { s = tolower(s); sub(/.*\./, "", s); gsub(/[-_]/, "", s); return s }
+		# Prints every entry of the config section with a key <w> names
+		function configs(w,   i, j, n, p) {
 			for (i = 1; i <= R; i++) {
-				if (K[i] != "T" || !names(V[i], w, any)) continue
-				show(i)
-				for (j = i + 1; j <= R && K[j] != "T" && K[j] != "S" && K[j] != "s"; j++) show(j)
+				if (K[i] != "T" || SEC[i] != "CONFIGURATION") continue
+				n = split(V[i], p, /, /)
+				for (j = 1; j <= n; j++) if (key(p[j]) == key(w)) { entry(i); break }
 			}
 		}
 		END {
@@ -1178,6 +1198,8 @@ _HELP_TOPICS () {
 			entries(w, 0)
 			if (shown) exit
 			entries(w, 1)
+			if (shown) exit
+			configs(w)
 			if (shown) exit
 			# Else the first section or subsection whose title holds it, to the next of its rank
 			# – a word of three letters or more, as one letter would name any
@@ -1198,7 +1220,7 @@ _HELP_TOPICS () {
 	done
 	(( SHOWN + ${#GONE} )) || USAGE
 	if (( ${#GONE} )); then
-		PRINT_ERR "No help topic '${(j:', ':)GONE}' – name a flag 'git edit -h' lists, or a section of 'git help edit': $(LC_ALL=C sed -n 's/^\.S[HS] //p' "$PAGE" | tr -d '"' | tr '\n' ',' | LC_ALL=C sed 's/,$//; s/,/, /g')"
+		PRINT_ERR "No help topic '${(j:', ':)GONE}' – name a flag 'git edit -h' lists, a config key or a section of 'git help edit': $(LC_ALL=C sed -n 's/^\.S[HS] //p' "$PAGE" | tr -d '"' | tr '\n' ',' | LC_ALL=C sed 's/,$//; s/,/, /g')"
 		exit 1
 	fi
 }

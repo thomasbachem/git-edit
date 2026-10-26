@@ -1963,8 +1963,13 @@ Print the usage block \(em or, given topics, their entries of this page as
 plain text, one paragraph a line: a flag, with or without its dashes or a
 value (\fBgit edit \-h edits put\fR, \fB\-h M\fR), \fBfold\fR for
 .BR \-\-amend\-into ,
-or a section's title (\fB\-h checkout\fR). Every entry naming a flag
-as its own prints, else every one mentioning it, else the first section
+\fIsha\fR for the plain edit, \fBfixup\fR for
+.BR \-s=auto ,
+\fBtier\fR for
+.BR \-\-verify\-span ,
+a CONFIGURATION key, its \fBedit.\fR, case and dashes optional
+(\fB\-h worktree\-link\fR), or a section's title (\fB\-h checkout\fR). Every entry naming a flag
+as its own prints, else every one mentioning it, else the key's, else the first section
 whose title holds a topic of three letters or more; an unknown topic
 refuses once the rest printed, naming the sections. A longer entry opens
 with its usage lines, the forms it is run in, so its first few lines answer
