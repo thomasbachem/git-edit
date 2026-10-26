@@ -110,15 +110,19 @@ _ST_OUT_HAS "the guard refusing the file names the record's merge" "still sits o
 _ST_OUT_LACKS "never a carry from the tip the fold rewrote" "--carry="
 _ST_EQ "and refuses" "$RC:$(git log -1 --format=%s)" "1:SF peer"
 # With no record, the guard names the merge from the landing's own old tip, which the fold replaced
+# – a merge conflicting there, the file named as differing in landed lines, its diff to read first
 rm -f .git/git-edit-unbrought
 GIT_EDIT_ACTOR=sf-b _ST_RUN --commit --text "SF rest" -- f
-_ST_OUT_HAS "with no record, the guard names the merge from the rewritten tip's file" "predates ${RT_T:0:7}, its landing replaced by a rewrite since – .*--filters ${RT_T:0:12}:f > "
+_ST_OUT_HAS "with no record, the guard names the merge from the rewritten tip's file" "Your f differs from the tip in lines that landed, the landing replaced by a rewrite since – look at 'git diff [0-9a-f]* -- f': pass --base as above only where it shows nothing but your own edits, else .*--filters ${RT_T:0:12}:f > "
+_ST_OUT_LACKS "never as a file predating it" "predates ${RT_T:0:7}"
 _ST_OUT_LACKS "no carry there either" "--carry="
-# An input names its pairs on the landed line, --base first, above the checkout file's merge
+# An input names its pairs on the landed line, --base first
+# – composed on the tip, it reads no checkout file, so none is merged into
 GIT_EDIT_ACTOR=sf-b _ST_RUN --commit --text "SF pair" --edits='{"f": [["A2\n", "l2\n"]]}'
 _ST_EQ "--edits taking the line back refuse" "$RC:$(git log -1 --format=%s)" "1:SF peer"
-_ST_OUT_HAS "naming the pairs" "Your change takes back what landed on f – what --edits compose there rewrites the landed lines: where that is meant pass --base as above, else merge what landed into the checkout file as below and build the change from it again, or leave out the part undoing them"
-_ST_EQ "ahead of the merge from the rewritten tip's file" "$(print -r -- "$OUT" | awk '/rewrites the landed lines: where/ { a = NR } /its landing replaced by a rewrite since – merge/ { b = NR } END { print (a && b > a ? "above" : "no") }')" above
+_ST_OUT_HAS "naming the pairs" "Your change takes back what landed on f – what --edits compose there rewrites the landed lines: where that is meant pass --base as above, else leave out the part undoing them"
+_ST_OUT_LACKS "never the checkout file's merge" "merge-file"
+_ST_OUT_LACKS "nor the checkout file at all" "Your checkout's"
 # A fold's own old tip is off the branch anyway – a checkout missing the fold still takes its carry
 _RT221_REPO sf3
 GIT_EDIT_ACTOR=sf-a _ST_RUN --commit --text "SF3 top" --edits='{"u": [["u1\n", "T1\n"]]}'
