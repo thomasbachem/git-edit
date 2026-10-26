@@ -70,8 +70,15 @@ _ST_RUN --continue
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt "$(_RB_F "f line 5 v2 wip")"
 _ST_RUN --continue
 _ST_EQ "a stop taking in a later commit's change refuses" "$RC:$(git rev-parse HEAD)" "1:$RB_T"
+_ST_OUT_HAS "led by the reason, c2's change being what the placed one builds on" "A later commit's change is what the placed one builds on – placed before it, that change empties"
+_ST_OUT_LACKS "never as a resolution taking it in" 'A resolution took in'
 _ST_OUT_HAS "naming it" 'RB c2 f line 5 – f\.txt$'
-_ST_OUT_HAS "and the placement past it" "or placed past the change it builds on: --after=${RB_C2:0:12} in place of --before=${RB_C2:0:7}"
+_ST_OUT_HAS "and the placement past it" "placed past that change: --after=${RB_C2:0:12} in place of --before=${RB_C2:0:7} – or, where the placed change reads on the text before that one too"
+_ST_RUN --status
+_ST_OUT_HAS "its status offers the cancel alone" "git-edit: paused – the replay in .* was refused, which a resume repeats; 'git edit --abort' cancels it"
+_ST_OUT_LACKS "never the resume that refuses again" 'checks it, landing it where it passes'
+_ST_RUN --continue
+_ST_EQ "as a resume refuses again" "$RC:$(git rev-parse HEAD)" "1:$RB_T"
 _ST_RUN --abort
 _ST_RUN --commit --after="${RB_C2:0:12}" --text "RB3 wip on line 5" -- f.txt
 _ST_EQ "which lands" "$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD:f.txt | sed -n 5p)" \

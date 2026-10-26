@@ -2631,6 +2631,16 @@ placed with
 or
 .B \-\-before
 placed after the latest commit named instead, which the refusal names.
+Where the placed commit's own change rewrites lines that commit wrote, its
+change there emptied, the refusal gives that reason \(em the change is what
+the placed one builds on \(em and names the placement past it first. The
+replay stays paused as refused, and a
+.B \-\-continue
+of it refuses the same, so
+.B \-\-status
+offers
+.B \-\-abort
+alone.
 .PP
 Only what the stop's commit changes beyond its own pick and the fold or
 fixups in it counts, so a fold whose file a later commit renames, moves or

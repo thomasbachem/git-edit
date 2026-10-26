@@ -100,7 +100,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_MODE_STRAY STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
 	STATE_ACTOR_ID STATE_ACTOR_NAME STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
-	STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
+	STATE_ABSORBED STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
 	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNBROUGHT UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
@@ -4125,6 +4125,7 @@ GIT_STATUS_REPORT () {
 			local STATUS_VERIFY=false
 			local STATUS_MODE=false
 			local STATUS_TIP=false
+			local STATUS_ABSORBED=false
 			# A gate pause holds a finished rebuild it refused – with no rebase
 			# running and nothing unmerged, the conflict report would show no files
 			if [ -n "$STATE_MODE_STRAY" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ]; then
@@ -4143,6 +4144,11 @@ GIT_STATUS_REPORT () {
 					_PRINT_TIP_SOURCES "$STATE_WORKTREE" "$STATE_ORIG_HEAD" "$STATE_TIP_REFUSED" "$STATE_SQUASH_TARGET"
 					_PRINT_TIP_REWORK "$STATE_WORKTREE" "$REPLY"
 				fi
+			# A replay the check of what its stops took in refused, untouched – a resume refuses again
+			elif [ -n "$STATE_ABSORBED" ] && [ ! -d "$STATUS_GITDIR/rebase-merge" ] && [ ! -d "$STATUS_GITDIR/rebase-apply" ] && \
+			     [ "$(git -C "$STATE_WORKTREE" rev-parse -q --verify HEAD 2>/dev/null)" = "$STATE_ABSORBED" ]; then
+				STATUS_ABSORBED=true
+				[ -n "$OWNER" ] || PRINT_TEXT "The replay in the worktree is finished, refused by the check of what its stops took in – a resume refuses it again as it stands." 33
 			elif [ "$STATE_OPERATION" = "split" ]; then
 				STATUS_AUTHORING=true
 				if [ -z "$OWNER" ]; then
@@ -4179,6 +4185,10 @@ GIT_STATUS_REPORT () {
 				EMIT_VERIFY_PAUSED "$STATE_VERIFY_FAILED" "$STATE_WORKTREE"
 			elif [ "$STATUS_TIP" = "true" ]; then
 				_EMIT_TRAILER "git-edit: paused – squash of ${STATE_TARGET:0:7} would change the tip's content, its replay kept in $STATE_WORKTREE; rework the commit named above there, then 'git edit --continue', or 'git edit --abort'"
+				_STATUS_EMITTED=true
+			elif [ "$STATUS_ABSORBED" = "true" ]; then
+				PRINT_TEXT "Cancel with %s, then run it again as the refusal said." 33 "git edit --abort"
+				_EMIT_TRAILER "git-edit: paused – the replay in $STATE_WORKTREE was refused, which a resume repeats; 'git edit --abort' cancels it"
 				_STATUS_EMITTED=true
 			elif [ "$STATUS_AUTHORING" = "true" ]; then
 				PRINT_TEXT "Then %s – or cancel via %s." 33 "git edit --continue" "git edit --abort"
@@ -18463,6 +18473,7 @@ _LOAD_STATE () {
 	STATE_PLACED=""
 	STATE_PLACE_LABEL=""
 	STATE_TIP_REFUSED=""
+	STATE_ABSORBED=""
 	# One read, kept – a resume holding the pause's worktree only after
 	# it tells by it whether another run took the pause on meanwhile
 	_STATE_READ=""
@@ -18529,6 +18540,7 @@ _LOAD_STATE () {
 			placed)          STATE_PLACED=$VAL ;;
 			place_label)     STATE_PLACE_LABEL=$VAL ;;
 			tip_refused)     STATE_TIP_REFUSED=$VAL ;;
+			absorbed)        STATE_ABSORBED=$VAL ;;
 		esac
 	done <<< "$_STATE_READ"
 	# One from before labels were kept as given holds the mapped one alone, the caller's own where
@@ -19169,6 +19181,20 @@ _STILL_REWRITTEN () {
 		/^\+/ { if (covered("MN", OY, 0)) print; OY++ }'
 }
 
+# Tells whether the change <lost> made to <file> is what the placed <commit> builds on
+# – that commit placed by this run, its own change rewriting lines <lost> wrote, and <lost>'s
+# change there emptied, its pick <rebuilt> left out (none given) or no longer touching the file
+_PLACED_BUILDS_ON () {
+	# Args: <worktree> <commit> <lost> <rebuilt> <file>
+	local WT=$1 C=$2 O=$3 R=$4 F=$5
+	[ -n "$C" ] && git -C "$WT" merge-base --is-ancestor "$C" "$STATE_PLACED" 2>/dev/null && \
+		! git -C "$WT" merge-base --is-ancestor "$C" "$STATE_ORIG_HEAD" 2>/dev/null && \
+		git -C "$WT" merge-base --is-ancestor "$O" "$STATE_ORIG_HEAD" 2>/dev/null || return 1
+	[ -z "$R" ] || git -C "$WT" diff-tree --quiet --no-renames --ignore-submodules=none "$R^" "$R" -- ":(literal)$F" 2>/dev/null || return 1
+	[ -n "$(LC_ALL=C comm -12 <(_COMMIT_CHANGE_LINES "$WT" "$O" "$F" | LC_ALL=C sed -n 's/^+//p' | LC_ALL=C sort -u) \
+		<(_COMMIT_CHANGE_LINES "$WT" "$C" "$F" | LC_ALL=C sed -n 's/^-//p' | LC_ALL=C sort -u))" ]
+}
+
 # Refuses a replay whose resolution at a stop took in what a later commit changes – a fold's stop
 # resolved to the file as the tip holds it, say – which no tree check sees, the tip ending the same:
 # a later commit, replayed, lost lines of its own change to a file a stop's commit changes, and most
@@ -19179,7 +19205,7 @@ _STILL_REWRITTEN () {
 # drop's or a replant's, nothing lost turns up there
 _GUARD_ABSORBED () {
 	# Args: <worktree> <new tip>
-	local WT=$1 NEW=$2 T R O FILE L K NOTE BY PAIR PAST AFTER
+	local WT=$1 NEW=$2 T R O FILE L K NOTE BY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1}
 	local -i I P V SIG MOVED ALL_SIG LOST_SIG
 	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST VO VR VL HUNKS SUPERSEDED
 	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED
@@ -19313,6 +19339,7 @@ _GUARD_ABSORBED () {
 				fi
 			done
 			(( SIG && MOVED * 2 > SIG )) || continue
+			[ -n "$BUILDS_ON" ] && ! _PLACED_BUILDS_ON "$WT" "${PAIRED[$BY]}" "$O" "$R" "$FILE" && BUILDS_ON=""
 			LOST+=("$(git -C "$WT" log -1 --format='%h %s' "${R:-$O}") – $FILE$NOTE")
 			# The latest commit named, which a placement's hint offers to place after
 			PAST=$O
@@ -19334,6 +19361,15 @@ _GUARD_ABSORBED () {
 		return 0
 	fi
 	_CLEANUP_HOOK=""
+	# Noted, so `--status` offers the cancel alone – a resume of the replay as it stands refuses again
+	[ "$STATE_ABSORBED" = "$NEW" ] || _STATE_NOTE "absorbed=$NEW"
+	# A placement before the change it builds on, as its stop's hint said – not a taking in
+	if [ -n "$BUILDS_ON" ] && [ -n "$PAST" ]; then
+		PRINT_ERR "A later commit's change is what the placed one builds on – placed before it, that change empties, so nothing was applied"
+		printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again placed past that change: --after=${PAST:0:12} in place of --${${STATE_PLACE_LABEL#* }%% *}=${STATE_PLACE_LABEL##* } – or, where the placed change reads on the text before that one too, placed as now, its stop resolved to that, the later commit replaying its own change on top.\e[0m" >&2
+		exit 1
+	fi
 	PRINT_ERR "A resolution took in what a later commit changes – replayed, it lost lines of its own change that a stop's commit now holds, so nothing was applied"
 	printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	# A reorder's stop holds no snapshot to take – its commit's change alone, on what the new order
