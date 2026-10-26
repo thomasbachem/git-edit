@@ -1900,9 +1900,15 @@ label, which any caller may resume.
 .IP
 Only the run's first check waits, before it takes any lock or worktree. One
 asked again later, a pause recorded while the run went on, refuses as
-before. Ctrl\-C or
+before. A pause on another branch is waited for only where the run must pause
+itself \(em at its conflict or refused gate, within the same bound, its replay
+held meanwhile \(em while an edit or a content split, pausing at once, waits
+for it at its first check. A run losing the freed slot to another run waiting
+at its stop waits on for what is left of the bound. Ctrl\-C or
 .B SIGTERM
-while waiting stops the run with nothing taken. For a longer wait, say
+while waiting stops the run with nothing taken, a replay in a
+.B \-C
+path taken back. For a longer wait, say
 .BR \-\-wait=540 ,
 run git\-edit in the background, or in the foreground under a 10\-minute call
 timeout. Refused beside
@@ -2644,7 +2650,9 @@ explicitly
 .BR false ,
 the recording still runs \(em the within\-run carry above is the point \(em
 but is scoped to the operation: the run's records are forgotten when it
-ends, completed and aborted alike, honoring the opt\-out.
+ends, completed and aborted alike, honoring the opt\-out. A record another
+run may have made \(em one live beside it, or the pause in the slot \(em is left
+for that run's own end, so overlapping runs never forget each other's.
 .SH SCRIPTING
 Notes for driving
 .B git edit
@@ -3197,23 +3205,27 @@ shares them.
 .TP
 .I <git dir>/git\-edit\-state
 The paused operation \(em its worktree, branch, target and phase. Only one can
-be paused at a time: while this file exists every mutating mode waits for it
-to clear, up to
+be paused at a time: while this file exists a mode moving the paused branch
+waits for it to clear, up to
 .B \-\-wait
 (90 seconds by default), then refuses rather
 than move the branch under a resolution that has not applied yet, whose own
-compare\-and\-swap would then fail at the end \(em
-.BR \-\-commit ,
-.B \-\-exec
-and
+compare\-and\-swap would then fail at the end \(em as do an edit and a content
+split on any branch, which pause at once, and a
+.B \-\-land
+of the paused branch or an
+.B \-\-onto
+replanting onto it, which would take its tip from before the resolution.
+A run on another branch goes ahead beside the pause, waiting for it only once
+it must pause itself \(em at a conflict or a refused gate \(em and refusing
+with nothing applied where that wait runs out.
 .B \-\-undo
-only where the pause is on the branch they move, and
-.B \-\-undo
-refuses at once, naming whose pause it is \(em another caller's is left to
-that caller to continue or abort \(em as does a run on a pause of the caller's
-own. A run
+refuses at once where the pause is on the branch it moves, naming whose pause
+it is \(em another caller's is left to that caller to continue or abort \(em as
+does a run on a pause of the caller's own. A run
 reaching a pause of its
-own after a parallel session's took the slot refuses without waiting, and
+own after a parallel session's took the slot on its branch refuses without
+waiting, and
 removes
 the temporary worktree it made, as nothing there is authored yet \(em as does a
 run about to gate or land on a branch another run paused on since it started,

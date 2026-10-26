@@ -136,7 +136,7 @@ git config --unset edit.verifyCmd
 _ST_EQ "as does one staged while a fold runs" "$RC:$(git ls-files -s -- wc-pst.txt | awk '{print $2}')" "0:$WC_PB"
 _ST_OUT_HAS "named there too" 'Left staged, changed since the fold read it: wc-pst.txt'
 git restore --staged --worktree -- wc-pst.txt
-# A pause elsewhere blocks neither `--commit` nor `--exec`
+# A pause elsewhere blocks neither `--commit` nor `--exec`, nor a reword
 # – one on their own branch does, saying whose call it is
 git checkout -q -b wc-paused
 printf '1\n2\n3\n' > wc-pz.txt
@@ -156,8 +156,8 @@ _ST_RUN --exec -- git commit -q --allow-empty -m "WC exec beside a pause elsewhe
 _ST_EQ "as --exec does" "$RC:$(git log -1 --format=%s)" "0:WC exec beside a pause elsewhere"
 _ST_RUN --undo
 _ST_EQ "and --undo takes such a landing back" "$RC:$(git log -1 --format=%s)" "0:WC commit beside a pause elsewhere"
-_ST_RUN -M --text "x" HEAD
-_ST_OUT_HAS "while other modes still refuse" 'operation is in flight on wc-paused'
+_ST_RUN -M --text "WC reworded beside a pause elsewhere" HEAD
+_ST_EQ "as does a reword, needing no pause itself" "$RC:$(git log -1 --format=%s)" "0:WC reworded beside a pause elsewhere"
 git checkout -q wc-paused
 echo pz2 > wc-pz2.txt
 _ST_RUN --commit --text "x" -- wc-pz2.txt

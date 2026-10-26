@@ -115,7 +115,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
-	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT
+	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
@@ -258,8 +258,8 @@ _EMIT_TRAILER () {
 	[[ "$1" == "git-edit: ok"* ]] && (( ${#${=_JOURNALED_MOVE}} == 3 )) && _RESYNC_MARK_DONE ${=_JOURNALED_MOVE}
 	# Its checkout's sync done by now, whatever is left to say
 	[ -n "$_SYNC_HELD" ] && _SYNC_HOLD_RELEASE
-	# Rerere's notes first, so the trailer stays last – only where no pause keeps the scope open
-	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
+	# Rerere's notes first, so the trailer stays last – only where no pause of its own keeps it open
+	if [ -n "$_RERERE_SCOPE_OWNED" ] && ! _RERERE_SCOPE_HELD; then
 		[[ "$1" == "git-edit: ok"* ]]
 		_RERERE_SCOPE_END $?
 		_RERERE_SCOPE_OWNED=""
@@ -647,6 +647,19 @@ typeset -ga _TYPED_KEEP
 _TYPED_KEEP=()
 # A `-C` path a first run's replay stands halfway in, taken back where that run refuses
 _UNWIND_PATH=""
+# Set where the run needs the pause slot itself, so a pause on another branch is in its way too
+# – a mode pausing at once, or a stop about to pause
+_SLOT_NEEDED=""
+# Set while a wait for the slot runs at the run's own stop, past its replay
+_WAIT_STOP=""
+# When the run's wait at its stop runs out, a wait again after losing the freed slot taking the rest
+_SLOT_WAIT_END=""
+# The file registering this run's rerere scope beside other runs', under `rerere.enabled=false`
+_RERERE_SCOPE_FILE=""
+# A failed check's record kept from its sidecar while another run's
+# pause owns it, written once this run's own pause takes the slot
+typeset -ga _VERIFY_LOG_HELD
+_VERIFY_LOG_HELD=()
 
 # Runs the cleanup hook, then emits a machine-readable error trailer matching the success
 # form (`git-edit: ok …`), so a `^git-edit:` grep dispatches either outcome on one rule
@@ -677,6 +690,8 @@ _GLOBAL_EXIT_TRAP () {
 		eval "$_CLEANUP_HOOK" 2>/dev/null
 		_CLEANUP_HOOK=""
 	fi
+	# A `-C` path's replay no pause recorded – a signal ending its wait at a stop, say – goes back too
+	_UNWIND_KEPT_PATH
 	if [ ${#_TEMP_FILES[@]} -gt 0 ]; then
 		rm -f "${_TEMP_FILES[@]}" 2>/dev/null
 		_TEMP_FILES=()
@@ -695,10 +710,12 @@ _GLOBAL_EXIT_TRAP () {
 		rm -rf "$W"
 	done
 	_TEMP_WORKTREES=()
-	if [ -n "$_RERERE_SCOPE_OWNED" ] && [ ! -f "$_RERERE_STATE_FILE" ]; then
+	if [ -n "$_RERERE_SCOPE_OWNED" ] && ! _RERERE_SCOPE_HELD; then
 		_RERERE_SCOPE_END $CODE
 		_RERERE_SCOPE_OWNED=""
 	fi
+	# A pause of its own carries its baseline on, which no live run need register
+	[ -n "$_RERERE_SCOPE_FILE" ] && rm -f "$_RERERE_SCOPE_FILE"
 	# A held-back rewrite delivery outlives the run only with the pause it belongs to
 	if [ -n "$_CAPTURE_DIR" ] && ! grep -qxF "capture=$_CAPTURE_DIR" "$SF" 2>/dev/null; then
 		_CAPTURE_REMOVE "$_CAPTURE_DIR"
@@ -788,7 +805,7 @@ _ON_TERMINATION () {
 	local KEPT=""
 	[ -n "$_STATE_OWNED" ] && [ -f "$_STATE_OWNED" ] && [ -z "$_LANDED_MOVE" ] && \
 		KEPT=" – its pause stays, 'git edit --status' shows it"
-	_LAST_ERROR="stopped by SIG$1${_LANDED_MOVE:+ after $_LANDED_MOVE}$RESYNC${_CANCELLED_PAUSE:+ after cancelling the pause ($_CANCELLED_PAUSE)}${_WAITING:+ while waiting for $_WAITING pause to clear – nothing ran}$KEPT"
+	_LAST_ERROR="stopped by SIG$1${_LANDED_MOVE:+ after $_LANDED_MOVE}$RESYNC${_CANCELLED_PAUSE:+ after cancelling the pause ($_CANCELLED_PAUSE)}${_WAITING:+ while waiting for $_WAITING pause to clear – nothing ${${_WAIT_STOP:+was applied}:-ran}}$KEPT"
 	[ -n "$_NAP_PID" ] && kill "$_NAP_PID" 2>/dev/null
 	exit $2
 }
@@ -8093,21 +8110,50 @@ _PAUSE_WHOSE () {
 	return 0
 }
 
-# Tells whether a recorded pause is in this run's way, `REPLY` naming its branch
+# Tells whether a recorded pause is in this run's way, `REPLY` naming its branch – one on another
+# branch only where the run needs the slot itself (`_SLOT_NEEDED`) or reads that branch, as a land
+# of it or a replant onto it would take its tip from before the resolution
 _PAUSE_IN_WAY () {
 	REPLY=""
 	_STATE_EXISTS || return 1
-	local SF=$(_STATE_FILE_PATH)
-	local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1) HERE=$(_GIT_FACT symbolic-ref -q HEAD)
+	local SF=$(_STATE_FILE_PATH) HERE
+	local SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
 	SB=${SB#refs/heads/}
 	REPLY=$SB
-	# Neither mode pauses unplaced, so neither needs the slot
-	# – only a pause on its own branch is in the way, whose landing it would strand
-	if [ ${#OPT_COMMIT} -gt 0 -o ${#OPT_EXEC} -gt 0 ] && [ ${#OPT_AFTER} -eq 0 ] && [ ${#OPT_BEFORE} -eq 0 ] && \
-	   [ -n "$SB" ] && [ -n "$HERE" ] && [ "$SB" != "${HERE#refs/heads/}" ]; then
-		return 1
+	[ -n "$SB" ] && [ -z "$_SLOT_NEEDED" ] || return 0
+	HERE=$(_GIT_FACT symbolic-ref -q HEAD)
+	[ -n "$HERE" ] && [ "$SB" != "${HERE#refs/heads/}" ] || return 0
+	[ ${#OPT_LAND} -gt 0 ] && [ "$(git rev-parse --symbolic-full-name "$LAND_BRANCH" 2>/dev/null)" = "refs/heads/$SB" ] && return 0
+	[ ${#OPT_ONTO} -gt 0 ] && [ "$(git rev-parse --symbolic-full-name "$ONTO_UPSTREAM" 2>/dev/null)" = "refs/heads/$SB" ] && return 0
+	return 1
+}
+
+# Waits out a pause on another branch holding the slot where this run is about to write its own
+# – that pause let it go ahead – refusing with nothing applied once `WAIT_SECS` runs out
+# • One on its own branch began since it started, which the check under the lock refuses at once
+# • Before the slot's lock, as a wait under it would hold up every landing
+_AWAIT_SLOT () {
+	# Args: <ref this run moves> <a first run's `-C` path to take its replay back from, or empty>
+	local _SLOT_NEEDED=1
+	local -i BOUND=$WAIT_SECS
+	_PAUSE_IN_WAY && [ -n "$REPLY" ] && [ "refs/heads/$REPLY" != "$1" ] || return 0
+	# Taken back however the run ends from here, a signal's included
+	_UNWIND_PATH=$2
+	# A wait again, the freed slot lost to another run, takes what is left of the bound
+	if [ -n "$_SLOT_WAIT_END" ]; then
+		local -i WAIT_SECS=$(( _SLOT_WAIT_END - EPOCHREALTIME ))
+		(( WAIT_SECS > 0 )) || WAIT_SECS=0
+	elif (( WAIT_SECS > 0 )); then
+		_SLOT_WAIT_END=$(( EPOCHREALTIME + WAIT_SECS ))
 	fi
-	return 0
+	if [ -n "$_JOURNAL_HELD" ]; then
+		REPLY=""
+	elif _WAIT_OUT_PAUSE --stop; then
+		return 0
+	fi
+	# The whole bound where it ran out, a wait again's included, never told to rerun with a wait
+	{ [ -n "$REPLY" ] || { [ -n "$_SLOT_WAIT_END" ] && (( WAIT_SECS <= 0 )); }; } && REPLY=$BOUND
+	_REFUSE_PEER_PAUSE "$1" "" "" "$REPLY"
 }
 
 # Waits up to `WAIT_SECS` for the pause in the way to clear, asking every 2 s,
@@ -8115,13 +8161,15 @@ _PAUSE_IN_WAY () {
 # own or one predating labels never, as only a continue or abort ends those –
 # `REPLY` holding the seconds waited where it ran out, empty where it never waited
 _WAIT_OUT_PAUSE () {
-	local SF=$(_STATE_FILE_PATH) SB ID WHAT AGE PLACED
+	# Args: [--stop – at the run's own stop, which then pauses]
+	local SF=$(_STATE_FILE_PATH) SB ID WHAT AGE PLACED THEN=running
 	local -i T WAITED
 	# Counted to the fraction, as a start floored to its second overshoots a short bound by nearly one
 	local -F START=$EPOCHREALTIME LEFT
 	local -F 2 NAP
 	REPLY=""
 	(( WAIT_SECS > 0 )) || return 1
+	[ "$1" = --stop ] && THEN="pausing here" _WAIT_STOP=1
 	# Each nap a background `sleep` the run waits on, as a trapped signal cuts that wait short – one
 	# reaches a foreground `sleep` or a `zselect` only once its time is up, and the trap ends the nap
 	while _PAUSE_IN_WAY; do
@@ -8130,7 +8178,7 @@ _WAIT_OUT_PAUSE () {
 		# the caller's too – read off a file still there, as one gone meanwhile names nobody
 		_PAUSE_WHOSE "$SF"
 		if [ "$REPLY" != other ] && [ -f "$SF" ]; then
-			_WAITING="" REPLY=""
+			_WAITING="" _WAIT_STOP="" REPLY=""
 			return 1
 		fi
 		# Announced before the bound is read, and counted from there,
@@ -8149,14 +8197,14 @@ _WAIT_OUT_PAUSE () {
 			(( T > 1000000000 )) || T=$(zmodload -F zsh/stat b:zstat 2>/dev/null && zstat +mtime -- "$SF" 2>/dev/null)
 			AGE=""
 			(( T > 0 && EPOCHSECONDS >= T )) && AGE=$(_AGO $(( EPOCHSECONDS - T )))
-			PRINT_TEXT "Waiting up to %s for %s paused %s to clear – re-checking every 2s, then running" 33 \
-				"${WAIT_SECS}s" "$_WAITING" "${WHAT:-operation}${ID:+ ${ID:0:7}}${SB:+ on $SB}${AGE:+ (paused $AGE ago)}"
+			PRINT_TEXT "Waiting up to %s for %s paused %s to clear – re-checking every 2s, then %s" 33 \
+				"${WAIT_SECS}s" "$_WAITING" "${WHAT:-operation}${ID:+ ${ID:0:7}}${SB:+ on $SB}${AGE:+ (paused $AGE ago)}" "$THEN"
 			START=$EPOCHREALTIME
 		fi
 		LEFT=$(( WAIT_SECS - (EPOCHREALTIME - START) ))
 		if (( LEFT <= 0 )); then
 			# The bound itself, which the last check's own moment overshoots
-			_WAITING="" REPLY=$WAIT_SECS
+			_WAITING="" _WAIT_STOP="" REPLY=$WAIT_SECS
 			return 1
 		fi
 		NAP=$(( LEFT < 2 ? LEFT : 2 ))
@@ -8168,11 +8216,13 @@ _WAIT_OUT_PAUSE () {
 	if [ -n "$_WAITING" ]; then
 		WAITED=$(( EPOCHREALTIME - START + 0.5 ))
 		(( WAITED > WAIT_SECS )) && WAITED=$WAIT_SECS
-		PRINT_TEXT "The pause cleared after %s – running." 32 "${WAITED}s"
+		PRINT_TEXT "The pause cleared after %s – %s." 32 "${WAITED}s" "$THEN"
 		_WAITING=""
 		# The trailer's old head is the tip the run starts from, which the pause's landing moved
-		SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
+		# – one on another branch at a stop, which moved none of this run's
+		[ -n "$_WAIT_STOP" ] || SCRIPT_INITIAL_HEAD=$(git rev-parse HEAD 2>/dev/null)
 	fi
+	_WAIT_STOP=""
 	return 0
 }
 
@@ -8243,12 +8293,16 @@ _PAUSE_FOREIGN () {
 # Refuses a pause or a landing where a parallel run's pause took the state slot while this one
 # ran – that check came too late, so the same error, which drivers already wait out, and the exit
 # trap removes a worktree the run made, as a pause records itself before anything is authored there
-# The pause wins – landing past it would refuse its finished resolution at its CAS
+# The pause wins – landing past it would refuse its finished resolution at its CAS – while one on
+# another branch is in the way only of a pause this run must write, the slot holding one
 _REFUSE_PEER_PAUSE () {
-	# Args: [<ref this run moves> [<message typed in an editor> <command rerunning with it>]]
+	# Args: [<ref this run moves> [<message typed in an editor> <command rerunning with it>
+	# [<seconds waited at the run's stop>]]]
 	local SF=$(_STATE_FILE_PATH) SB WHOSE
 	SB=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
 	SB=${SB#refs/heads/}
+	local ASIDE=""
+	[ -n "$SB" ] && [[ "$1" == refs/heads/* ]] && [ "refs/heads/$SB" != "$1" ] && ASIDE=1
 	# The busy hint reads the branch this run lands on, never the pause's
 	[[ "$1" == refs/heads/* ]] && _RACE_LOST=("$1" "$(_JOURNAL_FILE_PATH)")
 	_UNWIND_KEPT_PATH
@@ -8259,6 +8313,18 @@ _REFUSE_PEER_PAUSE () {
 	if [ ${#OPT_UNDO} -gt 0 ]; then
 		PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this undo ran, so nothing was undone"
 		ECHO_E "\e[0;31m  Wait for it to clear, then undo ('git edit --status' shows it).\e[0m" >&2
+		exit 1
+	fi
+	if [ -n "$ASIDE" ]; then
+		PRINT_ERR "Another git-edit operation is ${4:+still }in flight on $SB${4:+ after waiting ${4}s at this run's stop} (paused for resolution${REPLY:+ – $REPLY}) – this run must pause too, and the repository holds one pause at a time, so nothing was applied"
+		if [ -n "$4" ]; then
+			ECHO_E "\e[0;31m  Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run ('git edit --status' shows the pause).\e[0m" >&2
+		elif [ "$WHOSE" = other ]; then
+			ECHO_E "\e[0;31m  Rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there ('git edit --status' shows it).\e[0m" >&2
+		else
+			ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there ('git edit --status' shows it).\e[0m" >&2
+		fi
+		_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 		exit 1
 	fi
 	PRINT_ERR "Another git-edit operation is in flight${SB:+ on $SB} (paused for resolution${REPLY:+ – $REPLY}) – it paused while this one ran, so nothing was applied"
@@ -17829,6 +17895,7 @@ _SAVE_STATE () {
 	# create where the filesystem has none – so a parallel run's pause taken meanwhile refuses this one
 	# Under the journal's lock an abort ends a pause under, so none ends this one between the check
 	# and the write, nor clears the slot between its own check and its removal
+	[ -n "$_STATE_OWNED" ] || _AWAIT_SLOT "$REF" "${KEPT:+$PAUSE_WT}"
 	_SLOT_LOCK "$SF" "nothing was applied"
 	local JF=$REPLY
 	# A first run's refusal takes back the replay it left in a `-C` path, for the rerun to reuse
@@ -17847,9 +17914,19 @@ _SAVE_STATE () {
 		if ln "$SF_NEW" "$SF" 2>/dev/null || { [ ! -e "$SF" ] && ( setopt noclobber; cat "$SF_NEW" > "$SF" ) 2>/dev/null; }; then
 			_STATE_OWNED=$SF
 			rm -f "$SF_NEW"
+			# The check output the pause it waited out owned the sidecar of
+			(( ${#_VERIFY_LOG_HELD} )) && _VERIFY_SAVE_LOG "${_VERIFY_LOG_HELD[@]}"
+			_VERIFY_LOG_HELD=()
 		else
 			_IN_WRITE=""
 			rm -f "$SF_NEW"
+			# A freed slot another run waiting at its stop took first – waited for again, as the bound allows
+			local TOOK=$(LC_ALL=C sed -n 's/^branch=//p' "$SF" 2>/dev/null | head -1)
+			if [ -n "$_SLOT_WAIT_END" ] && [ -n "$TOOK" ] && [ "refs/heads/${TOOK#refs/heads/}" != "$REF" ]; then
+				[ -n "$JF" ] && _JOURNAL_UNLOCK "$JF"
+				_SAVE_STATE "$@"
+				return
+			fi
 			_REFUSE_PEER_PAUSE "$REF"
 		fi
 	fi
@@ -18060,8 +18137,10 @@ _VERIFY_SAVE_LOG () {
 	# Args: <commit> <cmd> <exit-status> <seconds> <output>
 	local LF
 	LF=$(_VERIFY_LOG_PATH) || return 0
-	# A parallel run's pause owns the sidecar too – this run's record is the tail printed above
+	# A parallel run's pause owns the sidecar too – this run's record is the tail printed above,
+	# the whole kept for a pause it may take once that one clears
 	if [ -z "$_STATE_OWNED" ] && _STATE_EXISTS; then
+		_VERIFY_LOG_HELD=("$@")
 		return 0
 	fi
 	{
@@ -18167,18 +18246,60 @@ _RERERE_SCOPE_BEGIN () {
 		_RERERE_PRE="${PRE[*]}"
 	fi
 	_RERERE_SCOPE_OWNED=1
+	# Registered, its baseline after its holder's mark, before anything is recorded
+	# – a run ending beside it leaves what this one may record, which its own end forgets
+	[ "$_RERERE_OPTOUT" = true ] && [ -n "$_RERERE_STATE_FILE" ] || return 0
+	local RD="${_RERERE_STATE_FILE:h}/git-edit-rerere"
+	mkdir -p "$RD" 2>/dev/null || return 0
+	_LOCK_MARK_SET
+	_RERERE_SCOPE_FILE="$RD/$$"
+	print -r -- "$_LOCK_MARK"$'\n'"$_RERERE_PRE" > "$_RERERE_SCOPE_FILE" 2>/dev/null
 }
 
-# Finalizes the rerere scope, called from the exit trap once no operation is in flight,
+# Puts into `reply` the baselines of the rerere scopes open beside this run's – each live run's, one
+# whose holder is gone removed, and the pause's in the slot, which no run holds while it waits
+_RERERE_OTHERS () {
+	local F
+	local -a L
+	reply=()
+	[ -n "$_RERERE_STATE_FILE" ] || return 0
+	for F in "${_RERERE_STATE_FILE:h}/git-edit-rerere"/<->(N.); do
+		[ "$F" = "$_RERERE_SCOPE_FILE" ] && continue
+		# One gone meanwhile, or not yet written, whose run has recorded nothing so far
+		L=()
+		{ L=("${(@f)$(<"$F")}") } 2>/dev/null
+		[ -n "${L[1]}" ] || continue
+		if _HOLDER_GONE "${L[1]}"; then
+			rm -f "$F"
+			continue
+		fi
+		reply+=("${L[2]}")
+	done
+	LC_ALL=C grep -aq '^rrpre=' "$_RERERE_STATE_FILE" 2>/dev/null && \
+		reply+=("$(LC_ALL=C sed -n 's/^rrpre=//p' "$_RERERE_STATE_FILE" 2>/dev/null | tail -1)")
+	return 0
+}
+
+# Tells whether this run's own pause holds its rerere scope open, for the resume to adopt
+_RERERE_SCOPE_HELD () {
+	[ -n "$_STATE_OWNED" ] && [ -f "$_STATE_OWNED" ] && [ "$(_PAUSE_KEYS "$_STATE_OWNED")" = "$_STATE_ID" ]
+}
+
+# Finalizes the rerere scope, called from the exit trap once no pause of the run's own holds it,
 # using only the absolute paths captured at begin or adopt time – new entries are found
 # by name, so nothing pre-existing is touched, and only a postimage counts as a resolution
 _RERERE_SCOPE_END () {
 	local CODE=$1
 	[ -n "$_RERERE_DIR" ] && [ -d "$_RERERE_DIR" ] || return 0
-	local -a NEW RESOLVED POSTIMAGES
-	local E
+	local -a NEW RESOLVED POSTIMAGES OTHERS
+	local E O
+	# One another open scope's baseline lacks may be that run's – left for its end,
+	# a pause's alone known without the opt-out, which registers live runs
+	_RERERE_OTHERS
+	OTHERS=("${reply[@]}")
 	for E in "$_RERERE_DIR"/*(N/:t); do
 		if [[ " $_RERERE_PRE " != *" $E "* ]]; then
+			for O in "${OTHERS[@]}"; do [[ " $O " == *" $E "* ]] || continue 2; done
 			NEW+=("$E")
 			POSTIMAGES=("$_RERERE_DIR/$E"/postimage*(N))
 			[ ${#POSTIMAGES[@]} -gt 0 ] && RESOLVED+=("$E")
@@ -23915,6 +24036,8 @@ if [ ${#OPT_SPLIT} -gt 0 ]; then
 	_SPLIT_GUARDS "$SPLIT_TARGET"
 	SPLIT_TARGET=$_RESOLVED_SHA
 	[ $# -gt 0 ] && _GUARD_NAMED_PATHS "split=$SPLIT_TARGET" "$@"
+	# One by an authored split point pauses at once, another branch's pause in its way as well
+	[ $# -eq 0 ] && _SLOT_NEEDED=1
 	_AWAIT_PAUSE
 	# No pathspec means the halves aren't separable by path – pause and let the
 	# caller author the split point instead of demanding one that can't exist
@@ -24060,6 +24183,8 @@ PINNED=("$(_PINNED_REV "$TARGET")" "${COMMITS[@]}")
 # `-s=auto` a keyword before any ref of that name, as `--amend-into=auto` is
 [[ ${#OPT_SQUASH} -gt 0 && "$TARGET" == auto && "$SQUASH_HAS_EQUALS" == true ]] && PINNED[1]=auto
 _RESOLVE_ACTION "${PINNED[@]}"
+# An edit pauses at once, so another branch's pause is in its way as well
+[ "$ACTION" = edit ] && _SLOT_NEEDED=1
 _AWAIT_PAUSE _RESOLVE_ACTION "${PINNED[@]}"
 
 

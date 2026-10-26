@@ -1,8 +1,8 @@
 # A run refuses before any wait what its arguments earn, and keeps what it named across it:
 # • A pushed target, a record header naming nothing (twice or with no message) and a split,
 #   `--commit` or `--amend-into` path matching nothing refuse at once beside another caller's pause
-# • `--onto=<rev>` naming no branch rebases onto what it named before the wait, a branch onto
-#   where that branch stands after it
+# • `--onto=<rev>` naming no branch rebases onto what it named, going ahead beside a pause on
+#   another branch, a branch onto where that branch stands once its pause clears
 # • The body put-back command is offered only where the new message has no body of its own
 # • A lost line counts as superseded only where the stop holds its old text alone, never its
 #   hunk's replacement
@@ -120,7 +120,12 @@ for WR_I in 1 2; do
 		_W188_BG wr2 --onto=main --wait=30
 	fi
 	_W188_UNTIL wr2 "Waiting up to 30s"
-	_ST_EQ "--onto beside a pause waits ($WR_I)" "$?" "0"
+	WR_EC=$?
+	if [ $WR_I = 1 ]; then
+		_ST_EQ "--onto=main~1 beside a pause on main goes ahead, as the wait changes nothing it named" "$WR_EC" "1"
+	else
+		_ST_EQ "--onto=main beside a pause on main waits" "$WR_EC" "0"
+	fi
 	WR_WTD=$(_ST_PZ_WT)
 	print -r -- m2 > "${WR_WTD:-$ST_NO_WT}/m.txt"
 	( cd "$TMP/pz-wr2-$WR_I-main" && _W188_PEER --continue )

@@ -26,7 +26,7 @@ git checkout -q -- f.txt
 print -r -- n > n.txt
 _ST_RUN --commit --text "PB before" --before=HEAD~1 -- n.txt
 _ST_OUT_HAS "a placement below an anchor names it by its new SHA" "committed before $(git rev-parse --short=7 HEAD~1):"
-# A pause on another branch is in the way of a placement, which can pause itself
+# A pause on another branch is in the way of a placement only where it would pause itself
 git branch pb-other HEAD~1
 git checkout -q pb-other
 print -r -- x > x.txt && git add x.txt && git commit -qm "PB other x"
@@ -35,10 +35,10 @@ _ST_RUN --move=HEAD --before=HEAD~1
 git checkout -q main 2>/dev/null
 print -r -- p > p.txt
 _ST_RUN --commit --text "PB placed" --after=HEAD~1 -- p.txt
-_ST_EQ "a placement with a pause open on another branch refuses up front" "$RC" "1"
-_ST_OUT_HAS "naming it and whose it is" "in flight on pb-other, paused for its resolution – an unlabeled caller's"
-_ST_RUN --commit --text "PB plain" -- p.txt
-_ST_EQ "while a plain commit, which never pauses, lands beside it" "${RC}:$(git log -1 --format=%s)" "0:PB plain"
+_ST_EQ "a placement with a pause open on another branch lands beside it" "${RC}:$(git log -1 --format=%s HEAD~1)" "0:PB placed"
+print -r -- q > q.txt
+_ST_RUN --commit --text "PB plain" -- q.txt
+_ST_EQ "as does a plain commit" "${RC}:$(git log -1 --format=%s)" "0:PB plain"
 git checkout -q pb-other 2>/dev/null
 _ST_RUN --abort
 git checkout -q main 2>/dev/null
