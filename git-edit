@@ -13454,7 +13454,7 @@ SEQEOF
 		# Resumed as a caller's continue resumes, each step's own message written back over git's
 		if [ -z "$EDITS_CONTINUE" ]; then
 			_RESUME_EDITOR "$WT"
-			EDITS_CONTINUE="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)REPLY} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
+			EDITS_CONTINUE="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
 		fi
 		_REBASE_FIRST_RUN "$EDITS_CONTINUE"
 		RC=$?

@@ -2,7 +2,8 @@
 # • A guard reads bytes, never a textconv driver's view – a peer's staging that view hides survives
 #   a raw undo's printed re-sync and a killed move's locked-index step, and a fold through such a
 #   file folds, its paths named, whole or everything staged
-# • A `TMPDIR` holding a space, or `$(…)`, runs a move, a fold and a `--continue` as any other
+# • A `TMPDIR` holding a space, or `$(…)`, runs a move, a fold – one resolving its replay's stops
+#   too – and a `--continue` as any other
 # • A quote in the repo's commit encoding stays inside its one config entry
 # • An `edit.worktreeLink` path below a symlink the commit tracks is named for that
 # • `color.ui=always` leaves a land's catch-up copies and a replay's pairing as they read without
@@ -110,6 +111,13 @@ for H9_T in "$TMP/h209 tmp/" "$TMP/h209x\$(touch\${IFS}$TMP/h209-pwned)/"; do
 	_ST_RESOLVE "${H9_WT:-$ST_NO_WT}" c 3
 	TMPDIR=$H9_T _ST_RUN --continue
 	_ST_EQ "a --continue under it lands" "$RC:$(git log --format=%s | tr '\n' '|'):$(git show HEAD:c)" "0:H9E c3|H9E c1|H9E g|H9E h|H9E f|:3"
+	# A fold whose replay stops resumes past the stops it resolves itself
+	_ST_PZ_C d $'a\nb' "H9E d1" && _ST_PZ_C d $'a\nB' "H9E d2"
+	print -r -- $'A\nB' > d && git add d
+	TMPDIR=$H9_T _ST_RUN --amend-into="$(git rev-parse ':/H9E d1')" -- d
+	_ST_EQ "a fold resolving its replay's stops under it lands" \
+		"$RC:$(git show "$(git rev-parse ':/H9E d1')":d | paste -sd'|' -):$(git show HEAD:d | paste -sd'|' -)" "0:A|b:A|B"
+	_ST_OUT_HAS "the stops resolved by the fold itself" "Made the fold's line replacements in the 2 commit(s) the replay stopped at"
 done
 _ST_EQ "and nothing a TMPDIR holds ran" "$([ -e "$TMP/h209-pwned" ] && echo ran)" ""
 
