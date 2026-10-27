@@ -133,6 +133,11 @@ branch rewritten. A branch checked out in a worktree is left for that worktree
 to move, as git leaves it too \(em but it is named all the same, with its
 counterpart and no command, since the move belongs to that checkout and to
 whatever work is sitting in it.
+.IP
+A tag that
+.B edit.followTag
+names follows the rewrite instead, once the run lands (see
+.BR CONFIGURATION ).
 .IP \(bu 3
 A \fIcommit\fR that an earlier rewrite has orphaned is resolved to its current
 identity when one commit carries the identical diff, and otherwise refused with
@@ -154,7 +159,10 @@ Every run ends with a machine\-readable status trailer (see
 refuses to rewrite commits that already exist on a remote unless
 .B \-\-allow\-pushed
 is given, records its ref move in the branch reflog and a journal, and warns
-about tags and branches left pointing into the rewritten span.
+about tags and branches left pointing into the rewritten span \(em but for the
+tags
+.B edit.followTag
+names, which it moves along.
 .PP
 It needs git 2.31 or later and refuses an older one outright, since below
 that some of its checks would read as off rather than fail. Every mode needs a
@@ -2052,6 +2060,12 @@ so its last operation can be a parallel session's on any branch: with
 .B GIT_EDIT_ACTOR
 set, a run made under another label, or none, is refused too.
 .IP
+Each tag the run moved under
+.B edit.followTag
+goes back to where the run found it, an annotated one to its own tag object
+\(em compare\-and\-swap from where the run put it, so a tag moved or deleted
+since is left so and named.
+.IP
 A run whose branch already sits where the undo would take it moves nothing.
 It may have been moved back by hand, say, with the raw
 .B "git update\-ref"
@@ -3159,6 +3173,72 @@ steps a single run back down.
 Seconds the post\-failure climb for the first passing commit may spend, zero
 to skip it altogether. Unset, it is five times the failing run's own duration
 (at least 30s), so a slow check stops early on its own.
+.TP
+.B edit.followTag
+Tags that follow a rewrite of the commit they point at, one tag name or
+pattern per value (repeatable), matched as
+.B "git tag \-l"
+matches one, a
+.B *
+crossing a
+.B /
+too \(em
+.BR cut\-* ,
+say, for a release's cut a session moves on as folds land below it. An empty
+value names none. It is meant for local markers: a tag that was pushed stays
+on the remote as it was, so moving it there is the caller's own
+.BR "git push \-\-force" " \fIremote\fR \fItag\fR" .
+Where a fetch maps the remote's tags below
+.IR refs/remotes/remote/tags/ ,
+the run names that push \(em git keeps no other record of a pushed tag, so
+otherwise it says nothing. Opting a tag in says it follows the run's branch:
+once that branch has moved, each such tag on a commit the run rewrote goes to
+its counterpart \(em what the rewrite made of the commit, the commit a squash
+took it into, or, for a dropped commit, the nearest commit below it the run
+kept. Where the run kept no record of the commit \(em a rebase keeps one only
+for a
+.B post\-rewrite
+hook or notes \(em its counterpart is the one commit the run made with its
+author name, email and date and its subject, the subject a fold's
+.B \-\-text
+gave it, and no other commit of either span holding the same. A fold into the
+tagged commit changes its diff but none of these. Two commits sharing them
+leave the tag behind, as does a commit the run never replayed \(em a
+cherry\-pick on another branch shares its identity, never one the run made,
+told by the branches and remotes as the run started, which a pause keeps for
+its resume, so a branch made from the pause since takes none of it \(em and
+a match by its change alone, which can be a commit below the span the run
+never touched. Each such tag is named with the reason it stayed. Every mode landing a rewrite does so,
+.B \-\-onto
+and
+.B \-\-exec
+included, and a paused one once its
+.B \-\-continue
+lands. A run aborted or refused its final ref update moves no tag.
+.IP
+An annotated tag is re\-made pointing there, its message and tagger \(em
+name, email and date \(em kept as they were. A
+signed one stays, as a moved copy would lose its signature, as do a tag of a
+tag and one whose counterpart is only a guess by subject or not found at
+all \(em each named with the command that would re\-point it and why it
+stayed. Each move is compare\-and\-swap from the value the run read before
+looking up its counterpart, so a tag another run or a person moved meanwhile
+stays where they put it, and is named as such. A tag whose commit no longer
+holds a change the run moved or squashed across it, or now holds one, is
+named with those changes \(em a
+.BR fixup! ,
+.B amend!
+or
+.B squash!
+folded below it is what the key is for, and stays unnamed \(em as are the
+local branches still holding its old commit, which it no longer marks there.
+Every move is said, recorded in
+.I git\-edit\-tags
+and taken back by
+.BR \-\-undo .
+A tag no value names stays behind as before, the hint naming it \(em a
+release tag a release checks against its commit, say, which is how a fold
+below a tagged but unpushed release gets caught.
 .SH ENVIRONMENT
 Set to
 .BR 0 ,
@@ -3287,7 +3367,7 @@ directory for the top, which no listing proves, and a
 .B .git
 file in a subdirectory would have every tracked file read as deleted.
 .SH FILES
-All three sit in the repository's common git directory, so every worktree
+All four sit in the repository's common git directory, so every worktree
 shares them.
 .TP
 .I <git dir>/git\-edit\-state
@@ -3362,6 +3442,14 @@ than 60 s, its pid then taken for another process's. A run that cannot read
 its own start time names it
 .BR \- ,
 held for as long as its pid lives.
+.TP
+.I <git dir>/git\-edit\-tags
+One line per tag a landing moved under
+.B edit.followTag
+(\fB<epoch> <ref> <old> <new> <tag ref> <from> <to>\fR, the first four the
+branch's move as its journal line has them), so
+.B \-\-undo
+puts each back with the move it followed.
 .SH EXAMPLES
 .TP
 Fold staged changes into the commit that introduced the code:

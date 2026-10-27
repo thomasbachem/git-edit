@@ -115,7 +115,8 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
-	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END
+	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END \
+	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
@@ -2900,11 +2901,12 @@ _RUN_FATES=()
 
 # Puts into `REPLY` what the run made of <commit> left in its span, as "<sha> <how>" – `dropped`
 # (sha `-`) or `squashed` by the run's word, `rewrite` or `patch-id` by its pairs, else `patch-id`
-# or `subject`, a guess, as the stale-SHA rule finds one – empty where none
+# or `subject` as the stale-SHA rule finds one – and into `_COUNTERPART_BY` whose word it is
 _SPAN_COUNTERPART () {
-	# Args: <commit> <new tip>
-	local PAIR
-	REPLY=""
+	# Args: [-i <ref> <old tip>] <commit> <new tip> – `-i` asks `identity` ahead of the stale-SHA rule
+	local PAIR REF="" OLD_TIP=""
+	[ "$1" = -i ] && REF=$2 OLD_TIP=$3 && shift 3
+	REPLY="" _COUNTERPART_BY=run
 	case ${_RUN_FATES[$1]} in
 		(dropped) REPLY="- dropped"; return 0 ;;
 		(squashed\ ?*) REPLY="${_RUN_FATES[$1]#squashed } squashed"; return 0 ;;
@@ -2917,8 +2919,325 @@ _SPAN_COUNTERPART () {
 		[ "$(_PATCH_ID "$1")" = "$(_PATCH_ID "${PAIR#* }")" ] && REPLY="${PAIR#* } patch-id"
 		return 0
 	done
+	_COUNTERPART_BY=identity
+	[ -n "$OLD_TIP" ] && _SPAN_IDENTITY "$1" "$REF" "$OLD_TIP" "$2" && return 0
+	_COUNTERPART_BY=stale
 	REPLY=$(_RESOLVE_STALE "$1" "$2")
 	return 0
+}
+typeset -g _COUNTERPART_BY=""
+
+# The `edit.followTag` values, read once a run
+typeset -ga _FOLLOW_PATS
+typeset -g _FOLLOW_READ=""
+_FOLLOW_PATS_READ () {
+	local P
+	[ -z "$_FOLLOW_READ" ] || return 0
+	_FOLLOW_READ=1 _FOLLOW_PATS=()
+	for P in ${(f)"$(git config --get-all edit.followTag 2>/dev/null)"}; do
+		P=${P#refs/tags/}
+		[ -n "$P" ] && _FOLLOW_PATS+=("$P")
+	done
+}
+
+# Commits a fold's `--text` reworded ahead of its replay, to the reword – the run's own record of
+# the change to their subject, which its rebase then rebuilds past any pair kept
+typeset -gA _RUN_PREMAP
+_RUN_PREMAP=()
+
+# Each span's commits by identity – author name, email and date and subject – for one move,
+# read once a tag that follows it first needs them:
+# • `_ID_NEW` – the commits the run made, each identity to its commit, `-` where two share one
+# • `_ID_OLD_N` – how many commits of the old span hold each, `_ID_OLD` their identities in order
+typeset -gA _ID_NEW _ID_OLD_N
+typeset -ga _ID_OLD
+typeset -g _ID_FOR=""
+
+# Reads the identity tables for the move of <ref> from <old tip> to <new tip>, as above – the new
+# span only what the run made, never what a branch or remote held as it started, as a cherry-pick
+# there shares an identity – one made from a pause holds the run's own (`_FOREIGN_TIPS`)
+_SPAN_IDENTITIES () {
+	# Args: <ref> <old tip> <new tip>
+	local BASE C K E F=$'%an\x1f%ae\x1f%ad\x1f%s'
+	local -a NOT HELD
+	[ "$_ID_FOR" = "$1 $2 $3" ] && return 0
+	_ID_FOR="$1 $2 $3" _ID_NEW=() _ID_OLD_N=() _ID_OLD=()
+	if [ -n "$_FOREIGN_READ" ]; then
+		for E in "${_FOREIGN_TIPS[@]}"; do [ "${E%% *}" = "$1" ] || HELD+=("${E#* }"); done
+	else
+		# None read, as for a pause an older build took – the refs as they stand now
+		HELD=(--exclude="${1#refs/heads/}" --branches --remotes)
+	fi
+	# A tip gone since, its commit pruned, is passed over rather than failing the walk
+	for C in ${(f)"$(git log --ignore-missing --date=raw --format="%H $F" "$3" --not "$2" "${HELD[@]}" -- 2>/dev/null)"}; do
+		K=${C#* }
+		if (( ${+_ID_NEW[$K]} )); then _ID_NEW[$K]=-; else _ID_NEW[$K]=${C%% *}; fi
+	done
+	BASE=$(git merge-base "$2" "$3" 2>/dev/null) && NOT=(--not "$BASE")
+	for C in ${(f)"$(git log --date=raw --format="%H $F" "$2" "${NOT[@]}" -- 2>/dev/null)"}; do
+		# One a fold's `--text` reworded by the subject the reword gave it
+		[ -n "${_RUN_PREMAP[${C%% *}]}" ] && C="${C%% *} $(git log -1 --date=raw --format="$F" "${_RUN_PREMAP[${C%% *}]}" -- 2>/dev/null)"
+		K=${C#* }
+		_ID_OLD+=("$C")
+		_ID_OLD_N[$K]=$(( ${_ID_OLD_N[$K]:-0} + 1 ))
+	done
+}
+
+# Puts into `REPLY` "<sha> identity", the one commit the move of <ref> made holding <commit>'s
+# identity, no other commit of either span holding it – a fold changes its diff, not these
+# – failing with `_IDENTITY_WHY` saying why: `shared` where two commits hold it, else `none`
+_SPAN_IDENTITY () {
+	# Args: <commit> <ref> <old tip> <new tip>
+	local K I
+	REPLY="" _IDENTITY_WHY=none
+	_SPAN_IDENTITIES "$2" "$3" "$4"
+	I=${_ID_OLD[(i)$1 *]}
+	(( I <= ${#_ID_OLD} )) || return 1
+	K=${_ID_OLD[I]#* }
+	if (( ${_ID_OLD_N[$K]:-0} > 1 )) || [ "${_ID_NEW[$K]}" = - ]; then
+		_IDENTITY_WHY=shared
+		return 1
+	fi
+	[ -n "${_ID_NEW[$K]}" ] || return 1
+	REPLY="${_ID_NEW[$K]} identity"
+}
+typeset -g _IDENTITY_WHY=""
+
+# The branches and remotes as the run started, "<ref> <sha>" each, read only where `edit.followTag`
+# names a pattern – a pause keeps them, so its resume reads what the run that paused read
+typeset -ga _FOREIGN_TIPS
+typeset -g _FOREIGN_READ=""
+_FOREIGN_SNAPSHOT () {
+	_FOLLOW_PATS_READ
+	(( ${#_FOLLOW_PATS} )) || return 0
+	_FOREIGN_READ=1
+	_FOREIGN_TIPS=(${(f)"$(git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes 2>/dev/null)"})
+}
+
+# Puts into `reply` the tags `edit.followTag` names, by full ref – each value a tag name or a
+# pattern as `git tag -l` matches it, its `*` crossing a `/` too, an empty one naming none, not all
+# – listed past any `column.*` setting, which `git tag` applies to a `--format` too
+_FOLLOWED_TAGS () {
+	reply=()
+	_FOLLOW_PATS_READ
+	(( ${#_FOLLOW_PATS} )) || return 0
+	reply=(${(f)"$(git tag -l --no-column --format='%(refname)' "${_FOLLOW_PATS[@]}" 2>/dev/null)"})
+}
+
+# Puts into `REPLY` the push that moves tag <tag> on each remote the repo knows to hold it – one
+# a fetch maps to `refs/remotes/<remote>/tags/`, as git keeps no record of pushed tags otherwise
+_PUSHED_TAG_CMD () {
+	# Args: <tag>
+	local R
+	local -a REMOTES
+	REPLY=""
+	# A tag name holds no glob character, so only the remote's part matches as a pattern
+	for R in ${(f)"$(git for-each-ref --format='%(refname)' "refs/remotes/*/tags/$1" 2>/dev/null)"}; do
+		R=${${R#refs/remotes/}%/tags/$1}
+		git config --get "remote.$R.url" >/dev/null 2>&1 && REMOTES+=("$R")
+	done
+	for R in "${REMOTES[@]}"; do REPLY+="${REPLY:+ && }git push --force $(_SHQ "$R") $(_SHQ "refs/tags/$1")"; done
+}
+
+# Names the record of tags each landing made follow it, beside the journal – one line a tag,
+# "<epoch> <ref> <old> <new> <tag ref> <from> <to>", which `--undo` reads to put them back
+_FOLLOWED_TAGS_FILE () {
+	local JF=${_MOVE_JOURNAL:-$(_JOURNAL_FILE_PATH)}
+	[ -n "$JF" ] && print -r -- "${JF:h}/git-edit-tags"
+}
+
+# What the tag step said it moved, for its re-run after a deferred
+# signal to say again – four fields a tag, keyed by the move it followed
+typeset -ga _TAGS_FOLLOWED
+_TAGS_FOLLOWED=()
+typeset -g _TAGS_FOLLOWED_FOR=""
+
+# Says that tag <tag> followed the move of <ref> from <old> to <new>, off <from> to <to> – <how> it
+# got there – and what that leaves:
+# • The changes the run moved or squashed across it, which its commit no longer holds or now holds
+#   – a `fixup!`, `amend!` or `squash!` folded below it never named, as that is what it is for
+# • The local branches still holding its old commit, as the tag follows the run's branch alone
+# • The push that moves it on a remote the repo knows to hold it, as a pushed tag stays as it was
+_SAY_FOLLOWED_TAG () {
+	# Args: <tag> <from> <to> <how> <ref> <old> <new>
+	local WHAT C K
+	local -a LOST GAINED HOLD NOT
+	local -A LAND IN_OLD IN_NEW
+	case $4 in
+		(patch-id) WHAT="its counterpart, the same change" ;;
+		(rewrite) WHAT="its counterpart, what the rewrite made of it" ;;
+		(identity) WHAT="its counterpart, the one commit of its author and date" ;;
+		(squashed) WHAT="the commit its own was squashed into" ;;
+		(*) WHAT="the nearest commit kept below the one dropped" ;;
+	esac
+	PRINT_TEXT "Tag %s followed the rewrite, %s → %s, to %s" 32 "$1" "${2:0:12}" "${3:0:12}" "$WHAT"
+	# Where each commit of the old span went – by the run's own word, else by identity
+	_SPAN_IDENTITIES "$5" "$6" "$7"
+	for C in "${_REWRITE_PAIRS[@]}"; do LAND[${C%% *}]=${C#* }; done
+	for C in "${_ID_OLD[@]}"; do
+		K=${C#* } C=${C%% *}
+		case ${_RUN_FATES[$C]} in
+			(dropped) unset "LAND[$C]"; continue ;;
+			(squashed\ ?*) LAND[$C]=${_RUN_FATES[$C]#squashed }; continue ;;
+		esac
+		[ -n "${LAND[$C]}" ] && continue
+		(( ${_ID_OLD_N[$K]:-0} == 1 )) && [[ -n "${_ID_NEW[$K]}" && "${_ID_NEW[$K]}" != - ]] && LAND[$C]=${_ID_NEW[$K]}
+	done
+	C=$(git merge-base "$6" "$7" 2>/dev/null) && NOT=(--not "$C")
+	for K in ${(f)"$(git rev-list "$2" "${NOT[@]}" -- 2>/dev/null)"}; do IN_OLD[$K]=1; done
+	for K in ${(f)"$(git rev-list "$3" "${NOT[@]}" -- 2>/dev/null)"}; do IN_NEW[$K]=1; done
+	for C in "${_ID_OLD[@]}"; do
+		K=${C##*$'\x1f'} C=${C%% *}
+		[[ -n "${LAND[$C]}" && "$K" != (fixup|amend|squash)'! '* ]] || continue
+		if (( ${+IN_OLD[$C]} )) && ! (( ${+IN_NEW[${LAND[$C]}]} )); then LOST+=("$K")
+		elif ! (( ${+IN_OLD[$C]} )) && (( ${+IN_NEW[${LAND[$C]}]} )); then GAINED+=("$K")
+		fi
+	done
+	(( ${#LOST} )) && PRINT_TEXT "Tag %s's commit no longer holds the change of what this run moved above it: %s" 33 "$1" "$(_SOME_PATHS "${LOST[@]}")"
+	(( ${#GAINED} )) && PRINT_TEXT "Tag %s's commit now holds the change of what this run moved or squashed below it: %s" 33 "$1" "$(_SOME_PATHS "${GAINED[@]}")"
+	HOLD=(${(f)"$(git for-each-ref --format='%(refname:short)' --contains "$2" refs/heads 2>/dev/null)"})
+	(( ${#HOLD} )) && PRINT_TEXT "Tag %s no longer marks its old commit on the branches still holding it: %s" 33 "$1" "$(_SOME_PATHS "${HOLD[@]}")"
+	_PUSHED_TAG_CMD "$1"
+	[ -n "$REPLY" ] && PRINT_TEXT "Tag %s is pushed and stays there as it was – moving it there too is yours to do: %s" 33 "$1" "$REPLY"
+	return 0
+}
+
+# Moves tag <tag ref> off <commit> to <hit>, its counterpart in the move of <ref> from <old> to
+# <new> by <by>'s word – a dropped commit's tag down to the nearest commit below it the run kept –
+# by compare-and-swap from <value>, read before the counterpart was looked up, so a tag moved
+# meanwhile stays where it is now
+# • An annotated tag is re-made pointing there, its message and tagger kept
+# • Follows only the run's own record or an identity it made – a match by the stale-SHA rule alone
+#   can be a commit the run never touched, a cherry-pick's original below the span say
+# • Fails with the reason in `REPLY` where the tag stays – a guess or no counterpart, a signature a
+#   moved copy would lose, a tag of a tag – for the hint to name its re-point as for any other tag
+_FOLLOW_TAG () {
+	# Args: <tag ref> <value> <commit> <hit> <by> <ref> <old> <new> <label>
+	local TAGREF=$1 VAL=$2 C=$3 HOW=${4#* } TO=${4%% *} NEWVAL F
+	local -a T
+	case $HOW in
+		(patch-id|rewrite|squashed|identity)
+			if [ "$5" = stale ]; then
+				_NOT_FOLLOWED_WHY "a match by its change alone moves nothing"
+				return 1
+			fi ;;
+		(dropped)
+			# Down its first parents past every commit the run dropped too
+			TO=""
+			while C=$(git rev-parse -q --verify "$C^" 2>/dev/null); do
+				if _IS_ANCESTOR "$C" "$8"; then
+					TO=$C
+					break
+				fi
+				_SPAN_COUNTERPART -i "$6" "$7" "$C" "$8"
+				[ "${REPLY#* }" = dropped ] && continue
+				[ "$_COUNTERPART_BY" != stale ] && [[ "${REPLY#* }" == (patch-id|rewrite|squashed|identity) ]] && TO=${REPLY%% *}
+				break
+			done
+			HOW=below ;;
+		(subject)
+			_NOT_FOLLOWED_WHY "its counterpart is only a guess"
+			return 1 ;;
+		(*)
+			_NOT_FOLLOWED_WHY "it has no counterpart to follow"
+			return 1 ;;
+	esac
+	if [ -z "$TO" ] || ! TO=$(git rev-parse -q --verify "$TO^{commit}" 2>/dev/null) || ! _IS_ANCESTOR "$TO" "$8"; then
+		REPLY="Not followed though edit.followTag names it – no commit below it was kept to follow"
+		[ "$HOW" = below ] || REPLY="Not followed though edit.followTag names it – its counterpart is not on the new line"
+		return 1
+	fi
+	# Moved during the lookup, as the swap would find too – said here, before anything is re-made
+	if [ "$(git rev-parse -q --verify "$TAGREF" 2>/dev/null)" != "$VAL" ]; then
+		PRINT_TEXT "Tag %s moved meanwhile, by another run or by hand – left where it stands now" 33 "${TAGREF#refs/tags/}"
+		return 0
+	fi
+	T=(${=$(git for-each-ref --format='%(objecttype) %(*objecttype)' "$TAGREF" 2>/dev/null)})
+	NEWVAL=$TO
+	if [ "${T[1]}" = tag ]; then
+		if [ "${T[2]}" != commit ]; then
+			REPLY="Not followed though edit.followTag names it – it tags another tag"
+			return 1
+		fi
+		if [ -n "$(git for-each-ref --format='%(contents:signature)' "$TAGREF" 2>/dev/null)" ]; then
+			REPLY="Not followed though edit.followTag names it – a moved copy would lose its signature"
+			return 1
+		fi
+		# The tag object as it was, its first line – what it points at – the only one changed, so
+		# what fsck only warns of, as an early tag's missing tagger, stays as git took it then
+		if ! NEWVAL=$({ print -r -- "object $TO"; git cat-file tag "$VAL" | LC_ALL=C sed 1d; } | git mktag --no-strict 2>/dev/null) || [ -z "$NEWVAL" ]; then
+			REPLY="Not followed though edit.followTag names it – git refused to re-make it"
+			return 1
+		fi
+	elif [ "${T[1]}" != commit ]; then
+		REPLY="Not followed though edit.followTag names it – it tags no commit"
+		return 1
+	fi
+	if ! git update-ref -m "git edit: $9$_REFLOG_TAG" "$TAGREF" "$NEWVAL" "$VAL" 2>/dev/null; then
+		if [ "$(git rev-parse -q --verify "$TAGREF" 2>/dev/null)" != "$VAL" ]; then
+			PRINT_TEXT "Tag %s moved meanwhile, by another run or by hand – left where it stands now" 33 "${TAGREF#refs/tags/}"
+			return 0
+		fi
+		REPLY="Not followed though edit.followTag names it – git refused to move it"
+		return 1
+	fi
+	F=$(_FOLLOWED_TAGS_FILE) && _APPEND_LINE "$F" "$EPOCHSECONDS $6 $7 $8 $TAGREF $VAL $NEWVAL"
+	_TAGS_FOLLOWED+=("${TAGREF#refs/tags/}" "$3" "$TO" "$HOW")
+	_SAY_FOLLOWED_TAG "${TAGREF#refs/tags/}" "$3" "$TO" "$HOW" "$6" "$7" "$8"
+	return 0
+}
+
+# Puts into `REPLY` why a tag whose counterpart the run's record and identity don't name stays
+# – <what else> where its identity, which no other commit shares, is on no commit the run made
+_NOT_FOLLOWED_WHY () {
+	# Args: <what else>
+	if [ "$_IDENTITY_WHY" = shared ]; then
+		REPLY="Not followed though edit.followTag names it – another commit has its author, date and subject, so none this run made is told for its own"
+	else
+		REPLY="Not followed though edit.followTag names it – no commit this run made has its author, date and subject, and $1"
+	fi
+}
+
+# Appends <line> to <file> in one write(2), as a landing appends its journal line
+_APPEND_LINE () {
+	# Args: <file> <line>
+	local -i FD
+	if zmodload zsh/system 2>/dev/null && sysopen -a -o creat -u FD "$1" 2>/dev/null; then
+		syswrite -o $FD "$2"$'\n'
+		exec {FD}>&-
+	else
+		print -r -- "$2" >> "$1"
+	fi
+}
+
+# Puts back the tags the move of <ref> from <old> to <new> made follow it, as `--undo` takes that
+# move back – each by compare-and-swap from where the run put it, so one moved since stays
+_UNFOLLOW_TAGS () {
+	# Args: <ref> <old> <new> <label>
+	local F LINE TAGREF CUR WAS
+	local -a W
+	local -A FROM TO
+	F=$(_FOLLOWED_TAGS_FILE) && [ -s "$F" ] || return 0
+	for LINE in "${(@f)$(<"$F")}"; do
+		W=(${=LINE})
+		(( ${#W} == 7 )) && [ "${W[2]}" = "$1" ] && [ "${W[3]}" = "$2" ] && [ "${W[4]}" = "$3" ] || continue
+		FROM[${W[5]}]=${W[6]} TO[${W[5]}]=${W[7]}
+	done
+	for TAGREF in "${(@ok)FROM}"; do
+		CUR=$(git rev-parse -q --verify "$TAGREF" 2>/dev/null)
+		[ "$CUR" = "${FROM[$TAGREF]}" ] && continue
+		WAS=$(git rev-parse -q --verify "${FROM[$TAGREF]}^{commit}" 2>/dev/null)
+		if [ "$CUR" = "${TO[$TAGREF]}" ] && [ -n "$WAS" ] && \
+		   git update-ref -m "git edit: undo $4$_REFLOG_TAG" "$TAGREF" "${FROM[$TAGREF]}" "$CUR" 2>/dev/null; then
+			PRINT_TEXT "Tag %s back on %s, where the run found it" 32 "${TAGREF#refs/tags/}" "${WAS:0:12}"
+		elif [ "$CUR" = "${TO[$TAGREF]}" ]; then
+			PRINT_TEXT "Tag %s could not be put back where the run found it, %s – it stays where the run put it" 33 "${TAGREF#refs/tags/}" "${${WAS:-${FROM[$TAGREF]}}:0:12}"
+		elif [ -z "$CUR" ]; then
+			PRINT_TEXT "Tag %s was deleted since the run moved it – left so, the run found it on %s" 33 "${TAGREF#refs/tags/}" "${${WAS:-${FROM[$TAGREF]}}:0:12}"
+		else
+			PRINT_TEXT "Tag %s moved since the run moved it – left where it stands now, the run found it on %s" 33 "${TAGREF#refs/tags/}" "${${WAS:-${FROM[$TAGREF]}}:0:12}"
+		fi
+	done
 }
 
 # Prints what a recorded ref move leaves for the caller – the inverse command, other checkouts of
@@ -2941,14 +3260,39 @@ _PRINT_REF_MOVE () {
 	_IS_ANCESTOR "$2" "$3" && ADVANCED=1
 	local ORPHANED_TAGS=""
 	[ -n "$ADVANCED" ] || ORPHANED_TAGS=$(comm -23 <(git for-each-ref refs/tags --merged "$2" --format='%(refname)' 2>/dev/null | sort) <(git for-each-ref refs/tags --merged "$3" --format='%(refname)' 2>/dev/null | sort))
-	local TAGREF TAG TAGSHA TSUBJ HIT TO RETAG TNOTE
+	local TAGREF TAG TAGSHA TVAL TSUBJ HIT TO RETAG TNOTE FNOTE
+	local -a FOLLOW
+	# A re-run after a deferred signal finds the tags the first run moved no longer in the span
+	# – said again from what that run kept, as its output went unprinted
+	if [ "$_TAGS_FOLLOWED_FOR" = "$1 $2 $3" ]; then
+		for TAG TAGSHA TO HIT in "${_TAGS_FOLLOWED[@]}"; do _SAY_FOLLOWED_TAG "$TAG" "$TAGSHA" "$TO" "$HIT" "$1" "$2" "$3"; done
+	else
+		_TAGS_FOLLOWED=() _TAGS_FOLLOWED_FOR="$1 $2 $3"
+	fi
+	[ -n "$ORPHANED_TAGS" ] && _FOLLOWED_TAGS && FOLLOW=("${reply[@]}")
 	for TAGREF in ${(f)ORPHANED_TAGS}; do
 		TAG=${TAGREF#refs/tags/}
-		TAGSHA=$(git rev-parse "$TAGREF^{commit}" 2>/dev/null)
+		# The value a follow swaps from, read before the lookup, which a peer's re-point may outrun
+		TVAL=$(git rev-parse -q --verify "$TAGREF" 2>/dev/null) && TAGSHA=$(git rev-parse "$TVAL^{commit}" 2>/dev/null)
 		[ -z "$TAGSHA" ] && continue
 		TSUBJ=$(git log -1 --format='%s' "$TAGSHA")
-		_SPAN_COUNTERPART "$TAGSHA" "$3"
-		HIT=$REPLY
+		# One the repo opts in follows the rewrite, else says why it stays, below the usual hint
+		# – its counterpart asked by identity too, as only such a tag is moved by it
+		FNOTE=""
+		if (( ${FOLLOW[(Ie)$TAGREF]} )); then
+			# Re-pointed onto the new line since the scan, by a peer
+			if _IS_ANCESTOR "$TAGSHA" "$3"; then
+				PRINT_TEXT "Tag %s moved meanwhile, by another run or by hand – left where it stands now" 33 "$TAG"
+				continue
+			fi
+			_SPAN_COUNTERPART -i "$1" "$2" "$TAGSHA" "$3"
+			HIT=$REPLY
+			_FOLLOW_TAG "$TAGREF" "$TVAL" "$TAGSHA" "$HIT" "$_COUNTERPART_BY" "$@" && continue
+			FNOTE=$REPLY
+		else
+			_SPAN_COUNTERPART "$TAGSHA" "$3"
+			HIT=$REPLY
+		fi
 		# The subject goes above the command, never after it – pasted into a shell that reads no `#`
 		# comments, an interactive zsh's default, it would run
 		# An annotated tag re-made keeps its message, which a plain `git tag -f` would drop with the
@@ -2963,10 +3307,12 @@ _PRINT_REF_MOVE () {
 		case ${HIT#* } in
 			(dropped)
 				PRINT_TEXT "Tag %s points at a commit this run dropped, with no counterpart in the new span – it keeps that commit as it was, to re-point or delete by hand if it shouldn't: %s" 33 "$TAG" "$TSUBJ"
+				[ -n "$FNOTE" ] && PRINT_TEXT "%s" 90 "$FNOTE"
 				continue ;;
 			(squashed) PRINT_TEXT "Tag %s points at a commit this run squashed into %s – re-point it there if it should follow the rewrite: %s" 33 "$TAG" "$TO" "$TSUBJ" ;;
 			(patch-id) PRINT_TEXT "Tag %s points into the rewritten span – re-point it to its counterpart, the same change: %s" 33 "$TAG" "$TSUBJ" ;;
 			(rewrite) PRINT_TEXT "Tag %s points into the rewritten span – re-point it to its counterpart, what the rewrite made of it: %s" 33 "$TAG" "$TSUBJ" ;;
+			(identity) PRINT_TEXT "Tag %s points into the rewritten span – re-point it to its counterpart, the one commit of its author and date: %s" 33 "$TAG" "$TSUBJ" ;;
 			(subject) PRINT_TEXT "Tag %s points into the rewritten span – a guess at its counterpart, by its subject alone, to check is the same change before re-pointing it: %s" 33 "$TAG" "$TSUBJ" ;;
 			(*)
 				PRINT_TEXT "Tag %s points into the rewritten span – re-point it or it stays on pre-rewrite history:" 33 "$TAG"
@@ -2974,6 +3320,7 @@ _PRINT_REF_MOVE () {
 		esac
 		ECHO_E "\e[0;33m  $(_LIT "$RETAG") $TO\e[0m"
 		[ -n "$TNOTE" ] && PRINT_TEXT "%s" 90 "$TNOTE"
+		[ -n "$FNOTE" ] && PRINT_TEXT "%s" 90 "$FNOTE"
 	done
 
 	# A branch left in the span is named the same way rather than moved – git's `rebase.updateRefs`
@@ -3407,6 +3754,7 @@ GIT_UNDO () {
 		_JOURNAL_REPLACE "$JF" "$LINE" "$EPOCHSECONDS $REF $NEW $OLD undo $LABEL${_ACTOR_ID:+$TAB$_ACTOR_ID}"
 		_JOURNAL_UNLOCK "$JF"
 		PRINT_TEXT "%s" 32 "Undid: $LABEL – ${REF#refs/heads/} already sat at ${OLD:0:7}, taken back outside git-edit, so nothing moved"
+		_UNFOLLOW_TAGS "$REF" "$OLD" "$NEW" "$LABEL"
 		# What that raw undo left to do, where it is still undone
 		_RAW_UNDO_STEPS "$REF" "$OLD" "$NEW" "$LABEL"
 		_EMIT_TRAILER "git-edit: ok – $REF unchanged, already at ${OLD:0:7}"
@@ -3434,6 +3782,7 @@ GIT_UNDO () {
 	_JOURNAL_UNLOCK "$JF"
 	SCRIPT_INITIAL_HEAD=$NEW
 	PRINT_TEXT "%s" 32 "Undid: $LABEL"
+	_UNFOLLOW_TAGS "$REF" "$OLD" "$NEW" "$LABEL"
 	# The checkout follows, as after any landing – but for what a commit, a fold or an `--exec` that
 	# only added commits landed, which may have come from it and stays there as uncommitted changes,
 	# as an `--exec` rewriting history is a rewrite like any other
@@ -13383,6 +13732,7 @@ GIT_AMEND_INTO () {
 	if [ -n "$TEXT_VALUE" ]; then
 		AMEND_OLD_SHA=$TARGET_FULL
 		_REWORD_AND_REBUILD "$TARGET_FULL" "$TEXT_VALUE" "$ORIG_HEAD"
+		_RUN_PREMAP[$TARGET_FULL]=$_REWORDED_TARGET
 		# The autosquash below rebuilds these commits again, so this step's map names intermediates
 		# that never reach the branch – held back, the landing follows each on to its final commit,
 		# and without the hold-back it goes out now, for the rebase's own copy to relay it onward
@@ -19106,6 +19456,8 @@ _SAVE_STATE () {
 		# And the files a run took whole, whose staging the landing re-syncs to what they folded
 		if [ ${#WHOLE_PATHS} -gt 0 ]; then print -r -- "whole=${(j: :)${(q)WHOLE_PATHS[@]}}"; fi
 		if [ ${#WHOLE_IDX} -gt 0 ]; then print -r -- "whole_idx=${(j: :)${(@qq)${(@kv)WHOLE_IDX}}}"; fi
+		# And the branches and remotes the run read as it started, for a tag that follows it
+		if [ -n "$_FOREIGN_READ" ]; then print -r -- "foreign=${(j: :)${(@qq)_FOREIGN_TIPS}}"; fi
 	} > "$SF_NEW"
 	# Rewrites this run's own pause in place, and claims a free slot by a hard link – an exclusive
 	# create where the filesystem has none – so a parallel run's pause taken meanwhile refuses this one
@@ -19249,6 +19601,7 @@ _LOAD_STATE () {
 			files)           STATE_FILES=${VAL:+$(_STATE_LIST "${(@ps:\t:)VAL}")} ;;
 			whole)           WHOLE_PATHS=("${(@Q)${(z)VAL}}") ;;
 			whole_idx)       WHOLE_IDX=("${(@Q)${(z)VAL}}") ;;
+			foreign)         _FOREIGN_TIPS=("${(@Q)${(z)VAL}}") _FOREIGN_READ=1 ;;
 			pathspecs_q)     STATE_PATHSPECS=$VAL ;;
 			pathspecs)       STATE_PATHSPECS=${VAL:+$(_STATE_LIST "${(@ps:\t:)VAL}")} ;;
 			tree)            STATE_TREE=$VAL ;;
@@ -24818,6 +25171,7 @@ fi
 # exited – which also keeps the sweep off the read-only reporting paths
 _GC_ORPHANED_WORKTREES
 _GC_KILLED_RUN_WORKTREES
+_FOREIGN_SNAPSHOT
 _GC_KILLED_RUN_REFS
 
 # Extract the `-C`/`--dir` value – `zparseopts` with `::` greedily consumes the next word

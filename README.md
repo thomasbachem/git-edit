@@ -24,6 +24,8 @@ What it's good at:
 
 Pushed commits are refused unless you pass `--allow-pushed`, merge commits are rebuilt faithfully or refused but never flattened, and `git edit --undo` takes back the last operation.
 
+Only the branch being rewritten moves. A tag or another branch left on a commit the rewrite replaced is named with the command that would re-point it – unless the repo opts the tag in: `git config --add edit.followTag 'cut-*'` (a pattern as `git tag -l` takes it) makes each matching tag follow its commit once the run lands, to what the rewrite made of it (the one new commit of its author, date and subject, where the run kept no record), the commit it was squashed into, or, where it was dropped, the nearest commit kept below it – an annotated one re-made with its message and tagger as they were. Only a commit the run rewrote moves its tag – a counterpart found by subject or by change alone is a guess and moves nothing, nor does a signed tag, whose signature a moved copy would lose. Every move is said, compare-and-swap from where the tag stood, so one moved meanwhile stays where it is, and `--undo` puts the tags back with the branch. A change moved or squashed across a tag is named, as are the branches still holding its old commit. A tag no pattern names, a release's `v1.2.0` say, stays behind as before. It is meant for local markers: a pushed tag stays on the remote as it was, moved there only by your own `git push --force <remote> <tag>`.
+
 ## Installation
 
 ```
@@ -256,7 +258,7 @@ Worth putting in an agent's own instructions verbatim: *with `GIT_EDIT_ACTOR` se
 | `--undo`, `--status`, `--carry[=<old tip>]` | Take back the last run – report the one in flight, else the last, and the pending fixups – bring the checkout along to what landed |
 | `-h [<topic>...]`, `--version`, `--selftest[=<ids>]`, `--jobs[=<n>]` | The usage or a flag's entry (prefer it to `--help`, which git routes through `man`), the version, the suite |
 
-Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.<path>.installCmd` and `edit.<path>.lockfile` (how a linked path is installed, and from what), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`. `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_NO_SELF_RESOLVE`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them. Every temp worktree reads the config your checkout reads, too – an `onbranch` include's identity or signing key, and a relative `core.hooksPath` such as husky's.
+Set with `git config`, per repo or globally: `edit.worktreeLink` (paths to link into every temp worktree, repeatable), `edit.<path>.installCmd` and `edit.<path>.lockfile` (how a linked path is installed, and from what), `edit.verifyCmd`, `edit.verifySpan`, `edit.verifyBudget`, `edit.followTag` (tags that follow a rewrite of their commit, repeatable). `GIT_EDIT_NO_AUTO_OPEN`, `GIT_EDIT_NO_RESOLVE`, `GIT_EDIT_NO_REPLAY`, `GIT_EDIT_NO_SELF_RESOLVE`, `GIT_EDIT_PROGRESS`, `GIT_EDIT_WORKTREE_LINK` and `NO_COLOR` cover the same ground ad hoc – `man git-edit` has all of them. Every temp worktree reads the config your checkout reads, too – an `onbranch` include's identity or signing key, and a relative `core.hooksPath` such as husky's.
 
 ## A run, as an agent sees it
 

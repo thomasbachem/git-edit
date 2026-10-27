@@ -88,6 +88,7 @@ if [ -f "$MANPAGE" ]; then
 	_ST_CHECK "-h --worktree-link the config key's entry" grep -qE '^edit\.worktreeLink$' <<<"$("$SELF" -h --worktree-link 2>&1)"
 	_ST_CHECK "-h verifyCmd too" grep -qE '^edit\.verifyCmd$' <<<"$("$SELF" -h verifyCmd 2>&1)"
 	_ST_CHECK "-h edit.verifySpan the key, not the flag" grep -qE '^edit\.verifySpan$' <<<"$("$SELF" -h edit.verifySpan 2>&1)"
+	_ST_CHECK "-h followTag the key's entry" grep -qE '^edit\.followTag$' <<<"$("$SELF" -h followTag 2>&1)"
 	_ST_CHECK "-h lockfile the key's shared entry" grep -qE '^edit\.<path>\.installCmd, edit\.<path>\.lockfile$' <<<"$("$SELF" -h lockfile 2>&1)"
 	_ST_CHECK "-h checkout the section of that title" grep -qE '^THE CHECKOUT$' <<<"$("$SELF" -h checkout 2>&1)"
 	# Every section reads as plain text, no roff escape left over
