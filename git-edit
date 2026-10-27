@@ -19758,7 +19758,7 @@ _PAIR_REPLAYED () {
 	for REC in git-edit-replayed rebase-merge/rewritten-list; do
 		_FACT REC -C "$1" rev-parse --path-format=absolute --git-path "$REC" 2>/dev/null
 		RECS=()
-		[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
+		[ -n "$REC" ] && RECS=(${(f)"$(_REPLAY_RECORD "$1" "$REC")"})
 		(( ${#RECS} )) && (( ${REBUILT[(Ie)${${RECS[-1]#* }%% *}]} )) && break
 		RECS=()
 	done
@@ -22472,9 +22472,63 @@ _TODO_PICKS () {
 	print -r -- "${PICKS[*]}"
 }
 
-# Adds a step to the rebase paused in <worktree>, run once every pick is done, that saves git's
-# own record of what each pick became, `rewritten-list`, beside the worktree – the rebase takes
-# its state dir along as it ends, a hand-typed `git rebase --continue` running the step too –
+# Prints git's record of what each pick became, <record> – `rewritten-list` mid-rebase or the copy
+# `_RECORD_REPLAY_PAIRS` saved – as a git before 2.56 wrote it, which listed a pick it left out
+# as emptied against the commit before it – a later git lists none, as for one taken out by hand –
+# bar mid-rebase the pick at its stop and a pending fixup chain, which git records later
+_REPLAY_RECORD () {
+	# Args: <worktree> <record>
+	local DIR DONE ONTO="" LINE CUR C IN_CHAIN=""
+	local -a RECS NAMES CMDS FULL W
+	local -A AT PENDING AFTER
+	local -i I
+	[ -s "$2" ] && RECS=(${(f)"$(<"$2")"})
+	if [ "${2:t}" = rewritten-list ]; then
+		DIR=${2:h} DONE=${2:h}/done
+		[ -s "$DIR/onto" ] && ONTO=$(<"$DIR/onto")
+		[ -s "$DIR/rewritten-pending" ] && for C in ${(f)"$(<"$DIR/rewritten-pending")"}; do PENDING[${C%% *}]=1; done
+	else
+		DONE=$2-done
+	fi
+	[ -s "$DONE" ] || { (( ${#RECS} )) && print -rl -- "${RECS[@]}"; return 0; }
+	for LINE in "${(@f)$(<"$DONE")}"; do
+		W=(${=LINE})
+		[ "${W[1]}" = onto ] && { ONTO=${W[2]}; continue; }
+		[[ "${W[1]}" == (p|pick|r|reword|e|edit|f|fixup|s|squash) ]] || { CMDS+=(-); NAMES+=(-); continue; }
+		[[ "${W[2]}" == -[cC] ]] && W[2]=()
+		[ -n "${W[2]}" ] || continue
+		CMDS+=("${W[1]}") NAMES+=("${W[2]}")
+	done
+	# A stop's own step, last done, has its pick recorded only as the rebase goes on
+	[ -n "$DIR" ] && (( ${#CMDS} )) && [ "${CMDS[-1]}" != - ] && CMDS[-1]=- NAMES[-1]=-
+	FULL=("${(@f)$(print -rl -- "${NAMES[@]}" | git -C "$1" cat-file --batch-check='%(objectname)' 2>/dev/null)}")
+	(( ${#FULL} == ${#NAMES} )) || { (( ${#RECS} )) && print -rl -- "${RECS[@]}"; return 0; }
+	for (( I = 1; I <= ${#RECS}; I++ )); do AT[${RECS[I]%% *}]=$I; done
+	# Each left-out pick goes in after the latest recorded one before it, as `HEAD` stood then
+	CUR=0
+	for (( I = 1; I <= ${#FULL}; I++ )); do
+		[ "${CMDS[I]}" = - ] && continue
+		C=${FULL[I]%% *}
+		if (( ${+AT[$C]} )); then
+			CUR=${AT[$C]} IN_CHAIN=""
+		elif (( ${+PENDING[$C]} )); then
+			IN_CHAIN=1
+		elif [[ -z "$IN_CHAIN" || "${CMDS[I]}" != (f|fixup|s|squash) ]]; then
+			IN_CHAIN=""
+			if (( CUR )); then AFTER[$CUR]+="$C ${${RECS[CUR]#* }%% *}"$'\n'; elif [ -n "$ONTO" ]; then AFTER[0]+="$C $ONTO"$'\n'; fi
+		fi
+	done
+	print -rn -- "${AFTER[0]}"
+	for (( I = 1; I <= ${#RECS}; I++ )); do
+		print -r -- "${RECS[I]}"
+		print -rn -- "${AFTER[$I]}"
+	done
+}
+
+# Adds a step to the rebase paused in <worktree>, run once every pick is done,
+# that saves git's own record of what each pick became, `rewritten-list`, beside
+# the worktree with its steps done for `_REPLAY_RECORD` – the rebase takes its state
+# dir along as it ends, a hand-typed `git rebase --continue` running the step too –
 # placed before the hold-back's trailing step, which must come last to tell who delivers
 _RECORD_REPLAY_PAIRS () {
 	# Args: <worktree>
@@ -22484,12 +22538,12 @@ _RECORD_REPLAY_PAIRS () {
 	_FACT REC -C "$1" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
 	local -a STEPS
 	local -i I AT
-	STEP='exec cat "$(git rev-parse --git-path rebase-merge/rewritten-list)" >"$(git rev-parse --git-path git-edit-replayed)" 2>/dev/null; :'
+	STEP='exec cat "$(git rev-parse --git-path rebase-merge/rewritten-list)" >"$(git rev-parse --git-path git-edit-replayed)" 2>/dev/null; { echo "onto $(cat "$(git rev-parse --git-path rebase-merge/onto)")"; cat "$(git rev-parse --git-path rebase-merge/done)"; } >"$(git rev-parse --git-path git-edit-replayed)-done" 2>/dev/null; :'
 	[ -f "$TODO" ] && [ -n "$REC" ] || return 0
 	STEPS=("${(@f)$(<"$TODO")}")
 	(( ${STEPS[(Ie)$STEP]} )) && return 0
 	# One a run before left in a `-C` worktree is never this replay's
-	rm -f "$REC"
+	rm -f "$REC" "$REC-done"
 	AT=$(( ${#STEPS} + 1 ))
 	for (( I = ${#STEPS}; I >= 1; I-- )); do
 		LINE=${STEPS[I]}
@@ -22645,7 +22699,7 @@ _REQUIRE_REPLAY_DONE () {
 	fi
 	[ -n "$STATE_TODO_LEFT" ] || return 0
 	_FACT REC -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
-	[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
+	[ -n "$REC" ] && RECS=(${(f)"$(_REPLAY_RECORD "$WT" "$REC")"})
 	# This replay's where it ends on a commit built on the stop that the worktree's tip holds
 	(( ${#RECS} )) && NEW=${${RECS[-1]#* }%% *}
 	if [ -n "$NEW" ] && git -C "$WT" merge-base --is-ancestor "$NEW" HEAD 2>/dev/null && \
@@ -22779,7 +22833,7 @@ _REQUIRE_PICKS_KEPT () {
 	else
 		_FACT REC -C "$WT" rev-parse --path-format=absolute --git-path git-edit-replayed 2>/dev/null
 	fi
-	[ -n "$REC" ] && [ -s "$REC" ] && RECS=(${(f)"$(<"$REC")"})
+	[ -n "$REC" ] && RECS=(${(f)"$(_REPLAY_RECORD "$WT" "$REC")"})
 	# A finished replay's record is this one's only where it ends on a commit the tip holds
 	if [ -z "$INPROGRESS" ]; then
 		(( ${#RECS} )) && git -C "$WT" merge-base --is-ancestor "${${RECS[-1]#* }%% *}" HEAD 2>/dev/null || return 0

@@ -234,11 +234,12 @@ for LP_WAY in drop reorder; do
 	_ST_RUN --continue
 	_ST_EQ "a $LP_WAY whose later pick fails its signature pauses" "$RC" "1"
 	mv "$(git rev-parse --git-common-dir)/lpfail" "$(git rev-parse --git-common-dir)/lpok"
-	# A git before 2.42.1 sets the failed pick's stop up as a conflict's, its message pending – the
-	# continue commits the change itself, the pick run again coming out empty, which a reorder stops on
+	# A git before 2.42.1 or from 2.56 sets the failed pick's stop up as a conflict's,
+	# its message pending – the continue commits the change itself, and before
+	# 2.42.1 the pick run again comes out empty, which a reorder stops on
 	if [ -e "$(git -C "${LP_WT:-$ST_NO_WT}" rev-parse --path-format=absolute --git-path rebase-merge/message 2>/dev/null)" ]; then
 		_ST_RUN --continue
-		if [ "$LP_WAY" = reorder ]; then
+		if [ "$LP_WAY" = reorder ] && [[ "$(git --version)" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 56 )); then
 			_ST_EQ "below git 2.42.1 the pick made again pauses as empty" "$RC" "2"
 			_ST_OUT_HAS "its hint dropping that commit" 'Continuing drops that commit'
 			_ST_RUN --continue
