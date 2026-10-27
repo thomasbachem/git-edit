@@ -4,3 +4,4 @@
 
 # Comments
 bd08f3b8026d515d22ceb81a644c2cd39ca6bc6e # Tighten comments in `git-edit` and the selftest suite
+cdfe5fdf0c4ee989a685f839a1036a1e7bc9a395 # Restyle comments in `git-edit` and the selftest suite
