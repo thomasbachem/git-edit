@@ -722,8 +722,8 @@ the replay takes what follows it, and the commits up to it stay out, those
 .IP
 Before replaying it reports what \fIupstream\fR gained and which of the
 branch's commits it already carries (by patch id). Those are dropped by the
-replay, and the count is repeated afterwards so a shorter branch is never
-mistaken for lost work.
+replay, however \fIupstream\fR changed them since, and the count is repeated
+afterwards so a shorter branch is never mistaken for lost work.
 .IP
 Runs in an isolated worktree and CAS\-updates the branch, then brings the
 caller's checkout along as after any landing. A replant changes its content,
