@@ -674,7 +674,28 @@ the moved commits' changes playing the fold's, on a resume too: at a moved
 commit's own step its change is made in what now precedes it, and a commit
 it moved across makes that change in its own content, or takes it back where
 it moved past it \(em each wherever the file holds every old text exactly
-once. A plain
+once. A stop those leave it resolves by line identity, file by file, where
+the file is in a plain content conflict \(em or one a commit still to come
+adds and the moved span never renames: moved later, a crossed commit keeps
+its own edits, beside the moved lines too, and lines it inserts, between two
+moved ones too, while its edits to the moved lines, or to a file the moved
+commit adds, land with the commit that wrote them; moved earlier, the moved
+commit's edits to lines a crossed commit wrote land with that one. Lines each
+edited in place go their own ways; a hunk rewrapping moved lines with older
+ones lands whole with the moved commit while its lines are at least half of
+those the hunk replaces. The run names each edit that landed with another
+commit, and the step taking it stops to make it. The step that must build
+the tree the moved lines built where they stood \(em moved later, the last
+moved commit's; moved earlier, the crossed commit they followed \(em takes
+that tree once it proves to be its own change and the edits carried to it
+atop what precedes it, content no line holds compared whole: a resolution of
+the run's own that broke that refuses, while after a stop resolved by hand it pauses there, naming what the
+step takes in beyond, and a continue takes it as staged. A hunk mixing fewer
+moved lines than older ones, a line placed where nothing ordered it against
+what stands there \(em bar lines abutting one end of a run a single commit
+rewrote, which go that end's side of its old lines \(em an alignment whose
+least forms read differently \(em none sure before git 2.50 \(em or a crossed
+commit whose whole change would go elsewhere pauses that file as before. A plain
 .B \-\-reorder
 pauses as before.
 .TP
@@ -3336,8 +3357,9 @@ instead of in one proven \fBgit replay\fR pass.
 .TP
 .B GIT_EDIT_NO_SELF_RESOLVE
 If set, the stops of a fold's, a squash's, a placement's, a move's or an
-edit's replay all pause for the resolver, none made by its line replacements;
-a fold's final step still resolves itself as the staged tree.
+edit's replay all pause for the resolver, none made by its line replacements
+or, a move's, by line identity; a fold's final step still resolves itself as
+the staged tree.
 .TP
 .B GIT_EDIT_PROGRESS
 If set, the verify gate names each commit as its check starts even where

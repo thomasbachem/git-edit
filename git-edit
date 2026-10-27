@@ -76,14 +76,14 @@ _UNSET_OWN () {
 }
 _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND_PATHSPECS AMEND_REF \
 	AMEND_SOURCE AMEND_TREE AMEND_TREE_GIVEN ARG_KIND ARG_SCAN ARG_SHA C CHAIN COMMIT COMMITS COMMITS_DESIRED \
-	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
+	COMMITS_RESOLVED COMMITS_TOPO COMMIT_GOT CARRY_KIND CARRY_MIX CARRY_NEW CARRY_NNEW CARRY_NOLD CARRY_OLD CARRY_PATH CARRY_TO D DIFF_N DIFF_O DIFF_PATHS DIR_FROM DIR_HAS_EQUALS DIR_MOVED DIR_PARTLY DIR_RENAMED \
 	DIR_RESPELT DIR_STAYS DIR_TAKEN DIR_TO EDIT_TARGET EDITS_AT EDITS_DERIVED EDITS_NEW EDITS_NNEW EDITS_NOLD EDITS_OLD EDITS_PATH EDITS_TIP_OK EDITS_UNDERIVED EXEC_BASE \
 	EXEC_CHANGED EXEC_DRY_BASE EXEC_DRY_BUILT EXEC_LABEL EXEC_NEW_HEAD EXEC_PEER_MOVE EXEC_PLACED \
 	EXEC_PLACE_ANCHOR EXEC_PLACE_BASE EXEC_PLACE_KIND EXEC_REF EXTRA FB_BLOB FB_ENT FB_NAME FB_TIP FLAG_AU FLAG_SW GOES GONE_WT I IDX_ENT IN_WAY INPUT_FORMS IS_REF ITA KEY \
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
 	MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
 	MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_STALE MOVE_STEP \
-	MOVE_TO MSG_MAP OBJ_AT OLD ONTO_NEW_HEAD ONTO_ON_LINE ONTO_PINNED ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OPT_ABORT OPT_AFTER \
+	MOVE_TO MSG_MAP OBJ_AT OLD ONTO_NEW_HEAD ONTO_ON_LINE ONTO_PINNED ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OUT_LINES OZA OZB OPT_ABORT OPT_AFTER \
 	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
 	OPT_BASE OPT_BEFORE OPT_CARRY OPT_CHMOD OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN \
 	OPT_EDIT OPT_EDITS OPT_EXEC OPT_HELP OPT_JOBS OPT_LAND OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY \
@@ -115,7 +115,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
-	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END \
+	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR
 
 # A switch set to 0, false, no or off is off, as most tools read one
@@ -1815,6 +1815,9 @@ _PRINT_CONFLICT_DETAIL () {
 			PRINT_TEXT "No conflicted files, yet changes left unstaged in %s refuse the continue – git resumes from staged content only. Stage what the resolution needs, restore the rest, then: git edit --continue" 33 "$(_SOME_PATHS "${UNSTAGED[@]}")" >&2
 			ECHO_E "\e[0;33m  $(_LIT "$(_PATHS_CMD "git -C $(_SHQ "$WT") add" "${UNSTAGED[@]}")")\e[0m" >&2
 			ECHO_E "\e[0;33m  $(_LIT "$(_PATHS_CMD "git -C $(_SHQ "$WT") restore" "${UNSTAGED[@]}")")\e[0m" >&2
+		# A move's step made, stopped to take the edits carried to it, its notes saying which
+		elif _MOVE_AT_EDIT "$WT"; then
+			PRINT_TEXT "No conflicted files – this step stopped once made, to take the edits a move carried to it. Make what its note names, amend the commit, then: git edit --continue" 33 >&2
 		# A placement's own commit gone empty has nothing to place – a skip would land another tree
 		elif git -C "$WT" diff-index --cached --quiet --ignore-submodules=none HEAD -- 2>/dev/null && LC_ALL=C grep -q '^placed=' "$(_STATE_FILE_PATH)" 2>/dev/null; then
 			PRINT_TEXT "No conflicted files – the current step became empty: its change is already there beside the anchor, so the placement cannot land. Cancel it with %s, then commit at the tip or beside another anchor." 33 "git edit --abort" >&2
@@ -14891,9 +14894,11 @@ _EDITS_RESUME_RUN () {
 	local -a RESOLVER=("${@:6}")
 	local -i STOPS=0 RC=0
 	(( ${#RESOLVER} )) || RESOLVER=(_EDITS_RESOLVE_STOP)
-	until [ -z "$STOPPED" ] && OUT=$(_RENORM_EVAL "$1" "$4" "$4"); do
+	# A move's step taking carried edits stops made, so it is resolved before going on
+	[ -z "$STOPPED" ] && _MOVE_RECEIVE_DUE "$1" && STOPPED=1
+	until [ -z "$STOPPED" ] && OUT=$(_RENORM_EVAL "$1" "$4" "$4") && ! _MOVE_RECEIVE_DUE "$1"; do
 		STOPPED=""
-		_REBASE_RESOLVABLE "$1" "$OUT" && "${RESOLVER[1]}" "$1" "${(@)RESOLVER[2,-1]}" || { RC=1; break; }
+		{ _REBASE_RESOLVABLE "$1" "$OUT" || _MOVE_RECEIVE_DUE "$1"; } && "${RESOLVER[1]}" "$1" "${(@)RESOLVER[2,-1]}" || { RC=1; break; }
 		[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE "$1"
 		STOPS+=1
 	done
@@ -14911,8 +14916,1004 @@ _RESOLVE_STOPS_ON () {
 	local CMD="GIT_SEQUENCE_EDITOR=true GIT_EDITOR=${(q)$(_SH_WORD "$REPLY")} git -c commit.cleanup=verbatim -c rerere.enabled=true -c rerere.autoUpdate=false -c rebase.updateRefs=false -c advice.mergeConflict=false -c advice.resolveConflict=false $_CAPTURE_PINS rebase --continue"
 	_EDITS_RESUME_RUN --stopped "${@[1,3]}" "$CMD" "${@:4}" && { REBASE_OUT=$REPLY; return 0; }
 	REBASE_OUT=$REPLY
-	_REBASE_RESOLVABLE "$1" "$REBASE_OUT" && return 2
+	{ _REBASE_RESOLVABLE "$1" "$REBASE_OUT" || _MOVE_AT_EDIT "$1"; } && return 2
 	return 1
+}
+
+# Answers whether each line of array <old> surely pairs with array <new>'s at its place
+# – sharing a word, and no word one drops another adds, as a rewrap does
+_MOVE_LINES_PAIR () {
+	# Args: <old array> <new array>
+	local -i I
+	local WD
+	local -a WO WN BOTH
+	local -A DROP ADD
+	(( ${#${(P)1}} == ${#${(P)2}} )) || return 1
+	for (( I = 1; I <= ${#${(P)1}}; I++ )); do
+		WO=(${=${${(P)1}[I]}}) WN=(${=${${(P)2}[I]}})
+		BOTH=(${WO:*WN})
+		(( ${#BOTH} )) || return 1
+		for WD in ${WO:|WN}; do DROP[$WD]+=" $I"; done
+		for WD in ${WN:|WO}; do ADD[$WD]+=" $I"; done
+	done
+	for WD in ${(k)DROP}; do
+		(( ${+ADD[$WD]} )) && [ "${ADD[$WD]}" != "${DROP[$WD]}" ] && return 1
+	done
+	return 0
+}
+
+# Puts into `reply` the hunks of a least change from file <a>
+# to file <b>, four numbers each as git's `@@` line gives them
+_MOVE_HUNKS () {
+	# Args: <file a> <file b>
+	local L
+	reply=()
+	for L in ${(f)"$(git -c core.quotePath=false diff --no-index --no-ext-diff --no-textconv --no-color --diff-algorithm=minimal -U0 -- "$1" "$2" 2>/dev/null)"}; do
+		[[ "$L" =~ '^@@ -([0-9]+)(,([0-9]+))? \+([0-9]+)(,([0-9]+))? @@' ]] || continue
+		reply+=(${match[1]} ${match[3]:-1} ${match[4]} ${match[6]:-1})
+	done
+}
+
+# Fills array <name> with the lines of blob <id> in <worktree>,
+# failing on a binary one or one whose last line lacks its line end
+_MOVE_BLOB_LINES () {
+	# Args: <worktree> <name> <blob id, empty for none>
+	local T
+	set -A "$2"
+	[ -n "$3" ] || return 0
+	T=$(git -C "$1" cat-file blob "$3" 2>/dev/null; print -n x) || return 1
+	T=${T%x}
+	[[ "$T" != *$'\0'* ]] || return 1
+	[ -n "$T" ] || return 0
+	[[ "$T" == *$'\n' ]] || return 1
+	set -A "$2" "${(@f)${T%$'\n'}}"
+}
+
+# Writes the lines of array <name> to <file>, each with its line end
+_MOVE_PUT () {
+	# Args: <name> <file>
+	if (( ${#${(P)1}} )); then print -rl -- "${(@P)1}" >"$2"; else : >"$2"; fi
+}
+
+# Fills array <name> with the lines of <file>, each without its line end
+# – of a record's text, joined without a last line end, given its <count> of lines
+_MOVE_READ () {
+	# Args: <name> <file> [<count>]
+	local T
+	T=$(cat -- "$2" 2>/dev/null; print -n x)
+	T=${T%x}
+	set -A "$1"
+	if (( $# > 2 )); then
+		(( $3 )) && set -A "$1" "${(@f)T}"
+	elif [ -n "$T" ]; then
+		set -A "$1" "${(@f)${T%$'\n'}}"
+	fi
+	return 0
+}
+
+# Puts into `REPLY` the length of a least change's common lines between files <a> and <b>
+_MOVE_COMMON () {
+	# Args: <file a> <file b>
+	local -a NS
+	NS=(${=$(git -c core.quotePath=false diff --no-index --no-ext-diff --no-textconv --diff-algorithm=minimal --numstat -- "$1" "$2" 2>/dev/null)})
+	REPLY=$(( $(LC_ALL=C wc -l <"$1") - ${NS[2]:-0} ))
+}
+
+# Answers whether line <x> of array <from> and line <z> of array <to>, held in files <from file>
+# and <to file>, pair in every least change between them – with no other line of their text,
+# and each dropped from its side shortening the least change's common lines – never on a git
+# before 2.50, whose `--minimal` may undercount a least change
+_MOVE_PAIR_SURE () {
+	# Args: <from array> <to array> <from file> <to file> <x> <z> <every hunk's four numbers>...
+	local -i L
+	[[ "$_GIT_VERSION" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 50 )) && return 1
+	_PAIR_CERTAIN $1 $2 $5 $6 "${@:7}" || return 1
+	_MOVE_COMMON "$3" "$4"
+	L=REPLY
+	LC_ALL=C sed "${5}d" "$3" >"$3.x" && _MOVE_COMMON "$3.x" "$4" && (( REPLY < L )) || return 1
+	LC_ALL=C sed "${6}d" "$4" >"$4.x" && _MOVE_COMMON "$3" "$4.x" && (( REPLY < L ))
+}
+
+# Answers whether both unchanged neighbors of hunk <a> <b> <c> <d> of the least
+# change from array <from> to array <to>, held in files <from file> and <to file>,
+# pair in every least change, the hunk then holding the same lines in each
+_MOVE_EDGES_SURE () {
+	# Args: <from array> <to array> <from file> <to file>
+	# <a> <b> <c> <d>
+	#       <every hunk's four numbers>...
+	local -i A=$5 B=$6 C=$7 D=$8 NF=${#${(P)1}} NT=${#${(P)2}} X Z K
+	local -a P
+	if (( B )); then
+		P=($(( A - 1 )) $(( D ? C - 1 : C )) $(( A + B )) $(( D ? C + D : C + 1 )))
+	else
+		P=($A $(( C - 1 )) $(( A + 1 )) $(( C + D )))
+	fi
+	for (( K = 1; K <= 3; K += 2 )); do
+		X=${P[K]} Z=${P[K+1]}
+		(( X >= 1 && X <= NF && Z >= 1 && Z <= NT )) || continue
+		_MOVE_PAIR_SURE $1 $2 "$3" "$4" $X $Z "${@:9}" || return 1
+	done
+}
+
+# Replaces in array <name> the one run of lines equal to array <old>'s with array <new>'s,
+# failing unless exactly one run matches – an empty <old> matches none
+_MOVE_SPLICE () {
+	# Args: <name> <old array> <new array>
+	local -i I J K=${#${(P)2}} N=${#${(P)1}} AT=0
+	(( K )) || return 1
+	for (( I = 1; I + K - 1 <= N; I++ )); do
+		[ "${${(P)1}[I]}" = "${${(P)2}[1]}" ] || continue
+		for (( J = 2; J <= K; J++ )); do [ "${${(P)1}[I+J-1]}" = "${${(P)2}[J]}" ] || break; done
+		(( J > K )) || continue
+		(( AT )) && return 1
+		AT=I
+	done
+	(( AT )) || return 1
+	set -A "$1" "${(@P)1[1,AT-1]}" "${(@P)3}" "${(@P)1[AT+K,-1]}"
+}
+
+# Prints the lines a least change from file <a> to file <b> drops, then a NUL,
+# then those it adds – what it changes, wherever it changes it
+_MOVE_CHANGED () {
+	# Args: <file a> <file b>
+	local -a FA FB H DROP ADD
+	local -i I
+	_MOVE_READ FA "$1"
+	_MOVE_READ FB "$2"
+	_MOVE_HUNKS "$1" "$2"
+	H=("${reply[@]}")
+	for (( I = 1; I <= ${#H}; I += 4 )); do
+		(( H[I+1] )) && DROP+=("${(@)FA[H[I],H[I]+H[I+1]-1]}")
+		(( H[I+3] )) && ADD+=("${(@)FB[H[I+2],H[I+2]+H[I+3]-1]}")
+	done
+	print -rn -- "${(pj:\n:)DROP}"$'\0'"${(pj:\n:)ADD}"
+}
+
+# Prints the directory of <worktree>'s rebase that holds the edits
+# a move carries to a later step, failing where it holds none
+_MOVE_CARRY_DIR () {
+	# Args: <worktree>
+	local D
+	_FACT D -C "$1" rev-parse --path-format=absolute --git-path git-edit-carried 2>/dev/null || return 1
+	[ -f "$D/cp" ] || return 1
+	print -r -- "$D"
+}
+
+# Answers whether the step <worktree>'s move is at takes carried edits, or proves
+# the move's lines landed, and has not yet – its conflicts resolved, by hand too
+_MOVE_RECEIVE_DUE () {
+	# Args: <worktree>
+	local D R
+	D=$(_MOVE_CARRY_DIR "$1") || return 1
+	[ -z "$(_UNMERGED_IN "$1")" ] || return 1
+	R=$(_STOP_BUILDS "$1")
+	[ -n "$R" ] && [ ! -f "$D/applied.$R" ] || return 1
+	[ -f "$D/to.$R" ] || [ "$R" = "$(<"$D/cp")" ]
+}
+
+# Resolves the conflicted files of the stop <worktree>'s move is at by line identity, the stop's
+# own commit taking every change of its own, none carried – touching nothing where one can't
+_MOVE_PLACE_STOP () {
+	# Args: <worktree>
+	setopt local_options no_multibyte
+	local WT=$1 GD C F TD LINE TAB=$'\t'
+	local -a FILES W RESOLVED OUT_LINES CARRY_TO CARRY_PATH CARRY_KIND CARRY_OLD CARRY_NOLD CARRY_NEW CARRY_NNEW CARRY_MIX
+	local -A ID MODE
+	local -x GIT_LITERAL_PATHSPECS=1
+	[ -z "$GIT_EDIT_NO_SELF_RESOLVE" ] || return 1
+	_EDITS_STOP_STEP "$WT" && (( ${reply[1]} == 3 )) || return 1
+	C=$(git -C "$WT" rev-parse -q --verify "${reply[2]}^{commit}" 2>/dev/null) || return 1
+	for LINE in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
+		F=${LINE#*$TAB} W=(${=${LINE%%$TAB*}})
+		ID[${W[3]}$TAB$F]=${W[2]} MODE[${W[3]}$TAB$F]=${W[1]}
+		FILES+=("$F")
+	done
+	FILES=("${(@u)FILES}")
+	(( ${#FILES} )) || return 1
+	TD=$(MKTEMP_DIR git-edit-move) || return 1
+	{
+		for F in "${FILES[@]}"; do
+			[[ -n "${ID[1$TAB$F]}" && -n "${ID[2$TAB$F]}" && -n "${ID[3$TAB$F]}" && "${MODE[1$TAB$F]}" == 100(644|755) && \
+			   "${MODE[2$TAB$F]}" == "${MODE[1$TAB$F]}" && "${MODE[3$TAB$F]}" == "${MODE[1$TAB$F]}" ]] || return 1
+			_MOVE_FILE_PLAN "$WT" "$F" "${ID[1$TAB$F]}" "${ID[2$TAB$F]}" "${ID[3$TAB$F]}" "$C^" "$TD" || { _MOVE_DECLINED "$C" "$F: $REPLY"; return 1; }
+			_MOVE_PUT OUT_LINES "$TD/r" && git -C "$WT" hash-object -w "$TD/r" >"$TD/id" 2>/dev/null || return 1
+			RESOLVED+=("${MODE[1$TAB$F]} $(<"$TD/id")$TAB$F")
+		done
+	} always {
+		rm -rf -- "$TD"
+	}
+	print -rN -- "${RESOLVED[@]}" | git -C "$WT" update-index -z --index-info 2>/dev/null || return 1
+	for F in "${RESOLVED[@]}"; do git -C "$WT" checkout-index -f -- "${F#*$TAB}" 2>/dev/null || return 1; done
+	return 0
+}
+
+# Notes that a stop of <worktree>'s move was resolved by hand, for the step proving its lines landed
+_MOVE_NOTE_HAND () {
+	# Args: <worktree>
+	local D
+	_FACT D -C "$1" rev-parse --path-format=absolute --git-path git-edit-carried 2>/dev/null || return 0
+	mkdir -p "$D" && : >"$D/hand"
+	return 0
+}
+
+# Answers whether <worktree>'s move stopped past a step it made to take carried edits there
+_MOVE_AT_EDIT () {
+	# Args: <worktree>
+	local GD
+	_MOVE_CARRY_DIR "$1" >/dev/null && _FACT GD -C "$1" rev-parse --absolute-git-dir 2>/dev/null && \
+		[ -f "$GD/rebase-merge/amend" ] && [ -z "$(_UNMERGED_IN "$1")" ]
+}
+
+# Resolves a stop of a move's replay in <worktree> – a step taking carried
+# edits by them, else as a placement's stop resolves, else by line identity
+_MOVE_RESOLVE_STOP () {
+	# Args: <worktree> <moved commit, oldest first>...
+	local D R
+	if D=$(_MOVE_CARRY_DIR "$1"); then
+		R=$(_STOP_BUILDS "$1")
+		if [ -n "$R" ] && [ ! -f "$D/applied.$R" ] && { [ -f "$D/to.$R" ] || [ "$R" = "$(<"$D/cp")" ]; }; then
+			_MOVE_RECEIVE "$@"
+			return
+		fi
+	fi
+	_PLACED_RESOLVE_STOP "$@" && return 0
+	_MOVE_CARRY_STOP "$@"
+}
+
+# Finds for `_MOVE_FILE_PLAN`'s hunk at `A` the stretch of stage 1 between the nearest lines
+# either side pairing with stage 3 in every least change – `ZA`/`ZB`, and `TZA`/`TZB` there –
+# failing where a side's search gives up after 20 lines
+_MOVE_ZONE () {
+	local -i X TRIES
+	X=$(( AC ? A - 1 : A )) TRIES=0
+	while (( X >= 1 )); do
+		(( ${+TMAP[$X]} )) && { _MOVE_PAIR_SURE _MV_B _MV_T "$TD/b" "$TD/t" $X ${TMAP[$X]} "${HT[@]}" && break; TRIES+=1; }
+		(( TRIES < 20 )) || return 1
+		X+=-1
+	done
+	ZA=X TZA=$(( X ? TMAP[$X] : 0 ))
+	X=$(( AC ? A + AC : A + 1 )) TRIES=0
+	while (( X <= NB )); do
+		(( ${+TMAP[$X]} )) && { _MOVE_PAIR_SURE _MV_B _MV_T "$TD/b" "$TD/t" $X ${TMAP[$X]} "${HT[@]}" && break; TRIES+=1; }
+		(( TRIES < 20 )) || return 1
+		X+=1
+	done
+	ZB=X TZB=$(( X <= NB ? TMAP[$X] : NT + 1 ))
+}
+
+# Answers whether `_MOVE_ZONE`'s stretch stands whole in stage 2 – no line unsure, every one
+# there in its place, its ends pairing there in every least change – putting it in `OZA`/`OZB`
+_MOVE_ZONE_KEPT () {
+	local -i X
+	for (( X = ZA; X <= ZB; X++ )); do
+		(( X < 1 || X > NB )) && continue
+		(( ${+MAP[$X]} && ! ${+MS[$X]} && ! ${+MAYBE[$X]} )) || return 1
+	done
+	OZA=$(( ZA ? MAP[$ZA] : 0 )) OZB=$(( ZB <= NB ? MAP[$ZB] : NO + 1 ))
+	(( OZB - OZA == ZB - ZA )) || return 1
+	{ (( ! ZA )) || _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $ZA $OZA "${HO[@]}"; } && \
+		{ (( ZB > NB )) || _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $ZB $OZB "${HO[@]}"; }
+}
+
+# Finds for `_MOVE_FILE_PLAN`'s stage 2 hunk at `A` the stretch of stage 1 between the nearest lines
+# either side pairing with stage 2 in every least change – `ZA`/`ZB`, and `OZA`/`OZB` there –
+# failing where a side's search gives up after 20 lines
+_MOVE_HO_ZONE () {
+	local -i X TRIES
+	X=$(( AC ? A - 1 : A )) TRIES=0
+	while (( X >= 1 )); do
+		(( ${+MAP[$X]} && ! ${+MS[$X]} )) && { _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $X ${MAP[$X]} "${HO[@]}" && break; TRIES+=1; }
+		(( TRIES < 20 )) || return 1
+		X+=-1
+	done
+	ZA=X OZA=$(( X ? MAP[$X] : 0 ))
+	X=$(( AC ? A + AC : A + 1 )) TRIES=0
+	while (( X <= NB )); do
+		(( ${+MAP[$X]} && ! ${+MS[$X]} )) && { _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $X ${MAP[$X]} "${HO[@]}" && break; TRIES+=1; }
+		(( TRIES < 20 )) || return 1
+		X+=1
+	done
+	ZB=X OZB=$(( X <= NB ? MAP[$X] : NO + 1 ))
+}
+
+# Marks unsure in `MAYBE` the lines of `_MOVE_HO_ZONE`'s stretch that some least change pairs and
+# another leaves – where stage 2's side of it is a run of stage 1's, its lines all pairing, those
+# one embedding of that run takes and another avoids – failing where stage 2's side is no such run
+_MOVE_ZONE_UNSURE () {
+	local -a BZ OZ PRE SUF
+	local -i J K NBZ NOZ
+	BZ=("${(@)_MV_B[ZA+1,ZB-1]}") OZ=("${(@)_MV_O[OZA+1,OZB-1]}")
+	(( ZB - ZA > 1 )) || BZ=()
+	(( OZB - OZA > 1 )) || OZ=()
+	NBZ=${#BZ} NOZ=${#OZ}
+	# The most of the run each start and end of the stretch embeds, taking lines greedily
+	PRE[1]=0
+	for (( J = 1; J <= NBZ; J++ )); do
+		PRE[J+1]=$(( PRE[J] ))
+		(( PRE[J] < NOZ )) && [ "${BZ[J]}" = "${OZ[PRE[J]+1]}" ] && PRE[J+1]=$(( PRE[J] + 1 ))
+	done
+	(( PRE[NBZ+1] == NOZ )) || return 1
+	SUF[NBZ+2]=0
+	for (( J = NBZ; J >= 1; J-- )); do
+		SUF[J+1]=$(( SUF[J+2] ))
+		(( SUF[J+2] < NOZ )) && [ "${BZ[J]}" = "${OZ[NOZ-SUF[J+2]]}" ] && SUF[J+1]=$(( SUF[J+2] + 1 ))
+	done
+	for (( J = 1; J <= NBZ; J++ )); do
+		# Avoidable where the rest still embeds it, takeable where some line of its text fits
+		(( PRE[J] + SUF[J+2] >= NOZ )) || continue
+		for (( K = NOZ - SUF[J+2]; K <= PRE[J] + 1; K++ )); do
+			(( K >= 1 && K <= NOZ )) && [ "${OZ[K]}" = "${BZ[J]}" ] && { MAYBE[$((ZA + J))]=1; break; }
+		done
+	done
+	return 0
+}
+
+# Answers for `_MOVE_FILE_PLAN`'s lines inserted at `A`, between the nearest lines `L` and `R`
+# that stand in stage 2, whether what stands between them there is the old side of one sure hunk
+# of a single commit's own change, its new side all between them in stage 1 – the lines abutting it
+_MOVE_EDGE_SIDE () {
+	local OWN LINE
+	local -i J
+	local -a HX FO FN OL NL BL
+	(( A == L || A + 1 == R )) && (( R - L > 1 )) || return 1
+	for (( J = 1; J <= ${#HO}; J += 4 )); do
+		(( HO[J] == L + 1 && HO[J+1] == R - L - 1 && HO[J+2] == PL + 1 && HO[J+3] == PR - PL - 1 )) && break
+	done
+	(( J <= ${#HO} )) || return 1
+	# Its new side the one commit's lines, which its own change replaced the old side with
+	for LINE in ${(f)"$(git -C "$WT" blame --porcelain -L "$(( L + 1 )),$(( R - 1 ))" "$REV" -- "$P" 2>/dev/null)"}; do
+		[[ "$LINE" =~ '^[0-9a-f]{40,64} [0-9]+ [0-9]+' ]] || continue
+		[ -z "$OWN" ] || [ "$OWN" = "${LINE%% *}" ] || return 1
+		OWN=${LINE%% *}
+	done
+	[ -n "$OWN" ] && git -C "$WT" rev-parse -q --verify "$OWN^" >/dev/null 2>&1 || return 1
+	git -C "$WT" cat-file blob "$OWN^:$P" >"$TD/eo" 2>/dev/null && git -C "$WT" cat-file blob "$OWN:$P" >"$TD/en" 2>/dev/null || return 1
+	_MOVE_READ FO "$TD/eo"
+	_MOVE_READ FN "$TD/en"
+	_MOVE_HUNKS "$TD/eo" "$TD/en"
+	HX=("${reply[@]}")
+	OL=("${(@)_MV_O[PL+1,PR-1]}") BL=("${(@)_MV_B[L+1,R-1]}")
+	for (( J = 1; J <= ${#HX}; J += 4 )); do
+		(( HX[J+1] == ${#OL} && HX[J+3] == ${#BL} )) || continue
+		NL=("${(@)FO[HX[J],HX[J]+HX[J+1]-1]}") 
+		[ "${(pj:\n:)NL}" = "${(pj:\n:)OL}" ] || continue
+		NL=("${(@)FN[HX[J+2],HX[J+2]+HX[J+3]-1]}")
+		[ "${(pj:\n:)NL}" = "${(pj:\n:)BL}" ] && return 0
+	done
+	return 1
+}
+
+# Plans one conflicted file of a move's stop in <worktree> by line identity, into the caller's
+# `OUT_LINES` and `CARRY_*` – the lines stage 1 holds and stage 2 lacks being those the commits
+# still to come wrote: Each hunk of stage 3's change touching only those goes to the commit that
+# wrote them, the rest is made in stage 2 – failing, `REPLY` saying why, where an alignment has
+# another least form, a hunk mixes both kinds of line or a line lands where nothing ordered it
+_MOVE_FILE_PLAN () {
+	# Args: <worktree> <path> <stage 1 blob> <stage 2 blob> <stage 3 blob>
+	# <stage 1 commit>
+	#       <scratch dir> <candidate receiver>...
+	setopt local_options no_multibyte
+	local WT=$1 P=$2 REV=$6 TD=$7
+	local -a CANDS=("${@:8}") _MV_B _MV_O _MV_T HO HT OLDL NEWL E_AT E_N E_NN E_TXT OWNS SUBS PO PN UNSURE ZONES
+	local -A MS MAP MAYBE TMAP OT
+	local -i I J S A AC N NC K L R PL PR NB NO NT X Y LO HI EXT UP DN SURE SKIP=0 ZA ZB TZA TZB OZA OZB
+	REPLY="it is binary or its last line lacks its line end"
+	_MOVE_BLOB_LINES "$WT" _MV_B "$3" && _MOVE_BLOB_LINES "$WT" _MV_O "$4" && _MOVE_BLOB_LINES "$WT" _MV_T "$5" || return 1
+	NB=${#_MV_B} NO=${#_MV_O} NT=${#_MV_T}
+	_MOVE_PUT _MV_B "$TD/b" && _MOVE_PUT _MV_O "$TD/o" && _MOVE_PUT _MV_T "$TD/t" || return 1
+	_MOVE_HUNKS "$TD/b" "$TD/o"
+	HO=("${reply[@]}")
+	_MOVE_HUNKS "$TD/b" "$TD/t"
+	HT=("${reply[@]}")
+	# Each hunk's checks diff the whole file again – a 700 KB file of 45 hunks took 12 s
+	(( $(LC_ALL=C wc -c <"$TD/b") * (${#HO} + ${#HT}) / 4 <= 60000000 )) || { REPLY="it is too large to plan in time"; return 1; }
+	# The lines still to be written, and where each other line of stage 1 stands in stage 2
+	# – where a hunk's edges are unsure, those lines of the stretch between sure lines either
+	# side whose text the other side holds there too unsure – else a run sliding along lines alike
+	# leaving those it may take or leave unsure, as are the lines beside a run of stage 2's own
+	L=0 R=0
+	for (( I = 1; I <= ${#HO}; I += 4 )); do
+		A=${HO[I]} AC=${HO[I+1]} N=${HO[I+2]} NC=${HO[I+3]} UP=0 DN=0 SURE=1
+		if ! _MOVE_EDGES_SURE _MV_B _MV_O "$TD/b" "$TD/o" $A $AC $N $NC "${HO[@]}"; then
+			SURE=0
+			UNSURE+=($I)
+		fi
+		for (( J = A; J < A + AC; J++ )); do MS[$J]=1; done
+		X=$(( HO[I+1] ? HO[I] - 1 : HO[I] ))
+		while (( L < X )); do L+=1 R+=1; MAP[$L]=$R; done
+		# Lines each edited in place keep their place, still lines of the commit that edited them
+		if (( SURE && AC && AC == NC )); then
+			PO=("${(@)_MV_B[A,A+AC-1]}") PN=("${(@)_MV_O[N,N+NC-1]}")
+			_MOVE_LINES_PAIR PO PN && for (( J = 0; J < AC; J++ )); do MAP[$((A + J))]=$(( N + J )); done
+		fi
+		L=$(( HO[I+1] ? HO[I] + HO[I+1] - 1 : HO[I] )) R=$(( HO[I+3] ? HO[I+2] + HO[I+3] - 1 : HO[I+2] ))
+	done
+	while (( L < NB )); do L+=1 R+=1; MAP[$L]=$R; done
+	for I in "${UNSURE[@]}"; do
+		A=${HO[I]} AC=${HO[I+1]} N=${HO[I+2]} NC=${HO[I+3]} UP=0 DN=0
+		if _MOVE_HO_ZONE; then
+			_MOVE_ZONE_UNSURE && continue
+			OT=()
+			for (( J = OZA + 1; J < OZB; J++ )); do OT[k${_MV_O[J]}]=1; done
+			for (( J = ZA + 1; J < ZB; J++ )); do (( ${+OT[k${_MV_B[J]}]} )) && MAYBE[$J]=1; done
+			continue
+		fi
+		if (( AC && !NC )); then
+			while (( A - UP > 1 )) && [ "${_MV_B[A-UP-1]}" = "${_MV_B[A+AC-UP-1]}" ]; do UP+=1; done
+			while (( A + AC + DN <= NB )) && [ "${_MV_B[A+AC+DN]}" = "${_MV_B[A+DN]}" ]; do DN+=1; done
+			for (( J = A - UP; J < A + AC + DN; J++ )); do (( J >= A + DN && J < A + AC - UP )) || MAYBE[$J]=1; done
+		elif (( !AC && NC )); then
+			while (( A - UP >= 1 && UP < NC )) && [ "${_MV_B[A-UP]}" = "${_MV_O[N+NC-UP-1]}" ]; do UP+=1; done
+			while (( A + 1 + DN <= NB && DN < NC )) && [ "${_MV_B[A+1+DN]}" = "${_MV_O[N+DN]}" ]; do DN+=1; done
+			for (( J = A - UP + 1; J <= A + DN; J++ )); do MAYBE[$J]=1; done
+		else
+			for (( J = A - 1; J <= A + AC; J++ )); do MAYBE[$J]=1; done
+		fi
+	done
+	# And in stage 3, unchanged
+	L=0 R=0
+	for (( I = 1; I <= ${#HT}; I += 4 )); do
+		X=$(( HT[I+1] ? HT[I] - 1 : HT[I] ))
+		while (( L < X )); do L+=1 R+=1; TMAP[$L]=$R; done
+		L=$(( HT[I+1] ? HT[I] + HT[I+1] - 1 : HT[I] )) R=$(( HT[I+3] ? HT[I+2] + HT[I+3] - 1 : HT[I+2] ))
+	done
+	while (( L < NB )); do L+=1 R+=1; TMAP[$L]=$R; done
+	# Each hunk whose edges are unsure reads alike only within the stretch between the nearest lines
+	# either side that pair with stage 3 in every least change – one stretch for those it spans
+	for (( I = 1; I <= ${#HT}; I += 4 )); do
+		A=${HT[I]} AC=${HT[I+1]} N=${HT[I+2]} NC=${HT[I+3]}
+		(( ${#ZONES} && A < ZONES[-3] )) && continue
+		_MOVE_EDGES_SURE _MV_B _MV_T "$TD/b" "$TD/t" $A $AC $N $NC "${HT[@]}" && continue
+		_MOVE_ZONE || { REPLY="its change at line $A aligns more than one least way"; return 1; }
+		ZONES+=($ZA $ZB $TZA $TZB)
+	done
+	for (( I = 1; I <= ${#HT}; I += 4 )); do
+		A=${HT[I]} AC=${HT[I+1]} N=${HT[I+2]} NC=${HT[I+3]}
+		(( A < SKIP )) && continue
+		LO=$(( AC ? A : A )) HI=$(( AC ? A + AC - 1 : A + 1 ))
+		for (( J = 1; J <= ${#ZONES}; J += 4 )); do
+			(( A >= ZONES[J] && A < ZONES[J+1] )) && break
+		done
+		if (( J <= ${#ZONES} )); then
+			# Its readings agree where the stretch holds none of the lines still to be
+			# written – made in stage 2 as stage 3 has it, standing whole – or only those,
+			# all going to the commit that wrote them, the stop's commit only dropping some
+			# – every line of stage 3's side pairing, so no least change inserts one
+			ZA=${ZONES[J]} ZB=${ZONES[J+1]} TZA=${ZONES[J+2]} TZB=${ZONES[J+3]} SKIP=ZB K=0 Y=0
+			for (( X = ZA + 1; X < ZB; X++ )); do
+				(( ${+MAYBE[$X]} )) && { REPLY="its change at line $A meets lines whose writer aligns more than one least way"; return 1; }
+				(( ${+MS[$X]} )) && K+=1
+				(( ${+TMAP[$X]} )) && Y+=1
+			done
+			if (( K == 0 )) && _MOVE_ZONE_KEPT; then
+				NEWL=()
+				(( TZB - TZA > 1 )) && NEWL=("${(@)_MV_T[TZA+1,TZB-1]}")
+				E_AT+=($(( OZA + 1 ))) E_N+=($(( ZB - ZA - 1 ))) E_NN+=(${#NEWL}) E_TXT+=("${(pj:\n:)NEWL}")
+				continue
+			fi
+			(( K && K == ZB - ZA - 1 && Y == TZB - TZA - 1 )) || { REPLY="its change at line $A aligns more than one least way, its readings differing"; return 1; }
+			A=$(( ZA + 1 )) AC=$(( ZB - ZA - 1 )) N=$(( TZA + 1 )) NC=$(( TZB - TZA - 1 ))
+		else
+			for (( J = LO; J <= HI; J++ )); do
+				(( ${+MAYBE[$J]} )) && { REPLY="its change at line $A meets lines whose writer aligns more than one least way"; return 1; }
+			done
+		fi
+		K=0
+		for (( J = A; J < A + AC; J++ )); do (( ${+MS[$J]} )) && K+=1; done
+		# Lines each edited in place, no word crossing between them, are each a hunk of their own
+		SUBS=($A $AC $N $NC)
+		if (( K && K < AC && AC == NC )); then
+			OLDL=("${(@)_MV_B[A,A+AC-1]}") NEWL=("${(@)_MV_T[N,N+NC-1]}")
+			if _MOVE_LINES_PAIR OLDL NEWL; then
+				SUBS=()
+				for (( J = 0; J < AC; J++ )); do SUBS+=($(( A + J )) 1 $(( N + J )) 1); done
+			fi
+		fi
+		for (( S = 1; S <= ${#SUBS}; S += 4 )); do
+		A=${SUBS[S]} AC=${SUBS[S+1]} N=${SUBS[S+2]} NC=${SUBS[S+3]}
+		K=0
+		for (( J = A; J < A + AC; J++ )); do (( ${+MS[$J]} )) && K+=1; done
+		NEWL=()
+		(( NC )) && NEWL=("${(@)_MV_T[N,N+NC-1]}")
+		# To the commit that wrote its lines – one mixing them with older ones while they
+		# are at least half of those it replaces – recorded with as much of stage 1 around it
+		# as makes its old text occur once there, none of it lines the stop's commit changes,
+		# while inserted lines stay with the stop's commit, between two of those too
+		if (( AC && K && 2 * K >= AC )); then
+			OWNS=()
+			LO=A HI=$(( AC ? A + AC - 1 : A + 1 ))
+			for (( J = LO; J <= HI; J++ )); do
+				(( ${+MS[$J]} )) || continue
+				_MOVE_OWNER "$WT" "$REV" "$P" $J "${CANDS[@]}" || { REPLY="no commit still to come alone wrote its line $J"; return 1; }
+				OWNS+=("$REPLY")
+			done
+			OWNS=("${(@u)OWNS}")
+			(( ${#OWNS} == 1 )) || { REPLY="its change at line $A changes lines of two commits still to come"; return 1; }
+			X=$(( AC ? A : A + 1 )) Y=$(( AC ? A + AC : A + 1 ))
+			LO=X HI=$(( Y - 1 ))
+			for (( EXT = 0; EXT <= 3; EXT++ )); do
+				OLDL=()
+				(( LO <= HI )) && OLDL=("${(@)_MV_B[LO,HI]}")
+				(( ${#OLDL} )) && _MOVE_COUNT _MV_B OLDL && (( REPLY == 1 )) && break
+				OLDL=()
+				(( LO > 1 )) && ! _MOVE_IN_HUNKS $(( LO - 1 )) "${HT[@]}" && LO+=-1
+				(( HI < NB )) && ! _MOVE_IN_HUNKS $(( HI + 1 )) "${HT[@]}" && HI+=1
+			done
+			(( ${#OLDL} )) || { REPLY="its change at line $A finds no text occurring once to carry it by"; return 1; }
+			NEWL=()
+			(( X > LO )) && NEWL+=("${(@)_MV_B[LO,X-1]}")
+			(( NC )) && NEWL+=("${(@)_MV_T[N,N+NC-1]}")
+			(( HI >= Y )) && NEWL+=("${(@)_MV_B[Y,HI]}")
+			CARRY_TO+=("${OWNS[1]}") CARRY_PATH+=("$P") CARRY_KIND+=(lines)
+			CARRY_OLD+=("${(pj:\n:)OLDL}") CARRY_NOLD+=(${#OLDL}) CARRY_NEW+=("${(pj:\n:)NEWL}") CARRY_NNEW+=(${#NEWL})
+			CARRY_MIX+=("$(( AC - K )) $K $A")
+			continue
+		fi
+		if (( AC && K )); then
+			REPLY="its change at line $A changes fewer lines still to be written than older ones"
+			return 1
+		fi
+		if (( AC )); then
+			# Made where its own lines stand, all together still and surely there
+			for (( J = A + 1; J < A + AC; J++ )); do
+				(( MAP[$J] == MAP[$((J - 1))] + 1 )) || { REPLY="its change at line $A falls apart in what precedes the stop"; return 1; }
+			done
+			for J in $A $(( A + AC - 1 )); do
+				_MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $J ${MAP[$J]} "${HO[@]}" || { REPLY="its change at line $A stands more than one least way in what precedes the stop"; return 1; }
+			done
+			E_AT+=(${MAP[$A]}) E_N+=($AC) E_NN+=($NC) E_TXT+=("${(pj:\n:)NEWL}")
+			continue
+		fi
+		# Inserted lines land between the nearest lines either side that stand in stage 2,
+		# only where nothing else stands between those there
+		L=A
+		while (( L >= 1 && ! ${+MAP[$L]} )); do L+=-1; done
+		R=$(( A + 1 ))
+		while (( R <= NB && ! ${+MAP[$R]} )); do R+=1; done
+		for (( J = L; J <= R; J++ )); do
+			(( ${+MAYBE[$J]} )) && { REPLY="its lines inserted at line $A meet lines whose writer aligns more than one least way"; return 1; }
+		done
+		PL=$(( L ? MAP[$L] : 0 )) PR=$(( R <= NB ? MAP[$R] : NO + 1 ))
+		X=$(( PL + 1 ))
+		# Lines abutting one end of a run a single commit rewrote go that end's side of its old lines
+		if (( PR != PL + 1 )); then
+			_MOVE_EDGE_SIDE || { REPLY="its lines inserted at line $A land where nothing ordered them against what stands there"; return 1; }
+			(( A == L )) || X=PR
+		fi
+		# A neighbor edited in place stands where its sure hunk put it
+		{ (( ! L || ${+MS[$L]} )) || _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $L $PL "${HO[@]}"; } && \
+			{ (( R > NB || ${+MS[$R]} )) || _MOVE_PAIR_SURE _MV_B _MV_O "$TD/b" "$TD/o" $R $PR "${HO[@]}"; } || \
+			{ REPLY="its lines inserted at line $A land beside lines standing more than one least way in what precedes the stop"; return 1; }
+		E_AT+=($X) E_N+=(0) E_NN+=($NC) E_TXT+=("${(pj:\n:)NEWL}")
+		done
+	done
+	OUT_LINES=("${_MV_O[@]}")
+	for (( I = ${#E_AT}; I >= 1; I-- )); do
+		NEWL=()
+		(( E_NN[I] )) && NEWL=("${(@f)E_TXT[I]}")
+		OUT_LINES=("${(@)OUT_LINES[1,E_AT[I]-1]}" "${NEWL[@]}" "${(@)OUT_LINES[E_AT[I]+E_N[I],-1]}")
+	done
+	return 0
+}
+
+# Puts into `REPLY` how often the run of array <run>'s lines occurs in array <name>
+_MOVE_COUNT () {
+	# Args: <name> <run>
+	local -i I J K=${#${(P)2}} N=${#${(P)1}} C=0
+	for (( I = 1; I + K - 1 <= N; I++ )); do
+		[ "${${(P)1}[I]}" = "${${(P)2}[1]}" ] || continue
+		for (( J = 2; J <= K; J++ )); do [ "${${(P)1}[I+J-1]}" = "${${(P)2}[J]}" ] || break; done
+		(( J > K )) && C+=1
+	done
+	REPLY=$C
+}
+
+# Answers whether line <n> is among the old lines of the hunks given
+_MOVE_IN_HUNKS () {
+	# Args: <n> <every hunk's four numbers>...
+	local -i N=$1 I
+	for (( I = 2; I <= $#; I += 4 )); do
+		(( N >= ${@[I]} && N < ${@[I]} + ${@[I+1]} )) && return 0
+	done
+	return 1
+}
+
+# Puts into `REPLY` which <candidate> wrote line <n> of <path> at <rev>
+# – the one, or by blame the one blame names, failing where blame names another
+_MOVE_OWNER () {
+	# Args: <worktree> <rev> <path> <n> <candidate>...
+	local -a C=("${@:5}") BL
+	REPLY=""
+	(( ${#C} == 1 )) && { REPLY=${C[1]}; return 0; }
+	BL=(${(f)"$(git -C "$1" blame --porcelain -L "$4,$4" "$2" -- "$3" 2>/dev/null)"})
+	(( ${#BL} )) && (( ${C[(Ie)${BL[1]%% *}]} )) || return 1
+	REPLY=${BL[1]%% *}
+}
+
+# Resolves the conflicted files of a move's stop in <worktree> by line identity where a placement's
+# resolution declined – a crossed commit's stop moving later, the moved commit's moving earlier:
+# each file in a plain content conflict, or one a commit still to come adds, as `_MOVE_FILE_PLAN`
+# plans it, its carried edits recorded for the step of the commit that writes those lines – which
+# then stops to take them, as does the step proving them all landed – the rest left to resolve
+_MOVE_CARRY_STOP () {
+	# Args: <worktree> <moved commit, oldest first>...
+	setopt local_options no_multibyte
+	local WT=$1 GD C CD F L TD REV OLDEST TAB=$'\t' LINE ADDER CP EXPECT
+	local -a MOVED=("${@:2}") DONE TODO RS FILES W RESOLVED REMOVED WHY RENAMED SAID
+	local -a OUT_LINES CARRY_TO CARRY_PATH CARRY_KIND CARRY_OLD CARRY_NOLD CARRY_NEW CARRY_NNEW CARRY_MIX
+	local -A ID MODE
+	local -i I K N
+	local -x GIT_LITERAL_PATHSPECS=1
+	[ -z "$GIT_EDIT_NO_SELF_RESOLVE" ] || return 1
+	_EDITS_STOP_STEP "$WT" && (( ${reply[1]} == 3 )) || return 1
+	C=$(git -C "$WT" rev-parse -q --verify "${reply[2]}^{commit}" 2>/dev/null) || return 1
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+	# The picks done before it and those still to come, in the new order
+	for LINE in "${(@f)$(LC_ALL=C cat -- "$GD/rebase-merge/done" 2>/dev/null)}"; do
+		W=(${=LINE})
+		[[ "${W[1]}" == (p|pick|r|reword|e|edit) && -n "${W[2]}" ]] && DONE+=("$(git -C "$WT" rev-parse -q --verify "${W[2]}^{commit}" 2>/dev/null)")
+	done
+	DONE=("${(@)DONE[1,-2]}")
+	for LINE in "${(@f)$(LC_ALL=C cat -- "$GD/rebase-merge/git-rebase-todo" 2>/dev/null)}"; do
+		W=(${=LINE})
+		[[ "${W[1]}" == (p|pick|r|reword|e|edit) && -n "${W[2]}" ]] && TODO+=("$(git -C "$WT" rev-parse -q --verify "${W[2]}^{commit}" 2>/dev/null)")
+	done
+	# The commits still to come that wrote lines the stop's commit changes – moving later,
+	# the moved ones it held, moving earlier, at a moved one's step, the crossed ones it held
+	if (( ${MOVED[(Ie)$C]} )); then
+		for L in "${TODO[@]}"; do
+			(( ! ${MOVED[(Ie)$L]} )) && git -C "$WT" merge-base --is-ancestor "$L" "$C" 2>/dev/null && RS+=("$L")
+		done
+	else
+		for L in "${TODO[@]}"; do
+			(( ${MOVED[(Ie)$L]} )) && git -C "$WT" merge-base --is-ancestor "$L" "$C" 2>/dev/null && RS+=("$L")
+		done
+	fi
+	(( ${#RS} )) || { _MOVE_PROVE_STOP "$WT" "$C" "${MOVED[*]}" "${DONE[*]}" "${TODO[*]}"; return; }
+	REV=$(git -C "$WT" rev-parse -q --verify "$C^" 2>/dev/null) || return 1
+	# "<mode> <id> <stage>\t<path>"
+	for LINE in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
+		F=${LINE#*$TAB} W=(${=${LINE%%$TAB*}})
+		ID[${W[3]}$TAB$F]=${W[2]} MODE[${W[3]}$TAB$F]=${W[1]}
+		FILES+=("$F")
+	done
+	FILES=("${(@u)FILES}")
+	(( ${#FILES} )) || return 1
+	TD=$(MKTEMP_DIR git-edit-move) || return 1
+	{
+		for F in "${FILES[@]}"; do
+			N=${#CARRY_TO}
+			if [[ -n "${ID[1$TAB$F]}" && -n "${ID[2$TAB$F]}" && -n "${ID[3$TAB$F]}" && \
+			      "${MODE[1$TAB$F]}" == 100(644|755) && "${MODE[2$TAB$F]}" == "${MODE[1$TAB$F]}" && "${MODE[3$TAB$F]}" == "${MODE[1$TAB$F]}" ]]; then
+				if _MOVE_FILE_PLAN "$WT" "$F" "${ID[1$TAB$F]}" "${ID[2$TAB$F]}" "${ID[3$TAB$F]}" "$REV" "$TD" "${RS[@]}"; then
+					_MOVE_PUT OUT_LINES "$TD/r" && git -C "$WT" hash-object -w "$TD/r" >"$TD/id" 2>/dev/null && \
+						RESOLVED+=("${MODE[1$TAB$F]} $(<"$TD/id")$TAB$F") && continue
+					WHY+=("$F: its resolution could not be written")
+				else
+					WHY+=("$F: $REPLY")
+				fi
+			elif [[ -n "${ID[1$TAB$F]}" && -z "${ID[2$TAB$F]}" && -n "${ID[3$TAB$F]}" && \
+			        "${MODE[1$TAB$F]}" == 100(644|755) && "${MODE[3$TAB$F]}" == "${MODE[1$TAB$F]}" ]]; then
+				# A file a commit still to come adds, which it alone wrote, every edit to it going there
+				ADDER=""
+				for L in "${RS[@]}"; do
+					[ -n "$(git -C "$WT" diff-tree --no-commit-id -r --diff-filter=A --name-only "$L" -- "$F" 2>/dev/null)" ] && ADDER=$L
+				done
+				if [ -z "$ADDER" ]; then
+					WHY+=("$F: no commit still to come adds it")
+					continue
+				fi
+				# The crossed span, from the oldest of the moved and crossed commits to the newest
+				if [ -z "$OLDEST" ]; then
+					W=("${DONE[@]}" "$C" "${TODO[@]}")
+					I=${W[(ie)${MOVED[1]}]} K=${W[(ie)${MOVED[-1]}]}
+					if (( ${MOVED[(Ie)$C]} )); then
+						OLDEST=${MOVED[1]} LINE=${W[K+1]}
+						[ -n "$LINE" ] && OLDEST=$LINE LINE=${MOVED[-1]}
+					else
+						OLDEST=${MOVED[1]} LINE=${W[I-1]}
+					fi
+					RENAMED=(${(f)"$(git -C "$WT" log -M --diff-filter=R --name-status --format= "$OLDEST^..$LINE" 2>/dev/null | cut -f2-)"})
+					RENAMED=(${(s:	:)${(j:	:)RENAMED}})
+				fi
+				if (( ${RENAMED[(Ie)$F]} )); then
+					WHY+=("$F: the span renames it")
+					continue
+				fi
+				CARRY_TO+=("$ADDER") CARRY_PATH+=("$F") CARRY_KIND+=(file)
+				CARRY_OLD+=("${$(git -C "$WT" cat-file blob "${ID[1$TAB$F]}" 2>/dev/null; print -n x)%x}") CARRY_NOLD+=(0)
+				CARRY_NEW+=("${$(git -C "$WT" cat-file blob "${ID[3$TAB$F]}" 2>/dev/null; print -n x)%x}") CARRY_NNEW+=(0) CARRY_MIX+=("0 0 0")
+				REMOVED+=("$F")
+				continue
+			else
+				WHY+=("$F: it is in no plain content conflict")
+			fi
+			# A file left to resolve takes no carried edit
+			CARRY_TO[N+1,-1]=() CARRY_PATH[N+1,-1]=() CARRY_KIND[N+1,-1]=() CARRY_OLD[N+1,-1]=()
+			CARRY_NOLD[N+1,-1]=() CARRY_NEW[N+1,-1]=() CARRY_NNEW[N+1,-1]=() CARRY_MIX[N+1,-1]=()
+		done
+	} always {
+		rm -rf -- "$TD"
+	}
+	(( ${#RESOLVED} + ${#REMOVED} )) || { _MOVE_DECLINED "$C" "${WHY[@]}"; return 1; }
+	# A step whose whole change goes elsewhere would vanish – it stays to resolve by hand
+	if (( ! ${#WHY} )) && cp -- "$GD/index" "$GD/git-edit-carried.index" 2>/dev/null; then
+		{ (( ! ${#RESOLVED} )) || print -rN -- "${RESOLVED[@]}" | GIT_INDEX_FILE=$GD/git-edit-carried.index git -C "$WT" update-index -z --index-info 2>/dev/null; } && \
+			{ (( ! ${#REMOVED} )) || GIT_INDEX_FILE=$GD/git-edit-carried.index git -C "$WT" rm -q --cached -- "${REMOVED[@]}" 2>/dev/null; } && \
+			GIT_INDEX_FILE=$GD/git-edit-carried.index git -C "$WT" diff-index --cached --quiet HEAD -- 2>/dev/null && \
+			WHY+=("every change of its own goes to a commit still to come, which would leave it empty")
+		rm -f -- "$GD/git-edit-carried.index"
+		(( ${#WHY} )) && { _MOVE_DECLINED "$C" "${WHY[@]}"; return 1; }
+	fi
+	_FACT CD -C "$WT" rev-parse --path-format=absolute --git-path git-edit-carried 2>/dev/null || return 1
+	mkdir -p "$CD" || return 1
+	# Where the move's lines must have landed – moving later, the last moved commit's step
+	# builds its anchor's tree, moving earlier, the crossed one they followed the last one's
+	if [ ! -f "$CD/cp" ] && (( ${#CARRY_TO} )); then
+		if (( ${MOVED[(Ie)$C]} )); then
+			CP=$(git -C "$WT" rev-parse -q --verify "${MOVED[1]}^" 2>/dev/null) EXPECT=${MOVED[-1]}
+		else
+			for L in "${TODO[@]}"; do (( ${MOVED[(Ie)$L]} )) && CP=$L; done
+			W=("${DONE[@]}" "$C" "${TODO[@]}")
+			I=${W[(ie)${MOVED[1]}]}
+			(( I > 1 )) && EXPECT=${W[I-1]}
+		fi
+		(( ${TODO[(Ie)$CP]} )) && [ -n "$EXPECT" ] || { _MOVE_DECLINED "$C" "the move's lines have no step proving them landed"; return 1; }
+		print -r -- "$CP" >"$CD/cp" && print -r -- "$EXPECT" >"$CD/expect" || return 1
+		_MOVE_MARK_EDIT "$GD" "$CP" || return 1
+	fi
+	K=0
+	[ -f "$CD/n" ] && K=$(<"$CD/n")
+	for (( I = 1; I <= ${#CARRY_TO}; I++ )); do
+		K+=1
+		print -rl -- "${CARRY_TO[I]}" "${CARRY_KIND[I]}" "${CARRY_NOLD[I]}" "${CARRY_NNEW[I]}" "$C" "${CARRY_PATH[I]}" >"$CD/$K.meta" && \
+			print -rn -- "${CARRY_OLD[I]}" >"$CD/$K.old" && print -rn -- "${CARRY_NEW[I]}" >"$CD/$K.new" && \
+			print -r -- "$K" >>"$CD/to.${CARRY_TO[I]}" && _MOVE_MARK_EDIT "$GD" "${CARRY_TO[I]}" || return 1
+		print -r -- "$K" >"$CD/n"
+		W=(${=CARRY_MIX[I]})
+		(( W[1] )) && PRINT_TEXT "%s (%s)'s change at line %s of %s mixes %s line(s) %s wrote with %s older one(s) – all of it lands with %s." 33 \
+			"${C:0:7}" "$(git -C "$WT" log -1 --format=%s "$C" 2>/dev/null)" "${W[3]}" "${CARRY_PATH[I]}" "${W[2]}" "${CARRY_TO[I]:0:7}" "${W[1]}" "${CARRY_TO[I]:0:7}"
+		(( ${SAID[(Ie)${CARRY_TO[I]} ${CARRY_PATH[I]}]} )) && continue
+		SAID+=("${CARRY_TO[I]} ${CARRY_PATH[I]}")
+		PRINT_TEXT "%s (%s)'s edits to lines in %s land with %s (%s), the commit that writes those lines." 32 \
+			"${C:0:7}" "$(git -C "$WT" log -1 --format=%s "$C" 2>/dev/null)" "${CARRY_PATH[I]}" \
+			"${CARRY_TO[I]:0:7}" "$(git -C "$WT" log -1 --format=%s "${CARRY_TO[I]}" 2>/dev/null)"
+	done
+	(( ${#RESOLVED} )) && { print -rN -- "${RESOLVED[@]}" | git -C "$WT" update-index -z --index-info 2>/dev/null || return 1; }
+	for F in "${RESOLVED[@]}"; do
+		git -C "$WT" checkout-index -f -- "${F#*$TAB}" 2>/dev/null || return 1
+	done
+	for F in "${REMOVED[@]}"; do
+		git -C "$WT" rm -q --cached -- "$F" 2>/dev/null && rm -f -- "$WT/$F" || return 1
+	done
+	(( ${#WHY} )) && { _MOVE_DECLINED "$C" "${WHY[@]}"; return 1; }
+	return 0
+}
+
+# Resolves the conflicted stop of <worktree>'s move at the step that must build the tree its lines
+# built where they stood – moving later, the last moved commit's, past every crossed one, that of
+# the commit now before them, moving earlier, the crossed one they followed, the last moved one's –
+# once `_MOVE_LANDED_SURE` proves it that step's own change atop what precedes it
+_MOVE_PROVE_STOP () {
+	# Args: <worktree> <commit at the stop> <moved commits> <picks done> <picks to come>
+	local WT=$1 C=$2 EXPECT="" L GD
+	local -a MOVED=(${=3}) DONE=(${=4}) TODO=(${=5}) W STEPS
+	local -i I
+	# The final step proves itself by the tree the run began with, as a replay's always did
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+	STEPS=(${=$(_REBASE_STEP "$GD")})
+	(( ${STEPS[1]:-0} < ${STEPS[2]:-0} )) || return 1
+	if (( ${MOVED[(Ie)$C]} )); then
+		for L in "${TODO[@]}"; do (( ${MOVED[(Ie)$L]} )) && return 1; done
+		W=("${DONE[@]}" "$C" "${TODO[@]}")
+		I=${W[(ie)${MOVED[1]}]}
+		(( I > 1 )) && EXPECT=${W[I-1]}
+		[ -n "$EXPECT" ] && git -C "$WT" merge-base --is-ancestor "${MOVED[-1]}" "$EXPECT" 2>/dev/null || return 1
+	else
+		[ "$(git -C "$WT" rev-parse -q --verify "${MOVED[1]}^" 2>/dev/null)" = "$C" ] || return 1
+		for L in "${MOVED[@]}"; do (( ${DONE[(Ie)$L]} )) || return 1; done
+		EXPECT=${MOVED[-1]}
+	fi
+	_MOVE_LANDED_SURE "$WT" "$(git -C "$WT" rev-parse -q --verify HEAD 2>/dev/null)" "$EXPECT" "$C" "" || return 1
+	git -C "$WT" read-tree --reset -u "$EXPECT^{tree}" 2>/dev/null
+}
+
+# Turns the pick of <commit> in the rebase of git dir <dir> into an edit, stopping once made
+_MOVE_MARK_EDIT () {
+	# Args: <git dir> <commit>
+	local TODO=$1/rebase-merge/git-rebase-todo LINE
+	local -a STEPS W
+	local -i I
+	STEPS=("${(@f)$(<"$TODO")}")
+	for (( I = 1; I <= ${#STEPS}; I++ )); do
+		W=(${=STEPS[I]})
+		[[ "${W[1]}" == (p|pick) && ${#W[2]} -ge 7 && "$2" == "${W[2]}"* ]] || continue
+		STEPS[I]="edit ${STEPS[I]#* }"
+		print -rl -- "${STEPS[@]}" >"$TODO.git-edit-carried" && mv -f "$TODO.git-edit-carried" "$TODO"
+		return
+	done
+	# Already an edit, or done
+	return 0
+}
+
+# Says why a move's stop at <commit> is left to resolve by hand, file by file
+_MOVE_DECLINED () {
+	# Args: <commit> <reason>...
+	local R
+	for R in "${@:2}"; do
+		PRINT_TEXT "Left to resolve at %s – %s." 33 "${1:0:7}" "$R"
+	done
+}
+
+# Lands the edits a move carried to the step of <worktree>'s rebase at hand, once its own change
+# is made, and at the step proving the move's lines landed builds the tree they must have built
+# there, proving that tree is that step's own change and the edits carried to it, line for line,
+# atop what precedes it – a wrong resolution before it shows there – amending a step made clean
+_MOVE_RECEIVE () {
+	# Args: <worktree> <moved commit, oldest first>...
+	setopt local_options no_multibyte
+	local WT=$1 GD CD R CP EXPECT PARENT F K TD AMEND=""
+	local -a KS FILES META OLDL NEWL CUR
+	local -i I
+	local -x GIT_LITERAL_PATHSPECS=1
+	CD=$(_MOVE_CARRY_DIR "$WT") || return 1
+	_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+	R=$(_STOP_BUILDS "$WT")
+	[ -n "$R" ] || return 1
+	CP=$(<"$CD/cp") EXPECT=$(<"$CD/expect")
+	[ -f "$CD/to.$R" ] && KS=(${(f)"$(<"$CD/to.$R")"})
+	# An edit's step made clean stops past its commit, which the edits then amend
+	[ -f "$GD/rebase-merge/amend" ] && [ -z "$(_UNMERGED_IN "$WT")" ] && AMEND=1
+	if [ "$R" = "$CP" ]; then
+		PARENT=HEAD
+		[ -n "$AMEND" ] && PARENT=HEAD^
+		PARENT=$(git -C "$WT" rev-parse -q --verify "$PARENT^{commit}" 2>/dev/null) || return 1
+		if [ -f "$CD/refused.$R" ]; then
+			PRINT_ERR "The move's lines did not land as its commits wrote them at ${R:0:7} – cancel with 'git edit --abort'"
+			return 1
+		fi
+		# Taken as staged where its pause showed what it takes in beyond its own change
+		if [ ! -f "$CD/accept.$R" ] && ! _MOVE_LANDED_SURE "$WT" "$PARENT" "$EXPECT" "$R" "$CD" "${KS[@]}"; then
+			if [ -f "$CD/hand" ]; then
+				# A stop resolved by hand decided what this step must take in, as the end tree has it
+				git -C "$WT" read-tree --reset -u "$EXPECT^{tree}" 2>/dev/null || return 1
+				: >"$CD/accept.$R"
+				PRINT_TEXT "%s (%s) staged as the tree the move began with, beyond what it and the edits carried to it change – resolved by hand before it:" 33 \
+					"${R:0:7}" "$(git -C "$WT" log -1 --format=%s "$R" 2>/dev/null)"
+				print -rl -- "${reply[@]}" | LC_ALL=C sed 's/^/  /' >&2
+				PRINT_TEXT "Check it, then %s takes it as staged." 33 "git edit --continue"
+			else
+				: >"$CD/refused.$R"
+				PRINT_ERR "The move's lines did not land as its commits wrote them at ${R:0:7} – a resolution of its own before it changed what they hold:"
+				print -rl -- "${reply[@]}" | LC_ALL=C sed 's/^/  /' >&2
+			fi
+			return 1
+		fi
+		[ -f "$CD/accept.$R" ] || git -C "$WT" read-tree --reset -u "$EXPECT^{tree}" 2>/dev/null || return 1
+	else
+		if [ -n "$(_UNMERGED_IN "$WT")" ]; then
+			_PLACED_RESOLVE_STOP "$@" || _MOVE_PLACE_STOP "$WT" || return 1
+			[ -z "$(_UNMERGED_IN "$WT")" ] || return 1
+		fi
+		for K in "${KS[@]}"; do
+			META=(${(f)"$(<"$CD/$K.meta")"})
+			F=${META[6]}
+			if [ "${META[2]}" = file ]; then
+				cmp -s -- "$WT/$F" "$CD/$K.old" || { _MOVE_DECLINED "$R" "$F: the file it adds is not as the carried edits found it"; return 1; }
+				cp -- "$CD/$K.new" "$WT/$F" || return 1
+			else
+				[ ! -s "$WT/$F" ] || [ -z "$(tail -c 1 -- "$WT/$F")" ] || { _MOVE_DECLINED "$R" "$F: its last line lacks its line end"; return 1; }
+				_MOVE_READ CUR "$WT/$F"
+				_MOVE_READ OLDL "$CD/$K.old" ${META[3]}
+				_MOVE_READ NEWL "$CD/$K.new" ${META[4]}
+				if ! _MOVE_SPLICE CUR OLDL NEWL; then
+					# Left to the hand, the step proving the move's lines landed checking the result
+					_MOVE_DECLINED "$R" "$F: the lines a carried edit changes no longer occur once there – make $(git -C "$WT" log -1 --format=%h "${META[5]}" 2>/dev/null)'s edit to them there by hand, amending ${R:0:7}, then continue"
+					: >"$CD/applied.$R"
+					return 1
+				fi
+				_MOVE_PUT CUR "$WT/$F" || return 1
+			fi
+			git -C "$WT" add -- "$F" 2>/dev/null || return 1
+		done
+	fi
+	if [ -n "$AMEND" ]; then
+		git -C "$WT" -c commit.cleanup=verbatim ${(z)_CAPTURE_PINS} commit -q --amend --no-edit --no-verify --allow-empty 2>/dev/null || return 1
+	fi
+	: >"$CD/applied.$R"
+	(( ${#KS} )) && PRINT_TEXT "%s (%s) took the %s edit(s) carried to it." 32 "${R:0:7}" "$(git -C "$WT" log -1 --format=%s "$R" 2>/dev/null)" ${#KS}
+	return 0
+}
+
+# Answers whether tree-ish <expect> is, file by file, the change of <commit> and the edits carried
+# to it atop <parent> – each carried edit taken back from it newest first, what is left must change
+# from <parent> exactly the lines <commit> changes – putting into `reply` a line for each file
+# where it isn't, with the lines it would take in beyond them
+_MOVE_LANDED_SURE () {
+	# Args: <worktree> <parent> <expect> <commit> <carry dir> <record number>...
+	setopt local_options no_multibyte
+	local WT=$1 PA=$2 EX=$3 R=$4 CD=$5 F K TD WHY GOT OWN
+	local -a KS=("${@:6}") FILES META CUR OLDL NEWL BAD
+	local -i I
+	FILES=(${(0)"$(git -C "$WT" diff-tree -z -r --no-renames --name-only "$PA" "$EX" 2>/dev/null)"} \
+		${(0)"$(git -C "$WT" diff-tree -z -r --no-renames --name-only "$R^" "$R" 2>/dev/null)"})
+	for K in "${KS[@]}"; do META=(${(f)"$(<"$CD/$K.meta")"}); FILES+=("${META[6]}"); done
+	FILES=("${(@u)FILES}")
+	TD=$(MKTEMP_DIR git-edit-move) || return 1
+	{
+		for F in "${FILES[@]}"; do
+			WHY=""
+			git -C "$WT" cat-file blob "$EX:$F" >"$TD/x" 2>/dev/null || : >"$TD/x"
+			for (( I = ${#KS}; I >= 1; I-- )); do
+				K=${KS[I]}
+				META=(${(f)"$(<"$CD/$K.meta")"})
+				[ "${META[6]}" = "$F" ] || continue
+				if [ "${META[2]}" = file ]; then
+					cmp -s "$TD/x" "$CD/$K.new" || { WHY="the file it adds is not as the carried edits left it"; break; }
+					cp -- "$CD/$K.old" "$TD/x"
+				else
+					_MOVE_READ CUR "$TD/x"
+					_MOVE_READ OLDL "$CD/$K.old" ${META[3]}
+					_MOVE_READ NEWL "$CD/$K.new" ${META[4]}
+					_MOVE_SPLICE CUR NEWL OLDL || { WHY="a carried edit's lines do not occur once there"; break; }
+					_MOVE_PUT CUR "$TD/x"
+				fi
+			done
+			if [ -z "$WHY" ]; then
+				git -C "$WT" cat-file blob "$PA:$F" >"$TD/p" 2>/dev/null || : >"$TD/p"
+				git -C "$WT" cat-file blob "$R^:$F" >"$TD/a" 2>/dev/null || : >"$TD/a"
+				git -C "$WT" cat-file blob "$R:$F" >"$TD/b" 2>/dev/null || : >"$TD/b"
+				if _MOVE_TEXT "$TD/p" "$TD/x" "$TD/a" "$TD/b"; then
+					GOT=$(_MOVE_CHANGED "$TD/p" "$TD/x") OWN=$(_MOVE_CHANGED "$TD/a" "$TD/b")
+					[ "$GOT" = "$OWN" ] && continue
+					_MOVE_BEYOND "$GOT" "$OWN"
+					WHY=$REPLY
+				else
+					# Content no line holds compares whole – kept as it was, or changed as the commit did
+					{ cmp -s "$TD/p" "$TD/x" && cmp -s "$TD/a" "$TD/b"; } || { cmp -s "$TD/p" "$TD/a" && cmp -s "$TD/x" "$TD/b"; } && continue
+					WHY="its binary content is not its commit's change atop what precedes it, taking in or dropping a change"
+				fi
+			fi
+			BAD+=("$F: $WHY")
+		done
+	} always {
+		rm -rf -- "$TD"
+	}
+	reply=("${BAD[@]}")
+	(( ! ${#BAD} ))
+}
+
+# Answers whether each <file> is text, holding no NUL
+_MOVE_TEXT () {
+	# Args: <file>...
+	local F
+	for F in "$@"; do
+		(( $(LC_ALL=C tr -d '\000' <"$F" | LC_ALL=C wc -c) == $(LC_ALL=C wc -c <"$F") )) || return 1
+	done
+}
+
+# Puts into `REPLY` how lines changed <got> exceed lines changed <own>, both as `_MOVE_CHANGED`
+# prints them – the lines it drops and adds beyond, and those of its own it lacks
+_MOVE_BEYOND () {
+	# Args: <got> <own>
+	local L
+	local -a G1 G2 O1 O2
+	local -A C
+	local -i XD=0 XA=0 MISS=0 V
+	G1=("${(@f)${1%%$'\0'*}}") G2=("${(@f)${1#*$'\0'}}") O1=("${(@f)${2%%$'\0'*}}") O2=("${(@f)${2#*$'\0'}}")
+	for L in "${G1[@]}"; do C[d$L]=$(( ${C[d$L]:-0} + 1 )); done
+	for L in "${G2[@]}"; do C[a$L]=$(( ${C[a$L]:-0} + 1 )); done
+	for L in "${O1[@]}"; do C[d$L]=$(( ${C[d$L]:-0} - 1 )); done
+	for L in "${O2[@]}"; do C[a$L]=$(( ${C[a$L]:-0} - 1 )); done
+	for L in ${(k)C}; do
+		V=${C[$L]}
+		if (( V > 0 )); then
+			[[ "$L" == d* ]] && XD+=V || XA+=V
+		else
+			MISS+=$(( -V ))
+		fi
+	done
+	REPLY="$XA line(s) added and $XD dropped beyond its own change and the edits carried to it, $MISS of those lacking"
 }
 
 # Resolves the stop a placement's or move's replay in <worktree> is at as a fold's resolves itself
@@ -15009,7 +16010,7 @@ _EDITS_STOP_STEP () {
 	U=(${U:#\#*})
 	REPLY=${U[-1]}
 	case ${REPLY%% *} in
-		p|pick) reply=(3 ${${REPLY#* }%% *}) ;;
+		p|pick|e|edit) reply=(3 ${${REPLY#* }%% *}) ;;
 		f|fixup|s|squash) reply=(2 HEAD) ;;
 		*) return 1 ;;
 	esac
@@ -16481,7 +17482,7 @@ GIT_REORDER () {
 	local RC=$?
 	# A move's stops the moved commits' line replacements resolve go on, as a fold's do
 	if (( RC == 2 && ${#OPT_MOVE} )); then
-		_RESOLVE_STOPS_ON "$WT" "" "" "the moved commits'" _PLACED_RESOLVE_STOP "${MOVE_SET[@]}"
+		_RESOLVE_STOPS_ON "$WT" "" "" "the moved commits'" _MOVE_RESOLVE_STOP "${MOVE_SET[@]}"
 		RC=$?
 	fi
 	(( RC == 1 )) && _REFUSE_REBASE_FAILED "run the ${${OPT_MOVE:+move}:-reorder} again."
@@ -16560,6 +17561,8 @@ _AUTO_RESOLVE_FINAL_STEP () {
 	local GUARD_EMPTY=$3
 	local -x GIT_LITERAL_PATHSPECS=1
 	[ -z "$SOURCE" ] && return 1
+	# A move carrying edits proves its lines landed at a step of its own, the end tree proving none
+	_MOVE_CARRY_DIR "$WT" >/dev/null && return 1
 	local GITDIR
 	_FACT GITDIR -C "$WT" rev-parse --absolute-git-dir 2>/dev/null
 	[ -z "$GITDIR" ] && return 1
@@ -18680,12 +19683,14 @@ _CONTINUE_REORDER () {
 		# Each later stop the placed or moved commits' line replacements resolve going on
 		local -a PLACED=(${=STATE_MOVED})
 		[ -n "$STATE_PLACED" ] && PLACED=(${(f)"$(git rev-list --reverse "$STATE_ORIG_HEAD..$STATE_PLACED" 2>/dev/null)"})
-		if ! _EDITS_RESUME_RUN "$STATE_WORKTREE" "" "" "$CMD" "the ${${STATE_PLACED:+placed}:-moved} commits'" _PLACED_RESOLVE_STOP "${PLACED[@]}" && \
+		# A move resumed past a stop it paused at had that stop resolved by hand
+		[ -z "$STATE_PLACED" ] && _MOVE_NOTE_HAND "$STATE_WORKTREE"
+		if ! _EDITS_RESUME_RUN "$STATE_WORKTREE" "" "" "$CMD" "the ${${STATE_PLACED:+placed}:-moved} commits'" "${${STATE_PLACED:+_PLACED_RESOLVE_STOP}:-_MOVE_RESOLVE_STOP}" "${PLACED[@]}" && \
 		   { CONTINUE_OUTPUT=$REPLY; true } && \
 		   ! { _AUTO_RESOLVE_FINAL_STEP "$STATE_WORKTREE" "$BUILT" && _FINISH_AUTO_RESOLVED_STEP "$STATE_WORKTREE" "${${STATE_PLACED:+built}:-pre-op}" }; then
 			_CLEANUP_HOOK=""
 			REBASE_OUT=$CONTINUE_OUTPUT
-			_REBASE_RESOLVABLE "$STATE_WORKTREE" "$REBASE_OUT" || _REFUSE_REBASE_FAILED resume
+			_REBASE_RESOLVABLE "$STATE_WORKTREE" "$REBASE_OUT" || _MOVE_AT_EDIT "$STATE_WORKTREE" || _REFUSE_REBASE_FAILED resume
 			_PRINT_RESUME_REFUSED "$STATE_WORKTREE" "$REBASE_OUT"
 			PRINT_TEXT "Worktree: %s" 33 "$STATE_WORKTREE"
 			local UNMERGED_LIST=$(_PRINT_CONFLICT_DETAIL "$STATE_WORKTREE" "$BUILT" "$CONTINUE_OUTPUT")

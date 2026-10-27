@@ -2,8 +2,12 @@
 # own step, and at a commit it moved across, taken back where it moved past it – on a resume too:
 # • A `--commit` given `--edits` makes those, the gate checks a stop resolved by its words
 # • A line the anchor lacks, or a file resolved by hand otherwise than they make it, stops
+# • A move resolves by line identity what they leave, a later commit's edits to the moved lines
+#   going with them, and pauses where a line's place or writer is not sure
 _ST_SCENARIO "\e[1;96m[252] a placement or move resolves its stops by its commits' replacements\e[0m"
-local PM_A PM_M PM_B PM_WT
+local PM_A PM_M PM_B PM_WT PM_OLD=""
+# Below git 2.50 no least change is sure, so a move's line identity resolves nothing there
+[[ "$(git --version)" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 50 )) && PM_OLD=1
 # Prints <rev>'s `f` on one line
 _PM_AT () {
 	# Args: <rev>
@@ -87,12 +91,21 @@ _ST_EQ "its resume resolving the next stop, pausing at one in that file" \
 	"2:h :y1|the fixed comment|y3|"
 _ST_OUT_HAS "saying so" "Made the placed commits' line replacements in the 1 later commit(s)"
 _ST_RUN --abort
+# A move's own stop its line identity resolves, it goes on to the stop a crossed commit's line
+# inserted beside a moved one makes, where nothing it builds tells their order
 _PM_PAUSED pm-move-resume move
-print -l x1 "the fixed comment" x3 > "$PM_WT/f" && print -l h1 hN h2 > "$PM_WT/h" && git -C "$PM_WT" add f h
+if [ -n "$PM_OLD" ]; then
+	_ST_EQ "as does a move's, its own stop paused before git 2.50" "$RC:$(git -C "$PM_WT" diff --name-only --diff-filter=U | tr '\n' ' ')" "2:f h "
+	_ST_RUN --abort
+else
+_ST_EQ "as does a move's, by line identity" \
+	"$RC:$(git -C "$PM_WT" diff --name-only --diff-filter=U | tr '\n' ' '):$(git -C "$PM_WT" show HEAD:f | tr '\n' '|')" \
+	"2:h :y1|the fixed comment|y3|"
+_ST_OUT_HAS "saying so" "Made the moved commits' line replacements in the 2 commit(s)"
+print -l h1 hb hN h2 > "$PM_WT/h" && git -C "$PM_WT" add h
 _ST_RUN --continue
-_ST_EQ "as does a move's" "$RC:$(git -C "$PM_WT" diff --name-only --diff-filter=U | tr '\n' ' ')" "2:h "
-_ST_OUT_HAS "saying so" "Made the moved commits' line replacements in the 1 later commit(s)"
-_ST_RUN --abort
+_ST_EQ "landing once that stop is resolved" "$RC:$(git log --format=%s | tr '\n' '|')" "0:PM beside|PM h|PM around it|PM fix|PM anchor|"
+fi
 _PM_PAUSED pm-own
 print -l x1 "the comment, fixed otherwise" x3 > "$PM_WT/f" && print -l h1 hN h2 > "$PM_WT/h" && git -C "$PM_WT" add f h
 _ST_RUN --continue
@@ -203,8 +216,14 @@ print -l 1 bar 3 4 qux 6 > f && git commit -qam "PM relocates"
 PM_B=$(git rev-parse HEAD)
 _ST_PZ_C g g1 "PM beside"
 _ST_RUN --move="$PM_M" --after="$PM_B"
-_ST_EQ "a move later past a commit writing its text elsewhere pauses" "$RC:$(git -C "$(_ST_PZ_WT)" diff --name-only --diff-filter=U)" "2:f"
-_ST_RUN --abort
+if [ -n "$PM_OLD" ]; then
+	_ST_EQ "a move later past a commit relocating its line pauses before git 2.50" "$RC" "2"
+	_ST_RUN --abort
+else
+	_ST_EQ "a move later past a commit relocating its line lands, the edit of that line going with it" \
+		"$RC:$(_PM_AT HEAD~2):$(_PM_AT HEAD~1)" "0:1|foo|3|4|qux|6|:1|bar|3|4|qux|6|"
+	_ST_OUT_HAS "naming it" "(PM relocates)'s edits to lines in f land with [0-9a-f]* (PM fix)"
+fi
 _ST_PZ_NEW pm-neighbor
 print -l "p alpha beta delta q" "z alpha beta gamma w" > f && git add f && git commit -qm "PM base"
 print -l "p alpha beta gamma q" "z alpha beta gamma w" > f && git commit -qam "PM rewords"
@@ -250,11 +269,17 @@ _PM_LATER () {
 }
 _PM_LATER pm-anew-later
 _ST_RUN --move="$PM_M" --after="$PM_B"
-_ST_EQ "a move later past them pauses" "$RC:$(git -C "$(_ST_PZ_WT)" diff --name-only --diff-filter=U)" "2:f"
-_ST_RUN --abort
+if [ -n "$PM_OLD" ]; then
+	_ST_EQ "a move later past them pauses before git 2.50" "$RC" "2"
+	_ST_RUN --abort
+else
+	_ST_EQ "a move later past them lands, the edit of its line going with it, the text written anew staying" \
+		"$RC:$(_PM_AT HEAD~2):$(_PM_AT HEAD~1)" "0:FOO|k26|k24|foo|k16|k0|k5|:FOO|k26|k24|t|k16|k0|k5|"
+fi
 _PM_LATER pm-anew-block block
 _ST_RUN --move="$PM_M" --move=HEAD~3 --after="$PM_B"
-_ST_EQ "as does a block moved so" "$RC:$(git -C "$(_ST_PZ_WT)" diff --name-only --diff-filter=U)" "2:f"
+_ST_EQ "a block moved so pauses where the edit no longer finds its line once" "$RC" "2"
+[ -n "$PM_OLD" ] || _ST_OUT_HAS "saying so" "the lines a carried edit changes no longer occur once there"
 _ST_RUN --abort
 unfunction _PM_AT _PM_REWRITTEN _PM_PAUSED _PM_ANEW _PM_LATER _PM_SHIFTED
 cd "$TMP/repo"

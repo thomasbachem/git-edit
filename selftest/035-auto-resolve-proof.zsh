@@ -6,7 +6,8 @@ printf 'p1\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR A"
 local PR_A=$(git rev-parse HEAD)
 printf 'p1\npB\npA\n' > pa.txt && git add pa.txt && git commit -qm "PR B"
 local PR_B=$(git rev-parse HEAD)
-_ST_RUN --move="$PR_A" --after="$PR_B"
+# Its stops left to the hand by the switch, rather than resolved by line identity
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --move="$PR_A" --after="$PR_B"
 _ST_EQ "abutting swap conflicts" "$RC" "2"
 local PR_WT=$(echo "$OUT" | sed -n 's/.*resolve in \([^ ]*\) .*/\1/p' | tail -1)
 # Resolve step 1, but also touch a file neither commit changes – the final

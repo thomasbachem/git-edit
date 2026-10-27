@@ -187,7 +187,8 @@ _ST_EQ "and the two the fold on the side branch replaced" "$HB_SIDE_N" "2"
 git worktree remove --force "$TMP/hb-side"
 git branch -qD hb-side
 # Armed, the capture steps count toward git's own step numbers – a pause must still number
-# the picks alone and hide those steps, and the final step must still resolve itself
+# the picks alone and hide those steps, and the final step must still resolve itself –
+# the switch leaving the move's stops to the hand, rather than to line identity
 git reset -q --hard "$HB_TIP"
 printf 'hbmv-base\n' > hbmv.txt && git add hbmv.txt && git commit -qm "HBMV base"
 printf 'hbmv-base\nhbmv-A\n' > hbmv.txt && git add hbmv.txt && git commit -qm "HBMV A"
@@ -195,7 +196,7 @@ local HBMV_A=$(git rev-parse HEAD)
 printf 'hbmv-base\nhbmv-B\nhbmv-A\n' > hbmv.txt && git add hbmv.txt && git commit -qm "HBMV B"
 local HBMV_B=$(git rev-parse HEAD)
 : > "$HB_LOG"
-_ST_RUN --move="$HBMV_A" --after="$HBMV_B"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --move="$HBMV_A" --after="$HBMV_B"
 _ST_EQ "an armed swap of abutting commits pauses on its first step" "$RC" "2"
 _ST_OUT_HAS "numbered among the picks alone" 'Step 1/2 rebuilds a state that never existed'
 _ST_OUT_LACKS "listing no capture step among the remaining ones" 'git-edit-capture'

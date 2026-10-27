@@ -17,16 +17,16 @@ _ST_EQ "in-position move is a no-op" "$RC" "0"
 _ST_OUT_HAS "no-op reports unchanged" 'unchanged'
 _ST_RUN --move="$(git rev-parse HEAD)" --after="$(git rev-parse HEAD~2)" --before="$(git rev-parse HEAD~3)"
 _ST_EQ "both anchors refused" "$RC" "1"
-# Swapping two commits whose hunks abut conflicts on both steps – the first
-# rebuilds an intermediate that never existed and is authored, while
-# the last is fully determined, so the hint must name it there and only there
+# Swapping two commits whose hunks abut conflicts on both steps, the switch leaving its stops
+# to the hand – the first rebuilds an intermediate that never existed and is authored, while
+# the last is fully determined, so the hint must name it there alone
 printf 'mv-base\n' > mv.txt && git add mv.txt && git commit -qm "MV base"
 printf 'mv-base\nmv-A\n' > mv.txt && git add mv.txt && git commit -qm "MV A"
 local MV_A=$(git rev-parse HEAD)
 printf 'mv-base\nmv-B\nmv-A\n' > mv.txt && git add mv.txt && git commit -qm "MV B"
 local MV_B=$(git rev-parse HEAD)
 local MV_TREE=$(git rev-parse 'HEAD^{tree}')
-_ST_RUN --move="$MV_A" --after="$MV_B"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --move="$MV_A" --after="$MV_B"
 _ST_EQ "abutting swap conflicts" "$RC" "2"
 _ST_OUT_LACKS "no final-step hint on an intermediate step" 'Final step'
 _ST_OUT_HAS "intermediate step says author it" 'rebuilds a state that never existed'
