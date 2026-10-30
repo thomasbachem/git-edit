@@ -2690,7 +2690,8 @@ That count sets aside blank and punctuation\-only lines, and ones the stop's
 own commit undoes, as a line it removes that the later one adds. A line the
 later commit removed counts where that commit holds the line its hunk put in
 its place, so a later edit of a single line counts whole. It does not count
-where that commit, rebuilt, still rewrites the line's place, its change
+where that commit, rebuilt, still rewrites the line's place, or makes its
+rewrite on a line holding it, moved or extended since \(em its change
 rebased onto the stop's rather than taken in. A partial take counts too, in
 a reorder or move as in a fold. For a binary file, what counts is a change
 gone whole whose very content that commit holds.

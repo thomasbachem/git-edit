@@ -21480,6 +21480,51 @@ _STILL_REWRITTEN () {
 		/^\+/ { if (covered("MN", OY, 0)) print; OY++ }'
 }
 
+# Prints the lines of <original>'s change to <file> whose rewrite <rebuilt> still makes on a line
+# holding them – moved, indented or extended by what now comes before it, which no place maps
+_STILL_REWORDED () {
+	# Args: <worktree> <original commit> <rebuilt commit> <file, from the top>
+	local -a DIFF=(-p -U0 --no-renames --no-ext-diff --no-textconv --no-color --no-commit-id)
+	{
+		print -r -- '=O'; git -C "$1" diff-tree "${DIFF[@]}" "$2" -- ":(literal)$4"
+		print -r -- '=R'; git -C "$1" diff-tree "${DIFF[@]}" "$3" -- ":(literal)$4"
+	} 2>/dev/null | LC_ALL=C awk '
+		function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+		/^=(O|R)$/ { S = substr($0, 2); next }
+		# The removed and added lines of each hunk, paired in order
+		/^@@/ { H = ++N[S]; NM[S, H] = 0; NP[S, H] = 0; next }
+		!N[S] { next }
+		/^-/ { M[S, H, ++NM[S, H]] = substr($0, 2); next }
+		/^\+/ { P[S, H, ++NP[S, H]] = substr($0, 2) }
+		END {
+			for (h = 1; h <= N["O"]; h++)
+				for (i = 1; i <= NM["O", h] && i <= NP["O", h]; i++) OWN[M["O", h, i] SUBSEP P["O", h, i]] = 1
+			for (h = 1; h <= N["R"]; h++)
+				for (i = 1; i <= NM["R", h] && i <= NP["R", h]; i++) KEPT[M["R", h, i] SUBSEP P["R", h, i]] = 1
+			# Only a rewrite the rebuilt commit no longer makes as it was weighs, against only one of
+			# its own that the original never made – one the original made, unmoved, is no copy
+			for (h = 1; h <= N["O"]; h++)
+				for (i = 1; i <= NM["O", h] && i <= NP["O", h]; i++)
+					if (!((M["O", h, i] SUBSEP P["O", h, i]) in KEPT)) { OM[++NO] = M["O", h, i]; OQ[NO] = P["O", h, i] }
+			for (h = 1; h <= N["R"]; h++)
+				for (i = 1; i <= NM["R", h] && i <= NP["R", h]; i++)
+					if (!((M["R", h, i] SUBSEP P["R", h, i]) in OWN)) { RM[++NR] = trim(M["R", h, i]); RQ[NR] = trim(P["R", h, i]) }
+			# Bounded, as each pair weighs against each – past it nothing counts as rebased, as before
+			if (NO * NR > 1000000) exit
+			for (i = 1; i <= NO; i++) {
+				a = trim(OM[i]); b = trim(OQ[i])
+				if (a == "" || a == b) continue
+				for (j = 1; j <= NR; j++) {
+					x = index(RM[j], a)
+					if (!x) continue
+					if (RQ[j] != substr(RM[j], 1, x - 1) b substr(RM[j], x + length(a))) continue
+					print "-" OM[i]; print "+" OQ[i]
+					break
+				}
+			}
+		}'
+}
+
 # Tells whether the change <lost> made to <file> is what the placed <commit> builds on
 # – that commit placed by this run, its own change rewriting lines <lost> wrote, and <lost>'s
 # change there emptied, its pick <rebuilt> left out (none given) or no longer touching the file
@@ -21594,13 +21639,14 @@ _GUARD_ABSORBED () {
 				(( ${+HUNK_HELD[${L%%$'\t'*}]} )) && SWAPPED[${L#*$'\t'}]=${HUNK_HELD[${L%%$'\t'*}]}
 				(( ${+HUNK_ADDS[${L%%$'\t'*}]} && ! ${+HUNK_HELD[${L%%$'\t'*}]} )) && REPLACED[${L#*$'\t'}]=1
 			done
-			# A line that would count as taken in whose place the rebuilt commit still rewrites is
-			# its change rebased onto the stop's, never taken in – it counts toward neither side
+			# A line that would count as taken in whose place the rebuilt commit still
+			# rewrites, or whose rewrite it still makes on a line holding it, is its change
+			# rebased onto the stop's, never taken in – it counts toward neither side
 			REBASED=()
 			if [ -n "$R" ]; then
 				for L in "${LOSTL[@]}"; do
 					(( ${+HELD[$L]} || ${+SWAPPED[$L]} )) || continue
-					for K in "${(@f)$(_STILL_REWRITTEN "$WT" "$O" "$R" "$FILE")}"; do
+					for K in "${(@f)$(_STILL_REWRITTEN "$WT" "$O" "$R" "$FILE")}" "${(@f)$(_STILL_REWORDED "$WT" "$O" "$R" "$FILE")}"; do
 						[ -n "$K" ] && (( ${+HELD[$K]} || ${+SWAPPED[$K]} )) && REBASED[$K]=1
 					done
 					break
