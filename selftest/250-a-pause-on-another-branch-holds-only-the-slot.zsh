@@ -63,6 +63,7 @@ _ST_RUN -d -y "$(git rev-parse HEAD~1)"
 _ST_EQ "a drop reaching its conflict refuses, main unmoved" "$RC:$(git rev-parse HEAD)" "1:$S_G"
 _ST_OUT_HAS "naming that pause and why" "in flight on side (paused for resolution – s-side's) – this run must pause too, and the repository holds one pause at a time, so nothing was applied"
 _ST_OUT_HAS "and the rerun that waits at its stop" "Rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there"
+_ST_OUT_HAS "its trailer carrying that rerun" "^git-edit: error – .* – --wait=540 waits for it at this run's stop$"
 _ST_EQ "its worktree gone" "$(git worktree list | wc -l | tr -d ' ')" "$S_WTS"
 _ST_EQ "the side pause as it was" "$(<"$S_SF")" "$S_HELD"
 
@@ -71,6 +72,7 @@ _ST_RUN --amend-into="$(git rev-parse HEAD~2)" --verify=false --wait=1 -- g.txt
 _ST_EQ "a fold whose gate refuses waits out its bound, then refuses" "$RC:$(git rev-parse HEAD)" "1:$S_G"
 _ST_OUT_HAS "having waited at its stop" "still in flight on side after waiting 1s at this run's stop"
 _ST_OUT_HAS "pointing at a longer wait" "Wait longer with --wait=540"
+_ST_OUT_HAS "its trailer too" "^git-edit: error – .* – --wait=540 waits longer$"
 _ST_EQ "its staging kept" "$(git diff --cached --name-only)" "g.txt"
 _ST_EQ "the side pause still as it was" "$(<"$S_SF")" "$S_HELD"
 

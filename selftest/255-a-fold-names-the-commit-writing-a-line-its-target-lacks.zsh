@@ -18,6 +18,7 @@ _ST_OUT_HAS "naming the edit and the commit writing its line" \
 	"^  f.txt: edit 2 ('charlie as written later') – written by $(git rev-parse --short ':/LK writes charlie') (LK writes charlie)$"
 _ST_OUT_LACKS "never the one the target holds" 'f.txt: edit 1 '
 _ST_OUT_HAS "and where each goes" "Nothing landed – fold those edits into the commit named or a later one, the rest into ${LK_T:0:7} apart"
+_ST_OUT_HAS "its trailer naming the writer" "^git-edit: error – --edits: 1 edit(s) replace text ${LK_T:0:7} lacks .* – written by $(git rev-parse ':/LK writes charlie' | cut -c1-7)\$"
 _ST_OUT_LACKS "before any replay" 'Conflict during the fold'
 # One taking that line back to what the target holds merges there clean, dissolving in the replay
 _ST_RUN --amend-into="$LK_T" --edits '{"f.txt": [["charlie as written later", "charlie"], ["alpha", "alpha fixed"]]}'

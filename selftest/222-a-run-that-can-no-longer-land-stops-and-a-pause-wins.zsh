@@ -71,6 +71,7 @@ _S222_END s222a "$TMP/s222-a"
 _ST_EQ "the fold, replaying when the pause began, refuses at its CAS, the branch unmoved" "$RC:$(git rev-parse HEAD)" "1:$S_TIP"
 _ST_OUT_HAS "naming the pause and whose it is" "in flight on main (paused for resolution – s-drop's) – it paused while this one ran, so nothing was applied"
 _ST_OUT_HAS "and the rerun that waits for it" "rerun with --wait=540: it waits for that pause, then runs on the new tip"
+_ST_OUT_HAS "its trailer carrying that rerun" "^git-edit: error – .* – --wait=540 waits for it, then runs on the new tip$"
 _ST_EQ "its staging untouched" "$(git diff --cached --name-only)" "g.txt"
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'1\n2y\n3'
 export GIT_EDIT_ACTOR=s-drop

@@ -8540,6 +8540,8 @@ _REQUIRE_NO_INFLIGHT () {
 	if [ -n "$WAITED" ]; then
 		PRINT_ERR "Another git-edit operation is still in flight${SB:+ on $SB} after waiting ${WAITED}s, paused for its resolution${REPLY:+ – $REPLY} – nothing ran"
 		ECHO_E "\e[0;31m  Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run ('git edit --status' shows the pause).\e[0m" >&2
+		# The trailer carries the wait too, which a caller reading it alone would otherwise poll for
+		_LAST_ERROR+=" – --wait=540 waits longer"
 		[ -n "$SB" ] && _RACE_LOST=("refs/heads/$SB" "$(_JOURNAL_FILE_PATH)")
 		exit 1
 	fi
@@ -8836,10 +8838,14 @@ _REFUSE_PEER_PAUSE () {
 			ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again ('git edit --status' shows where it stopped and why).\e[0m" >&2
 		elif [ -n "$4" ]; then
 			ECHO_E "\e[0;31m  Wait longer with --wait=540 – run in the background, or in the foreground with a 10-minute call timeout, its last minute left for the run ('git edit --status' shows the pause).\e[0m" >&2
+			_LAST_ERROR+=" – --wait=540 waits longer"
 		elif [ "$WHOSE" = other ]; then
 			ECHO_E "\e[0;31m  Rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there ('git edit --status' shows it).\e[0m" >&2
+			# The trailer carries the wait too, which a caller reading it alone would otherwise poll for
+			_LAST_ERROR+=" – --wait=540 waits for it at this run's stop"
 		else
 			ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=540: it waits at its stop for that pause to clear, then pauses there ('git edit --status' shows it).\e[0m" >&2
+			_LAST_ERROR+=" – --wait=540 waits for it where it is another session's"
 		fi
 		_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 		exit 1
@@ -8849,8 +8855,10 @@ _REFUSE_PEER_PAUSE () {
 		ECHO_E "\e[0;31m  Finish it first with 'git edit --continue', or 'git edit --abort' it, then run this again ('git edit --status' shows where it stopped and why).\e[0m" >&2
 	elif [ "$WHOSE" = other ]; then
 		ECHO_E "\e[0;31m  Its resolution lands only on the tip it read – rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+		_LAST_ERROR+=" – --wait=540 waits for it, then runs on the new tip"
 	else
 		ECHO_E "\e[0;31m  If it is yours, 'git edit --continue' or 'git edit --abort' it, then run this again – if another session's, rerun with --wait=540: it waits for that pause, then runs on the new tip ('git edit --status' shows it).\e[0m" >&2
+		_LAST_ERROR+=" – --wait=540 waits for it where it is another session's"
 	fi
 	_KEEP_TYPED_MESSAGE "${2:-${_TYPED_KEEP[1]}}" "${3:-${_TYPED_KEEP[2]}}"
 	exit 1
@@ -13619,7 +13627,7 @@ _REFUSE_EDITS_WRITTEN_LATER () {
 	local TARGET=$1 TIP=$2 P OLD AT TEXT LEAD W SHOWN
 	local -i K I FIRST
 	local -a LACKS OUT
-	local -aU WS
+	local -aU WS WRITERS
 	local -A NTH AT_OF TIP_OF BLOB_OF
 	for (( K = 1; K <= ${#EDITS_PATH}; K++ )); do
 		P=${EDITS_PATH[K]} OLD=${EDITS_OLD[K]}
@@ -13653,9 +13661,12 @@ _REFUSE_EDITS_WRITTEN_LATER () {
 		SHOWN=$REPLY
 		W=$(git log --no-walk=unsorted --format='%h (%s)' "${WS[@]}" 2>/dev/null)
 		OUT+=("$P: edit ${NTH[$P]} ($SHOWN) – written by ${W//$'\n'/, }")
+		for W in "${WS[@]}"; do WRITERS+=("${W:0:7}"); done
 	done
 	(( ${#OUT} )) || return 0
 	PRINT_ERR "--edits: ${#OUT} edit(s) replace text ${TARGET:0:7} lacks – a later commit writes it, so the fold would stop at its own step, where no edit resolves it"
+	# The trailer names the writers too, which a caller reading it alone would otherwise look up
+	_LAST_ERROR+=" – written by ${(j:, :)WRITERS}"
 	_CARET "${(F)OUT}"
 	print -r -- "$REPLY" | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	W=""
