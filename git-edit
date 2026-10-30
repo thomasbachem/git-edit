@@ -4421,7 +4421,8 @@ GIT_STATUS_REPORT () {
 		# or one cut short, has its trailer then no step to take there
 		local OWNER="" FOREIGN=""
 		_PAUSE_FOREIGN && FOREIGN=$REPLY
-		_PAUSE_OWNER "$_STATE_PATH"
+		# From the state as read, which a landing clearing the file meanwhile leaves nameless
+		_PAUSE_OWNER =(print -r -- "$_STATE_READ")
 		local WHOSE=$REPLY
 		if [ "$FOREIGN" = cut ]; then
 			OWNER="an unknown caller's"
