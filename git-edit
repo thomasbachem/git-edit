@@ -10832,7 +10832,12 @@ GIT_EXEC () {
 			PRINT_ERR "Command exited with status $STATUS$RAN – this run applied nothing, though $MOVED_NOTE"
 		elif [ -n "$EXEC_LABEL" ]; then
 			# `--commit` runs no command of the caller's – its commit is what refused, a hook's doing
-			PRINT_ERR "The commit was refused (exit $STATUS) – a hook of the repository's, most often – so nothing landed"
+			# – the remedies in the error itself, which a caller reading the trailer alone still sees
+			local HOOK_WHY=""
+			[ -z "$(git config --get-all edit.worktreeLink 2>/dev/null)" ] && [ -z "$GIT_EDIT_WORKTREE_LINK" ] && \
+				HOOK_WHY+=" – nothing is linked into its worktree, where a hook needing gitignored files fails on that alone – GIT_EDIT_WORKTREE_LINK=node_modules links them for a run, edit.worktreeLink for good"
+			(( ${#OPT_NO_VERIFY} )) && HOOK_WHY+=" – --no-verify skips edit.verifyCmd, never the repository's hooks"
+			PRINT_ERR "The commit was refused (exit $STATUS) – a hook of the repository's, most often – so nothing landed$HOOK_WHY"
 		else
 			PRINT_ERR "Command exited with status $STATUS$RAN – leaving original branch unchanged"
 		fi

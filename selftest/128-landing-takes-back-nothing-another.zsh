@@ -131,6 +131,14 @@ print -r -- c3 > c.txt
 _ST_RUN --commit --no-verify --text "LA3 c3" -- c.txt
 _ST_EQ "--commit runs the repository's hooks even with --no-verify" "$RC:$(git log -1 --format=%s)" "1:LA3 c2"
 _ST_OUT_HAS "naming the refused commit, not a command" 'The commit was refused (exit 1)'
+_ST_OUT_HAS "its trailer naming the link a hook may need, nothing linked" '^git-edit: error – The commit was refused .* – GIT_EDIT_WORKTREE_LINK=node_modules links them for a run'
+_ST_OUT_HAS "and that --no-verify left the hooks running" "^git-edit: error – .* – --no-verify skips edit\.verifyCmd, never the repository's hooks\$"
+export GIT_EDIT_WORKTREE_LINK=none.here
+_ST_RUN --commit --text "LA3 c3" -- c.txt
+unset GIT_EDIT_WORKTREE_LINK
+_ST_EQ "refused again with a link named" "$RC:$(git log -1 --format=%s)" "1:LA3 c2"
+_ST_OUT_LACKS "never naming the link once one is" 'links them for a run'
+_ST_OUT_LACKS "nor --no-verify where it wasn't given" 'never the repository'
 rm -f .git/hooks/pre-commit
 git checkout -q -- c.txt
 # --whole and --tree together refuse
