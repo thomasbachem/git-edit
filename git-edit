@@ -1252,6 +1252,8 @@ PRINT_TEXT () {
 	ECHO_E "$OUTPUT"
 }
 
+# Prints a printf-style action <message>, each `%s` commit by its short SHA and
+# subject – one a line where it names several or a merge's `->`
 PRINT_ACTION () {
 	local MSG=$1; shift
 
@@ -16438,6 +16440,7 @@ _SNAPSHOT_PAUSE () {
 	_PAUSE_EXIT 2 conflict
 }
 
+# Writes a snapshot fold's pause from its `STATE_*` values – a conflict's and a refused gate's alike
 _SNAPSHOT_SAVE_STATE () {
 	_REFUSE_NEWLINE_NAMES --fold "$STATE_TARGET" "${(@Q)${(z)STATE_FILES}}" "${(@Q)${(z)STATE_PATHSPECS}}"
 	_SAVE_STATE \
@@ -17427,6 +17430,7 @@ _CONTINUE_SPLIT () {
 	PRINT_COMPLETED "$SPLIT_NEW_HEAD" "$SPLIT_REF" true
 }
 
+# Cancels a paused content split, removing its worktree, as the branch never moved
 _ABORT_SPLIT () {
 	PRINT_ACTION "Aborting split of %s..." "${STATE_TARGET:0:7}"
 
@@ -20658,6 +20662,7 @@ _SAVE_STATE () {
 	STATE_STOPS="" STATE_REPLAY="" STATE_SKIPPED="" STATE_FLAG_SKIPS="" STATE_MARKED=""
 }
 
+# Reads the pause's state file into the `STATE_*` values – failing where there is no pause
 _LOAD_STATE () {
 	local SF=$(_STATE_FILE_PATH)
 	# Kept for the clear, which a run removing its worktree first could no longer resolve
