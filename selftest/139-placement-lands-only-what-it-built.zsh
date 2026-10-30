@@ -16,8 +16,10 @@ git -C "${PB_WT:-$ST_NO_WT}" rebase --skip >/dev/null 2>&1
 _ST_RUN --continue
 _ST_EQ "a resume without it refuses rather than land another tree under the placement" "${RC}:$(git rev-parse HEAD)" "1:$PB_T"
 _ST_OUT_HAS "saying so" 'no longer ends as it was built'
+_ST_OUT_HAS "its trailer naming the replay kept" '^git-edit: error – The placement no longer ends as it was built.* – its replay kept in '
 _ST_RUN --status
 _ST_OUT_HAS "--status names a placement as one" 'In-flight operation: placement – commit after'
+_ST_OUT_HAS "and the refusal, offering the cancel alone" 'refused for no longer ending on the tree the placement built'
 _ST_RUN --abort
 _ST_OUT_HAS "as does --abort" 'Placement aborted'
 _ST_EQ "which leaves the branch and the checkout's file as they were" "${RC}:$(git rev-parse HEAD):$(<f.txt)" "0:${PB_T}:a"

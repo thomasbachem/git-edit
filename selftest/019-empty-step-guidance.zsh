@@ -15,6 +15,10 @@ _ST_OUT_HAS "and that dropping one changing a reorder's tree refuses" 'A reorder
 _ST_RUN --continue
 _ST_EQ "a drop that changes the tree refuses, the branch untouched" "${RC}:$(git rev-parse HEAD)" "1:$PRE_HEAD"
 _ST_OUT_HAS "naming the file it changed" 'no longer ends on the tree it began with – a resolution changed f2.txt'
+_ST_OUT_HAS "its trailer naming the replay kept, for the cancel" "^git-edit: error – The reorder no longer ends .* – its replay kept in .*, which a resume refuses again: 'git edit --abort' cancels it$"
+_ST_RUN --status
+_ST_OUT_HAS "--status reads the refusal, never a resume landing it" 'refused for no longer ending on the tree the reorder began with'
+_ST_OUT_LACKS "offering no resume" 'checks it, landing it where it passes'
 _ST_RUN --abort
 _ST_CHECK "state cleared by the abort" test ! -f "$(git rev-parse --git-common-dir)/git-edit-state"
 # A reorder aborted by hand in its worktree is no reorder – refused, the pause kept for an abort

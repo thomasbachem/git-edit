@@ -18,7 +18,7 @@ local SQ_WT=$(_ST_PZ_WT)
 # Resolved to the target's own line, plus one the tip never holds
 [ -n "$SQ_WT" ] && print -l x1 a b c d P > "$SQ_WT/f" && git -C "$SQ_WT" add f
 _ST_RUN --continue
-_ST_EQ "a resolution adding what the tip lacks refuses, the branch untouched" "$RC:$(git rev-parse HEAD)" "1:$SQ_TIP"
+_ST_EQ "a resolution adding what the tip lacks refuses, paused, the branch untouched" "$RC:$(git rev-parse HEAD)" "2:$SQ_TIP"
 _ST_OUT_HAS "naming the clean pick's line" 'f:1 – [0-9a-f]* (SQ later rewrite)$'
 _ST_OUT_HAS "and the line the resolution made" 'f:6 – [0-9a-f]* (SQ target), resolved at its stop$'
 local SQ_AT=$(git -C "${SQ_WT:-$ST_NO_WT}" log --format='%H %s' 2>/dev/null | awk 'NF == 3 && $2 == "SQ" && $3 == "target" { print $1 }')
@@ -27,7 +27,7 @@ _ST_RUN --status
 _ST_OUT_HAS "--status reads the pause as that refusal" "^git-edit: paused – squash of ${SQ_Z:0:7} would change the tip's content"
 _ST_OUT_LACKS "never as a conflict" '^git-edit: conflict'
 _ST_RUN --continue
-_ST_EQ "a resume finding the result untouched refuses again" "$RC:$(git rev-parse HEAD)" "1:$SQ_TIP"
+_ST_EQ "a resume finding the result untouched refuses again" "$RC:$(git rev-parse HEAD)" "2:$SQ_TIP"
 _ST_OUT_HAS "naming the commit again" "Rework ${SQ_AT:0:12} in the replay kept there"
 _ST_OUT_LACKS "at once, never read as a replay finished by hand" 'Rebase already completed'
 # Reworked in place – the target taking the squashed change, the later rewrite resolved on top –

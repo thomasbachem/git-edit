@@ -348,8 +348,10 @@ folds in, as git's autosquash does: an \fBamend!\fR commit naming the target
 takes the place of its message, a \fBsquash!\fR one adds its body.
 A squash ends on the tip's content \(em one whose resolutions add up to
 anything else refuses to land, naming the commits the differing lines came
-from, and keeps its replay paused for one of them to be reworked there
-before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo.
+from or were lost at, and keeps its replay paused for one of them to be
+reworked there before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo
+\(em rerere forgetting what it recorded at the stop named, which a redo would
+otherwise replay as refused.
 Its replay resolves its own stops where every commit it folds touching a
 conflicted file only replaces lines, as a fold of staged changes does (see
 .BR \-\-amend\-into ):
@@ -2764,7 +2766,9 @@ or a second rewrite over the same lines \(em still pauses, but the file arrives
 carrying the recorded resolution instead of markers, so it only has to be
 staged, never worked out a second time.
 .PP
-Recorded resolutions persist once the operation completes. An abort or an
+Recorded resolutions persist once the operation completes, bar the one
+recorded at the stop named where a squash's tip refused its replay.
+An abort or an
 error that leaves fresh ones behind says so and names them \(em they would
 pre\-fill a retry's conflicts marker\-free, which is what retrying wants,
 but not what abandoning a distrusted rewrite wants. With
@@ -3000,8 +3004,8 @@ refuses so outside a repository, and from a current directory that is gone
 removed, say \(em naming which.
 .TP
 .B 2
-Paused \(em on a conflict, for an edit or content split, or at a failed
-verify or mode gate \(em awaiting
+Paused \(em on a conflict, for an edit or content split, at a failed
+verify or mode gate, or where a squash's tip refused its replay \(em awaiting
 .B \-\-continue
 or
 .BR \-\-abort .

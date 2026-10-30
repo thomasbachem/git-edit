@@ -147,7 +147,7 @@ _ST_RESOLVE "${SO_WT:-$ST_NO_WT}" f.txt t4
 _ST_RUN --continue
 _ST_RESOLVE "${SO_WT:-$ST_NO_WT}" f.txt t3
 _ST_RUN --continue
-_ST_EQ "a squash changing the tip lands nothing" "$RC:$(git rev-parse HEAD)" "1:$SO_OLD"
+_ST_EQ "a squash changing the tip lands nothing, still paused" "$RC:$(git rev-parse HEAD)" "2:$SO_OLD"
 _ST_OUT_HAS "refusing before its gate, naming the path" "The squash would change the tip's content, at f.txt – not applied"
 _ST_OUT_LACKS "never pausing at the gate first" 'Verification failed'
 _ST_RUN --abort

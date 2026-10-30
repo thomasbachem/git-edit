@@ -67,7 +67,7 @@ _ST_RESOLVE "${RE_WT:-$ST_NO_WT}" t.txt t4
 _ST_RUN --continue
 _ST_RESOLVE "${RE_WT:-$ST_NO_WT}" t.txt t3
 _ST_RUN --continue
-_ST_EQ "a resumed squash changing the tip lands nothing" "$RC:$(git rev-parse HEAD)" "1:$RE_TIP"
+_ST_EQ "a resumed squash changing the tip lands nothing, still paused" "$RC:$(git rev-parse HEAD)" "2:$RE_TIP"
 _ST_OUT_HAS "saying so" "The squash would change the tip's content"
 _ST_RUN --abort
 # A root's edit takes an amend made by hand at its stop
