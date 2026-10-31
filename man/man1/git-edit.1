@@ -1285,8 +1285,12 @@ the change from that run's old tip to the tip, the caller's own runs among
 them. It also refuses a file such a run removed, the removal of one it added
 or edited, and a file written whole in place of one it added. So too one
 still under the mode before a flip of its executable bit, or without the bit
-of one it added executable. The refusal names the run and the remedy, its
-closing line each run's label and range, the
+of one it added executable. A removal passes where the files the commit adds
+or changes, by any route, gain every line that run added and the tip still
+holds, beside the same lines, and none it removed \(em its content moved
+elsewhere, though not back to a name that run took away, nor for an empty
+file, a binary or a submodule, which have no lines to move. The refusal
+names the run and the remedy, its closing line each run's label and range, the
 .B \-\-base
 opt\-out above the remedy.
 .IP

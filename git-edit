@@ -12101,6 +12101,8 @@ _COMPOSE_INPUTS () {
 		exit 1
 	fi
 	_INPUT_FLIPS=${#FLIPS}
+	# The whole tree, where a route's guard reads a removal's content moved into a file any route took
+	local _WHOLE_ALL=$WHOLE_TREE
 	# Each route guarded on a tree holding its own paths alone, with its own remedies
 	# – against other callers' landings of the last 7 days, or the `--base` named,
 	# which puts and removals met above – an edit or a patch as much as a put, as one
@@ -12634,6 +12636,66 @@ _LANDING_UNDONE () {
 	(( ${A[(Ie)$3]} ))
 }
 
+# Prints <blob>'s non-blank lines sorted bytewise, each as often as it occurs, and each two
+# in a row as `\x1f<line>\x1f<line>` – none for no blob, failing on a binary or a failed read
+_SORTED_LINES () {
+	# Args: [<blob>]
+	[ -n "$1" ] || return 0
+	local C
+	C=$(git cat-file blob "$1" 2>/dev/null) && [[ ${C[1,8000]} != *$'\0'* ]] || return 1
+	print -r -- "$C" | LC_ALL=C awk 'length($0) { print; if (n++) print "\037" q "\037" $0; q = $0 }' | LC_ALL=C sort
+}
+
+# Prints the non-blank lines <tree> adds over <tip>, and each two in a row one of them is in,
+# as `_SORTED_LINES` does – where a removal beside them may have moved its content
+_GAINED_LINES () {
+	# Args: <tip> <tree>
+	git diff-tree -r -p -U3 --no-renames --no-color "$1" "$2" 2>/dev/null | LC_ALL=C awk '
+		/^diff --git / { h = 0; next }
+		/^@@/ { h = 1; q = ""; next }
+		!h || /^[-\\]/ { next }
+		{
+			t = substr($0, 2)
+			if (!length(t)) next
+			a = /^\+/
+			if (a) print t
+			if (length(q) && (a || qa)) print "\037" q "\037" t
+			q = t; qa = a
+		}' | LC_ALL=C sort
+}
+
+# Tells whether a removal leaves a landing on the file whole – `GAINED` holding every line it
+# added that the tip still holds, beside the same lines, and none it removed that the tip lacks
+_REMOVAL_KEEPS_LANDING () {
+	# Args: <blob before the landing, or ""> <blob after it> <tip's blob> – reads `GAINED`
+	local B A T NEW ADDED REMOVED
+	B=$(_SORTED_LINES "$1") && A=$(_SORTED_LINES "$2") && T=$(_SORTED_LINES "$3") || return 1
+	# A pair counts beside a line it added – one a cut leaves joined holds nothing of it
+	NEW=$(LC_ALL=C comm -23 <(print -r -- "$A") <(print -r -- "$B") | LC_ALL=C comm -12 - <(print -r -- "$T"))
+	ADDED=$(LC_ALL=C awk -F '\037' 'NR == FNR { if ($1 != "" || NF < 3) L[$0]; next }
+		$1 != "" || NF < 3 || ($2 in L) || ($3 in L)' <(print -r -- "$NEW") <(print -r -- "$NEW"))
+	REMOVED=$(LC_ALL=C comm -23 <(print -r -- "$B") <(print -r -- "$A") | LC_ALL=C comm -23 - <(print -r -- "$T") | \
+		LC_ALL=C awk -F '\037' '$1 != "" || NF < 3')
+	# A file it added moves only with content – an empty one's removal takes it back
+	[ -n "$1$ADDED" ] || return 1
+	[ -z "$(LC_ALL=C comm -23 <(print -r -- "$ADDED") <(print -r -- "$GAINED"))" ] && \
+		[ -z "$(LC_ALL=C comm -12 <(print -r -- "$REMOVED") <(print -r -- "$GAINED"))" ]
+}
+
+# Tells whether the whole commit adds back a path landing <k> of `MOVES` removed
+# – content moved there takes the landing's rename back
+_BRINGS_BACK_NAME () {
+	# Args: <index into `MOVES`> – reads `ADDS`
+	(( ${+BACK_OF[$1]} )) && return ${BACK_OF[$1]}
+	local -a M GONE BOTH
+	M=(${=MOVES[$1]})
+	GONE=(${(0)"$(git diff-tree -r -z --no-renames --diff-filter=D --name-only "${M[2]}" "${M[3]}" 2>/dev/null)"})
+	BOTH=(${GONE:*ADDS})
+	BACK_OF[$1]=1
+	(( ${#BOTH} )) && BACK_OF[$1]=0
+	return ${BACK_OF[$1]}
+}
+
 # Refuses composed content taking back another caller's landing of the last 7 days,
 # whatever route composed it – a file lacking one the tip still carries, one a landing
 # removed or the removal of one it added – where a conflict proves nothing, later
@@ -12648,14 +12710,14 @@ _GUARD_WHOLE_LANDINGS () {
 	local -i NOW=$(date +%s) K I RI RJ OLDEST_K=0 MRC
 	local OLDEST_OLD=""
 	local -a J MOVES CHANGED QUERIES ANSWERS HITS HIT_PATHS M RESTORE REMOVED EDITED RF RT RENAMED LIVE RAW LM OWN
-	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS MQ DOUBLED
-	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD=""
+	local -a CHMOD_X CHMOD_NX CARRIED RENAMED_DST UNB R REWRITTEN DROPS TIPS MQ DOUBLED ADDS MOVE_HITS
+	local KIND BMODE AMODE HIT B L FROM UB UB_READ="" FIRST_OLD="" GAINED="" GAINED_READ="" MOVE_HIT=""
 	local -i FIRST_K=0
 	# The paths a run's sync left unbrought, read where a merge first conflicts
 	# – and those of a rewritten landing whose merge into the file conflicts
 	local -A UNBROUGHT UNB_AT REWRITE_CLASH
-	# Each landing's `_LANDING_DROPPED` answer, once asked
-	local -A DROPPED_OF
+	# Each landing's `_LANDING_DROPPED` and `_BRINGS_BACK_NAME` answers, once asked
+	local -A DROPPED_OF BACK_OF
 	# Opens each printed merge – its sides kept in the step's own temp dir, as `_MERGE_CMD`'s are
 	local T='T=$(mktemp -d) && '
 	local -A MODE_OF RENAMED_TO RENAMES_OF IS_CHANGED LANDED AWAY NAME_THEN NAME_WAS ST_BASE ST_THEIRS ST_FROM ABOVE
@@ -12854,7 +12916,7 @@ _GUARD_WHOLE_LANDINGS () {
 			fi
 			# Each kind takes its own remedy – a merge carries only edits made beside a landing
 			# (or across its rename), while a file still as before it or one it added is restored whole
-			GONE="" HIT="" FROM=$P MCLEAN=""
+			GONE="" HIT="" FROM=$P MCLEAN="" MOVE_HIT=""
 			# A file this commit renames answers with its new name's content where the landing
 			# changed it under the old one, or added it there and the new name holds most of it
 			# – unless the landing took that name away, which renaming back to takes its rename back
@@ -12891,6 +12953,17 @@ _GUARD_WHOLE_LANDINGS () {
 					else
 						[ -n "$AFTER" ] && [ "$TIP" != "$BEFORE" ] || continue
 						KIND=removed GONE=", which edited it – removing the file takes that edit back"
+					fi
+					# Nor one moving what the tip holds of it into files the whole commit adds or changes
+					# – bar a name the landing took away, the rename's own remedy following it there
+					if [ -z "$GAINED_READ" ]; then
+						GAINED_READ=1 GAINED=$(_GAINED_LINES "$WHOLE_HEAD" "${_WHOLE_ALL:-$WHOLE_TREE}")
+						ADDS=(${(0)"$(git diff-tree -r -z --no-renames --diff-filter=A --name-only "$WHOLE_HEAD" "${_WHOLE_ALL:-$WHOLE_TREE}")"})
+					fi
+					if ! _BRINGS_BACK_NAME $K; then
+						_REMOVAL_KEEPS_LANDING "$BEFORE" "$AFTER" "$TIP" && continue
+						# Lines gained elsewhere may be its content moved without what landed – never a submodule's
+						[ -n "$GAINED" ] && [ "$AMODE" != 160000 ] && MOVE_HIT=1
 					fi
 				elif [ -z "$BEFORE" ]; then
 					# A file the landing added has no before to merge from – edits on top keep most of what
@@ -13093,6 +13166,8 @@ _GUARD_WHOLE_LANDINGS () {
 					fi
 					;;
 			esac
+			# Whatever its route's remedy, a removal that may be a move takes the move's too
+			[ -n "$MOVE_HIT" ] && [[ $KIND == (restore|removed) ]] && MOVE_HITS+=("$P")
 			break
 		done
 	done
@@ -13312,6 +13387,8 @@ _GUARD_WHOLE_LANDINGS () {
 	[ ${#REMOVED} -gt 0 ] && ECHO_E "\e[0;31m  Leave out what was removed: $(_LIT "$(_ALL_PATHS -q "${reply[@]}")")\e[0m" >&2
 	_MARK_LITERAL "${EDITED[@]}"
 	[ ${#EDITED} -gt 0 ] && ECHO_E "\e[0;31m  Look at what landed on $(_LIT "$(_ALL_PATHS -q "${reply[@]}")") first – keep the file, or remove it with --base as above.\e[0m" >&2
+	_MARK_LITERAL "${(@u)MOVE_HITS}"
+	[ ${#MOVE_HITS} -gt 0 ] && ECHO_E "\e[0;31m  Where the content of $(_LIT "$(_ALL_PATHS -q "${reply[@]}")") moved, carry what landed on it into the file it went to, beside the same lines (the tip's copy: git show ${WHOLE_HEAD:0:12}:<path>), then run this again$FROM.\e[0m" >&2
 	for Q in "${RENAMED[@]}"; do
 		ECHO_E "\e[0;31m  Merge what landed into the new name with: $(_LIT "${AT}$Q")\e[0m" >&2
 	done
