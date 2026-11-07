@@ -154,6 +154,7 @@ local EX_GOOD=$(git rev-parse HEAD)
 _ST_RUN --exec -- sh -c 'printf "EXBAD\n" > ex.txt && git commit -qam "EX bad"'
 _ST_EQ "an --exec commit the gate rejects is refused" "$RC" "1"
 _ST_OUT_HAS "naming the failure" 'Verification failed at'
+_ST_OUT_HAS "its trailer naming the saved output" '^git-edit: error – .* – output in [^ ]*-verify$'
 _ST_OUT_HAS "and where the built history sits" 'Built history is at'
 _ST_EQ "with the branch left where it was" "$(git rev-parse HEAD)" "$EX_GOOD"
 # No pause here either, so neither hint the pausing modes print may appear

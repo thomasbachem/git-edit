@@ -20983,12 +20983,13 @@ _VERIFY_LOG_PATH () {
 	print -r -- "$SF-verify"
 }
 
-# Writes that sidecar and names it, header first, so a truncated or huge
-# output still answers what ran, how it ended and how long it took
-# – the check's own text is what tells a timeout from a red run
+# Writes that sidecar and names it, putting its path into `REPLY` – empty where none was
+# written – header first, so a truncated or huge output still answers what ran, how it
+# ended and how long it took, the check's own text telling a timeout from a red run
 _VERIFY_SAVE_LOG () {
 	# Args: <commit> <cmd> <exit-status> <seconds> <output>
 	local LF
+	REPLY=""
 	LF=$(_VERIFY_LOG_PATH) || return 0
 	# A parallel run's pause owns the sidecar too – this run's record is the tail printed above,
 	# the whole kept for a pause it may take once that one clears
@@ -21005,6 +21006,7 @@ _VERIFY_SAVE_LOG () {
 		print -r -- "$5"
 	} > "$LF" 2>/dev/null || return 0
 	PRINT_TEXT "Full output: %s" 33 "$LF"
+	REPLY=$LF
 }
 
 # Tells whether the pause's worktree is one this tool made
@@ -22727,6 +22729,8 @@ _VERIFY_REWRITE () {
 			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | _CARET_LINES --crlf | LC_ALL=C sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
 			PRINT_TEXT "Command: %s (exit %s, %ss)" 33 "$VERIFY_CMD" "$RC" "$RUN_SECS"
 			_VERIFY_SAVE_LOG "$C" "$VERIFY_CMD" "$RC" "$RUN_SECS" "$OUT"
+			# The trailer names the saved output too, which a caller reading it alone would rerun the run for
+			[ -n "$REPLY" ] && _LAST_ERROR+=" – output in $REPLY"
 			# Attribution and the healing point, run in the worktree the gate already owns – then back
 			# to the result tip, since every resume path reads the worktree's `HEAD` as the result,
 			# and one left at a walked commit would land that commit as the new tip
