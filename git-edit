@@ -13771,7 +13771,7 @@ _REFUSE_EDITS_WRITTEN_LATER () {
 	print -r -- "$REPLY" | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	W=""
 	(( ${#EDITS_PATH} > ${#OUT} )) && W=", the rest into ${TARGET:0:7} apart"
-	ECHO_E "\e[0;31m  Nothing landed – fold those edits into the commit named or a later one$W.\e[0m" >&2
+	ECHO_E "\e[0;31m  Nothing landed – fold those edits into the commit named or a later one$W, or make them in place with 'git edit ${TARGET:0:7}', resolving the stop where that commit replays.\e[0m" >&2
 	exit 1
 }
 
