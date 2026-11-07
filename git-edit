@@ -117,10 +117,10 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
-	AT AT_RES MORE OUT SHOWN
+	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS
 
 # A switch set to 0, false, no or off is off, as most tools read one
-for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
+for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RERUN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
 	[[ "${(P)_V:l}" == (0|false|no|off) ]] && unset $_V
 done
 unset _V
@@ -185,6 +185,12 @@ _CALLER_ENV_SH () {
 _SELF=${0:A}
 _EXPECT_PAUSE=$GIT_EDIT_EXPECT_PAUSE
 unset GIT_EDIT_EXPECT_PAUSE
+# The arguments a run losing a race runs again with, and the re-runs before this one
+# – the count a re-run passes on, any other value read as none
+_RERUN_ARGS=("$@")
+_RERUNS=0
+[[ "$GIT_EDIT_RERUNS" == <1-2> ]] && _RERUNS=$GIT_EDIT_RERUNS
+unset GIT_EDIT_RERUNS
 
 # A relative `TMPDIR` taken from where the run starts – a worktree's git would resolve it in there,
 # an editor stand-in's path naming nothing, and one opening with `-` reads to `mktemp` as an option
@@ -642,6 +648,10 @@ _PAUSE_AT_START=""
 # The ref and journal of a race this run lost, for the busy-branch hint above its trailer
 typeset -ga _RACE_LOST
 _RACE_LOST=()
+# The re-run a lost race starts once the exit trap has cleaned up, as `_RERUN_LOST` set it
+_RERUN_DUE=""
+# Set once `--text -` reads stdin, which a re-run would find empty
+_READ_STDIN=""
 # Set where a refusal is over the flags given, for the pointer at `-h` above its trailer
 _USAGE_POINT=""
 # A message typed in an editor and the command rerunning with it, kept where a landing refuses
@@ -723,6 +733,8 @@ _GLOBAL_EXIT_TRAP () {
 	if [ -n "$_CAPTURE_DIR" ] && ! grep -qxF "capture=$_CAPTURE_DIR" "$SF" 2>/dev/null; then
 		_CAPTURE_REMOVE "$_CAPTURE_DIR"
 	fi
+	# A lost race runs again in its place, the trailer that run's
+	[ -n "$_RERUN_DUE" ] && [ $CODE -eq 1 ] && [ "$_STATUS_EMITTED" != "true" ] && _RERUN_EXEC
 	if [ $CODE -ne 0 ] && [ "$_STATUS_EMITTED" != "true" ]; then
 		# A line pointing at the flags rather than the whole usage, which buried the refusal
 		[ -n "$_USAGE_POINT" ] && ECHO_E "\e[0;31m  'git edit -h' lists every flag – 'git edit -h <flag>...' gives each in full.\e[0m" >&2
@@ -1035,6 +1047,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
 	ECHO_E "\e[0;94m       proven identical commit for commit. GIT_EDIT_NO_REPLAY=1 keeps the commit-by-commit walk.\e[0m"
+	ECHO_E "\e[0;94m       A run losing the race to another caller runs itself again on the new tip, up to twice,\e[0m"
+	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -. GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – <ref> moved <old-sha> → <new-sha>\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – <ref> unchanged[, <why>]\e[0m"
@@ -8456,6 +8470,7 @@ _REQUIRE_IN_TIP () {
 		[ -n "$C" ] || continue
 		git merge-base --is-ancestor "$C" "$TIP" 2>/dev/null && continue
 		PRINT_ERR "The branch moved while this run read it – ${C:0:7} is no longer in its history"
+		_RERUN_LOST "$(git symbolic-ref -q HEAD || print -r -- HEAD)" && exit 1
 		ECHO_E "\e[0;31m  Nothing was applied – re-read the SHAs with 'git log' and run it again.\e[0m" >&2
 		exit 1
 	done
@@ -8925,6 +8940,7 @@ _REFUSE_STALE () {
 		fi
 	else
 		_UNWIND_KEPT_PATH
+		_RERUN_LOST "$1" "${4:-${_TYPED_KEEP[1]}}" && exit 1
 		ECHO_E "\e[0;31m  Run it again on the new tip.\e[0m" >&2
 	fi
 	_KEEP_TYPED_MESSAGE "${4:-${_TYPED_KEEP[1]}}" "${5:-${_TYPED_KEEP[2]}}"
@@ -9004,6 +9020,7 @@ _REFUSE_MOVED_DURING () {
 	else
 		PRINT_ERR "$WHAT moved during the $3 – refusing to overwrite"
 	fi
+	_RERUN_LOST "$1" "$4" && exit 1
 	ECHO_E "\e[0;31m  Nothing was applied – run the $3 again on its new tip.\e[0m" >&2
 	_KEEP_TYPED_MESSAGE "$4" "$5"
 	exit 1
@@ -10291,6 +10308,7 @@ _LAND_REBASE () {
 	if ! _MOVE_REF "$CMD"; then
 		[ -n "$_STATE_OWNED" ] && _REFUSE_MOVED_BRANCH "${REF#refs/heads/}" "$WT" "$TYPED" "$RERUN"
 		PRINT_ERR "Branch '${REF#refs/heads/}' moved during the $ACT – refusing to overwrite"
+		_RERUN_LOST "$REF" "$TYPED" && exit 1
 		ECHO_E "\e[0;31m  Nothing was applied – run the $ACT again on its new tip.\e[0m" >&2
 		_KEEP_TYPED_MESSAGE "$TYPED" "$RERUN"
 		exit 1
@@ -10527,6 +10545,7 @@ _REFUSE_EXEC_BASE_MOVED () {
 	# `--commit` pins the tip it composed on, which the caller never named
 	if [ ${#OPT_COMMIT} -gt 0 ]; then
 		PRINT_ERR "$BRANCH moved to ${ORIG_HEAD:0:7} while the commit was composed on ${BASE:0:7} – nothing landed, so run it again"
+		_RERUN_LOST "$3"
 		return 0
 	fi
 	if ! git merge-base --is-ancestor "$BASE" "$ORIG_HEAD" 2>/dev/null; then
@@ -13518,11 +13537,14 @@ _FOLD_SOURCE () {
 # – it would take back what landed since – named as the caller gave it, whole files or a `--tree`
 _TREE_MOVED () {
 	# Args: <the tip now>
+	# Files and inputs a re-run reads again, where a `--tree` stays as the caller composed it
 	if [ ${#OPT_WHOLE} -gt 0 ] && ! _INPUTS_GIVEN; then
 		PRINT_ERR "The files were read on ${TREE_BASE:0:7}, but the branch moved to ${1:0:7} since – nothing was applied"
+		_RERUN_LOST "$(git symbolic-ref -q HEAD || print -r -- HEAD)" && exit 1
 		ECHO_E "\e[0;31m  Run it again, reading them on the current tip.\e[0m" >&2
 	elif _INPUTS_GIVEN; then
 		PRINT_ERR "The inputs${OPT_WHOLE:+ and the files taken whole} were composed on ${TREE_BASE:0:7}, but the branch moved to ${1:0:7} since – nothing was applied"
+		_RERUN_LOST "$(git symbolic-ref -q HEAD || print -r -- HEAD)" && exit 1
 		ECHO_E "\e[0;31m  Run it again, composing them on the current tip.\e[0m" >&2
 	else
 		PRINT_ERR "--tree $AMEND_TREE_GIVEN was composed on ${TREE_BASE:0:7}, but HEAD is ${1:0:7} now – nothing was applied"
@@ -14140,6 +14162,7 @@ SEQEOF
 		# Named as the caller ran it – the autosquash only builds the fold
 		local NOW=$(git rev-parse -q --verify "$REF" 2>/dev/null)
 		PRINT_ERR "Branch '${REF#refs/heads/}' moved${NOW:+ from ${ORIG_HEAD:0:7} to ${NOW:0:7}} during the fold – refusing to overwrite"
+		_RERUN_LOST "$REF" && exit 1
 		PRINT_TEXT "Nothing was applied; %s untouched – retry when ready." 33 "$(_FOLD_SOURCE)"
 		exit 1
 	fi
@@ -16611,6 +16634,7 @@ _SNAPSHOT_RUN () {
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		[ -n "$_STATE_OWNED" ] && _REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$WT"
 		PRINT_ERR "Branch '$STATE_BRANCH' moved during the snapshot fold – refusing to overwrite"
+		_RERUN_LOST "$STATE_BRANCH" && exit 1
 		PRINT_TEXT "Nothing was applied; %s untouched – retry when ready." 33 "$(_FOLD_SOURCE)"
 		exit 1
 	fi
@@ -17197,6 +17221,7 @@ _SPLIT_APPLY () {
 	PRINT_CMD "$CMD"
 	if ! _MOVE_REF "$CMD"; then
 		PRINT_ERR "Ref '$REF' moved during split – refusing to overwrite"
+		_RERUN_LOST "$REF" && exit 1
 		PRINT_TEXT "Split history is at %s (not applied)." 33 "$PREV_NEW"
 		exit 1
 	fi
@@ -17778,6 +17803,7 @@ GIT_REORDER () {
 	PRINT_CMD "$UPDATE_CMD" 90
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
+		_RERUN_LOST "$REF" && exit 1
 		PRINT_TEXT "Reordered history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
 	fi
@@ -17979,6 +18005,7 @@ GIT_ONTO () {
 		PRINT_CMD "$UPDATE_CMD" 90
 		if ! _MOVE_REF "$UPDATE_CMD"; then
 			PRINT_ERR "Branch '${REF#refs/heads/}' moved during replant – refusing to overwrite"
+			_RERUN_LOST "$REF"
 			exit 1
 		fi
 		_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$UPSTREAM_FULL" "onto ${UPSTREAM_FULL:0:7}"
@@ -18153,6 +18180,7 @@ _ONTO_REPLAY () {
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		[ -n "$LAND_FROM" ] && _REFUSE_LAND_MOVED "$REF" "$OLD"
 		PRINT_ERR "Branch '${REF#refs/heads/}' moved during replant – refusing to overwrite"
+		_RERUN_LOST "$REF" && exit 1
 		PRINT_TEXT "Replanted history is at %s (not applied)." 33 "$NEW_HEAD"
 		exit 1
 	fi
@@ -19374,6 +19402,7 @@ _REFUSE_LAND_MOVED () {
 	# Args: <ref> <tip the run read>
 	local NOW=$(git rev-parse -q --verify "$1" 2>/dev/null)
 	PRINT_ERR "Branch '${1#refs/heads/}' moved from ${2:0:7} to ${NOW:0:7} during the land – refusing to overwrite"
+	_RERUN_LOST "$1" && exit 1
 	ECHO_E "\e[0;31m  Nothing landed – land it onto the new tip: git edit --land=$(_LIT "$(_SHQ "$LAND_FROM")")\e[0m" >&2
 	exit 1
 }
@@ -24033,12 +24062,58 @@ _RESUME_EXEC () {
 		rm -rf "$W"
 	done
 	cd "$_START_DIR" 2>/dev/null || cd "${$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null):h}"
-	local -a ENV=(-u GIT_CONFIG_PARAMETERS "GIT_EDIT_EXPECT_PAUSE=$2") RUN=("$_SELF")
+	_EXEC_SELF "GIT_EDIT_EXPECT_PAUSE=$2" "$1"
+}
+
+# Runs the script with <arg>... in this run's place, in the caller's environment plus <name=value>
+_EXEC_SELF () {
+	# Args: <name=value> <arg>...
+	local -a ENV=(-u GIT_CONFIG_PARAMETERS "$1") RUN=("$_SELF")
+	shift
 	[ -n "$_CALLER_GCP_SET" ] && ENV+=("GIT_CONFIG_PARAMETERS=$_CALLER_GCP")
 	# A copy run as `zsh git-edit` need not be executable itself
 	[ -x "$_SELF" ] || RUN=("${commands[zsh]:-zsh}" "$_SELF")
 	trap - EXIT
-	exec env "${ENV[@]}" "${_CALLER_ENV[@]}" "${RUN[@]}" "$1"
+	exec env "${ENV[@]}" "${_CALLER_ENV[@]}" "${RUN[@]}" "$@"
+}
+
+# Hands a race lost on <ref> to a fresh run the exit trap starts once it cleaned up, at most twice,
+# where that run composes it all again: Nothing applied, no pause, stdin, typed message or `--exec`
+# – failing otherwise, the trailer then naming the rerun a caller reading it alone would miss
+_RERUN_LOST () {
+	# Args: <ref> [<message typed in an editor>]
+	local NOW TRIES=""
+	if [ -z "$GIT_EDIT_NO_RERUN$2${_TYPED_KEEP[1]}$_READ_STDIN$_STATE_OWNED$_LANDED_MOVE$_DEFERRED_SIGNAL" ] && (( _RERUNS < 2 )) && \
+	   (( ${#_TODO} + ${#OPT_EXEC} + ${#OPT_CONTINUE} + ${#OPT_SKIP} == 0 )); then
+		_RERUN_DUE=$(( _RERUNS + 1 ))
+		NOW=$(git rev-parse -q --verify "$1" 2>/dev/null)
+		_MOVED_BY "$1"
+		if [ -n "$REPLY" ]; then
+			PRINT_TEXT "Lost the race – %s moved %s to %s – running it again on the new tip, re-run %s of 2." 33 "$REPLY" "${1#refs/heads/}" "${NOW:0:7}" "$_RERUN_DUE"
+		else
+			PRINT_TEXT "Lost the race – %s moved to %s – running it again on the new tip, re-run %s of 2." 33 "${1#refs/heads/}" "${NOW:0:7}" "$_RERUN_DUE"
+		fi
+		return 0
+	fi
+	# A pause taken up has a remedy of its own, which its refusal names
+	[ -n "$_STATE_OWNED" ] && return 1
+	(( _RERUNS )) && TRIES="lost on each of $(( _RERUNS + 1 )) tries, "
+	if [[ "$_LAST_ERROR" == *"run it again"* ]]; then
+		_LAST_ERROR+="${TRIES:+ – ${TRIES%, }}"
+	elif [[ "$_LAST_ERROR" == *" – nothing was applied" ]]; then
+		_LAST_ERROR="${_LAST_ERROR% – nothing was applied} – ${TRIES}nothing was applied, so run it again"
+	else
+		_LAST_ERROR+=" – ${TRIES}nothing was applied, so run it again"
+	fi
+	return 1
+}
+
+# Starts the re-run `_RERUN_LOST` found due, from where this run started
+_RERUN_EXEC () {
+	cd "$_START_DIR" 2>/dev/null || return 0
+	# Ignored while the exit trap runs, which would carry over into the re-run
+	trap - HUP INT TERM
+	_EXEC_SELF "GIT_EDIT_RERUNS=$_RERUN_DUE" "${_RERUN_ARGS[@]}"
 }
 
 # Ends a run at the pause it recorded – a caller resumes with `--continue`, so the run
@@ -25932,6 +26007,7 @@ if [ ${#OPT_TEXT} -gt 0 ]; then
 	fi
 	if [ "$TEXT_VALUE" = "-" ]; then
 		TEXT_VALUE=$(cat)
+		_READ_STDIN=1
 	fi
 	# Keep the un-normalized text so a records batch can split on its own `--- `
 	# headers – the single-message stripspace below would still leave those

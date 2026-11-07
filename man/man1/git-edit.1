@@ -1406,7 +1406,9 @@ to offer, a failure refuses outright and names the SHA, and
 applies it.
 .IP
 The compare\-and\-swap covers the \fIcommand\fR's own run and nothing
-before it. A history built before the run (elsewhere, then landed with
+before it. Losing it refuses rather than run the \fIcommand\fR again, which
+may do something else the second time. A history built before the run
+(elsewhere, then landed with
 .BR "git reset \-\-hard" )
 says nothing of the tip it was built on. So whatever reached the branch
 meanwhile would leave with the rest, and the run would still report
@@ -1497,7 +1499,8 @@ or
 which requires it
 (skips the editor).
 .B \-\-text \-
-reads the message from standard input. With
+reads the message from standard input, which a run losing the race then has
+no more of, so it refuses rather than run itself again. With
 .BR \-\-amend\-into
 it must be given up front, not on
 .BR \-\-continue :
@@ -2957,7 +2960,20 @@ nothing applied once its branch moved off the tip it read, or another run
 paused on that branch since it started. The refusal names who moved the
 branch: a git\-edit run by its operation and
 .B GIT_EDIT_ACTOR
-label, or a commit outside git\-edit. A pause wins over a run in flight, which
+label, or a commit outside git\-edit. The run then runs itself again on the
+new tip, up to twice, naming each loss and re\-run as it goes and ending in
+one trailer \(em wherever a fresh run composes it all again from the same
+arguments: nothing applied, no pause taken up, and no message typed or read
+from standard input, so never an
+.BR \-\-exec ,
+a
+.B \-\-continue
+or a
+.BR "\-\-text \-" .
+Past the last try the refusal stands, its trailer saying nothing was applied,
+so run it again;
+.B GIT_EDIT_NO_RERUN
+keeps every loss a refusal. A pause wins over a run in flight, which
 reruns with
 .B \-\-wait=540
 to run on the tip the pause's landing leaves; a resume refused keeps its
@@ -3369,6 +3385,12 @@ If set, the stops of a fold's, a squash's, a placement's, a move's or an
 edit's replay all pause for the resolver, none made by its line replacements
 or, a move's, by line identity; a fold's final step still resolves itself as
 the staged tree.
+.TP
+.B GIT_EDIT_NO_RERUN
+If set, a run that lost the race to another caller refuses at once instead of
+running itself again on the new tip, up to twice \(em for a script or suite
+that pins the refusal, or retries on its own terms. See
+.BR "Many sessions at once" .
 .TP
 .B GIT_EDIT_PROGRESS
 If set, the verify gate names each commit as its check starts even where

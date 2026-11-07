@@ -45,6 +45,8 @@ GIT_SELFTEST () {
 	# unset, so a startup file filling in a default only where it is unset leaves it alone
 	# – and its name would join every message naming a pause's owner
 	export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME=
+	# A race a check stages is lost once, which a re-run would win – scenario 268 turns them back on
+	export GIT_EDIT_NO_RERUN=1
 
 	# Deterministic clock – every git call takes a unique ascending timestamp via the `:-`
 	# fallbacks, since real-time fixtures landed up to 8 commits per wall-clock second and
@@ -344,8 +346,8 @@ GIT_SELFTEST () {
 			print -r -- "$ST_ERR" | head -3 | sed 's/^/       | /'
 			continue
 		fi
-		# A label one scenario set would close every reflog message the next compares
-		export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME=
+		# A label one scenario set would close every reflog message the next compares – re-runs go off too
+		export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME= GIT_EDIT_NO_RERUN=1
 		source "$ST_FILE"
 	done
 
