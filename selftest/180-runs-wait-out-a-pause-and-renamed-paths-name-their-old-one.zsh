@@ -277,7 +277,7 @@ _ST_OUT_HAS "noting it" 'paired\.txt is pair\.txt at [0-9a-f]\{7\} – git.s ren
 WT_MAN="${SELF:h}/man/man1/git-edit.1"
 [ -f "$WT_MAN" ] || WT_MAN="${SELF:h}/../share/man/man1/git-edit.1"
 # Its roff unescaped, a `\ ` being a space kept on one line
-WT_RE=$(sed -n "s/.*grep -E '\(\^[^']*\)'.*/\1/p" "$WT_MAN" | head -1 | sed 's/\\ / /g')
+WT_RE=$(sed -n "s/.*grep -E[^']*'\(\^[^']*\)'.*/\1/p" "$WT_MAN" | head -1 | sed 's/\\ / /g')
 _ST_PZ_C q.txt q1 "WR q" && _ST_PZ_C s.txt s1 "WR s"
 _ST_RUN --reorder HEAD HEAD~1
 _ST_EQ "a reorder lands" "$RC" "0"

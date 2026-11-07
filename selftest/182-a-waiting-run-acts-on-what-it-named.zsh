@@ -262,7 +262,7 @@ _ST_CHECK "putting the body back under the edit's subject, byte for byte" cmp -s
 # The documented grep keeps a fold's note that the tip tree came out other than staged
 PW_MAN="${SELF:h}/man/man1/git-edit.1"
 [ -f "$PW_MAN" ] || PW_MAN="${SELF:h}/../share/man/man1/git-edit.1"
-PW_RE=$(sed -n "s/.*grep -E '\(\^[^']*\)'.*/\1/p" "$PW_MAN" | head -1 | sed 's/\\ / /g')
+PW_RE=$(sed -n "s/.*grep -E[^']*'\(\^[^']*\)'.*/\1/p" "$PW_MAN" | head -1 | sed 's/\\ / /g')
 _ST_PZ_NEW pw10
 _ST_PZ_C fa.txt a1 "PW10 base"
 print -r -- x1 > fb.txt && git add fb.txt && git commit -qm "PW10 x1"
@@ -276,7 +276,10 @@ _ST_EQ "which the man page's grep keeps, beside the trailer" \
 PW_RD="${SELF:h}/README.md"
 [ -f "$PW_RD" ] || PW_RD="${SELF:h}/../README.md"
 if [ -f "$PW_RD" ]; then
-	_ST_EQ "the README gives the same grep" "$(sed -n "s/.*grep -E '\(\^(Verif[^']*\)'.*/\1/p" "$PW_RD" | head -1)" "$PW_RE"
+	# Flags and all, so neither page can drop the -B2 that keeps a refusal's fix
+	_ST_EQ "the README gives the same grep" "$(sed -n "s/.*\(grep -E[^']*'^(Verif[^']*'\).*/\1/p" "$PW_RD" | head -1)" \
+		"$(sed -n "s/.*\(grep -E[^']*'^(Verif[^']*'\).*/\1/p" "$PW_MAN" | head -1 | sed 's/\\ / /g')"
+	_ST_EQ "the man page's grep keeps two lines above each match" "$(sed -n "s/.*grep -E \(-B2\) '^(Verif.*/\1/p" "$PW_MAN" | head -1)" "-B2"
 	_ST_EQ "its --text row claims no note --amend-into never prints" "$(grep -c 'a body it drops is named, with the' "$PW_RD")" "0"
 fi
 cd "$TMP/repo"

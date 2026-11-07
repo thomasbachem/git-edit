@@ -93,11 +93,12 @@ mode but \fB\-\-exec\fR, whose command is yours and has no single target.
 Nothing above those two is guaranteed: a stat block or path list grows with
 the commit. Colour goes with the padding, so a captured line starts at column
 zero and a name reaches further than a count \(em
-.B "| grep -E '^(Verif|Tip\ tree|Trees|Note:\ tip\ tree|git-edit:)'"
+.B "| grep -E -B2 '^(Verif|Tip\ tree|Trees|Note:\ tip\ tree|git-edit:)'"
 answers what landed, what checked it and whether the trees came out as they
 were (\fBTip tree identical\fR, \fBTrees unchanged\fR) or not (a fold's
 \fBNote: tip tree differs from the staged result\fR), wherever the gate's
-summary sits. A run
+summary sits \(em its \fB\-B2\fR keeping the two lines above each match, where
+a refusal names its fix. A run
 that had a gate and declined it reports that too \(em
 .B "Verify skipped \(en --no-verify was passed, so `npm test` never ran"
 \(em so silence means only that the repo configured no gate.
