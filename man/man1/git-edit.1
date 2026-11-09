@@ -1829,7 +1829,8 @@ commit moved up or dropped leaves missing what sat below it. It runs at each
 commit a move or reorder puts directly below one that came before it: the
 topmost commit moved down, or the one a commit moved up lands on, where a
 commit it jumped over that needed it still fails. It also runs at each commit
-a conflict resolution wrote, and at the new tip. A resolution is checked
+a conflict resolution wrote \(em by hand, or by git\-edit itself through changed
+words \(em and at the new tip. A resolution is checked
 where it was made because git replayed the rest, and a later commit can heal
 a wrong one before the tip ever shows it.
 .IP
