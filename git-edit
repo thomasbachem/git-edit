@@ -1953,13 +1953,26 @@ _PRINT_EMPTIED_STOP () {
 		ECHO_E "\e[0;33m  Its change there is what the placed one builds on – cancel with 'git edit --abort', then run it again placed past that change: --after=${S:0:12} in place of --${${LABEL#* }%% *}=${LABEL##* }\e[0m" >&2
 		return 0
 	fi
-	# The latest commit replayed before it that changes one of those files, which holds that change
+	# The latest commit replayed before it whose change touches a line its own change
+	# does, which holds that change – else the latest changing one of those files
+	local F L FB=""
+	local -A OWN
+	for F in "$@"; do
+		for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$S" "$F")}"; do
+			[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && OWN[$F$'\n'${L:1}]=1
+		done
+	done
 	for O in ${(Oa)${(f)"$(LC_ALL=C sed '$d' "$GITDIR/rebase-merge/done" 2>/dev/null | LC_ALL=C awk '$1 ~ /^(p|pick|r|reword|e|edit)$/ { print $2 }')"}}; do
 		O=$(git -C "$WT" rev-parse -q --verify "$O^{commit}" 2>/dev/null) || continue
 		[ "$O" != "$S" ] && [ -n "$(git -C "$WT" --literal-pathspecs diff-tree -r --root --no-commit-id --name-only --no-renames "$O" -- "$@" 2>/dev/null)" ] || continue
-		M=$O
-		break
+		FB=${FB:-$O}
+		for F in "$@"; do
+			for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$O" "$F")}"; do
+				(( ${+OWN[$F$'\n'${L:1}]} )) && { M=$O; break 3; }
+			done
+		done
 	done
+	M=${M:-$FB}
 	# Older first, as the absorption guard's squash names them – a move only where one came between
 	if [ -n "$M" ] && git -C "$WT" merge-base --is-ancestor "$S" "$M" 2>/dev/null; then
 		K=" – where ${M:0:12}'s change builds on ${S:0:12}'s, keep their order"

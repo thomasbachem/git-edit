@@ -142,3 +142,18 @@ _P199_AS ps-a --continue
 _ST_OUT_HAS "as the refusal the answer meets names it" \
 	"git edit --move=${PS_M:0:12} --after=${PS_S:0:12}, or squash the two into one: git edit -s=${PS_S:0:12} ${PS_M:0:12}\$"
 _P199_AS ps-a --abort
+# The commit named is the one touching its lines, never a later one sharing only its file
+_ST_PZ_NEW ps7
+git config rerere.enabled false
+_ST_PZ_C f.txt $'1\n2\n3\n4' "PS7 base"
+_ST_PZ_C f.txt $'1\nX\n3\n4' "PS7 S" && PS_S=$(git rev-parse HEAD)
+_ST_PZ_C f.txt $'1\nY\n3\n4' "PS7 M" && PS_M=$(git rev-parse HEAD)
+_ST_PZ_C f.txt $'1\nY\n3\nW' "PS7 P" && _ST_PZ_C o.txt o "PS7 top"
+_P199_AS ps-a --move="$PS_M" --move=':/PS7 P' --before="$PS_S"
+_ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'1\nY\n3\n4'
+_P199_AS ps-a --continue
+_ST_OUT_HAS "a stop whose answer would empty its commit, a later commit sharing only its file between" \
+	"resolved to it, ${PS_S:0:7} PS7 S keeps no change of its own there"
+_ST_OUT_HAS "names the commit rewriting its line, right after it already" \
+	"where ${PS_M:0:12}'s change builds on ${PS_S:0:12}'s, keep their order, or squash the two into one: git edit -s=${PS_S:0:12} ${PS_M:0:12}\$"
+_P199_AS ps-a --abort
