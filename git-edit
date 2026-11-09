@@ -21677,7 +21677,7 @@ _GUARD_ABSORBED () {
 	local WT=$1 NEW=$2 T R O FILE L K NOTE BY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1}
 	local -i I P V SIG MOVED ALL_SIG LOST_SIG
 	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST VO VR VL HUNKS SUPERSEDED
-	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED
+	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED ELSEWHERE
 	[ -n "$STATE_STOPS" ] && [ -n "$STATE_REPLAY" ] || return 0
 	# Each stop's tip, the commit it builds and its files, NUL-joined
 	for T in ${(z)STATE_STOPS}; do
@@ -21780,12 +21780,19 @@ _GUARD_ABSORBED () {
 			# A line it rewrote that the stop's commit only rewrites again – that line's old text
 			# alone there, not what its hunk put in its place – counts where the later commit lost
 			# most of its change to the file, a commit keeping the rest of it named as superseded
-			ALL_SIG=0 LOST_SIG=0
+			ALL_SIG=0 LOST_SIG=0 ELSEWHERE=()
+			# A line the rebuilt commit still writes in another file moved with its code, never lost
+			if [ -n "$R" ]; then
+				for L in "${(@f)$(git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$R" -- . ":(exclude,literal)$FILE" 2>/dev/null | \
+					LC_ALL=C awk '/^(\+\+\+|---) / { next } /^[-+]/')}"; do
+					[ -n "$L" ] && ELSEWHERE[${L:0:1}${(j: :)${=${L:1}}}]=1
+				done
+			fi
 			for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$O" "$FILE")}"; do
 				[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && ALL_SIG+=1
 			done
 			for L in "${LOSTL[@]}"; do
-				[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+REBASED[$L]} )) && LOST_SIG+=1
+				[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+REBASED[$L]} && ! ${+ELSEWHERE[${L:0:1}${(j: :)${=${L:1}}}]} )) && LOST_SIG+=1
 			done
 			# A lost line the stop's own change undoes is the new order's doing, a moved commit's
 			# change cancelling against it, not taken in – so it counts toward neither side
