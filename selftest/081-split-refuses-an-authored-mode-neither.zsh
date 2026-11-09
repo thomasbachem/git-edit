@@ -17,6 +17,7 @@ _ST_RUN --continue --text "XS extracted"
 _ST_EQ "the authored mode is refused" "$RC" "1"
 _ST_OUT_HAS "naming the path and the modes around it" 'xs\.sh: authored 100644, [0-9a-f]* carries 100755, its parent 100755'
 _ST_OUT_HAS "and the fix" 'chmod it in'
+_ST_OUT_HAS "its trailer naming the path" '^git-edit: error – Worktree changes a file mode .* – xs\.sh$'
 _ST_EQ "the branch never moved" "$(git rev-parse HEAD)" "$XS_TIP"
 chmod +x "$XS_WT/xs.sh"
 _ST_RUN --continue --text "XS extracted"

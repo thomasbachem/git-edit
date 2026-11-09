@@ -1368,6 +1368,16 @@ PRINT_ERR () {
 	fi
 }
 
+# Ends the trailer's error with the first <entry> and how many follow, which a caller
+# cutting the output to its trailer, or dropping the indented list above it, still reads
+_TRAIL_FIRST () {
+	# Args: <entry>...
+	(( $# )) || return 0
+	_LAST_ERROR+=" – $1"
+	(( $# > 1 )) && _LAST_ERROR+=" and $(( $# - 1 )) more"
+	return 0
+}
+
 # Gives every git this run spawns, once a run, the config the branch's checkout reads and a detached
 # worktree misses – an `onbranch` include's identity or signing key, a relative `core.hooksPath`
 # whose untracked hooks (husky's) only the checkout has – through an `includeIf` last in what
@@ -10611,6 +10621,7 @@ _REFUSE_EXEC_BLANK_LINES () {
 	# Args: <new-head> <gained, one `<sha> <subject>` a line>
 	local -a GAINED=("${(@f)2}")
 	PRINT_ERR "HEAD moved to ${1:0:7}, but ${#GAINED} message(s) it brings in end in more blank lines than before – a message read with %B and fed raw to commit-tree gains one each pass, which git log and git range-diff both hide"
+	_TRAIL_FIRST "${(@)GAINED%% *}"
 	print -rl -- "${(@)GAINED[1,5]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}    /;s/\$/${_OFF}/" >&2
 	(( ${#GAINED} > 5 )) && ECHO_E "\e[0;31m    … and $(( ${#GAINED} - 5 )) more\e[0m" >&2
 	ECHO_E "\e[0;31m  Take each message from git cat-file commit, or trim its trailing newlines to one, and rebuild.\e[0m" >&2
@@ -17536,6 +17547,7 @@ _CONTINUE_SPLIT () {
 		done
 		if [ ${#MODE_STRAYS[@]} -gt 0 ]; then
 			PRINT_ERR "Worktree changes a file mode neither ${X:0:7} nor its parent carries – a file written anew, without its executable bit?"
+			_TRAIL_FIRST "${(@)MODE_STRAYS%%: *}"
 			printf '%s\n' "${MODE_STRAYS[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 			ECHO_E "\e[0;31m  chmod it in $(_LIT "$STATE_WORKTREE") to the mode a half should carry, then retry – or pass --allow-mode-change to keep it.\e[0m" >&2
 			exit 1
@@ -21918,15 +21930,21 @@ _GUARD_ABSORBED () {
 	_CLEANUP_HOOK=""
 	# Noted, so `--status` offers the cancel alone – a resume of the replay as it stands refuses again
 	[ "$STATE_ABSORBED" = "$NEW" ] || _STATE_NOTE "absorbed=$NEW"
+	# The trailer names each by commit and file alone, a subject running past what a cut keeps
+	local -a LOST_SHORT
+	local LS
+	for LS in "${LOST[@]}"; do LOST_SHORT+=("${LS%% *} ${LS##* – }"); done
 	# A placement before the change it builds on, as its stop's hint said – not a taking in
 	if [ -n "$BUILDS_ON" ] && [ -n "$PAST" ]; then
 		PRINT_ERR "A later commit's change is what the placed one builds on – placed before it, that change empties, so nothing was applied"
+		_TRAIL_FIRST "${LOST_SHORT[@]}"
 		printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again placed past that change: --after=${PAST:0:12} in place of --${${STATE_PLACE_LABEL#* }%% *}=${STATE_PLACE_LABEL##* } – or, where the placed change reads on the text before that one too, placed as now, its stop resolved to that, the later commit replaying its own change on top.\e[0m" >&2
 		_EMIT_REFUSED_KEPT "$WT"
 		exit 1
 	fi
 	PRINT_ERR "A resolution took in what a later commit changes – replayed, it lost lines of its own change that a stop's commit now holds, so nothing was applied"
+	_TRAIL_FIRST "${LOST_SHORT[@]}"
 	printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	# A reorder's stop holds no snapshot to take – its commit's change alone, on what the new order
 	# puts first, which a change building on a commit moved past it lacks – so it offers the move
@@ -21973,11 +21991,13 @@ _GUARD_HAND_FINISH () {
 	# One still in progress takes no `rebase -i` over those commits
 	if [ -d "$(_GIT_FACT -C "$WT" rev-parse --path-format=absolute --git-path rebase-merge 2>/dev/null)" ]; then
 		PRINT_ERR "The rebase continued by hand in $WT committed conflict markers – nothing was applied"
+		_TRAIL_FIRST "${BAD[@]}"
 		printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again.\e[0m" >&2
 		exit 1
 	fi
 	PRINT_ERR "The rebase finished by hand in $WT committed conflict markers – nothing was applied"
+	_TRAIL_FIRST "${BAD[@]}"
 	printf '%s\n' "${BAD[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
 	ECHO_E "\e[0;31m  Strip them from those commits ('git -C $(_LIT "$(_SHQ "$WT")") rebase -i ${STOP_TIP:0:12}'), then 'git edit --continue' – or cancel with 'git edit --abort'.\e[0m" >&2
 	exit 1

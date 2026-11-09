@@ -35,6 +35,8 @@ _ST_EQ "resolved to the placed text, it refuses" "$RC:$(git rev-parse HEAD)" "1:
 _ST_OUT_HAS "led by the reason the stop gave" "A later commit's change is what the placed one builds on – placed before it, that change empties, so nothing was applied"
 _ST_OUT_LACKS "never as a resolution taking it in" 'A resolution took in'
 _ST_OUT_HAS "naming the rewrap, left out as emptied" "${PB_WRAP:0:7} PB rewrap – f\.js (left out as emptied)"
+_ST_OUT_HAS "its trailer naming it by commit and file, before the replay kept" \
+	"^git-edit: error – A later commit's change is what .* so nothing was applied – ${PB_WRAP:0:7} f\.js (left out as emptied) – its replay kept in "
 _ST_OUT_HAS "and the placement past it" "placed past that change: --after=${PB_WRAP:0:12} in place of --after=${PB_BASE:0:7}"
 _ST_RUN --status
 _ST_OUT_HAS "its status names the refusal" 'refused by the check of what its stops took in – a resume refuses it again as it stands'
@@ -65,6 +67,8 @@ _ST_RESOLVE "${PB_WT:-$ST_NO_WT}" f.txt "$(print -l 1 P R 4)"
 _ST_RUN --continue
 _ST_EQ "a stop taking in a change it never built on refuses" "$RC:$(git rev-parse HEAD)" "1:$PB_T"
 _ST_OUT_HAS "named as taken in" 'A resolution took in what a later commit changes'
+_ST_OUT_HAS "its trailer naming the first commit and file it lost" \
+	'^git-edit: error – A resolution took in what .* so nothing was applied – [0-9a-f]\{7\} f\.txt (left out as emptied) – its replay kept in '
 _ST_OUT_LACKS "never as what the placed one builds on" 'is what the placed one builds on'
 _ST_RUN --abort
 unset GIT_EDIT_NO_SELF_RESOLVE

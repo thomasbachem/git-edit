@@ -38,6 +38,7 @@ _HF_HAND_FINISH "${HF_WT:-$ST_NO_WT}"
 _ST_RUN --continue
 _ST_EQ "a drop finished by hand with markers committed lands nothing" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "naming what carries them" 'committed conflict markers'
+_ST_OUT_HAS "its trailer naming the commit and file carrying them" '^git-edit: error – The rebase finished by hand in .* committed conflict markers – nothing was applied – [0-9a-f]\{7\} f\.txt$'
 # While one the resolver amended clean lands
 print -r -- $'1\n2y\n3' > "${HF_WT:-$ST_NO_WT}/f.txt"
 git -C "${HF_WT:-$ST_NO_WT}" commit -qa --amend --no-edit

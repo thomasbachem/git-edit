@@ -25,6 +25,7 @@ _ST_EQ "a loop feeding %B raw refuses" "$RC" "1"
 _ST_OUT_HAS "counting both messages" '2 message(s) it brings in end in more blank lines'
 _ST_OUT_HAS "naming one already ending in a blank line" '^    [0-9a-f]\{7,\} BL two$'
 _ST_OUT_HAS "and one that did not" '^    [0-9a-f]\{7,\} BL three$'
+_ST_OUT_HAS "its trailer naming the first of them and how many more" '^git-edit: error – HEAD moved to .* both hide – [0-9a-f]\{7\} and 1 more$'
 _ST_OUT_HAS "and the fix" 'Take each message from git cat-file commit'
 _ST_EQ "moving nothing" "$(git rev-parse HEAD)" "$BL_TIP"
 _ST_RUN --exec --dry-run --base="$BL_TIP" -- sh "$TMP/bl-loop.sh" "$BL_BASE" raw
