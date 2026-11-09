@@ -15242,6 +15242,38 @@ _RESOLVE_STOPS_ON () {
 	return 1
 }
 
+# Answers whether two changes to one line edit words apart – <old> to <mid> and <mid> to <new>,
+# each narrowed to the words of <mid> outside what it shares with the other line at either end,
+# an untouched word between the two spans
+_WORDS_APART () {
+	# Args: <old line> <mid line> <new line>
+	local -a O=(${=1}) M=(${=2}) N=(${=3})
+	local -i A1 A2 B1 B2
+	_WORDS_CHANGED O M
+	A1=${reply[1]} A2=${reply[2]}
+	_WORDS_CHANGED N M
+	B1=${reply[1]} B2=${reply[2]}
+	if (( A1 < A2 && B1 < B2 )); then
+		(( A2 < B1 || B2 < A1 ))
+	elif (( A1 == A2 && B1 == B2 )); then
+		(( A1 != B1 ))
+	elif (( A1 == A2 )); then
+		(( A1 < B1 || A1 > B2 ))
+	else
+		(( B1 < A1 || B1 > A2 ))
+	fi
+}
+
+# Puts into `reply` the span of array <mid>'s words outside the longest prefix and suffix
+# it shares with array <other>, as its first word's offset and one past its last
+_WORDS_CHANGED () {
+	# Args: <other array> <mid array>
+	local -i P=0 S=0 NO=${#${(P)1}} NM=${#${(P)2}}
+	while (( P < NO && P < NM )) && [ "${${(P)1}[P + 1]}" = "${${(P)2}[P + 1]}" ]; do P+=1; done
+	while (( S < NO - P && S < NM - P )) && [ "${${(P)1}[NO - S]}" = "${${(P)2}[NM - S]}" ]; do S+=1; done
+	reply=($P $(( NM - S )))
+}
+
 # Answers whether each line of array <old> surely pairs with array <new>'s at its place
 # – sharing a word, and no word one drops another adds, as a rewrap does
 _MOVE_LINES_PAIR () {
@@ -15742,6 +15774,18 @@ _MOVE_FILE_PLAN () {
 		# as makes its old text occur once there, none of it lines the stop's commit changes,
 		# while inserted lines stay with the stop's commit, between two of those too
 		if (( AC && K && 2 * K >= AC )); then
+			# A line both commits edited in place, at words apart, holds an edit of the stop's
+			# commit's own that a carry would take from it – left to the hand instead
+			if (( AC == NC )); then
+				for (( J = 0; J < AC; J++ )); do
+					X=$(( A + J ))
+					(( ${+MS[$X]} && ${+MAP[$X]} )) || continue
+					Y=${MAP[$X]}
+					_WORDS_APART "${_MV_O[Y]}" "${_MV_B[X]}" "${_MV_T[N + J]}" || continue
+					REPLY="its change at line $X edits words a commit still to come left alone, on a line that commit rewrote – make it there on the line as it stands before this stop, keeping it this commit's own"
+					return 1
+				done
+			fi
 			OWNS=()
 			LO=A HI=$(( AC ? A + AC - 1 : A + 1 ))
 			for (( J = LO; J <= HI; J++ )); do

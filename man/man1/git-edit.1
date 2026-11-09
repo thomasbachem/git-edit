@@ -684,7 +684,9 @@ its own edits, beside the moved lines too, and lines it inserts, between two
 moved ones too, while its edits to the moved lines, or to a file the moved
 commit adds, land with the commit that wrote them; moved earlier, the moved
 commit's edits to lines a crossed commit wrote land with that one. Lines each
-edited in place go their own ways; a hunk rewrapping moved lines with older
+edited in place go their own ways, and a line both edited in place, at words
+an untouched one lies between, stops the run there for the hand, as no carry
+keeps that edit its own commit's; a hunk rewrapping moved lines with older
 ones lands whole with the moved commit while its lines are at least half of
 those the hunk replaces. The run names each edit that landed with another
 commit, and the step taking it stops to make it. The step that must build
