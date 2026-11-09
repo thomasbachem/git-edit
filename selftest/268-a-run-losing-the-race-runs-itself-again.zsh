@@ -88,6 +88,34 @@ _ST_EQ "a move losing the race once lands on its re-run, below the peer's commit
 	"$RC:$(git log --format=%s -3 | tr '\n' ,):$(_RR_TRAILERS)" "0:RR peer,RR target,RR above,:1"
 _ST_OUT_HAS "naming the loss" '^Lost the race – .* re-run 1 of 2'
 
+# A reorder whose newest commit a peer rewords right after the run checks it against the tip –
+# the window a live read of the tip once fell in – runs again as a lost race, never refused as
+# that commit missing, the shim keeping its author date as a rewrite does
+_ST_PZ_NEW rr8
+_ST_PZ_C a.txt a "RR8 A"
+_ST_PZ_C b.txt b "RR8 B"
+_ST_PZ_C c.txt c "RR8 C"
+_ST_PZ_C t.txt t "RR8 top"
+RR_TGT=$(git rev-parse ':/RR8 C')
+mkdir -p "$TMP/rr8-shim"
+cat > "$TMP/rr8-shim/git" <<SHIM
+#!/bin/sh
+"$(whence -p git)" "\$@"
+RC=\$?
+if [ "\$1 \$2 \$3 \$4" = "merge-base --is-ancestor $RR_TGT $(git rev-parse HEAD)" ] && [ ! -e "$TMP/rr8.fired" ]; then
+	: > "$TMP/rr8.fired"
+	C=\$(GIT_AUTHOR_DATE="$(git log -1 --format=%aI "$RR_TGT")" "$(whence -p git)" commit-tree -p "$RR_TGT^" -m "RR8 C reworded" "$RR_TGT^{tree}")
+	"$(whence -p git)" update-ref -m "commit: RR8 peer" refs/heads/main "\$("$(whence -p git)" commit-tree -p "\$C" -m "RR8 top" "refs/heads/main^{tree}")"
+fi
+exit \$RC
+SHIM
+chmod +x "$TMP/rr8-shim/git"
+PATH="$TMP/rr8-shim:$PATH" _ST_RUN --reorder "$RR_TGT" "$(git rev-parse ':/RR8 B')" "$(git rev-parse ':/RR8 A')"
+_ST_EQ "a reorder whose newest commit a peer reworded lands on its re-run, in the order asked" \
+	"$RC:$(git log --format=%s | tr '\n' ,):$(_RR_TRAILERS)" "0:RR8 top,RR8 A,RR8 B,RR8 C reworded,:1"
+_ST_OUT_HAS "naming the loss" '^Lost the race – .* re-run 1 of 2'
+_ST_OUT_LACKS "never refused as missing from the branch" 'not reachable from HEAD'
+
 # `GIT_EDIT_NO_RERUN` keeps the loss a refusal, its trailer naming the rerun
 _RR_NEW rr6 1
 export GIT_EDIT_NO_RERUN=1

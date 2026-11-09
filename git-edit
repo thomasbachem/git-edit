@@ -17677,10 +17677,8 @@ GIT_REORDER () {
 	# Contiguity: the span oldest..newest must equal the selection exactly
 	local OLDEST=${COMMITS[1]}
 	local NEWEST=${COMMITS[-1]}
-	if ! git merge-base --is-ancestor "$NEWEST" HEAD 2>/dev/null; then
-		PRINT_ERR "Commit ${NEWEST:0:7} is not reachable from HEAD"
-		exit 1
-	fi
+	# The tip read again – a peer's rewrite since the read above lost this run the race
+	_REQUIRE_IN_TIP "$(git rev-parse HEAD)" "$NEWEST"
 	local EXPECTED
 	if git rev-parse --verify "$OLDEST^" >/dev/null 2>&1; then
 		EXPECTED=($(git rev-list --reverse "$OLDEST^..$NEWEST"))
