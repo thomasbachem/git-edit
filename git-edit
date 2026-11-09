@@ -17908,10 +17908,90 @@ _PRINT_REORDER_SUMMARY () {
 	[ -n "$_IN_LANDED_STEP" ] || { _LANDED_STEP "$0" "$@"; return; }
 	local BASE=$(git merge-base "$1" "$2" 2>/dev/null)
 	# A span from the root shares no base – then all of the new tip's history
-	local AFTER=$(git rev-list --count ${BASE:+$BASE..}"$2" 2>/dev/null)
-	PRINT_TEXT "%s – new order (oldest-first):" 32 "Tip tree identical ✓"
-	git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	local AFTER=$(git rev-list --count ${BASE:+$BASE..}"$2" 2>/dev/null) E
+	local -a NEWL
+	# A long span shows what moved – its commits matched by author date and subject
+	if (( AFTER > 12 )) && _ORDER_EXCERPT "${(@f)$(git log --reverse --format='%aI %ae %s' ${BASE:+$BASE..}"$1" 2>/dev/null)}" \
+		-- "${(@f)$(git log --reverse --format='%aI %ae %s' ${BASE:+$BASE..}"$2" 2>/dev/null)}"; then
+		NEWL=("${(@f)$(git log --reverse --format='%h %s' ${BASE:+$BASE..}"$2" 2>/dev/null)}")
+		PRINT_TEXT "%s – new order (oldest-first) around the %s of %s commits moved:" 32 "Tip tree identical ✓" "$REPLY" "$AFTER"
+		for E in "${reply[@]}"; do
+			[[ $E == …* ]] && print -r -- "  … ${E#…} more in their old order" || print -r -- "  ${NEWL[E]}"
+		done | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	else
+		PRINT_TEXT "%s – new order (oldest-first):" 32 "Tip tree identical ✓"
+		git log --reverse --format='  %h %s' -"${AFTER:-12}" "$2" | head -12 | _CARET_LINES | LC_ALL=C sed "/./!d;s/^/${_DIM}/;s/\$/${_OFF}/"
+	fi
 	_PRINT_DROPPED_COMMITS "$1" "$2"
+}
+
+# Names the order `--reorder` asks for – a long one by its excerpt around the commits
+# moving in it, as `_ORDER_EXCERPT` picks them, otherwise commit by commit
+_PRINT_REORDER_TO () {
+	local E SUBJECT MSG
+	local -a ARGS
+	if ! _ORDER_EXCERPT "${COMMITS[@]}" -- "${COMMITS_DESIRED[@]}"; then
+		PRINT_ACTION "Reordering to %s" "${COMMITS_DESIRED[@]}"
+		return
+	fi
+	MSG="Reordering ${#COMMITS_DESIRED} commits – the new order around the $REPLY moved:"
+	for E in "${reply[@]}"; do
+		if [[ $E == …* ]]; then
+			MSG+=$'\n'" - … ${E#…} more in their old order"
+			continue
+		fi
+		SUBJECT=$(git log -1 --pretty=format:'%s' "${COMMITS_DESIRED[E]}" --)
+		MSG+=$'\n'" - %s"
+		ARGS+=("${COMMITS_DESIRED[E]:0:7}\e[22m (${SUBJECT//\\/$_LITB})")
+	done
+	local _PT_RAW=1
+	PRINT_TEXT "$MSG" 36 "${ARGS[@]}"
+}
+
+# Puts into `reply` what an excerpt of a new order shows – each commit outside one longest run
+# keeping the old order's, with the commit it now follows, each stretch left out as `…<count>`
+# – and the moved commits' count into `REPLY`, failing where the order is short or none moved
+_ORDER_EXCERPT () {
+	# Args: <old order's key>... `--` <new order's key>... – oldest first, the shown as new positions
+	local -a OLD NEW SEQ TAILS PREV
+	local -A POS KEPT SHOW
+	local -i I N K LO HI MID MOVED=0 SKIP=0
+	I=${argv[(ie)--]}
+	OLD=("${@[1,I-1]}") NEW=("${@[I+1,-1]}") N=${#NEW}
+	(( N > 12 )) || return 1
+	for (( I = 1; I <= ${#OLD}; I++ )); do POS[${OLD[I]}]=$I; done
+	# Patience sorting – the tail of each run length's best run, and each commit's predecessor
+	for (( I = 1; I <= N; I++ )); do
+		SEQ[I]=${POS[${NEW[I]}]:-0}
+		(( SEQ[I] )) || continue
+		LO=1 HI=K
+		while (( LO <= HI )); do
+			MID=$(( (LO + HI) / 2 ))
+			(( SEQ[TAILS[MID]] < SEQ[I] )) && LO=$(( MID + 1 )) || HI=$(( MID - 1 ))
+		done
+		PREV[I]=$(( LO > 1 ? TAILS[LO - 1] : 0 ))
+		TAILS[LO]=$I
+		(( LO > K )) && K=LO
+	done
+	(( K )) && for (( I = TAILS[K]; I; I = PREV[I] )); do KEPT[$I]=1; done
+	for (( I = 1; I <= N; I++ )); do
+		(( ${+KEPT[$I]} )) && continue
+		MOVED+=1 SHOW[$I]=1
+		(( I > 1 )) && SHOW[$(( I - 1 ))]=1
+	done
+	(( MOVED )) || return 1
+	reply=()
+	for (( I = 1; I <= N; I++ )); do
+		if (( ${+SHOW[$I]} )); then
+			(( SKIP )) && reply+=("…$SKIP")
+			SKIP=0
+			reply+=($I)
+		else
+			SKIP+=1
+		fi
+	done
+	(( SKIP )) && reply+=("…$SKIP")
+	REPLY=$MOVED
 }
 
 # Resolves where `$1`, a branch tip, left `$2`, the upstream – a rewritten upstream orphans
@@ -27294,7 +27374,7 @@ if [[ "$ACTION" == "resquash" ]]; then
 	exit 0
 fi
 if [[ "$ACTION" == "reorder" ]]; then
-	PRINT_ACTION "Reordering to %s" "${COMMITS_DESIRED[@]}"
+	_PRINT_REORDER_TO
 	GIT_REORDER
 	PRINT_COMPLETED "$REORDER_NEW_HEAD" "$REORDER_REF" true
 	exit 0
