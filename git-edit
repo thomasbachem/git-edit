@@ -1641,6 +1641,42 @@ _TODO_LINE_NAMED () {
 	REPLY+=" # $(git -C "$1" log -1 --format=%s "${W[2]}" 2>/dev/null)"
 }
 
+# Names each file a move's stop staged clean that holds lines a moved commit still to come adds
+# – its own commit came after that one in the old order, so what it added or rewrote whole there
+# can carry those lines, which no conflict shows – reading the caller's `UNMERGED`
+_PRINT_MOVED_LINES_STAGED () {
+	# Args: <worktree> <commit the stop builds>
+	local WT=$1 C=$2 M F L
+	local -a MV OUT
+	local -A ADDS N_AT BY_AT
+	local -i N
+	MV=(${=${STATE_MOVED:-${OPT_MOVE:+${MOVE_SET[*]}}}})
+	(( ${#MV} )) && C=$(git -C "$WT" rev-parse -q --verify "$C^{commit}" 2>/dev/null) || return 0
+	# Each line with a word a moved commit older than it adds, whitespace aside
+	for M in "${MV[@]}"; do
+		git -C "$WT" merge-base --is-ancestor "$M" "$C" 2>/dev/null || continue
+		for L in "${(@f)$(git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$M" 2>/dev/null | \
+			LC_ALL=C awk '/^\+\+\+ / { next } /^\+/')}"; do
+			[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && ADDS[${(j: :)${=${L:1}}}]=${ADDS[${(j: :)${=${L:1}}}]:-${M:0:7}}
+		done
+	done
+	(( ${#ADDS} )) || return 0
+	# One diff of what the stop staged, each added line by its file – a path git quotes left out
+	for L in "${(@f)$(git -C "$WT" -c core.quotePath=false diff --cached -U0 --no-renames --no-ext-diff --no-textconv --no-color --dst-prefix=/ HEAD 2>/dev/null | \
+		LC_ALL=C awk '/^\+\+\+ \// { f = substr($0, 6); next } /^\+\+\+ / { f = ""; next } /^\+/ && f != "" { print f "\t" substr($0, 2) }')}"; do
+		F=${L%%$'\t'*} L=${L#*$'\t'}
+		(( ${UNMERGED[(Ie)$F]} )) && continue
+		L=${(j: :)${=L}}
+		(( ${+ADDS[$L]} )) || continue
+		N=$(( ${N_AT[$F]:-0} + 1 ))
+		N_AT[$F]=$N BY_AT[$F]=${BY_AT[$F]:-${ADDS[$L]}}
+	done
+	for F in ${(ok)N_AT}; do OUT+=("$F – ${N_AT[$F]} line(s) ${BY_AT[$F]} adds"); done
+	(( ${#OUT} )) || return 0
+	PRINT_TEXT "Staged clean, yet holding lines a moved commit still to come adds – what precedes this stop lacks that commit, so unless this stop's commit wrote them too, take them out:" 33 >&2
+	for F in "${OUT[@]}"; do ECHO_E "\e[0;33m  ${F//\\/$_LITB}\e[0m" >&2; done
+}
+
 # Prints the conflict context – unmerged files, the step we paused on and what remains, so
 # the resolver can tell a single resolution from a likely cascade
 # Echoes the unmerged files comma-separated to stdout for the trailer, the rest to stderr
@@ -1697,6 +1733,7 @@ _PRINT_CONFLICT_DETAIL () {
 			elif [[ "${STEP_WORDS[1]}" == (p|pick|r|reword|e|edit) ]]; then
 				BUILDS=$(git -C "$WT" log -1 --format='%h %s' "${STEP_WORDS[2]}" 2>/dev/null)
 				[ -n "$BUILDS" ] && PRINT_TEXT "This stop builds %s – resolve to what that commit holds, not to what later commits make of it." 33 "$BUILDS" >&2
+				_PRINT_MOVED_LINES_STAGED "$WT" "${STEP_WORDS[2]}"
 			fi
 		fi
 	fi

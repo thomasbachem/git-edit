@@ -34,6 +34,7 @@ _ST_EQ "moved past its code's relocation, the first commit it crosses stops" "$R
 _ST_RESOLVE "$(_ST_PZ_WT)" a.js $'const top = 1\n// Checks the sheet for what drops or breaks\nfor (const v of [...findA(src), ...findBroken(src)]) report(v)\nconst bottom = 2'
 _ST_RUN --continue
 _ST_EQ "the relocation stops in turn" "$RC" "2"
+_ST_OUT_HAS "naming the file it staged clean holding the moved commit's lines" "^  s\.js – 4 line(s) ${RL_O:0:7} adds$"
 _ST_RESOLVE "$(_ST_PZ_WT)" a.js $'const top = 1\nconst bottom = 2'
 _ST_RESOLVE "$(_ST_PZ_WT)" s.js $'// Checks the sheet for what drops or breaks\nfor (const v of [...findA(src), ...findBroken(src)]) report(v)'
 _ST_RUN --continue
