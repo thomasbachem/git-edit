@@ -10,7 +10,7 @@
 #   writer is not sure, or a file in no plain content conflict, pauses
 _ST_SCENARIO "\e[1;96m[263] a move resolves its stops by line identity\e[0m"
 local MI_M MI_S MI_OLD=""
-# Below git 2.50 no least change is sure, so whatever line identity resolves pauses there
+# Below git 2.50 no least change is sure, so what line identity alone resolves pauses there
 [[ "$(git --version)" =~ '^git version 2\.([0-9]+)\.' ]] && (( match[1] < 50 )) && MI_OLD=1
 # Prints <rev>'s `f` on one line
 _MI_AT () {
@@ -39,7 +39,8 @@ _MI_C "MI M" a m1 m2 b c d e f g h && MI_M=$(git rev-parse HEAD)
 _MI_C "MI S" a m1 m2 B c d e f g H && MI_S=$(git rev-parse HEAD)
 _ST_PZ_C x x1 "MI beside"
 _ST_RUN --move="$MI_M" --after="$MI_S"
-_MI_LANDS "a move later past a commit editing beside its lines lands, each keeping its own" \
+# Below git 2.50 too, the moved block taken back out of the crossed commit's stop
+_ST_EQ "a move later past a commit editing beside its lines lands, each keeping its own" \
 	"$RC:$(git log --format=%s | tr '\n' '|'):$(_MI_AT HEAD~2):$(_MI_AT HEAD~1)" \
 	"0:MI beside|MI M|MI S|MI base|:a B c d e f g H :a m1 m2 B c d e f g H "
 _ST_PZ_NEW mi-absorb
@@ -169,7 +170,8 @@ _MI_C "MI M" a m b c "}" "}" "}" d e && MI_M=$(git rev-parse HEAD)
 _MI_C "MI S" a m B c "}" "}" d e && MI_S=$(git rev-parse HEAD)
 _ST_PZ_C x x1 "MI beside"
 _ST_RUN --move="$MI_M" --after="$MI_S"
-_MI_LANDS "a change whose readings all agree lands" "$RC:$(_MI_AT HEAD~2):$(_MI_AT HEAD~1)" "0:a B c } } d e :a m B c } } d e "
+_ST_EQ "a change whose readings all agree lands, below git 2.50 by taking the moved line back" \
+	"$RC:$(_MI_AT HEAD~2):$(_MI_AT HEAD~1)" "0:a B c } } d e :a m B c } } d e "
 _ST_PZ_NEW mi-alike-moved
 _MI_C "MI base" a "}" b c
 _MI_C "MI M" a "}" "}" b c && MI_M=$(git rev-parse HEAD)

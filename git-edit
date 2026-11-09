@@ -15896,6 +15896,67 @@ _MOVE_OWNER () {
 	REPLY=${BL[1]%% *}
 }
 
+# Plans one conflicted file of a move's stop into the caller's `OUT_LINES` by taking back
+# the block the one commit still to come changing it adds there, its whole change to the file
+# – each way the block aligns found once in stages 1 and 3, taking out the same lines, and
+# the rest merging with stage 2 clean – `REPLY` naming that commit and the block's size
+_MOVE_TAKE_BACK () {
+	# Args: <worktree> <path> <stage 1 blob> <stage 2 blob>
+	#       <stage 3 blob> <scratch dir> <commit still to come>...
+	setopt local_options no_multibyte
+	local WT=$1 P=$2 TD=$6 A="" C T V KEY FIRST
+	local -a NEWA BLK CUR RES H B1 B3
+	local -A TEXTS
+	local -i S NN K I J
+	local -x GIT_LITERAL_PATHSPECS=1
+	for C in "${@:7}"; do
+		[ -n "$(git -C "$WT" diff-tree -r --no-commit-id --name-only --no-renames "$C" -- "$P" 2>/dev/null)" ] || continue
+		[ -z "$A" ] || return 1
+		A=$C
+	done
+	[ -n "$A" ] || return 1
+	# Its change to the file one hunk, adding lines alone – "<old count> <new start> <new count>"
+	H=(${(f)"$(git -C "$WT" diff-tree -p -U0 --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$A" -- "$P" 2>/dev/null | \
+		LC_ALL=C awk '/^@@ / { split($2, o, ","); split($3, n, ","); print (o[2] == "" ? 1 : o[2]), substr(n[1], 2), (n[2] == "" ? 1 : n[2]) }')"})
+	(( ${#H} == 1 )) || return 1
+	H=(${=H[1]})
+	(( H[1] == 0 && H[3] > 0 )) || return 1
+	S=${H[2]} NN=${H[3]}
+	_MOVE_BLOB_LINES "$WT" NEWA "$(git -C "$WT" rev-parse -q --verify "$A:$P" 2>/dev/null)" || return 1
+	# Every least alignment of the block, sliding along lines alike at either end
+	TEXTS[${(pj:\n:)NEWA[S,S+NN-1]}]=1
+	for (( K = S; K > 1; K-- )); do
+		[ "${NEWA[K-1]}" = "${NEWA[K+NN-1]}" ] || break
+		TEXTS[${(pj:\n:)NEWA[K-1,K+NN-2]}]=1
+	done
+	for (( K = S; K + NN <= ${#NEWA}; K++ )); do
+		[ "${NEWA[K]}" = "${NEWA[K+NN]}" ] || break
+		TEXTS[${(pj:\n:)NEWA[K+1,K+NN]}]=1
+	done
+	_MOVE_BLOB_LINES "$WT" B1 "$3" && _MOVE_BLOB_LINES "$WT" B3 "$5" || return 1
+	# Each alignment found once in stage 1 and in stage 3, every one taking out the same lines
+	for V in B1 B3; do
+		CUR=("${(@P)V}") FIRST=""
+		for T in "${(@k)TEXTS}"; do
+			BLK=("${(@ps:\n:)T}") J=0
+			for (( I = 1; I + NN - 1 <= ${#CUR}; I++ )); do
+				[ "${CUR[I]}" = "${BLK[1]}" ] && [ "${(pj:\n:)CUR[I,I+NN-1]}" = "$T" ] || continue
+				(( J )) && return 1
+				J=I
+			done
+			(( J )) || return 1
+			RES=("${(@)CUR[1,J-1]}" "${(@)CUR[J+NN,-1]}")
+			KEY=${(pj:\n:)RES}
+			[ -z "$FIRST" ] && FIRST=1 && set -A "$V" "${RES[@]}" && continue
+			[ "$KEY" = "${(pj:\n:)${(P)V}}" ] || return 1
+		done
+	done
+	_MOVE_PUT B1 "$TD/tb1" && _MOVE_PUT B3 "$TD/tb3" && git -C "$WT" cat-file blob "$4" >"$TD/tb2" 2>/dev/null || return 1
+	git merge-file -q "$TD/tb2" "$TD/tb1" "$TD/tb3" 2>/dev/null || return 1
+	_MOVE_READ OUT_LINES "$TD/tb2"
+	REPLY="$A $NN"
+}
+
 # Resolves the conflicted files of a move's stop in <worktree> by line identity where a placement's
 # resolution declined – a crossed commit's stop moving later, the moved commit's moving earlier:
 # each file in a plain content conflict, or one a commit still to come adds, as `_MOVE_FILE_PLAN`
@@ -15904,8 +15965,8 @@ _MOVE_OWNER () {
 _MOVE_CARRY_STOP () {
 	# Args: <worktree> <moved commit, oldest first>...
 	setopt local_options no_multibyte
-	local WT=$1 GD C CD F L TD REV OLDEST TAB=$'\t' LINE ADDER CP EXPECT
-	local -a MOVED=("${@:2}") DONE TODO RS FILES W RESOLVED REMOVED WHY RENAMED SAID
+	local WT=$1 GD C CD F L TD REV OLDEST TAB=$'\t' LINE ADDER CP EXPECT PLAN_WHY
+	local -a MOVED=("${@:2}") DONE TODO RS FILES W RESOLVED REMOVED WHY RENAMED SAID TAKEN
 	local -a OUT_LINES CARRY_TO CARRY_PATH CARRY_KIND CARRY_OLD CARRY_NOLD CARRY_NEW CARRY_NNEW CARRY_MIX
 	local -A ID MODE
 	local -i I K N
@@ -15951,12 +16012,20 @@ _MOVE_CARRY_STOP () {
 			N=${#CARRY_TO}
 			if [[ -n "${ID[1$TAB$F]}" && -n "${ID[2$TAB$F]}" && -n "${ID[3$TAB$F]}" && \
 			      "${MODE[1$TAB$F]}" == 100(644|755) && "${MODE[2$TAB$F]}" == "${MODE[1$TAB$F]}" && "${MODE[3$TAB$F]}" == "${MODE[1$TAB$F]}" ]]; then
-				if _MOVE_FILE_PLAN "$WT" "$F" "${ID[1$TAB$F]}" "${ID[2$TAB$F]}" "${ID[3$TAB$F]}" "$REV" "$TD" "${RS[@]}"; then
+				PLAN_WHY=""
+				if _MOVE_FILE_PLAN "$WT" "$F" "${ID[1$TAB$F]}" "${ID[2$TAB$F]}" "${ID[3$TAB$F]}" "$REV" "$TD" "${RS[@]}" || \
+				   { PLAN_WHY=$REPLY; _MOVE_TAKE_BACK "$WT" "$F" "${ID[1$TAB$F]}" "${ID[2$TAB$F]}" "${ID[3$TAB$F]}" "$TD" "${RS[@]}"; }; then
+					if [ -n "$PLAN_WHY" ]; then
+						# Taken back, the file carries nothing – the moved commit's own step adds the block again
+						CARRY_TO[N+1,-1]=() CARRY_PATH[N+1,-1]=() CARRY_KIND[N+1,-1]=() CARRY_OLD[N+1,-1]=()
+						CARRY_NOLD[N+1,-1]=() CARRY_NEW[N+1,-1]=() CARRY_NNEW[N+1,-1]=() CARRY_MIX[N+1,-1]=()
+						TAKEN+=("$F" "$REPLY")
+					fi
 					_MOVE_PUT OUT_LINES "$TD/r" && git -C "$WT" hash-object -w "$TD/r" >"$TD/id" 2>/dev/null && \
 						RESOLVED+=("${MODE[1$TAB$F]} $(<"$TD/id")$TAB$F") && continue
 					WHY+=("$F: its resolution could not be written")
 				else
-					WHY+=("$F: $REPLY")
+					WHY+=("$F: $PLAN_WHY")
 				fi
 			elif [[ -n "${ID[1$TAB$F]}" && -z "${ID[2$TAB$F]}" && -n "${ID[3$TAB$F]}" && \
 			        "${MODE[1$TAB$F]}" == 100(644|755) && "${MODE[3$TAB$F]}" == "${MODE[1$TAB$F]}" ]]; then
@@ -16048,6 +16117,12 @@ _MOVE_CARRY_STOP () {
 	(( ${#RESOLVED} )) && { print -rN -- "${RESOLVED[@]}" | git -C "$WT" update-index -z --index-info 2>/dev/null || return 1; }
 	for F in "${RESOLVED[@]}"; do
 		git -C "$WT" checkout-index -f -- "${F#*$TAB}" 2>/dev/null || return 1
+	done
+	for (( I = 1; I < ${#TAKEN}; I += 2 )); do
+		W=(${=TAKEN[I+1]})
+		PRINT_TEXT "%s (%s) takes the %s line(s) %s (%s) adds to %s back out, as what precedes it lacks that commit – its own step adds them again." 32 \
+			"${C:0:7}" "$(git -C "$WT" log -1 --format=%s "$C" 2>/dev/null)" "${W[2]}" "${W[1]:0:7}" \
+			"$(git -C "$WT" log -1 --format=%s "${W[1]}" 2>/dev/null)" "${TAKEN[I]}"
 	done
 	for F in "${REMOVED[@]}"; do
 		git -C "$WT" rm -q --cached -- "$F" 2>/dev/null && rm -f -- "$WT/$F" || return 1

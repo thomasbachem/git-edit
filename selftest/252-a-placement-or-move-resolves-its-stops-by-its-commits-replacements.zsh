@@ -95,7 +95,8 @@ _ST_RUN --abort
 # inserted beside a moved one makes, where nothing it builds tells their order
 _PM_PAUSED pm-move-resume move
 if [ -n "$PM_OLD" ]; then
-	_ST_EQ "as does a move's, its own stop paused before git 2.50" "$RC:$(git -C "$PM_WT" diff --name-only --diff-filter=U | tr '\n' ' ')" "2:f h "
+	_ST_EQ "as does a move's, its own stop paused before git 2.50, the crossed commit's line taken back out of h" \
+		"$RC:$(git -C "$PM_WT" diff --name-only --diff-filter=U | tr '\n' ' '):$(git -C "$PM_WT" show :h | tr '\n' ' ')" "2:f :h1 hN h2 "
 	_ST_RUN --abort
 else
 _ST_EQ "as does a move's, by line identity" \
