@@ -21754,6 +21754,16 @@ _PLACED_BUILDS_ON () {
 		<(_COMMIT_CHANGE_LINES "$WT" "$C" "$F" | LC_ALL=C sed -n 's/^-//p' | LC_ALL=C sort -u))" ]
 }
 
+# Prints the absorption guard's `LOST` entries, each with the stop
+# holding what it lost and one such line under it, from `LOST_WHY`
+_PRINT_LOST () {
+	local -i J
+	for (( J = 1; J <= ${#LOST}; J++ )); do
+		print -r -- "${LOST[J]}"
+		[ -z "${LOST_WHY[J]}" ] || print -r -- "  ${LOST_WHY[J]}"
+	done | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+}
+
 # Refuses a replay whose resolution at a stop took in what a later commit changes – a fold's stop
 # resolved to the file as the tip holds it, say – which no tree check sees, the tip ending the same:
 # a later commit, replayed, lost lines of its own change to a file a stop's commit changes, and most
@@ -21764,9 +21774,9 @@ _PLACED_BUILDS_ON () {
 # drop's or a replant's, nothing lost turns up there
 _GUARD_ABSORBED () {
 	# Args: <worktree> <new tip>
-	local WT=$1 NEW=$2 T R O FILE L K NOTE BY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1}
+	local WT=$1 NEW=$2 T R O FILE L K NOTE BY BY_LINE BY_WAY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1}
 	local -i I P V SIG MOVED ALL_SIG LOST_SIG
-	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST VO VR VL HUNKS SUPERSEDED
+	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST LOST_WHY VO VR VL HUNKS SUPERSEDED
 	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED ELSEWHERE
 	[ -n "$STATE_STOPS" ] && [ -n "$STATE_REPLAY" ] || return 0
 	# Each stop's tip, the commit it builds and its files, NUL-joined
@@ -21818,6 +21828,7 @@ _GUARD_ABSORBED () {
 				for T in "${INTO[@]}"; do
 					[ "$(git -C "$WT" rev-parse -q --verify "$T:$FILE" 2>/dev/null)" = "$L" ] || continue
 					LOST+=("$(git -C "$WT" log -1 --format='%h %s' "${R:-$O}") – $FILE$NOTE")
+					LOST_WHY+=("its content held at the stop for $(git -C "$WT" log -1 --format='%h (%s)' "${PAIRED[$T]:-$T}")")
 					break
 				done
 				continue
@@ -21838,7 +21849,7 @@ _GUARD_ABSORBED () {
 					esac
 				done
 			done
-			SIG=0 MOVED=0 BY=""
+			SIG=0 MOVED=0 BY="" BY_LINE=""
 			# A line it removes is never held, the stop's commit holding what replaced it – so it moved
 			# with a line its hunk adds that the stop's commit holds, the later version of that line
 			HUNKS=("${(@f)$(git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$O" -- ":(literal)$FILE" 2>/dev/null | \
@@ -21895,12 +21906,12 @@ _GUARD_ABSORBED () {
 					continue
 				elif (( ${+HELD[$L]} )); then
 					SIG+=1 MOVED+=1
-					BY=${BY:-${HELD[$L]}}
+					[ -n "$BY" ] || BY=${HELD[$L]} BY_LINE=$L
 				elif (( ${+UNDONE[$L]} )); then
 					continue
 				elif (( ${+SWAPPED[$L]} )); then
 					SIG+=1 MOVED+=1
-					BY=${BY:-${SWAPPED[$L]}}
+					[ -n "$BY" ] || BY=${SWAPPED[$L]} BY_LINE=$L
 				else
 					SIG+=1
 				fi
@@ -21908,6 +21919,8 @@ _GUARD_ABSORBED () {
 			(( SIG && MOVED * 2 > SIG )) || continue
 			[ -n "$BUILDS_ON" ] && ! _PLACED_BUILDS_ON "$WT" "${PAIRED[$BY]}" "$O" "$R" "$FILE" && BUILDS_ON=""
 			LOST+=("$(git -C "$WT" log -1 --format='%h %s' "${R:-$O}") – $FILE$NOTE")
+			[[ "$BY_LINE" == -* ]] && BY_WAY="its removal of" || BY_WAY="its line"
+			LOST_WHY+=("$BY_WAY \"${${BY_LINE:1}:0:60}\" held at the stop for $(git -C "$WT" log -1 --format='%h (%s)' "${PAIRED[$BY]:-$BY}")")
 			# The latest commit named, which a placement's hint offers to place after
 			PAST=$O
 			# The two as the branch had them, older first, for the squash a reorder's hint offers
@@ -21938,14 +21951,14 @@ _GUARD_ABSORBED () {
 	if [ -n "$BUILDS_ON" ] && [ -n "$PAST" ]; then
 		PRINT_ERR "A later commit's change is what the placed one builds on – placed before it, that change empties, so nothing was applied"
 		_TRAIL_FIRST "${LOST_SHORT[@]}"
-		printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+		_PRINT_LOST
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again placed past that change: --after=${PAST:0:12} in place of --${${STATE_PLACE_LABEL#* }%% *}=${STATE_PLACE_LABEL##* } – or, where the placed change reads on the text before that one too, placed as now, its stop resolved to that, the later commit replaying its own change on top.\e[0m" >&2
 		_EMIT_REFUSED_KEPT "$WT"
 		exit 1
 	fi
-	PRINT_ERR "A resolution took in what a later commit changes – replayed, it lost lines of its own change that a stop's commit now holds, so nothing was applied"
+	PRINT_ERR "A resolution took in what a later commit changes – replayed, it lost lines of its own change that an earlier stop's commit now holds, so nothing was applied"
 	_TRAIL_FIRST "${LOST_SHORT[@]}"
-	printf '%s\n' "${LOST[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	_PRINT_LOST
 	# A reorder's stop holds no snapshot to take – its commit's change alone, on what the new order
 	# puts first, which a change building on a commit moved past it lacks – so it offers the move
 	# right after that commit where others stood between the two, and a placement the same

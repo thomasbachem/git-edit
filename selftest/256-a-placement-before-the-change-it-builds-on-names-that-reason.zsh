@@ -70,5 +70,6 @@ _ST_OUT_HAS "named as taken in" 'A resolution took in what a later commit change
 _ST_OUT_HAS "its trailer naming the first commit and file it lost" \
 	'^git-edit: error – A resolution took in what .* so nothing was applied – [0-9a-f]\{7\} f\.txt (left out as emptied) – its replay kept in '
 _ST_OUT_LACKS "never as what the placed one builds on" 'is what the placed one builds on'
+_ST_OUT_HAS "each entry over the stop holding what it lost" '^    its .* held at the stop for [0-9a-f]\{7\} (PC placed)$'
 _ST_RUN --abort
 unset GIT_EDIT_NO_SELF_RESOLVE

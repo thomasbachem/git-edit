@@ -73,6 +73,7 @@ _ST_EQ "a stop taking in a later commit's change refuses" "$RC:$(git rev-parse H
 _ST_OUT_HAS "led by the reason, c2's change being what the placed one builds on" "A later commit's change is what the placed one builds on – placed before it, that change empties"
 _ST_OUT_LACKS "never as a resolution taking it in" 'A resolution took in'
 _ST_OUT_HAS "naming it" 'RB c2 f line 5 – f\.txt$'
+_ST_OUT_HAS "with the stop holding a line of its change" '^    its removal of "f line 5" held at the stop for [0-9a-f]\{7\} (RB3 wip on line 5)$'
 _ST_OUT_HAS "and the placement past it" "placed past that change: --after=${RB_C2:0:12} in place of --before=${RB_C2:0:7} – or, where the placed change reads on the text before that one too"
 _ST_RUN --status
 _ST_OUT_HAS "its status offers the cancel alone" "git-edit: paused – the replay in .* was refused, which a resume repeats; 'git edit --abort' cancels it"
