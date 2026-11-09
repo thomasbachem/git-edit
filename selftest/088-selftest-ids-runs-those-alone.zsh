@@ -65,6 +65,24 @@ _ST_EQ "a scenario file that fails to parse fails the run" "$RC" "1"
 _ST_OUT_HAS "naming it" 'FAIL.* 001-broken.zsh does not parse'
 _ST_OUT_HAS "the file after it still running" 'PASS.* after it'
 _ST_OUT_HAS "counted as one failure" '^git-edit: error – selftest 1/2 failed$'
+# A shell error in a scenario's own lines, or a function's it defines, fails the run too
+# – only printed, it passed, the checks after it running on – while git's own words on
+# stderr count for nothing, the files after it still running
+mkdir -p "$TMP/pick-runtime/selftest"
+cp "$SELF" "$TMP/pick-runtime/git-edit" && cp "$SELFTEST_DIR/lib.zsh" "$TMP/pick-runtime/selftest/"
+print -rl -- '_ST_SCENARIO "\e[1;96m[1] erring\e[0m"' 'ST_X=$(<"$TMP/no-such-file")' \
+	'_PR_ERR () { ST_X=$(<"$TMP/no-such-file-either") }' '_PR_ERR' '_ST_EQ "before it ends" 1 1' \
+	> "$TMP/pick-runtime/selftest/001-erring.zsh"
+print -rl -- '_ST_SCENARIO "\e[1;96m[2] fine\e[0m"' 'print -u2 -- "error: git'\''s own words on stderr"' '_ST_EQ "after it" 1 1' \
+	> "$TMP/pick-runtime/selftest/002-fine.zsh"
+OUT=$(GIT_EDIT_NO_AUTO_OPEN=1 "$TMP/pick-runtime/git-edit" --selftest </dev/null 2>&1)
+RC=$?
+_ST_EQ "a scenario whose own line raises a shell error fails the run" "$RC" "1"
+_ST_OUT_HAS "naming it" 'FAIL.* 001-erring.zsh raised a shell error of its own'
+_ST_OUT_HAS "and the error, in its own lines" '^ *| .*001-erring\.zsh:2: no such file or directory'
+_ST_OUT_HAS "and in a function it defines, named without a line" '^ *| _PR_ERR: no such file or directory'
+_ST_OUT_HAS "the file after it still running" 'PASS.* after it'
+_ST_OUT_HAS "counted as one failure" '^git-edit: error – selftest 1/3 failed$'
 # Through the real dispatch, in both spellings, the trailer saying it was not the whole suite
 _ST_RUN --selftest=70
 _ST_EQ "a pick runs" "$RC" "0"

@@ -126,7 +126,7 @@ for PB_S in sync carry; do
 		_ST_RUN_UNSYNCED --exec -- sh -c "$PB_C"
 		_ST_RUN --carry="$PB_OLD"
 	fi
-	PB_GOT+=("$(for PB_F in u e c m n r a; do print -rn -- "$PB_F:$(tr '\n' ' ' < $PB_F.txt 2>/dev/null)|"; done);$(git status --porcelain | LC_ALL=C sort | tr '\n' '|');$(git ls-files -s | cut -d' ' -f2 | tr '\n' ' ')")
+	PB_GOT+=("$(for PB_F in u e c m n r a; do print -rn -- "$PB_F:$({ tr '\n' ' ' < $PB_F.txt } 2>/dev/null)|"; done);$(git status --porcelain | LC_ALL=C sort | tr '\n' '|');$(git ls-files -s | cut -d' ' -f2 | tr '\n' ' ')")
 done
 _ST_EQ "a sync and a carry of one state end alike" "${PB_GOT[1]}" "${PB_GOT[2]}"
 _ST_EQ "each file as it should be, what conflicts left as it was" "${${PB_GOT[1]%;*}}" \

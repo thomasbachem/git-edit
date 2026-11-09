@@ -335,7 +335,8 @@ GIT_SELFTEST () {
 
 	# Sources each scenario file into this function, so what one leaves,
 	# its locals too, is there for the ones after it
-	local ST_FILE ST_ERR
+	local ST_FILE ST_ERR ST_LINE
+	local -a ST_ERRS
 	for ST_FILE in "${SELFTEST_FILES[@]}"; do
 		# One failing to parse would run up to its error and pass, so it parses first, running none
 		# of it – as a function body, where a stray `else` or `fi` shows, and in an `if false`,
@@ -348,7 +349,23 @@ GIT_SELFTEST () {
 		fi
 		# A label one scenario set would close every reflog message the next compares – re-runs go off too
 		export GIT_EDIT_ACTOR= GIT_EDIT_ACTOR_NAME= GIT_EDIT_NO_RERUN=1
-		source "$ST_FILE"
+		# A shell error in its own lines only prints, its checks running on – so its stderr, in a file
+		# of its own as a process it leaves running writes on, is read back – each line zsh opens with
+		# its file and a line number, or one of the suite's `_` functions, a failure, as git's never do
+		{ source "$ST_FILE" } 2>"$TMP/stderr-${ST_FILE:t}"
+		ST_ERRS=()
+		for ST_LINE in "${(@f)$(<"$TMP/stderr-${ST_FILE:t}")}"; do
+			if [[ "$ST_LINE" == "$ST_FILE":* && "${ST_LINE#"$ST_FILE":}" =~ '^[0-9]+: ' ]] || \
+			   [[ "$ST_LINE" =~ '^_[A-Za-z0-9_]+(:[0-9]+)?: ' ]]; then
+				ST_ERRS+=("$ST_LINE")
+			fi
+		done
+		[ -s "$TMP/stderr-${ST_FILE:t}" ] && cat -- "$TMP/stderr-${ST_FILE:t}" >&2
+		if (( ${#ST_ERRS} )); then
+			FAIL=$((FAIL+1))
+			ECHO_E "  \e[1;31mFAIL\e[0m ${ST_FILE:t} raised a shell error of its own"
+			print -rl -- "${ST_ERRS[@]}" | head -3 | sed 's/^/       | /'
+		fi
 	done
 
 	# ----- Summary -----

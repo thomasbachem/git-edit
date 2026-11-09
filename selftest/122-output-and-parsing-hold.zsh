@@ -112,7 +112,7 @@ _ST_EQ "and no tee reopens a stream it would truncate" "$(grep -n 'tee /dev/' "$
 _ST_PZ_NEW o10
 _ST_PZ_C base.txt b "OP base"
 OP_A=$'m\377.sh'
-if print -r -- echo > "$OP_A" 2>/dev/null; then
+if { print -r -- echo > "$OP_A" } 2>/dev/null; then
 	git add -- "$OP_A" && git commit -qm "OP M"
 	_ST_PZ_C other.txt o "OP other"
 	chmod +x "$OP_A" && git add -- "$OP_A"
