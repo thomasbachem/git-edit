@@ -1,8 +1,8 @@
 # What a run prints leads to the next step, and a resume takes what the caller resolved:
 # • A landing's output names its undo alone – the raw undo's re-sync and carry steps come from
 #   `--status` for the last run, and from an `--undo` finding it taken back already
-# • `--status` names a checkout left behind – its mark below the tip, with the bare carry, and the
-#   files a sync left unbrought, with the carry from their base, until merged
+# • `--status` names a checkout left behind – its mark below the tip on another tree, with the bare
+#   carry, and the files a sync left unbrought, with the carry from their base, until merged
 # • A resume stages each conflicted file whose markers are gone, in every mode that replays – one
 #   given none stays, named with the step staging it, and markers still there continue the conflict
 # • A squash changing the tip refuses before its gate runs, naming the paths
@@ -57,6 +57,27 @@ _ST_OUT_HAS "--status names a checkout left behind, with the bare carry" "^Your 
 _ST_RUN --carry
 _ST_RUN --status
 _ST_OUT_LACKS "and not once it is brought along" 'left behind'
+# One whose mark holds the tip's tree is named nothing to bring – past a reword, a batch reword,
+# a move and a squash, each keeping it – until a landing changes the tree unbrought
+_SO218_REPO s2b 2
+print -r -- g > g.txt && _ST_RUN --commit --text "SO g" -- g.txt
+print -r -- h > h.txt && _ST_RUN --commit --text "SO h" -- h.txt
+SO_OLD=$(git rev-parse HEAD)
+_ST_RUN -M --text "SO h reworded" "$SO_OLD"
+_ST_RUN --status
+_ST_OUT_LACKS "--status names no checkout left behind past a reword" 'left behind'
+_ST_RUN_IN "--- $(git rev-parse HEAD~1)"$'\n'"SO g reworded" -M --text -
+_ST_RUN --status
+_ST_OUT_LACKS "nor past a batch reword" 'left behind'
+_ST_RUN --move="$(git rev-parse HEAD~1)" --after="$(git rev-parse HEAD)"
+_ST_RUN --status
+_ST_OUT_LACKS "nor past a move keeping the tree" 'left behind'
+_ST_RUN -s -y --text "SO g+h" "$(git rev-parse HEAD~1)" "$(git rev-parse HEAD)"
+_ST_RUN --status
+_ST_OUT_LACKS "nor past a squash" 'left behind'
+_ST_RUN_UNSYNCED -d -y HEAD
+_ST_RUN --status
+_ST_OUT_HAS "but past a landing changing the tree unbrought, from the mark" "^Your checkout was left behind at ${SO_OLD:0:7}, the landings since not brought along – bring it along with: git edit --carry$"
 # A file a sync left on a conflict is named, with the carry from its base, until merged by hand
 _SO218_REPO s3 2 3
 SO_OLD=$(git rev-parse HEAD)

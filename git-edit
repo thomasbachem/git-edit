@@ -4456,7 +4456,9 @@ _STATUS_UNBROUGHT () {
 		(( KM && KB <= KM )) && FROM=$M
 		BY_FROM[$FROM]+="$P"$'\0'
 	done
-	if [ -n "$M" ]; then
+	# A mark holding the tip's tree leaves nothing to bring – a reword, a move or a squash leaves one
+	# so – bar files a sync left unbrought past it
+	if [ -n "$M" ] && { [ -n "${BY_FROM[$M]}" ] || ! _SAME_TREE "$M" "$TIP"; }; then
 		_CARRY_CMD "$CO"
 		PRINT_TEXT "Your checkout was left behind at %s, the landings since not brought along%s – bring it along with: %s" 33 "${M:0:7}" \
 			"${BY_FROM[$M]:+, files a sync left unbrought among them: $(_SOME_PATHS "${(@0)${BY_FROM[$M]%$'\0'}}")}" "$REPLY"
