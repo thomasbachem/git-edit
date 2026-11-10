@@ -341,7 +341,11 @@ Dropping every commit of the branch refuses.
 .B \-s, \-\-squash
 Merge \fIcommit\fRs into the oldest of them (or into \fItarget\fR with
 .BR \-s= \fItarget\fR),
-a single \fIcommit\fR into its parent. Auto\-routes to the plumbing path
+a single \fIcommit\fR into its parent.
+Commits older than \fItarget\fR replay right before it, in their order, as it
+was built on them \(em the fold keeping \fItarget\fR's authorship, and its
+message where \fB\-\-text\fR, \fB\-m\fR or a marker brings none.
+Auto\-routes to the plumbing path
 when the selection is a
 contiguous, merge\-free range whose target is the oldest commit.
 Given neither \fB\-\-text\fR nor \fB\-m\fR, the message follows the markers it

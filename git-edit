@@ -9955,6 +9955,20 @@ GIT_REBASE_SQUASH () {
 			SED_SCRIPT+=" -e '/^pick $C/d'"
 			APPEND+=$'\\\n'"$OP $C"
 		done
+		# A named target's older commits go right before it, in order, it folding into them – after it,
+		# it would replay without what it was built on – `_FOLD_AS_TARGET` then gives its authorship back
+		if [ -z "$_SQUASH_GROUPS" ] && [ "${COMMITS[1]}" != "$T" ]; then
+			local INSERT="" W=pick
+			APPEND=""
+			for C in "${COMMITS[@]}"; do
+				[ "$C" = "$T" ] && { W=""; continue; }
+				if [ -n "$W" ]; then INSERT+=$'\\\n'"$W $C" W=$OP; else APPEND+=$'\\\n'"$OP $C"; fi
+			done
+			SED_SCRIPT+=" -e '/^pick $T/i$INSERT'"
+			[ -n "$APPEND" ] && SED_SCRIPT+=" -e '/^pick $T/a$APPEND'"
+			SED_SCRIPT+=" -e 's/^pick $T/$OP $T/'"
+			continue
+		fi
 		SED_SCRIPT+=" -e '/^pick $T/a$APPEND'"
 	done
 	local TEXT_FILE=""
@@ -10026,12 +10040,14 @@ _PRINT_EMPTIED () {
 	for LINE in "${GONE[@]}"; do print -r -- "${LINE:0:7} ${LINE#* }"; done | _CARET_LINES | LC_ALL=C sed "s/^/  emptied: /;s/^/${_DIM}/;s/\$/${_OFF}/"
 }
 
-# Prints the commit a squash's rebase made of its target – the target's place in the todo,
-# each commit before it kept bar those squashed away, and those a replay dropped gone empty,
-# which find no commit of their authorship and subject next in the new line – proven by the
-# authorship a fold keeps, else the target itself
+# Prints the commit a squash's rebase made of its target – the target's place in the todo, each
+# commit before it kept bar those squashed away, and those a replay dropped gone empty, which find
+# no commit of their authorship and subject next in the new line – proven by the authorship a fold
+# keeps, else the target itself, or with `--place` nothing
 _SQUASHED_INTO () {
-	# Args: <old tip> <new tip> <target> <commit the caller named>...
+	# Args: [--place] <old tip> <new tip> <target> <commit the caller named>...
+	local PLACE=""
+	[ "$1" = --place ] && { PLACE=1; shift; }
 	local OLD=$1 NEW=$2 TGT=$3 C
 	shift 3
 	local OLDEST=$(git merge-base --octopus "$@" 2>/dev/null)
@@ -10046,11 +10062,46 @@ _SQUASHED_INTO () {
 		[ "$(git log -1 --format='%an%x01%ae%x01%ad%x01%s' --date=raw "$C" 2>/dev/null)" = "${NKEYS[K]}" ] && K+=1
 	done
 	C=${NEWS[K]}
-	if [ -n "$C" ] && [ "$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$C" 2>/dev/null)" = "$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$TGT" 2>/dev/null)" ]; then
+	if [ -n "$PLACE" ]; then
+		# Proven by the authorship of the oldest named commit, which a fold into it keeps, or the target's
+		[ -n "$C" ] && [[ "$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$C" 2>/dev/null)" == \
+			("$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$1" 2>/dev/null)"|"$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$TGT" 2>/dev/null)") ]] && \
+			print -r -- "$C"
+	elif [ -n "$C" ] && [ "$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$C" 2>/dev/null)" = "$(git log -1 --format='%an%x01%ae%x01%ad' --date=raw "$TGT" 2>/dev/null)" ]; then
 		print -r -- "$C"
 	else
 		print -r -- "$TGT"
 	fi
+}
+
+# Gives <fold> – <target> folded into its older commits, which leaves it their oldest's authorship
+# and message – <target>'s authorship, and the run's message, else its own, rebuilding everything
+# above it up to <tip> – the new tip into `REPLY`, <tip> where it has both
+_FOLD_AS_TARGET () {
+	# Args: <fold> <target> <tip> [<file holding --text> | keep – `-m`'s, the fold's already]
+	local AT=$1 TGT=$2 UPTO=$3 P WANT
+	local -a PA TA FA
+	TA=("${(@0)$(git log -1 --format='%an%x00%ae%x00%ad%x00%B%x00' --date=raw "$TGT")}")
+	FA=("${(@0)$(git log -1 --format='%an%x00%ae%x00%ad%x00%B%x00' --date=raw "$AT")}")
+	# The text set here, as a squash step its resolution emptied went with the editor applying it
+	if [ "$4" = keep ]; then
+		WANT=${FA[4]}
+	elif [ -n "$4" ]; then
+		WANT=$(LC_ALL=C cat -- "$4"; print -n x) || _REBUILD_FAILED "$AT"
+		WANT=${WANT%x}
+	else
+		WANT=${TA[4]}
+	fi
+	REPLY=$UPTO
+	[ "${TA[1]}" = "${FA[1]}" ] && [ "${TA[2]}" = "${FA[2]}" ] && [ "${TA[3]}" = "${FA[3]}" ] && [ "$WANT" = "${FA[4]}" ] && return 0
+	for P in $(git log -1 --format='%P' "$AT"); do PA+=(-p "$P"); done
+	_MSG_FILE "$WANT" || _REBUILD_FAILED "$AT"
+	PREV_NEW=$(_COMMIT_TREE_AS "$TGT" "${TA[1]}" "${TA[2]}" "${TA[3]}" "$(git rev-parse "$AT^{tree}")" "${PA[@]}" -F "$REPLY") || _REBUILD_FAILED "$AT"
+	PRINT_CMD "git commit-tree ${$(git rev-parse "$AT^{tree}"):0:7} ... -> ${PREV_NEW:0:7} # ${AT:0:7} as ${TGT:0:7}"
+	_RECORD_REWRITE "$AT" "$PREV_NEW"
+	PREV_OLD=$AT
+	_REBUILD_DESCENDANTS "$AT" "$UPTO"
+	REPLY=$PREV_NEW
 }
 
 # Refuses a squash whose replay ends off the tip's content, naming the commits the differing lines
@@ -10328,6 +10379,29 @@ _LAND_REBASE () {
 			[ "$_CAPTURE_REWRITES" = true ] && _CAPTURE_HOLD_PAIRS
 		fi
 		for T in "${TGTS[@]}"; do [ -n "${_SQUASHED_AT[$T]}" ] && AT+=("${_SQUASHED_AT[$T]}"); done
+	fi
+	# A named target its older commits went before takes its authorship back, with `--text`, `-m`'s
+	# message or its own – set on what the replay built, as above
+	if [ "$ACT" = squash ] && [ -z "$AUTO" ] && [ -n "$TGT" ] && [ "${NAMED[1]}" != "$TGT" ]; then
+		T=$(_SQUASHED_INTO --place "$OLD" "$NEW" "$TGT" "${NAMED[@]}")
+		if [ -n "$T" ]; then
+			# `--text` as its rebase's stand-in writes it, and a pause keeps it
+			local MSGF=""
+			if [ -n "$TEXT_VALUE" ]; then
+				_MSG_FILE "$TEXT_VALUE"$'\n' || exit 1
+				MSGF=$REPLY
+			elif [ -n "$_STATE_OWNED" ] && [ -s "$(_TEXT_MSG_PATH)" ]; then
+				MSGF=$(_TEXT_MSG_PATH)
+			elif (( ${#OPT_MESSAGE} )) || [ "$STATE_MESSAGE" = editor ]; then
+				MSGF=keep
+			fi
+			_FOLD_AS_TARGET "$T" "$TGT" "$NEW" "$MSGF"
+			if [ "$REPLY" != "$NEW" ]; then
+				NEW=$REPLY
+				git -C "$WT" update-ref --no-deref HEAD "$NEW" || exit 1
+				[ "$_CAPTURE_REWRITES" = true ] && _CAPTURE_HOLD_PAIRS
+			fi
+		fi
 	fi
 	# A message `-m`'s editor took is kept for the rerun
 	local TYPED="" RERUN="git edit -s${TGT:+=$TGT}"
