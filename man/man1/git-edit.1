@@ -393,10 +393,12 @@ and \fBsquash!\fR commits on the branch's first\-parent line that the journal
 names its
 .B GIT_EDIT_ACTOR
 label as landing \(em to a caller with none, those an unlabeled run or no
-git\-edit run landed. A commit is known there by its author, author date and
-subject, which a rewrite keeps, so a landing since that gave it a new SHA
-still leaves the run that brought it in: the first since it was made to bring
-it onto the branch, by a commit, land, undo, exec or edit. Another caller's are
+git\-edit run landed. A commit is known there by its author, author date,
+subject and the paths it changes, which a replay keeps, so a landing since
+that gave it a new SHA still leaves the run that brought it in: the first
+since it was made to bring it onto the branch. A run that gives one a new
+subject or paths \(em a reword, a fold into it, the half a split inserts \(em
+brings it in anew, as its caller's. Another caller's are
 left to it, as squashing a fix takes its context, and
 .B \-\-status
 lists them. With none of its own the run ends

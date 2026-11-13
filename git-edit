@@ -9600,7 +9600,7 @@ _SQUASH_GROUP_OF () {
 }
 
 # Puts into `reply` a line per commit `git log <arg>...` lists, "<head>\t<key>" – <head> as <format>
-# spells it, the key "<author date> <author>\t<subject>\t<paths it changes>", which a rewrite keeps
+# spells it, the key "<author date> <author>\t<subject>\t<paths it changes>", which a replay keeps
 # and whose paths tell apart two sessions' fixups of one target landing in one second
 _KEYED_LOG () {
 	# Args: <format> <git log arg>...
@@ -9618,8 +9618,8 @@ _KEYED_LOG () {
 # a bare `@` for an unlabeled run, empty for one made outside git-edit
 # • Known by `_KEYED_LOG`'s key, so a landing since that gave one a new SHA
 #   leaves the run that brought it in
-# • That run is the first since the commit was made to bring it onto <ref> – a commit, land, undo,
-#   exec or edit – one bringing it back later counting not
+# • That run is the first since the commit was made to bring its key onto <ref>, one bringing it
+#   back later counting not – a reword, fold or split giving it new subject or paths brings it anew
 _PENDING_FIXUPS () {
 	# Args: <ref>
 	local L K JF BY OLD NEW
@@ -9638,7 +9638,7 @@ _PENDING_FIXUPS () {
 	(( ${#PEND} )) || return 0
 	JF=$(_JOURNAL_FILE_PATH)
 	if [ -s "$JF" ]; then
-		JL=(${(f)"$(LC_ALL=C awk -v r="$1" -v s=$(( SINCE - 5 )) '$1 >= s + 0 && $2 == r && $5 ~ /^(commit|land|undo|exec|edit)$/' "$JF" 2>/dev/null)"})
+		JL=(${(f)"$(LC_ALL=C awk -v r="$1" -v s=$(( SINCE - 5 )) '$1 >= s + 0 && $2 == r' "$JF" 2>/dev/null)"})
 		for L in "${JL[@]}"; do F=(${=${L%%$'\t'*}}); NEWS+=("${F[4]}"); done
 		# Each new tip's parents and key in one pass – one atop the old tip brought in itself alone
 		if (( ${#NEWS} )); then
