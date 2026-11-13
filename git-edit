@@ -9804,6 +9804,16 @@ _PAUSED_SQUASH_INTO () {
 	(( ${#reply} ))
 }
 
+# Tells whether <commit> is a target the paused fold folds into, `--amend-into`'s or a squash's
+_FOLDS_INTO () {
+	# Args: <commit>
+	if [ "$STATE_OPERATION" = amend-into ]; then
+		[ -n "$1" ] && [ "$1" = "$STATE_TARGET" ]
+	else
+		_PAUSED_SQUASH_INTO && (( ${reply[(Ie)$1]} ))
+	fi
+}
+
 # Finds the commit a `-s=auto` replay made of each target, into `_SQUASHED_AT` – old and new line
 # walked side by side, past markers and commits dropped gone empty, a target matched by the
 # authorship a fold keeps, others by their subject too – empty for a target its fixups emptied
@@ -22024,9 +22034,9 @@ _PRINT_LOST () {
 # drop's or a replant's, nothing lost turns up there
 _GUARD_ABSORBED () {
 	# Args: <worktree> <new tip>
-	local WT=$1 NEW=$2 T R O FILE L K NOTE BY BY_LINE BY_WAY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1}
+	local WT=$1 NEW=$2 T R O FILE L K NOTE BY BY_LINE BY_WAY PAIR PAST AFTER BUILDS_ON=${STATE_PLACED:+1} MOVABLE=1
 	local -i I P V SIG MOVED ALL_SIG LOST_SIG
-	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST LOST_WHY VO VR VL HUNKS SUPERSEDED
+	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST LOST_WHY VO VR VL HUNKS SUPERSEDED LOST_FROM LOST_AT
 	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED ELSEWHERE
 	[ -n "$STATE_STOPS" ] && [ -n "$STATE_REPLAY" ] || return 0
 	# Each stop's tip, the commit it builds and its files, NUL-joined
@@ -22079,6 +22089,7 @@ _GUARD_ABSORBED () {
 					[ "$(git -C "$WT" rev-parse -q --verify "$T:$FILE" 2>/dev/null)" = "$L" ] || continue
 					LOST+=("$(git -C "$WT" log -1 --format='%h %s' "${R:-$O}") – $FILE$NOTE")
 					LOST_WHY+=("its content held at the stop for $(git -C "$WT" log -1 --format='%h (%s)' "${PAIRED[$T]:-$T}")")
+					MOVABLE=""
 					break
 				done
 				continue
@@ -22169,6 +22180,10 @@ _GUARD_ABSORBED () {
 			(( SIG && MOVED * 2 > SIG )) || continue
 			[ -n "$BUILDS_ON" ] && ! _PLACED_BUILDS_ON "$WT" "${PAIRED[$BY]}" "$O" "$R" "$FILE" && BUILDS_ON=""
 			LOST+=("$(git -C "$WT" log -1 --format='%h %s' "${R:-$O}") – $FILE$NOTE")
+			# A split moves them into the stop's commit only from one later commit adding them, keeping more
+			# – never a rewrite, whose old text the commits between still read
+			LOST_FROM+=("$O") LOST_AT+=("${PAIRED[$BY]:-$BY}")
+			[ -n "$R" ] && (( ! ${#SWAPPED} )) || MOVABLE=""
 			[[ "$BY_LINE" == -* ]] && BY_WAY="its removal of" || BY_WAY="its line"
 			LOST_WHY+=("$BY_WAY \"${${BY_LINE:1}:0:60}\" held at the stop for $(git -C "$WT" log -1 --format='%h (%s)' "${PAIRED[$BY]:-$BY}")")
 			# The latest commit named, which a placement's hint offers to place after
@@ -22221,6 +22236,17 @@ _GUARD_ABSORBED () {
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again, resolving each stop to what the commit it builds holds – the later commits replay their own changes on top – or placed past the change it builds on: --after=${PAST:0:12} in place of --${${STATE_PLACE_LABEL#* }%% *}=${STATE_PLACE_LABEL##* }\e[0m" >&2
 	else
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again, resolving each stop to what the commit it builds holds – the later commits replay their own changes on top.\e[0m" >&2
+		# A fold making its target depend on lines one later commit adds wants them moved there whole,
+		# which a split does with that commit's tree kept, so the tip stays as it was
+		if [ -n "$MOVABLE" ] && (( ${#${(u)LOST_FROM[@]}} == 1 && ${#${(u)LOST_AT[@]}} == 1 )) && _FOLDS_INTO "${LOST_AT[1]}"; then
+			K=$(git -C "$WT" log -1 --format=%s "${LOST_AT[1]}" 2>/dev/null)
+			if [ "$STATE_OPERATION" = amend-into ]; then
+				T=fold L="then 'git edit -s=auto' and this fold again"
+			else
+				T=squash L="then this squash again, that fixup in it"
+			fi
+			ECHO_E "\e[0;31m  Where this $T makes ${LOST_AT[1]:0:7} ($(_LIT "$K")) depend on lines $(_LIT "$(git -C "$WT" log -1 --format='%h (%s)' "${LOST_FROM[1]}" 2>/dev/null)") adds, move them into it as a fixup first: $(_LIT "git edit --split=${LOST_FROM[1]:0:12} --text $(_SHQ "fixup! $K")"), its pause left holding those lines alone – $L.\e[0m" >&2
+		fi
 	fi
 	_EMIT_REFUSED_KEPT "$WT"
 	exit 1

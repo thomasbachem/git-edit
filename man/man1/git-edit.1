@@ -2729,7 +2729,15 @@ or
 placed after the latest commit named instead, which the refusal names.
 Where the placed commit's own change rewrites lines that commit wrote, its
 change there emptied, the refusal gives that reason \(em the change is what
-the placed one builds on \(em and names the placement past it first. The
+the placed one builds on \(em and names the placement past it first. Where
+a fold or squash took into its target lines one later commit adds, rewriting
+none and keeping the rest of its change, the refusal names their move too,
+for a fold that makes the target depend on them: that commit split by
+.B \-\-split
+into those lines alone, as a
+.B fixup!
+of the target, then the fold run again with it \(em the split keeps that
+commit's tree, so the tip stays as it was. The
 replay stays paused as refused, and a
 .B \-\-continue
 of it refuses the same, so
