@@ -56,6 +56,7 @@ if [ -f "$MANPAGE" ]; then
 	else
 		FAIL=$((FAIL+1)); ECHO_E "  \e[1;31mFAIL\e[0m -h missing:$hmissing"
 	fi
+	_ST_CHECK "-h says a tag in the span stays unless edit.followTag names it" grep -qE -- 'A tag edit\.followTag names follows the rewrite instead' <<<"$HELPTEXT"
 	# A flag taken by a mode it was not first written for is documented beside that mode too
 	_ST_CHECK "the man synopsis gives --land its --base" grep -qE -- '--land=branch \[--base=sha\]' <<<"$MANTEXT"
 	_ST_CHECK "-h gives --land its --base" grep -qE -- '--land=<branch> \[--base=<sha>\]' <<<"$HELPTEXT"
@@ -89,6 +90,8 @@ if [ -f "$MANPAGE" ]; then
 	_ST_CHECK "-h verifyCmd too" grep -qE '^edit\.verifyCmd$' <<<"$("$SELF" -h verifyCmd 2>&1)"
 	_ST_CHECK "-h edit.verifySpan the key, not the flag" grep -qE '^edit\.verifySpan$' <<<"$("$SELF" -h edit.verifySpan 2>&1)"
 	_ST_CHECK "-h followTag the key's entry" grep -qE '^edit\.followTag$' <<<"$("$SELF" -h followTag 2>&1)"
+	_ST_CHECK "-h tags that entry, the key moving them" grep -qE '^edit\.followTag$' <<<"$("$SELF" -h tags 2>&1)"
+	_ST_EQ "as does -h tag" "$("$SELF" -h tag 2>&1)" "$("$SELF" -h tags 2>&1)"
 	_ST_CHECK "-h lockfile the key's shared entry" grep -qE '^edit\.<path>\.installCmd, edit\.<path>\.lockfile$' <<<"$("$SELF" -h lockfile 2>&1)"
 	_ST_CHECK "-h checkout the section of that title" grep -qE '^THE CHECKOUT$' <<<"$("$SELF" -h checkout 2>&1)"
 	# Every section reads as plain text, no roff escape left over

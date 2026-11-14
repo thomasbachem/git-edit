@@ -1043,6 +1043,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       none of CI, CLAUDECODE or GIT_EDIT_ACTOR set) a pause prompts – Enter continues, Escape\e[0m"
 	ECHO_E "\e[0;94m       twice cancels, q leaves it; elsewhere it exits for --continue. Every mode but -M, -S and\e[0m"
 	ECHO_E "\e[0;94m       a pathspec split needs a checked-out branch.\e[0m"
+	ECHO_E "\e[0;94m       Only the branch being rewritten moves: a tag or another branch left in the span is named\e[0m"
+	ECHO_E "\e[0;94m       with the command re-pointing it. A tag edit.followTag names follows the rewrite instead.\e[0m"
 	ECHO_E "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
 	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
@@ -1086,7 +1088,8 @@ _HELP_TOPICS () {
 	for T in "$@"; do
 		# An empty one names nothing – none at all is the usage
 		[ -n "$T" ] || continue
-		# A mode by its everyday name or its usage placeholder – a tier by the flag that names one
+		# A mode by its everyday name or its usage placeholder
+		# – a tier by the flag that names one, a tag by the key that moves one
 		case ${${${T#-}#-}%%=*} in
 			fold)              T=--amend-into ;;
 			place)             T=--after ;;
@@ -1094,6 +1097,7 @@ _HELP_TOPICS () {
 			'<sha>'|'<commit>'|sha) T=--edit ;;
 			fixup|autosquash)  T=-s ;;
 			tier)              T=--verify-span ;;
+			tag|tags)          T=edit.followTag ;;
 		esac
 		# Through the environment, as `-v` would read a backslash in it as an escape
 		OUT=$(GIT_EDIT_HELP_TOPIC=$T LC_ALL=C awk '
