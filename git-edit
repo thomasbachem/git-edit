@@ -1045,6 +1045,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       a pathspec split needs a checked-out branch.\e[0m"
 	ECHO_E "\e[0;94m       Only the branch being rewritten moves: a tag or another branch left in the span is named\e[0m"
 	ECHO_E "\e[0;94m       with the command re-pointing it. A tag edit.followTag names follows the rewrite instead.\e[0m"
+	ECHO_E "\e[0;94m       Another branch's rewrite offers no command for the default branch or a tag it holds.\e[0m"
 	ECHO_E "\e[0;94m       A commit staled by an earlier rewrite resolves to its current identity when one\e[0m"
 	ECHO_E "\e[0;94m       commit has the identical diff; otherwise it is refused. GIT_EDIT_NO_RESOLVE=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
@@ -3357,8 +3358,29 @@ _PRINT_REF_MOVE () {
 		_TAGS_FOLLOWED=() _TAGS_FOLLOWED_FOR="$1 $2 $3"
 	fi
 	[ -n "$ORPHANED_TAGS" ] && _FOLLOWED_TAGS && FOLLOW=("${reply[@]}")
+	# A rewrite of another branch or a detached `HEAD` leaves the default branch and the tags it
+	# still holds as they are, unhinted – a trial made from main below its cut, say – while a tag
+	# a backup or a stack holds goes as before, as such a branch follows the rewrite or is retired
+	local MAIN_LINE="" MAIN_WHY="the default branch" BESIDE=""
+	local -A HELD_TAGS
+	if [ -z "$ADVANCED" ]; then
+		MAIN_LINE=$(_DEFAULT_BRANCH) || MAIN_WHY="the main worktree's branch" MAIN_LINE=$(git worktree list --porcelain 2>/dev/null | \
+			LC_ALL=C awk '/^$/ { exit } sub(/^branch refs\/heads\//, "") { print; exit }')
+		[ -n "$MAIN_LINE" ] && [ "refs/heads/$MAIN_LINE" != "$1" ] && BESIDE=1
+	fi
+	if [ -n "$ORPHANED_TAGS" ] && [ -n "$BESIDE" ]; then
+		for TAGREF in ${(f)"$(git for-each-ref --format='%(refname)' --merged="refs/heads/$MAIN_LINE" refs/tags 2>/dev/null)"}; do
+			HELD_TAGS[$TAGREF]=1
+		done
+	fi
 	for TAGREF in ${(f)ORPHANED_TAGS}; do
 		TAG=${TAGREF#refs/tags/}
+		# Said only for one the repo asked to follow, a tag no pattern names being just where it was
+		if (( ${+HELD_TAGS[$TAGREF]} )); then
+			(( ${FOLLOW[(Ie)$TAGREF]} )) && PRINT_TEXT "Tag %s stays on %s, not followed though edit.followTag names it – %s, %s, still holds it" 90 \
+				"$TAG" "$(git rev-parse --short=12 "$TAGREF^{commit}" 2>/dev/null)" "$MAIN_LINE" "$MAIN_WHY"
+			continue
+		fi
 		# The value a follow swaps from, read before the lookup, which a peer's re-point may outrun
 		TVAL=$(git rev-parse -q --verify "$TAGREF" 2>/dev/null) && TAGSHA=$(git rev-parse "$TVAL^{commit}" 2>/dev/null)
 		[ -z "$TAGSHA" ] && continue
@@ -3418,6 +3440,7 @@ _PRINT_REF_MOVE () {
 	local ENTRY BREF BSHA BSUBJ NAMED=false
 	for ENTRY in ${(f)STRANDED}; do
 		BREF=${ENTRY%% *}
+		[ -n "$BESIDE" ] && [ "$BREF" = "refs/heads/$MAIN_LINE" ] && continue
 		BSHA=$(git rev-parse "$BREF")
 		BSUBJ=$(git log -1 --format=%s "$BSHA")
 		_SPAN_COUNTERPART "$BSHA" "$3"

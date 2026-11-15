@@ -10,6 +10,7 @@
 # • By compare-and-swap from the value read before the lookup, so a tag moved meanwhile stays
 #   – and `--undo` puts each back
 # • Naming a change moved or squashed across it and the branches still holding its old commit
+# • Never off a commit the default branch holds, but on its own rewrite – nor naming that branch
 _ST_SCENARIO "\e[1;96m[264] tags a repo opts in follow the rewrite\e[0m"
 local FT_B FT_C FT_ANN FT_WHEN FT_GD FT_X FT_GIT
 # Builds base, b, c and d – `cut-l` and `v1` on c, an annotated `cut-a` on d – opting in `cut-*`
@@ -193,6 +194,33 @@ git branch rel "$FT_C"
 _ST_RUN -M --text="FT b reworded" "$FT_B"
 _ST_EQ "the tag follows the run's branch" "$RC:$(git rev-parse cut-l)" "0:$(git rev-parse HEAD~1)"
 _ST_OUT_HAS "naming the branch still holding its old commit" '^Tag cut-l no longer marks its old commit on the branches still holding it: rel$'
+
+# A side branch's rewrite leaves the tags main still holds there, saying why, its own following
+# though a backup holds it – a trial branch made from main and moving a commit below the cut
+_FT_REPO ft-side
+git checkout -q -b trial && _ST_PZ_C e.txt e "FT e" && git tag cut-e && git branch trial-backup
+FT_X=$(git rev-parse main)
+_ST_RUN --move="$(git rev-parse HEAD)" --after="$FT_B"
+_ST_EQ "the trial lands, main's tags staying, its own following" \
+	"$RC:$(git log --format=%s | paste -sd'|' -):$(git rev-parse cut-l 'cut-a^{commit}' | paste -sd'|' -):$(git log -1 --format=%s cut-e)" \
+	"0:FT d|FT c|FT e|FT b|FT base:$FT_C|$FT_X:FT e"
+_ST_EQ "the annotated one its own tag object still" "$(git rev-parse cut-a)" "$FT_ANN"
+_ST_OUT_HAS "saying why the cut stays" "^Tag cut-l stays on ${FT_C:0:12}, not followed though edit.followTag names it – main, the default branch, still holds it\$"
+_ST_OUT_HAS "and the annotated one" "^Tag cut-a stays on ${FT_X:0:12}, not followed though"
+_ST_OUT_LACKS "naming no tag main holds to re-point" '^Tag [^ ]* points into'
+_ST_OUT_LACKS "nor main itself" '^Branch main'
+_ST_OUT_HAS "its own tag following, the backup holding it all the same" '^Tag cut-e followed the rewrite'
+
+# With no default branch to be found, the main worktree's branch stands in
+# – a trial checked out in a linked worktree leaving its cut
+_FT_REPO ft-trunk
+git branch -m main trunk && FT_X=$PWD
+git worktree add -q -b trial "$TMP/pz-ft-trunk-wt" && cd "$TMP/pz-ft-trunk-wt" && _ST_PZ_C e.txt e "FT e"
+_ST_RUN --move="$(git rev-parse HEAD)" --after="$FT_B"
+_ST_EQ "the trial lands, the main worktree's cut staying" "$RC:$(git log -1 --format=%s HEAD~2):$(git rev-parse cut-l)" "0:FT e:$FT_C"
+_ST_OUT_HAS "saying why" "^Tag cut-l stays on ${FT_C:0:12}, not followed though edit.followTag names it – trunk, the main worktree's branch, still holds it\$"
+_ST_OUT_LACKS "nor naming trunk itself" '^Branch trunk'
+cd "$FT_X"
 
 # A land moves no tag – the branch it lands on only advances
 _FT_REPO ft-land

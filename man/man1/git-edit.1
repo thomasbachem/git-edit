@@ -127,6 +127,11 @@ matched the way a stale \fIcommit\fR is, so only a commit carrying the same
 change is offered as one, and a subject match alone is offered as a guess to
 check first. One on a commit the run dropped is named as such, with no
 command, and one on a commit it squashed away names the commit it went into.
+The default branch (where none is found, the main worktree's branch) and a
+tag it still holds are that branch's own, so the rewrite of any other branch
+or a detached HEAD \(em one made from it and rewritten below its tip or tag,
+say \(em leaves the branch unnamed and offers no command for the tag. A branch
+or tag only a backup or another side branch holds is named as any other.
 .B rebase.updateRefs
 is not applied: git moves such a branch as its rebase completes, before the
 result is verified or lands, so an aborted or refused rewrite would leave the
@@ -3321,7 +3326,15 @@ and
 .B \-\-exec
 included, and a paused one once its
 .B \-\-continue
-lands. A run aborted or refused its final ref update moves no tag.
+lands. A run aborted or refused its final ref update moves no tag. Nor does
+the rewrite of any other branch or a detached HEAD move one the default branch
+(where none is found, the main worktree's branch) still holds, which it names
+as staying there \(em a trial branch made from the default branch and
+rewritten below its cut would otherwise carry the cut off it. One only a
+backup or another side branch holds follows as ever. The default branch's
+rewrite moves its tag all the same, naming the branches still holding its old
+commit, as every fix branch made from it holds the cut while a release is
+reviewed.
 .IP
 An annotated tag is re\-made pointing there, its message and tagger \(em
 name, email and date \(em kept as they were. A

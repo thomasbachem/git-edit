@@ -27,3 +27,23 @@ _ST_OUT_HAS "warns about the lower tag" 'Tag markerA points into'
 _ST_OUT_HAS "and the upper tag" 'Tag markerB points into'
 _ST_OUT_LACKS "blob tag never flagged" 'blobmark'
 git tag -d markerA markerB blobmark >/dev/null 2>&1
+# A side branch's rewrite names neither the default branch nor a tag
+# it still holds, its own rewrite one a side branch holds all the same
+git tag markerS
+git checkout -q -b tag-trial && echo t3 > t3.txt && git add t3.txt && git commit -qm "T3 commit" && git tag markerT && git branch tag-backup
+_ST_RUN -M --text="T2 reworded on the trial" "$(git rev-parse HEAD~1)"
+_ST_EQ "exits 0 on the side branch, the tag where it was" "$RC:$(git rev-parse markerS)" "0:$(git rev-parse main)"
+_ST_OUT_LACKS "naming no tag main holds" 'Tag markerS'
+_ST_OUT_HAS "naming one the side branch and its backup hold" 'Tag markerT points into'
+_ST_OUT_LACKS "nor main itself" '^Branch main'
+_ST_OUT_HAS "the backup still named" '^Branch tag-backup points into the rewritten span'
+git checkout -q main
+_ST_RUN -M --text="T2 reworded on main" "$(git rev-parse HEAD)"
+_ST_OUT_HAS "the default branch's rewrite naming one the side holds" 'Tag markerS points into'
+# A detached `HEAD`'s rewrite names none a branch holds either
+git checkout -q --detach main && git tag markerD
+_ST_RUN -M --text="T2 reworded detached" "$(git rev-parse HEAD)"
+_ST_EQ "exits 0 detached, the tag where it was" "$RC:$(git rev-parse markerD)" "0:$(git rev-parse main)"
+_ST_OUT_LACKS "naming no tag main holds, detached" 'Tag markerD'
+git checkout -q main
+git tag -d markerS markerT markerD >/dev/null 2>&1 && git branch -q -D tag-trial tag-backup
