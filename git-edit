@@ -9918,7 +9918,8 @@ _SQUASH_STOP_EDITS () {
 		# One whose replacements don't remake its own change, a line it replaced held
 		# twice say, can't, nor a file it does more to than replace
 		NAMES=(${(0)"$(git diff-tree -r -z --no-renames --no-commit-id --name-only "$M^" "$M" 2>/dev/null)"})
-		(( ${#${NAMES:*WANT}} )) || continue
+		# Kept an array by `(@)` – nested bare, it is joined into one word before `:*` reads it
+		(( ${#${(@)NAMES:*WANT}} )) || continue
 		(( $2 == 3 )) && git merge-base --is-ancestor "$M" "$3" 2>/dev/null && continue
 		_EDITS_DERIVE "$M^" "$M" || return 1
 		for P in "${(@u)EDITS_PATH}"; do
