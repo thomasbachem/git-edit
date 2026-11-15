@@ -87,4 +87,37 @@ _ST_RESOLVE "${TI_WT:-$ST_NO_WT}" s.js "$(print -l alpha-new bravo-x charlie del
 _ST_RUN --continue
 _ST_EQ "a superseded rewrite goes on and lands" "$RC:$(git show HEAD:s.js | tr '\n' ' ')" "0:alpha-new bravo-x charlie-c delta-c echo "
 _ST_OUT_LACKS "refusing nothing at the stop" "The staged resolution takes in"
+# A resolution re-indenting lines a later commit rewrites, a fixup written on the tip wrapping
+# them, takes nothing in – that commit rewrites them where they now stand, as the landing reads it
+_ST_PZ_NEW tw
+git config rerere.enabled false
+print -l "function a() {" $'\t// keep the skip here,' $'\t// as the lock avoids it' $'\trun();' "}" > w.js && git add w.js && git commit -qm "tw a"
+print -l "function a() {" $'\t// keep the skip here,' $'\t// as the lock avoids it' $'\trun(1);' "}" > w.js && git commit -qam "tw x"
+print -l "function a() {" $'\t// skip kept, the lock avoiding it' $'\trun(1);' "}" > w.js && git commit -qam "tw c"
+TI_TIP=$(git rev-parse HEAD)
+print -l "function a() {" $'\tif (ok) {' $'\t\t// skip kept, the lock avoiding it' $'\t\trun(1);' $'\t}' "}" > w.js && git commit -qam "fixup! tw x"
+local TW_T=$(git rev-parse 'HEAD^{tree}')
+_ST_RUN -s=auto HEAD
+TI_WT=$(_ST_PZ_WT)
+_ST_RESOLVE "${TI_WT:-$ST_NO_WT}" w.js "$(print -l "function a() {" $'\tif (ok) {' $'\t\t// keep the skip here,' $'\t\t// as the lock avoids it' $'\t\trun(1);' $'\t}' "}")"
+_ST_RUN --continue
+_ST_EQ "a re-indented line a later commit rewrites goes on to that commit's stop" "$RC" "2"
+_ST_OUT_LACKS "refusing nothing at the stop" "The staged resolution takes in"
+_ST_RESOLVE "${TI_WT:-$ST_NO_WT}" w.js "$(print -l "function a() {" $'\tif (ok) {' $'\t\t// skip kept, the lock avoiding it' $'\t\trun(1);' $'\t}' "}")"
+_ST_RUN --continue
+_ST_EQ "and lands, the tip as the fixup made it" "$RC:$(git rev-parse 'HEAD^{tree}')" "0:$TW_T"
+# A copy of the removed line that its own commits put in elsewhere moves nothing – still taken in
+_ST_PZ_NEW tk
+git config rerere.enabled false
+print -l a "keep me here" m b c > k.js && git add k.js && git commit -qm "tk a"
+print -l a1 "keep me here" m b c > k.js && git commit -qam "tk x"
+print -l a1 m b2 c > k.js && git commit -qam "tk c"
+print -l a1 m b2 c1 "keep me here" > k.js && git commit -qam "fixup! tk x"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN -s=auto HEAD
+TI_WT=$(_ST_PZ_WT)
+_ST_RESOLVE "${TI_WT:-$ST_NO_WT}" k.js "$(print -l a1 m b c1 "keep me here")"
+_ST_RUN --continue
+_ST_EQ "its removal taken in beside its own copy refuses at the stop" "$RC" "2"
+_ST_OUT_HAS "naming that commit" "tk c – k\.js"
+_ST_RUN --abort
 unset GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_ACTOR

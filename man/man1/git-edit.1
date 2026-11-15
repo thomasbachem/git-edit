@@ -2735,6 +2735,7 @@ beyond what the stop's own commits change, refuses with the pause kept,
 naming each such commit with its file and a line, so the stop is resolved
 again before any stop after it. It counts as the landing does, a rewrite the
 stop's commit makes again set aside where most of the later change survives,
+as is a line the resolution removes and adds back, re-indented or moved,
 over the stop's conflicted files and any file its commits never touch. A
 .B \-\-continue
 again on that same resolution goes on, the landing judging what the later

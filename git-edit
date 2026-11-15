@@ -22455,8 +22455,8 @@ _GUARD_STOP_TAKES_IN () {
 	# Args: <worktree>
 	local WT=$1 GD STOP="" BASE TREE C F L LINE CUR WAY MOVABLE=1
 	local -i I IN_GROUP=1 ALL_SIG HELD_SIG COUNTED
-	local -a W STEPS OWN_C LATER FILES FOUND FOUND_FILES FROMS ENTRIES HELD
-	local -A OWN OWN_FILES GONE_OWN TOOK HUNK_ADDS HUNK_DELS HUNK_HELD
+	local -a W STEPS OWN_C LATER FILES FOUND FOUND_FILES FROMS ENTRIES HELD RES
+	local -A OWN OWN_FILES GONE_OWN TOOK MOVED HUNK_ADDS HUNK_DELS HUNK_HELD
 	[ -n "$STATE_REPLAY" ] && [ -n "$STATE_STOP_HEAD" ] || return 0
 	GD=$(git -C "$WT" rev-parse --path-format=absolute --git-dir 2>/dev/null)
 	[ -n "$GD" ] && [ -d "$GD/rebase-merge" ] || return 0
@@ -22518,10 +22518,21 @@ _GUARD_STOP_TAKES_IN () {
 		for C in "${OWN_C[@]}"; do
 			for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$C" "$F")}"; do [ -n "$L" ] && OWN[$L]=1; done
 		done
+		RES=("${(@f)$(git -C "$WT" diff-tree -p -U0 --no-renames --no-ext-diff --no-textconv --no-color "$BASE" "$TREE" -- ":(literal)$F" 2>/dev/null | \
+			LC_ALL=C awk 'H && /^[-+]/; /^@@/ { H = 1 }')}")
+		# A line it removes and adds back, re-indented or moved, is its own change of that line,
+		# the later commit rebuilt rewriting it where it now stands, as the landing reads it rebased
+		# – never paired with a line its commits put in, a copy of that text elsewhere
+		MOVED=()
+		for L in "${RES[@]}"; do (( ${+OWN[$L]} )) || MOVED[${L:0:1}${(j: :)${=${L:1}}}]=1; done
 		# Blank and punctuation-only lines aside, as the landing counts them
-		for L in "${(@f)$(git -C "$WT" diff-tree -p -U0 --no-renames --no-ext-diff --no-textconv --no-color "$BASE" "$TREE" -- ":(literal)$F" 2>/dev/null | \
-			LC_ALL=C awk 'H && /^[-+]/; /^@@/ { H = 1 }')}"; do
-			[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+OWN[$L]} )) && TOOK[$L]=1
+		for L in "${RES[@]}"; do
+			[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+OWN[$L]} )) || continue
+			case ${L:0:1} in
+				-) (( ${+MOVED[+${(j: :)${=${L:1}}}]} )) && continue ;;
+				+) (( ${+MOVED[-${(j: :)${=${L:1}}}]} )) && continue ;;
+			esac
+			TOOK[$L]=1
 		done
 		(( ${#TOOK} )) || continue
 		# Each later pick's change to the file in one read, as "<commit>\t<hunk>\t<line>"
