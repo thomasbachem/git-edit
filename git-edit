@@ -15331,7 +15331,10 @@ _EDITS_DERIVE () {
 			A=${${H%% *}%%,*} B=1 C=${${H#* +}%%,*} D=1
 			[[ "${H%% *}" == *,* ]] && B=${${H%% *}#*,}
 			[[ "$H" == *+*,* ]] && D=${H##*,}
-			O=${(pj:\n:)OL[A,A+B-1]} N=${(pj:\n:)NL[C,C+D-1]}
+			# A side of no lines slices none – at line 0, `[0,-1]` is the whole file
+			O="" N=""
+			(( B )) && O=${(pj:\n:)OL[A,A+B-1]}
+			(( D )) && N=${(pj:\n:)NL[C,C+D-1]}
 			(( B && A + B - 1 < ${#OL} )) && O+=$'\n'
 			(( D && C + D - 1 < ${#NL} )) && N+=$'\n'
 			# Lines added alone only for a fold, its old text empty and the lines either side kept
