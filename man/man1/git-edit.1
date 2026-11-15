@@ -1903,7 +1903,11 @@ operation as it would on its first invocation.
 .B "\-\-no\-verify \-\-continue"
 applies the result anyway, and
 .B \-\-abort
-cancels with nothing consumed. The built result is recorded, so a resume
+cancels with nothing consumed. The pause takes no repair, so the line above
+its trailer names the one keeping the rest of the result, every resolution
+included: apply it anyway, then
+.BI "git edit " sha
+on the commit that failed. The built result is recorded, so a resume
 restores the worktree to it if an inspect checkout of one of its commits
 moved it. A resume refuses a worktree on any other commit, an amend of the
 result say.

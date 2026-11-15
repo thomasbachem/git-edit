@@ -25,6 +25,11 @@ _ST_OUT_HAS "the pause is a verify pause" 'git-edit: paused – verify failed'
 _ST_OUT_HAS "the failing commit is named" 'Verification failed at'
 _ST_OUT_HAS "the run's exit status and duration are printed" 'exit 1,'
 _ST_OUT_HAS "the trailer names the saved output" '; output in '
+# Right above the trailer, where README's `grep -B2` recipe keeps it, the repair keeping the rest
+local VF_BAD=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at \([0-9a-f]*\) in .*/\1/p' | head -1)
+_ST_EQ "the line above the trailer names the repair keeping the rest of the result" \
+	"$(print -r -- "$OUT" | grep -B1 '^git-edit: paused' | head -1)" \
+	"To repair $VF_BAD with the rest of this result kept: git edit --no-verify --continue applies it, then git edit $VF_BAD."
 local VF_LOG=$(print -r -- "$OUT" | sed -n 's/.*paused – verify failed at [0-9a-f]* in [^;]*; output in \([^;]*\);.*/\1/p' | head -1)
 _ST_CHECK "the named file is there" test -f "$VF_LOG"
 _ST_CHECK "it holds the failing run's own output" sh -c "grep -q VERIFY_SAW_FORBIDDEN '$VF_LOG'"
@@ -66,6 +71,7 @@ _ST_OUT_HAS "naming the check the pause had recorded" "$TMP/verify.sh"
 _ST_EQ "the whole chain survived" "$(git rev-list --count HEAD)" "$(git rev-list --count $VF_TIP)"
 _ST_CHECK "the overridden content landed at the base" \
 	sh -c "git show \"\$(git rev-parse ':/VF base'):vf.txt\" | grep -q FORBIDDEN"
+_ST_CHECK "the commit the repair names landed as built, for its 'git edit' to reach" git merge-base --is-ancestor "$VP_BAD" HEAD
 # --no-verify up front skips the gate entirely
 printf 'vf one\nvf two\nFORBIDDEN\nmore FORBIDDEN\n' > vf.txt && git add vf.txt
 _ST_RUN --no-verify --amend-into="$(git rev-parse ':/VF base')" -- vf.txt

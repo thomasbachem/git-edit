@@ -1606,6 +1606,9 @@ EMIT_VERIFY_PAUSED () {
 	[ "$STATE_VERIFY_FAILED" != "$1" ] && _STATE_NOTE "verify_failed=$1"
 	[ -n "$3" ] && [ "$STATE_VERIFY_RESULT" != "$3" ] && _STATE_NOTE "verify_result=$3"
 	_DEPS_NOTE_PAUSE "$2" "$1"
+	# A gate pause takes no repair, `--continue` refusing its worktree's edits – one made on the
+	# applied result keeps every other commit the run built, the resolved ones among them
+	PRINT_TEXT "To repair %s with the rest of this result kept: %s applies it, then %s." 33 "${1:0:7}" "git edit --no-verify --continue" "git edit ${1:0:7}"
 	# A driver greps the trailer, commonly through a `| tail -N` that cuts off
 	# the run's own output printed above it – so the trailer carries the path
 	local VLOG=$(_VERIFY_LOG_PATH)
