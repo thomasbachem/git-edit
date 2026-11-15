@@ -210,6 +210,8 @@ _ST_OUT_HAS "the fold's stop says it builds the target itself" 'This stop folds 
 HF_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${HF_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 a2 a3 a4 5 b6 b7 b8 E9 10 11 T12)"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_EQ "a fold resolved to the tip's content refuses" "$RC:$(git rev-parse HEAD)" "1:$HF_T"
 _ST_OUT_HAS "naming the later commit it absorbed" 'HF10 later one – f.txt'
 _ST_RUN --abort

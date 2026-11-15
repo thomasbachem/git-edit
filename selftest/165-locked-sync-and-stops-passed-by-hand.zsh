@@ -73,6 +73,8 @@ _HP_SEED hp2
 _HP_TO_SECOND
 _ST_RESOLVE "${HP_WT:-$ST_NO_WT}" g.txt $'a\nb\ncq\nd\ne\nf\ng\nh2'
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_EQ "a stop reached by a hand continue counts for the absorption guard" "$RC:$(git rev-parse HEAD)" "1:$HP_T"
 _ST_OUT_HAS "naming the commit whose change it took in" 'HP2 H edit h – g\.txt (left out as emptied)'
 _ST_RUN --abort

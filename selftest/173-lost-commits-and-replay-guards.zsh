@@ -151,6 +151,8 @@ LP_T=$(git rev-parse HEAD)
 _ST_RUN -d -y "$LP_C1"
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f "$(_LP_F FIVE NINE)"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_EQ "a stop taking in a later one-line edit refuses" "$RC:$(git rev-parse HEAD)" "1:$LP_T"
 _ST_OUT_HAS "naming that commit" 'LP c4 NINE – f (left out as emptied)'
 _ST_RUN --abort
@@ -169,6 +171,7 @@ LP_T=$(git rev-parse HEAD)
 _ST_RUN -d -y "$LP_C1"
 LP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${LP_WT:-$ST_NO_WT}" f "$(_LP_F FIVE "line 9")" && print G1 > "${LP_WT:-$ST_NO_WT}/g" && git -C "${LP_WT:-$ST_NO_WT}" add g
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_EQ "a stop staging a later commit's change to a file it never conflicted on refuses" "$RC:$(git rev-parse HEAD)" "1:$LP_T"
 _ST_OUT_HAS "naming that commit and file" 'LP c3 G1 – g (left out as emptied)'

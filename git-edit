@@ -100,7 +100,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_MODE_STRAY STATE_MOVED STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
 	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
 	STATE_ACTOR_ID STATE_ACTOR_NAME STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
-	STATE_ABSORBED STATE_OFF_TREE STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
+	STATE_ABSORBED STATE_OFF_TREE STATE_TAKEIN_SEEN STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
 	STATE_VERIFY_RESULT STATE_VERIFY_SPAN STATE_WORKTREE STATE_WT_OURS STEP STRAY_ARR STRAY_OPT T TARGET TARGETS TEXT_APART \
 	TEXT_VALUE TREE_BASE TREE_ENT TREE_SHA TT_IN_WAY TT_MOVED UNBROUGHT UNSURE_WT UNTOLD VALUE_FLAG VERIFY_APART VERIFY_VALUE WAIT_SECS WHOLE_GONE WHOLE_HEAD WHOLE_IDX WHOLE_PATHS \
@@ -20152,6 +20152,7 @@ _CONTINUE_ONTO () {
 			_STAGE_MARKS_GONE "$STATE_WORKTREE"
 			_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 			_GUARD_STOP_MODES "$STATE_WORKTREE"
+			_GUARD_STOP_TAKES_IN "$STATE_WORKTREE"
 			_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 			_NOTE_LET_GO "$STATE_WORKTREE"
 			_CLEAR_RESCHEDULED_PICK "$STATE_WORKTREE"
@@ -20295,6 +20296,7 @@ _CONTINUE_REORDER () {
 		_STAGE_MARKS_GONE "$STATE_WORKTREE"
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_GUARD_STOP_TAKES_IN "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		_NOTE_LET_GO "$STATE_WORKTREE"
 		_CLEAR_RESCHEDULED_PICK "$STATE_WORKTREE"
@@ -20416,6 +20418,7 @@ _CONTINUE_REBASE () {
 		_STAGE_MARKS_GONE "$STATE_WORKTREE"
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_GUARD_STOP_TAKES_IN "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		_NOTE_LET_GO "$STATE_WORKTREE"
 		_CLEAR_RESCHEDULED_PICK "$STATE_WORKTREE"
@@ -20690,6 +20693,7 @@ _CONTINUE_EDIT () {
 		_STAGE_MARKS_GONE "$STATE_WORKTREE"
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_GUARD_STOP_TAKES_IN "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		_NOTE_LET_GO "$STATE_WORKTREE"
 		_CLEAR_RESCHEDULED_PICK "$STATE_WORKTREE"
@@ -21206,6 +21210,7 @@ _LOAD_STATE () {
 	STATE_TIP_REFUSED=""
 	STATE_ABSORBED=""
 	STATE_OFF_TREE=""
+	STATE_TAKEIN_SEEN=""
 	# One read, kept – a resume holding the pause's worktree only after
 	# it tells by it whether another run took the pause on meanwhile
 	_STATE_READ=""
@@ -21276,6 +21281,7 @@ _LOAD_STATE () {
 			tip_refused)     STATE_TIP_REFUSED=$VAL ;;
 			absorbed)        STATE_ABSORBED=$VAL ;;
 			off_tree)        STATE_OFF_TREE=$VAL ;;
+			takein_seen)     STATE_TAKEIN_SEEN=$VAL ;;
 		esac
 	done <<< "$_STATE_READ"
 	# One from before labels were kept as given holds the mapped one alone, the caller's own where
@@ -22021,6 +22027,20 @@ _PLACED_BUILDS_ON () {
 		<(_COMMIT_CHANGE_LINES "$WT" "$C" "$F" | LC_ALL=C sed -n 's/^-//p' | LC_ALL=C sort -u))" ]
 }
 
+# Prints the way out for a fold or squash making <into> depend on lines <from> adds – those
+# lines moved into <into> as a fixup by a split first, which keeps <from>'s tree, so the tip stays
+_PRINT_MOVE_FIRST () {
+	# Args: <worktree> <into> <from> [<step it takes first>]
+	local K T L
+	K=$(git -C "$1" log -1 --format=%s "$2" 2>/dev/null)
+	if [ "$STATE_OPERATION" = amend-into ]; then
+		T=fold L="then 'git edit -s=auto' and this fold again"
+	else
+		T=squash L="then this squash again, that fixup in it"
+	fi
+	ECHO_E "\e[0;31m  Where this $T makes ${2:0:7} ($(_LIT "$K")) depend on lines $(_LIT "$(git -C "$1" log -1 --format='%h (%s)' "$3" 2>/dev/null)") adds, move them into it as a fixup first${4:+, $4}: $(_LIT "git edit --split=${3:0:12} --text $(_SHQ "fixup! $K")"), its pause left holding those lines alone – $L.\e[0m" >&2
+}
+
 # Prints the absorption guard's `LOST` entries, each with the stop
 # holding what it lost and one such line under it, from `LOST_WHY`
 _PRINT_LOST () {
@@ -22245,15 +22265,8 @@ _GUARD_ABSORBED () {
 		ECHO_E "\e[0;31m  Cancel with 'git edit --abort', then run it again, resolving each stop to what the commit it builds holds – the later commits replay their own changes on top.\e[0m" >&2
 		# A fold making its target depend on lines one later commit adds wants them moved there whole,
 		# which a split does with that commit's tree kept, so the tip stays as it was
-		if [ -n "$MOVABLE" ] && (( ${#${(u)LOST_FROM[@]}} == 1 && ${#${(u)LOST_AT[@]}} == 1 )) && _FOLDS_INTO "${LOST_AT[1]}"; then
-			K=$(git -C "$WT" log -1 --format=%s "${LOST_AT[1]}" 2>/dev/null)
-			if [ "$STATE_OPERATION" = amend-into ]; then
-				T=fold L="then 'git edit -s=auto' and this fold again"
-			else
-				T=squash L="then this squash again, that fixup in it"
-			fi
-			ECHO_E "\e[0;31m  Where this $T makes ${LOST_AT[1]:0:7} ($(_LIT "$K")) depend on lines $(_LIT "$(git -C "$WT" log -1 --format='%h (%s)' "${LOST_FROM[1]}" 2>/dev/null)") adds, move them into it as a fixup first: $(_LIT "git edit --split=${LOST_FROM[1]:0:12} --text $(_SHQ "fixup! $K")"), its pause left holding those lines alone – $L.\e[0m" >&2
-		fi
+		[ -n "$MOVABLE" ] && (( ${#${(u)LOST_FROM[@]}} == 1 && ${#${(u)LOST_AT[@]}} == 1 )) && _FOLDS_INTO "${LOST_AT[1]}" && \
+			_PRINT_MOVE_FIRST "$WT" "${LOST_AT[1]}" "${LOST_FROM[1]}"
 	fi
 	_EMIT_REFUSED_KEPT "$WT"
 	exit 1
@@ -22328,6 +22341,139 @@ _GUARD_RESOLUTION_CLEAN () {
 		EMIT_CONFLICT "$WT" "${(F)BAD}"
 		_PAUSE_EXIT 2 conflict
 	fi
+}
+
+# Refuses once a stop's staged resolution changing lines a later pick of the replay changes beyond
+# the stop's own commits – replayed, that pick would lose them and the landing refuse, every stop to
+# come resolved for nothing – counted as `_GUARD_ABSORBED` counts, a repeat on it going on
+_GUARD_STOP_TAKES_IN () {
+	# Args: <worktree>
+	local WT=$1 GD STOP="" BASE TREE C F L LINE CUR WAY MOVABLE=1
+	local -i I IN_GROUP=1 ALL_SIG HELD_SIG COUNTED
+	local -a W STEPS OWN_C LATER FILES FOUND FOUND_FILES FROMS ENTRIES HELD
+	local -A OWN OWN_FILES GONE_OWN TOOK HUNK_ADDS HUNK_DELS HUNK_HELD
+	[ -n "$STATE_REPLAY" ] && [ -n "$STATE_STOP_HEAD" ] || return 0
+	GD=$(git -C "$WT" rev-parse --path-format=absolute --git-dir 2>/dev/null)
+	[ -n "$GD" ] && [ -d "$GD/rebase-merge" ] || return 0
+	# Staged on the tip the stop began at – commits made there by hand are the landing's to judge
+	[ "$(git -C "$WT" rev-parse -q --verify HEAD 2>/dev/null)" = "${STATE_STOP_HEAD%% *}" ] || return 0
+	TREE=$(git -C "$WT" write-tree 2>/dev/null) || return 0
+	[ "$TREE" != "$STATE_TAKEIN_SEEN" ] || return 0
+	# The step's own commits – its pick and the fixups folded into it, done and to come –
+	# and the parent it builds on: the tip a pick stopped at, that tip's own where a fixup amends it
+	STEPS=(${(f)"$(LC_ALL=C grep -v '^#' "$GD/rebase-merge/done" 2>/dev/null)"})
+	for (( I = ${#STEPS}; I > 0; I-- )); do
+		W=(${=STEPS[I]})
+		[[ "${W[2]}" == -[Cc] ]] && W[2]=()
+		case ${W[1]} in
+			p|pick|r|reword|e|edit) OWN_C+=("${W[2]}") STOP=${W[2]}; break ;;
+			f|fixup|s|squash) OWN_C+=("${W[2]}") ;;
+			*) return 0 ;;
+		esac
+	done
+	[ -n "$STOP" ] || return 0
+	STOP=$(git -C "$WT" rev-parse -q --verify "$STOP^{commit}" 2>/dev/null) || return 0
+	(( I == ${#STEPS} )) && BASE=HEAD || BASE=HEAD^
+	while IFS= read -r LINE; do
+		W=(${=LINE})
+		(( ${#W} )) && [[ "${W[1]}" != \#* ]] || continue
+		[[ "${W[2]}" == -[Cc] ]] && W[2]=()
+		case ${W[1]} in
+			f|fixup|s|squash) (( IN_GROUP )) && OWN_C+=("${W[2]}") ;;
+			p|pick|r|reword|e|edit) IN_GROUP=0 LATER+=("${W[2]}") ;;
+			*) IN_GROUP=0 ;;
+		esac
+	done < "$GD/rebase-merge/git-rebase-todo"
+	(( ${#LATER} )) || return 0
+	# The files the stop noted last, its conflicted ones, and any it changes that its commits never
+	# touch – a later commit's file staged whole – git's own merge of the rest left to the landing
+	for C in ${(z)STATE_STOPS}; do
+		if [[ "$C" == \$\'* ]]; then FILES+=("${(Q)C}"); else FILES=(); fi
+	done
+	for C in "${OWN_C[@]}"; do
+		for F in ${(0)"$(git -C "$WT" diff-tree -r -z --root --no-commit-id --name-only --no-renames "$C" 2>/dev/null)"}; do OWN_FILES[$F]=1; done
+	done
+	for F in ${(0)"$(git -C "$WT" diff-tree -r -z --name-only --no-renames "$BASE" "$TREE" 2>/dev/null)"}; do
+		(( ${+OWN_FILES[$F]} )) || FILES+=("$F")
+	done
+	# A fold names a file by its path at the tip – its lines on a path the resolution lacks count as
+	# its own in every file, as `_STOP_OWN_LINES` counts them
+	for C in "${OWN_C[@]}"; do
+		W=(${(0)"$(git -C "$WT" diff-tree -r -z --no-commit-id --name-only --no-renames --diff-filter=M "$C" 2>/dev/null)"})
+		W=(${W:#*$'\n'*})
+		(( ${#W} )) || continue
+		ENTRIES=("${(@f)$(print -rl -- "${W[@]/#/$TREE:}" | git -C "$WT" cat-file --batch-check='%(objecttype)' 2>/dev/null)}")
+		for (( I = 1; I <= ${#W}; I++ )); do
+			[[ "${ENTRIES[I]}" == (blob|tree|commit) ]] && continue
+			for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$C" "${W[I]}")}"; do [ -n "$L" ] && GONE_OWN[$L]=1; done
+		done
+	done
+	for F in "${(@u)FILES}"; do
+		OWN=("${(@kv)GONE_OWN}") TOOK=()
+		for C in "${OWN_C[@]}"; do
+			for L in "${(@f)$(_COMMIT_CHANGE_LINES "$WT" "$C" "$F")}"; do [ -n "$L" ] && OWN[$L]=1; done
+		done
+		# Blank and punctuation-only lines aside, as the landing counts them
+		for L in "${(@f)$(git -C "$WT" diff-tree -p -U0 --no-renames --no-ext-diff --no-textconv --no-color "$BASE" "$TREE" -- ":(literal)$F" 2>/dev/null | \
+			LC_ALL=C awk 'H && /^[-+]/; /^@@/ { H = 1 }')}"; do
+			[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+OWN[$L]} )) && TOOK[$L]=1
+		done
+		(( ${#TOOK} )) || continue
+		# Each later pick's change to the file in one read, as "<commit>\t<hunk>\t<line>"
+		ENTRIES=("${(@f)$(print -rl -- "${LATER[@]}" | git -C "$WT" log --no-walk=unsorted --stdin --format='%x01%H' -p -U0 \
+			--no-renames --no-ext-diff --no-textconv --no-color -- ":(literal)$F" 2>/dev/null | \
+			LC_ALL=C awk 'substr($0, 1, 1) == "\001" { C = substr($0, 2); H = 0; next }
+				/^diff --git / { H = 0; next } /^@@/ { H = 1; K++; next } H && /^[-+]/ { print C "\t" K "\t" $0 }')}" "")
+		CUR="" ALL_SIG=0 HELD_SIG=0 HELD=()
+		HUNK_ADDS=() HUNK_DELS=() HUNK_HELD=()
+		for LINE in "${ENTRIES[@]}"; do
+			C=${LINE%%$'\t'*}
+			if [ "$C" != "$CUR" ] && [ -n "$CUR" ]; then
+				# A held line it removes from a hunk putting lines in its place, none of them held,
+				# is a rewrite the stop's commit makes again – superseded where most of its change survives
+				COUNTED=0
+				for L in "${HELD[@]}"; do
+					[[ "${L#*$'\t'}" == -* ]] && (( ${+HUNK_ADDS[${L%%$'\t'*}]} && ! ${+HUNK_HELD[${L%%$'\t'*}]} && HELD_SIG * 2 <= ALL_SIG )) && continue
+					L=${L#*$'\t'}
+					if (( ! COUNTED++ )); then
+						[[ "$L" == -* ]] && WAY="its removal of" || WAY="its line"
+						FOUND+=("$(git -C "$WT" log -1 --format='%h %s' "$CUR" 2>/dev/null) – $F" "  $WAY \"${${L:1}:0:60}\" held here")
+					fi
+					[[ "$L" == -* ]] && MOVABLE=""
+				done
+				if (( COUNTED )); then
+					FROMS+=("$CUR") FOUND_FILES+=("$F")
+					for L in "${(@k)HUNK_HELD}"; do (( ${+HUNK_DELS[$L]} )) && MOVABLE=""; done
+				fi
+				ALL_SIG=0 HELD_SIG=0 HELD=() HUNK_ADDS=() HUNK_DELS=() HUNK_HELD=()
+			fi
+			CUR=$C
+			[ -n "$C" ] || continue
+			L=${LINE#*$'\t'}
+			case ${L#*$'\t'} in
+				+*) HUNK_ADDS[${L%%$'\t'*}]=1 ;;
+				-*) HUNK_DELS[${L%%$'\t'*}]=1 ;;
+			esac
+			[[ "${${L#*$'\t'}:1}" == *[^[:space:][:punct:]]* ]] || continue
+			ALL_SIG+=1
+			if (( ${+TOOK[${L#*$'\t'}]} )); then
+				HELD+=("$L") HELD_SIG+=1
+				[[ "${L#*$'\t'}" == +* ]] && HUNK_HELD[${L%%$'\t'*}]=1
+			fi
+		done
+	done
+	(( ${#FOUND} )) || return 0
+	_CLEANUP_HOOK=""
+	# Noted, so a resume holding this same resolution goes on
+	_STATE_NOTE "takein_seen=$TREE"
+	PRINT_ERR "The staged resolution takes in what a later commit changes – replayed, that commit would lose those lines of its own, and the landing refuse after every stop to come"
+	printf '%s\n' "${FOUND[@]}" | _CARET_LINES | LC_ALL=C sed "s/^/${_RED}  /;s/\$/${_OFF}/" >&2
+	ECHO_E "\e[0;31m  Resolve it to what the commit this stop builds holds – that later commit replays its own change on top – then 'git edit --continue'.\e[0m" >&2
+	[ -n "$MOVABLE" ] && (( ${#${(u)FROMS[@]}} == 1 )) && _FOLDS_INTO "$STOP" && \
+		_PRINT_MOVE_FIRST "$WT" "$STOP" "${FROMS[1]}" "this pause cancelled with 'git edit --abort'"
+	ECHO_E "\e[0;31m  Or 'git edit --continue' again on this same resolution to go on, the landing judging what that commit lost.\e[0m" >&2
+	EMIT_CONFLICT "$WT" "${(F)${(u)FOUND_FILES[@]}}"
+	_PAUSE_EXIT 2 conflict
 }
 
 # Records the tree a resolver staged at a stop, the one state in a replay that somebody wrote
@@ -23263,6 +23409,7 @@ _CONTINUE_AMEND_INTO () {
 		_STAGE_MARKS_GONE "$STATE_WORKTREE"
 		_GUARD_RESOLUTION_CLEAN "$STATE_WORKTREE"
 		_GUARD_STOP_MODES "$STATE_WORKTREE"
+		_GUARD_STOP_TAKES_IN "$STATE_WORKTREE"
 		_NOTE_RESOLVED_TREE "$STATE_WORKTREE"
 		_NOTE_LET_GO "$STATE_WORKTREE"
 		_CLEAR_RESCHEDULED_PICK "$STATE_WORKTREE"

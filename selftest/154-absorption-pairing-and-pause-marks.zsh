@@ -76,6 +76,8 @@ print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt
 _ST_RUN --amend-into="$AB_B" --whole -- f.txt
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 12 13 T14)"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_EQ "a fold's stop taking in a later commit's hunk refuses" "$RC:$(git rev-parse HEAD)" "1:$AB_T"
 _ST_OUT_HAS "naming that commit, though it still changes the file" 'AB5 later – f.txt'
 _ST_RUN --abort
@@ -103,6 +105,7 @@ _ST_EQ "a drop among commits of one second and subject lands" "$RC:$(git log --f
 git reset -q --hard "$AB_T"
 _ST_RUN -d -y HEAD~3
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 8 9z)"
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_EQ "while its stop taking in the next one's change refuses" "$RC:$(git rev-parse HEAD):$(grep -c -e 'wip – f.txt' <<<"$OUT")" "1:$AB_T:1"
 _ST_RUN --abort

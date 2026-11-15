@@ -37,6 +37,8 @@ RP_WT=$(_ST_PZ_WT)
 _ST_EQ "the stop's todo saves git's record in a step of its own" "$(grep -c 'git-edit-replayed' "$(git -C "${RP_WT:-$ST_NO_WT}" rev-parse --path-format=absolute --git-path rebase-merge/git-rebase-todo 2>/dev/null)" 2>/dev/null)" "1"
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 a8 9 10 11 12)"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_EQ "a stop taking in a later commit's line among commits of one second refuses" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
 _ST_OUT_HAS "naming that commit, past the pick left out" 'RP1 V edit 8 and 12 – f.txt'
 _ST_RUN --abort
@@ -53,6 +55,7 @@ RP_WT=$(_ST_PZ_WT)
 _RP_NO_RECORD "${RP_WT:-$ST_NO_WT}"
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 a8 9 10 11 12)"
 _ST_RUN --continue
+_ST_RUN --continue
 _ST_EQ "without a record the absorption refuses too" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
 _ST_OUT_HAS "naming the same commit" 'RP1 V edit 8 and 12 – f.txt'
 _ST_RUN --abort
@@ -68,6 +71,7 @@ RP_T=$(git rev-parse HEAD)
 _ST_RUN -d -y HEAD~3
 _ST_RESOLVE "${$(_ST_PZ_WT):-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 8 9 10 11 12w)"
 _ST_RUN --continue
+_ST_RUN --continue
 _ST_EQ "a drop's stop taking in a later commit whole refuses" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
 _ST_OUT_HAS "naming the commit git left out" 'RP9 W edit line 12 – f.txt (left out as emptied)'
 _ST_RUN --abort
@@ -82,6 +86,7 @@ print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14 > f.txt
 _ST_RUN --amend-into="$RP_B" --whole -- f.txt
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 5 6 7 a8 E9 10 11 a12 13 T14)"
+_ST_RUN --continue
 _ST_RUN --continue
 git -C "${RP_WT:-$ST_NO_WT}" rebase --skip >/dev/null 2>&1
 _ST_RUN --continue
@@ -116,6 +121,7 @@ RP_T=$(git rev-parse HEAD)
 _ST_RUN -d -y HEAD~4
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l 1 2 3z 4 5 6 7 a8 9 10 11 12)"
+_ST_RUN --continue
 _ST_RUN --continue
 RP_V=$(git -C "${RP_WT:-$ST_NO_WT}" log -1 --format=%h HEAD~1 2>/dev/null)
 _ST_EQ "one subject throughout, the absorption refuses" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
@@ -203,6 +209,7 @@ _ST_RUN --amend-into="$RP_B"
 RP_WT=$(_ST_PZ_WT)
 [ -n "$RP_WT" ] && _RP_W T N F "" "$RP_WT/f.txt" && git -C "$RP_WT" add f.txt
 _ST_RUN --continue
+_ST_RUN --continue
 [ -n "$RP_WT" ] && _RP_W T N F N "$RP_WT/f.txt" && git -C "$RP_WT" add f.txt
 _ST_RUN --continue
 _ST_EQ "a fold's stop taking in a later commit's line refuses, a rename following" "$RC:$(git rev-parse HEAD)" "1:$RP_T"
@@ -222,6 +229,7 @@ print -l -- 1 2 3 4 8 9 10 L11 E12 13 T14 > f.txt
 _ST_RUN --amend-into="$RP_B" --whole -- f.txt
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 8 9 10 11 E12 13 T14)"
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l -- 1 2 3 4 8 9 10 L11 E12 13 T14)"
 _ST_RUN --continue
@@ -245,6 +253,7 @@ RP_T=$(git rev-parse HEAD)
 _ST_RUN --move=HEAD~1 --before=HEAD~2
 RP_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l a b p n1 n2 n3 q r s t u v w)"
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_RESOLVE "${RP_WT:-$ST_NO_WT}" f.txt "$(print -l a b p n1 n2 n3 q r s t u v w2)"
 _ST_RUN --continue

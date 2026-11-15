@@ -63,6 +63,8 @@ _ST_RUN --commit --after="${PB_BASE:0:12}" --text "PC placed" -- f.txt
 PB_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${PB_WT:-$ST_NO_WT}" f.txt "$(print -l 1 P R 4)"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again reaching the landing
+_ST_RUN --continue
 _ST_RESOLVE "${PB_WT:-$ST_NO_WT}" f.txt "$(print -l 1 P R 4)"
 _ST_RUN --continue
 _ST_EQ "a stop taking in a change it never built on refuses" "$RC:$(git rev-parse HEAD)" "1:$PB_T"

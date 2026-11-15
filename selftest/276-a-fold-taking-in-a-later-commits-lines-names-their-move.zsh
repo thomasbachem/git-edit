@@ -23,6 +23,11 @@ MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run)"
 _ST_RUN --continue
+# The stop itself refuses it once, naming the move with the pause to cancel first
+_ST_EQ "the stop taking it in refuses once, its pause kept" "$RC" "2"
+_ST_OUT_HAS "naming the later commit and its file" "${MV_Y:0:7} mv y – test.js"
+_ST_OUT_HAS "and their move, this pause cancelled first" "move them into it as a fixup first, this pause cancelled with 'git edit --abort': git edit --split=${MV_Y:0:12} --text 'fixup! mv x'"
+_ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue
 _ST_EQ "a squash's stop taking in a later commit's line refuses" "$RC" "1"
@@ -50,6 +55,8 @@ MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run)"
 _ST_RUN --continue
+_ST_OUT_HAS "a fold's stop the same" "move them into it as a fixup first, this pause cancelled with 'git edit --abort':"
+_ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue
 _ST_OUT_HAS "a fold's refusal the same" "Where this fold makes ${MV_X:0:7} (mf x) depend on lines ${MV_Y:0:7} (mf y) adds"
@@ -63,6 +70,7 @@ _ST_RUN -s="$MV_X" "$(git rev-parse HEAD)"
 MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run)"
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue
@@ -78,6 +86,9 @@ _ST_RUN -s=auto
 MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run load-net)"
+_ST_RUN --continue
+_ST_EQ "two commits' lines taken in refuse at the stop" "$RC" "2"
+_ST_OUT_LACKS "naming no move there" "move them into it"
 _ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue
@@ -96,6 +107,8 @@ _ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run load-net)"
 _ST_RUN --continue
+_ST_EQ "a later stop's take refuses there first" "$RC" "2"
+_ST_RUN --continue
 _ST_OUT_HAS "a later stop's take refuses" "held at the stop for $(git log -1 --format=%h --grep='^mp w$') (mp w)"
 _ST_OUT_LACKS "naming no move into it" "Where this squash makes"
 _ST_RUN --abort
@@ -110,6 +123,7 @@ MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" lib.js new
 _ST_RUN --continue
+_ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue
 _ST_OUT_HAS "a rewrite taken in refuses" "its line \"new\" held at the stop for ${MV_X:0:7} (mr x)"
@@ -122,6 +136,7 @@ _ST_RUN -s=auto
 MV_WT=$(_ST_PZ_WT)
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three)"
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" test.js "$(print -l setup load-gui run)"
+_ST_RUN --continue
 _ST_RUN --continue
 _ST_RESOLVE "${MV_WT:-$ST_NO_WT}" app.js "$(print -l one call-gui three-w)"
 _ST_RUN --continue

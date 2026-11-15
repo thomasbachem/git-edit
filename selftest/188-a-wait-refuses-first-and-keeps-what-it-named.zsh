@@ -176,6 +176,8 @@ _ST_RUN --amend-into="$WR_EC" -- f
 WR_S=("${WR_E[@]}"); WR_S[10]="alpha = 2"
 _ST_RESOLVE "$(_ST_PZ_WT)" f "${(F)WR_S}"
 _ST_RUN --continue
+# Refused at the stop once, the same resolution again going on
+_ST_RUN --continue
 _ST_EQ "E's stop takes in X's alpha line, X's stop follows" "$RC" "2"
 WR_R=("${WR_F[@]}"); WR_R[10]="alpha = 2"
 _ST_RESOLVE "$(_ST_PZ_WT)" f "${(F)WR_R}"
