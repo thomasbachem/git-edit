@@ -18927,10 +18927,14 @@ _LAND_HELD_COPIES () {
 		L=${LINE%% *} K=${${LINE#* * }%%$'\x1e'*}
 		(( ${+KEY[$K]} )) && CAND[$K]+=" $L" AT[$L]=${${LINE#* }%% *} SUBJ[$L]=${LINE#*$'\x1e'} TIPS[$L]=1
 	done
-	# What the target held and holds no more – by a value outside
-	# an undone land's window, or a peer's commit inside one
+	# What the target held and holds no more – by a value outside an undone land's window,
+	# or a peer's commit inside one – cut to the branch's own keys before the loop reads it,
+	# as a long-lived target's reflog holds copies by the hundred thousand
 	for LINE in ${(f)"$( { print -rl -- "${WHOLE[@]}" "^$TIP" "^$FORK" | git log --ignore-missing --stdin --format="$FMT" -- 2>/dev/null
-		(( $# )) && print -rl -- "$@" | git log --no-walk=unsorted --stdin --format="$FMT" -- 2>/dev/null } )"}; do
+		(( $# )) && print -rl -- "$@" | git log --no-walk=unsorted --stdin --format="$FMT" -- 2>/dev/null } | \
+		LC_ALL=C awk 'NR == FNR { K[$0] = 1; next }
+			{ r = substr($0, index($0, " ") + 1); r = substr(r, index(r, " ") + 1); k = index(r, "\036") }
+			k && (substr(r, 1, k - 1) in K)' <(print -rl -- "${(@k)KEY}") - )"}; do
 		L=${LINE%% *} K=${${LINE#* * }%%$'\x1e'*}
 		(( ${+KEY[$K]} && ! ${+AT[$L]} )) && CAND[$K]+=" $L" AT[$L]=${${LINE#* }%% *} SUBJ[$L]=${LINE#*$'\x1e'}
 	done
