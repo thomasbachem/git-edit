@@ -182,7 +182,8 @@ _ST_EQ "a target only pushed refuses" "$RC" "1"
 _ST_OUT_HAS "as pushed" "already pushed"
 _ST_RUN -s=auto --allow-pushed HEAD
 _ST_EQ "--allow-pushed takes it" "$RC:$(git rev-list --count HEAD):$(git show HEAD:a)" "0:1:a2"
-# Across a pause – a target stopping twice, its fixup adding a line, another clean beside it
+# Across a pause – a target stopping twice, its fixup adding a line,
+# another clean beside it, the stops left to the hand
 _ST_PZ_NEW au-pause
 print -l 1 2 > f && git add f && git commit -qm "AU base"
 print -l t 2 > f && git commit -qam "AU target"
@@ -191,14 +192,14 @@ print -l t l > f && git commit -qam "AU later"
 print -l t a l > f && git commit -qam "amend! AU target" -m "AU target reworded across a pause"
 _ST_PZ_C g g2 "squash! AU other"
 git commit -q --amend -m "squash! AU other" -m "AU other note"
-_ST_RUN -s=auto HEAD~1 HEAD
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN -s=auto HEAD~1 HEAD
 AU_WT=$(_ST_PZ_WT)
 AU_STEPS=("t a 2" "t a l")
 for AU_I in 1 2; do
 	[[ "${OUT##*$'\n'}" == "git-edit: conflict"* ]] || break
 	AU_STOPS=$AU_I
 	print -l ${=AU_STEPS[AU_I]} > "${AU_WT:-$ST_NO_WT}/f" && git -C "${AU_WT:-$ST_NO_WT}" add f
-	_ST_RUN --continue
+	GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --continue
 done
 _ST_EQ "each target takes its message once its pauses are through" \
 	"$AU_STOPS:$RC:$(git log --format=%s | tr '\n' '|'):$(git log -1 --format=%B HEAD~1)" \
@@ -260,9 +261,9 @@ _ST_PZ_NEW au-mixed
 print -l y1 "the line" y3 > f && git add f && git commit -qm "AU mixed target"
 print -l z1 "the line" z3 > f && git commit -qam "AU mixed around"
 print -l z1 "the fixed line" z3 > f && git commit -qam "fixup! AU mixed target"
-print -l z1 "the fixed line" added z3 > f && git commit -qam "fixup! AU mixed target"
+print -l z1 "the fixed line" z3 added > f && git commit -qam "fixup! AU mixed target"
 _ST_RUN -s=auto HEAD~1 HEAD
-_ST_EQ "a stop whose file a fixup adds a line to pauses" "$RC" "2"
+_ST_EQ "a stop whose file a fixup adds a line to beside none held there pauses" "$RC" "2"
 _ST_OUT_HAS "at that fixup" "Currently failing on:"
 _ST_RUN --abort
 # A gate's pause – the resume lands the messages it set as they were, and a note on the target

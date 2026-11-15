@@ -358,12 +358,14 @@ reworked there before \fB\-\-continue\fR, or for \fB\-\-abort\fR and a redo
 \(em rerere forgetting what it recorded at the stop named, which a redo would
 otherwise replay as refused.
 Its replay resolves its own stops where every commit it folds touching a
-conflicted file only replaces lines, as a fold of staged changes does (see
+conflicted file only replaces or adds lines it can place, as a fold of staged
+changes does (see
 .BR \-\-amend\-into ):
 the commit a stop builds takes the replacements of the commits folded at or
 below it, bar those it holds already, at a folded commit's own step its own,
-wherever it holds each old text exactly once, and a resume goes on so, bar a
-file a resolution by hand staged otherwise.
+wherever it holds each old text, and a line beside each line added, exactly
+once, and a resume goes on so, bar a file a resolution by hand staged
+otherwise.
 .IP
 With
 .BR \-s=auto ,
@@ -1234,10 +1236,22 @@ fold's is an edit, its old lines the old text, matched as whole lines. A line
 replaced by one is matched by its changed words too, a word on either side
 kept and more where those match more than once, where the line itself is
 wrapped otherwise there \(em never inside a longer line holding it whole \(em
-and the gate checks a commit so resolved as a resolver's own. A file the fold
-inserts a line in, or changes more than a text file's lines of \(em adds,
-removes, renames or gives another mode \(em derives no edit, and a stop where
-it conflicts pauses as before.
+and the gate checks a commit so resolved as a resolver's own. Lines a hunk
+only adds go beside the line above them, else the one below, wherever that
+line is held exactly once and followed there as below; words a line only adds
+go beside the words before them, else after, where those on both sides match
+nowhere once. The gate checks a commit so resolved too, and where the replay's
+tip then differs from the fold applied to the tip, the fold refuses \(em
+nothing applied, a first run forgetting what rerere recorded of it, a resume
+keeping its pause for
+.B \-\-abort
+\(em and names the rerun under
+.B GIT_EDIT_NO_SELF_RESOLVE=1
+that leaves each stop to you. A file the fold adds lines to with neither line
+beside them held once on the tip, or changes more than a text file's lines of
+\(em adds, removes, renames or gives another mode \(em derives no edit, and a
+stop where it conflicts pauses as before, as does one where any edit to a
+conflicted file places nowhere.
 Where the target lacks a line the fold replaces \(em held nowhere there, nor
 its changed words, as a later commit wrote it \(em no edit resolves the fold's
 own step, as that change belongs in the commit writing the line or a later one.

@@ -143,8 +143,9 @@ _ST_RUN -C="$TMP/as9-empty" -d -y HEAD~1
 _ST_OUT_HAS "-C on an existing directory that is no worktree names a path to give instead" 'Name a path that does not exist yet'
 
 # A paused squash names the commits it squashes into, as its resume does
-# – its fixups adding lines, which no replacement resolves
+# – its stops left to the hand
 _ST_PZ_NEW as9s
+export GIT_EDIT_NO_SELF_RESOLVE=1
 print -l 1 2 > f && print g1 > g && git add f g && git commit -qm "AS9S base"
 print -l t 2 > f && git commit -qam "AS9S target" && AS_T=$(git rev-parse HEAD)
 print g2 > g && git commit -qam "AS9S other" && AS_O=$(git rev-parse HEAD)
@@ -161,6 +162,7 @@ _ST_RUN -s=auto HEAD~1 HEAD
 _ST_RUN --status
 _ST_OUT_HAS "and -s=auto's by each" "^In-flight operation: squash (targets ${AS_T:0:7}, ${AS_O:0:7}, branch "
 _ST_RUN --abort
+unset GIT_EDIT_NO_SELF_RESOLVE
 
 # A new `-C` path the late in-flight checks refuse is taken back out – kept only
 # where a pause in it holds work, a peer's that took the path while this run waited

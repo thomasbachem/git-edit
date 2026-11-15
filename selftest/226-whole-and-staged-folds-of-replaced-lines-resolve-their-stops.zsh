@@ -1,6 +1,7 @@
 # A fold that replaces lines resolves its replay's stops as an `--edits` fold does, each hunk
 # its old lines to its new ones – taken whole, staged, `--patch`, `--put` or `--tree` alike:
-# • A file it inserts a line in, or a commit holding a replaced line twice or in a longer one, stops
+# • A file it adds a line to beside none held once, or a commit holding a replaced line twice
+#   or inside a longer one, stops
 # • A resume goes on so, bar a file a stop resolved by hand otherwise than the fold makes it
 _ST_SCENARIO "\e[1;96m[226] whole and staged folds of replaced lines resolve their stops by replacement\e[0m"
 local RL_T RL_O RL_WT
@@ -77,12 +78,13 @@ _ST_EQ "a last line without a line end, edited beside an insertion, lands with n
 	"0:$(printf 'Lead.\n\nLast line, edited.' | git hash-object --stdin):$(printf 'Lead, reworded.\n\nInserted.\nLast line, edited.' | git hash-object --stdin)"
 _ST_OUT_HAS "each of its stops resolved" "Made the fold's line replacements in the 2 commit(s) the replay stopped at"
 
-# A fold inserting a line anywhere derives nothing – its stop pauses, and `--abort` leaves it all
+# A fold inserting a line beside none held once there – after a line a later commit rewrote,
+# at the file's end – pauses its stop, the file's other edits with it, and `--abort` leaves it all
 _RL_DOC rl4
-print -l "# Title" "Subtitle." "" "First paragraph, inserted beside." "Inserted paragraph." "" "Last paragraph, reworded." > doc.md
+print -l "# Title" "Subtitle." "" "First paragraph, inserted beside." "Inserted paragraph." "" "Last paragraph, reworded." "Appendix." > doc.md
 _ST_RUN --amend-into="$RL_T" --whole -- doc.md
 RL_WT=$(_ST_PZ_WT)
-_ST_EQ "a whole fold inserting a line stops at its target" \
+_ST_EQ "a whole fold inserting a line it can't place stops at its target" \
 	"$RC:$(git -C "${RL_WT:-$ST_NO_WT}" log -1 --format=%s HEAD 2>/dev/null):$(git -C "${RL_WT:-$ST_NO_WT}" diff --name-only --diff-filter=U 2>/dev/null):$(git rev-parse HEAD)" \
 	"2:RL target:doc.md:$RL_O"
 _ST_OUT_LACKS "resolving none of it" "Made the"
@@ -153,25 +155,25 @@ GIT_INDEX_FILE="$TMP/rl10.idx" git read-tree HEAD && GIT_INDEX_FILE="$TMP/rl10.i
 RL_WT=$(GIT_INDEX_FILE="$TMP/rl10.idx" git write-tree)
 _ST_RUN --amend-into="$RL_T" --tree="$RL_WT"
 _ST_EQ "a --tree fold resolves its stops" "$RC:$(_RL_AT HEAD~2)" "0:# Title||First paragraph, edited.||Last paragraph, as written.|"
-# A resume goes on resolving: past two stops its inserted line needs by hand,
-# the third its replaced one alone conflicts in resolves itself
+# A resume goes on resolving: past two stops its inserted line needs by hand, between two lines
+# a later commit rewrote, the third its replaced one alone conflicts in resolves itself
 _ST_PZ_NEW rl11
 print -l g1 g2 > g && print -l h1 "the line" h3 > h && git add g h && git commit -qm "RL11 target"
 RL_T=$(git rev-parse HEAD)
-print -l g1 G2 > g && git commit -qam "RL11 changes g"
+print -l G1 G2 > g && git commit -qam "RL11 changes g"
 print -l y1 "the line" y3 > h && git commit -qam "RL11 changes h"
 _ST_PZ_C k k1 "RL11 later"
-print -l g1 new G2 > g && print -l y1 "the fixed line" y3 > h
+print -l G1 new G2 > g && print -l y1 "the fixed line" y3 > h
 _ST_RUN --amend-into="$RL_T" --whole -- g h
 RL_WT=$(_ST_PZ_WT)
 print -l g1 new g2 > "${RL_WT:-$ST_NO_WT}/g" && print -l h1 "the fixed line" h3 > "${RL_WT:-$ST_NO_WT}/h"
 git -C "${RL_WT:-$ST_NO_WT}" add g h
 _ST_RUN --continue
-print -l g1 new G2 > "${RL_WT:-$ST_NO_WT}/g" && git -C "${RL_WT:-$ST_NO_WT}" add g
+print -l G1 new G2 > "${RL_WT:-$ST_NO_WT}/g" && git -C "${RL_WT:-$ST_NO_WT}" add g
 _ST_RUN --continue
 _ST_EQ "the stop after them resolves itself on resume" \
 	"$RC:$(git show HEAD~3:h | tr '\n' ' '):$(git show HEAD~1:h | tr '\n' ' '):$(git show HEAD:g | tr '\n' ' ')" \
-	"0:h1 the fixed line h3 :y1 the fixed line y3 :g1 new G2 "
+	"0:h1 the fixed line h3 :y1 the fixed line y3 :G1 new G2 "
 _ST_OUT_HAS "saying so" "Made the fold's line replacements in the 1 later commit(s)"
 # A fold adding a file besides derives the replacements of the others, their stops resolving
 _RL_DOC rl12
