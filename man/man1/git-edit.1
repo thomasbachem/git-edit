@@ -2747,8 +2747,13 @@ later commit removed counts where that commit holds the line its hunk put in
 its place, so a later edit of a single line counts whole. It does not count
 where that commit, rebuilt, still rewrites the line's place, or makes its
 rewrite on a line holding it, moved or extended since \(em its change
-rebased onto the stop's rather than taken in. A partial take counts too, in
-a reorder or move as in a fold. For a binary file, what counts is a change
+rebased onto the stop's rather than taken in. A line that commit, rebuilt,
+still writes in another file counts as surviving, moved with its code, and so
+does a rewrite it newly makes there putting in and taking out the same words,
+the line reworded on the way. At the stop, what its own commits write or rewrite
+that way counts as theirs in a file they never touch \(em a rewrite only where
+the stop's parent no longer holds the line it rewrote, its code moved. A
+partial take counts too, in a reorder or move as in a fold. For a binary file, what counts is a change
 gone whole whose very content that commit holds.
 .PP
 .B \-\-abort

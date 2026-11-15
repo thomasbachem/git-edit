@@ -22118,6 +22118,66 @@ _STILL_REWORDED () {
 		}'
 }
 
+# Prints "<A's -line>\1<its +line>\1<B's file>\1<B's -line>" for each rewrite of stdin's diff `=A`
+# putting in and taking out the words one of `=B` does, never one `=X` makes, the two lines sharing
+# half the other words of the one keeping fewer – a rewrite moved with its code, reworded on the way
+_REWORDS_PAIRED () {
+	LC_ALL=C awk '
+		# Fills <set> with the words of <s>, runs of letters, digits and underscores
+		function words(s, set,   n, i, w) {
+			n = split(s, w, /[^A-Za-z0-9_]+/)
+			for (i = 1; i <= n; i++) if (w[i] != "") set[w[i]] = 1
+		}
+		# Puts the words <b> puts in and <a> takes out, sorted, into `KEY`, and the words both
+		# hold into `CTX` – returning how many changed, none where they differ in no word
+		function changed(a, b,   A, B, w, i, j, t, IN, OUT, ni, no) {
+			split("", A); split("", B); split("", CTX); words(a, A); words(b, B)
+			ni = 0; no = 0
+			for (w in B) if (!(w in A)) IN[++ni] = w
+			for (w in A) if (!(w in B)) OUT[++no] = w; else CTX[w] = 1
+			for (i = 2; i <= ni; i++) for (j = i; j > 1 && IN[j - 1] > IN[j]; j--) { t = IN[j]; IN[j] = IN[j - 1]; IN[j - 1] = t }
+			for (i = 2; i <= no; i++) for (j = i; j > 1 && OUT[j - 1] > OUT[j]; j--) { t = OUT[j]; OUT[j] = OUT[j - 1]; OUT[j - 1] = t }
+			KEY = ""
+			for (i = 1; i <= ni; i++) KEY = KEY " " IN[i]
+			KEY = KEY " |"
+			for (i = 1; i <= no; i++) KEY = KEY " " OUT[i]
+			return ni + no
+		}
+		/^=(A|B|X)$/ { S = substr($0, 2); H = 0; next }
+		/^diff --git / { H = 0; F = ""; next }
+		!H && /^\+\+\+ b\// { F = substr($0, 7); next }
+		!H && /^--- a\// { if (F == "") F = substr($0, 7); next }
+		# The removed and added lines of each hunk, paired in order
+		/^@@/ { H = ++N[S]; HF[S, H] = F; NM[S, H] = 0; NP[S, H] = 0; next }
+		!H { next }
+		/^-/ { M[S, H, ++NM[S, H]] = substr($0, 2); next }
+		/^\+/ { P[S, H, ++NP[S, H]] = substr($0, 2) }
+		END {
+			for (h = 1; h <= N["X"]; h++)
+				for (i = 1; i <= NM["X", h] && i <= NP["X", h]; i++) OWN[M["X", h, i] SUBSEP P["X", h, i]] = 1
+			# Those of `=B` by their changed words, each with the words it keeps
+			for (h = 1; h <= N["B"]; h++)
+				for (i = 1; i <= NM["B", h] && i <= NP["B", h]; i++) {
+					if ((M["B", h, i] SUBSEP P["B", h, i]) in OWN || !changed(M["B", h, i], P["B", h, i])) continue
+					k = ++NB[KEY]; BH[KEY, k] = h; BI[KEY, k] = i
+					for (w in CTX) { BC[KEY, k, w] = 1; BN[KEY, k]++ }
+				}
+			for (h = 1; h <= N["A"]; h++)
+				for (i = 1; i <= NM["A", h] && i <= NP["A", h]; i++) {
+					if (!changed(M["A", h, i], P["A", h, i]) || !(KEY in NB)) continue
+					na = 0
+					for (w in CTX) na++
+					for (k = 1; k <= NB[KEY]; k++) {
+						hit = 0
+						for (w in CTX) if ((KEY, k, w) in BC) hit++
+						if (!hit || 2 * hit < (na < BN[KEY, k] ? na : BN[KEY, k])) continue
+						print M["A", h, i] "\001" P["A", h, i] "\001" HF["B", BH[KEY, k]] "\001" M["B", BH[KEY, k], BI[KEY, k]]
+						break
+					}
+				}
+		}'
+}
+
 # Tells whether the change <lost> made to <file> is what the placed <commit> builds on
 # – that commit placed by this run, its own change rewriting lines <lost> wrote, and <lost>'s
 # change there emptied, its pick <rebuilt> left out (none given) or no longer touching the file
@@ -22288,6 +22348,26 @@ _GUARD_ABSORBED () {
 			for L in "${LOSTL[@]}"; do
 				[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+REBASED[$L]} && ! ${+ELSEWHERE[${L:0:1}${(j: :)${=${L:1}}}]} )) && LOST_SIG+=1
 			done
+			# So did a rewrite whose changed words the rebuilt commit makes in another file,
+			# the line reworded there – never one the later commit made already – asked
+			# only where that could turn a lost line held at a stop into a superseded one
+			K=""
+			if [ -n "$R" ] && (( LOST_SIG * 2 > ALL_SIG )); then
+				for L in "${LOSTL[@]}"; do (( ${+HELD[$L]} && ${+REPLACED[$L]} )) && K=1 && break; done
+			fi
+			if [ -n "$K" ]; then
+				{
+					print -r -- '=A'; git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$O" -- ":(literal)$FILE"
+					print -r -- '=B'; git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$R" -- . ":(exclude,literal)$FILE"
+					print -r -- '=X'; git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$O"
+				} 2>/dev/null | _REWORDS_PAIRED | while IFS=$'\1' read -r K L; do
+					ELSEWHERE[-${(j: :)${=K}}]=1 ELSEWHERE[+${(j: :)${=${L%%$'\1'*}}}]=1
+				done
+				LOST_SIG=0
+				for L in "${LOSTL[@]}"; do
+					[[ "${L:1}" == *[^[:space:][:punct:]]* ]] && (( ! ${+REBASED[$L]} && ! ${+ELSEWHERE[${L:0:1}${(j: :)${=${L:1}}}]} )) && LOST_SIG+=1
+				done
+			fi
 			# A lost line the stop's own change undoes is the new order's doing, a moved commit's
 			# change cancelling against it, not taken in – so it counts toward neither side
 			for L in "${LOSTL[@]}"; do
@@ -22453,10 +22533,10 @@ _GUARD_RESOLUTION_CLEAN () {
 # come resolved for nothing – counted as `_GUARD_ABSORBED` counts, a repeat on it going on
 _GUARD_STOP_TAKES_IN () {
 	# Args: <worktree>
-	local WT=$1 GD STOP="" BASE TREE C F L LINE CUR WAY MOVABLE=1
+	local WT=$1 GD STOP="" BASE TREE C F L LINE CUR WAY MOVABLE=1 ANY_READ=""
 	local -i I IN_GROUP=1 ALL_SIG HELD_SIG COUNTED
 	local -a W STEPS OWN_C LATER FILES FOUND FOUND_FILES FROMS ENTRIES HELD RES
-	local -A OWN OWN_FILES GONE_OWN TOOK MOVED HUNK_ADDS HUNK_DELS HUNK_HELD
+	local -A OWN OWN_FILES GONE_OWN TOOK MOVED HUNK_ADDS HUNK_DELS HUNK_HELD OWN_ANY NOT KEEP BASE_LINES
 	[ -n "$STATE_REPLAY" ] && [ -n "$STATE_STOP_HEAD" ] || return 0
 	GD=$(git -C "$WT" rev-parse --path-format=absolute --git-dir 2>/dev/null)
 	[ -n "$GD" ] && [ -d "$GD/rebase-merge" ] || return 0
@@ -22534,6 +22614,36 @@ _GUARD_STOP_TAKES_IN () {
 			esac
 			TOOK[$L]=1
 		done
+		# In a file its commits never touch, what moved there with their code is their own – a line
+		# they write in another file, or a rewrite whose changed words they make in another file on
+		# a line the stop's parent no longer holds there, as the landing counts it
+		if (( ${#TOOK} && ! ${+OWN_FILES[$F]} )); then
+			if [ -z "$ANY_READ" ]; then
+				ANY_READ=1
+				for C in "${OWN_C[@]}"; do
+					for L in "${(@f)$(git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$C" 2>/dev/null | \
+						LC_ALL=C awk '/^diff --git / { H = 0; next } /^@@/ { H = 1; next } H && /^[-+]/')}"; do
+						[ -n "$L" ] && OWN_ANY[${L:0:1}${(j: :)${=${L:1}}}]=1
+					done
+				done
+			fi
+			NOT=()
+			for L in "${(@k)TOOK}"; do (( ${+OWN_ANY[${L:0:1}${(j: :)${=${L:1}}}]} )) && NOT[$L]=1; done
+			{
+				print -r -- '=A'; git -C "$WT" diff-tree -p -U0 --no-renames --no-ext-diff --no-textconv --no-color "$BASE" "$TREE" -- ":(literal)$F"
+				print -r -- '=B'
+				for C in "${OWN_C[@]}"; do
+					git -C "$WT" diff-tree -p -U0 --root --no-commit-id --no-renames --no-ext-diff --no-textconv --no-color "$C" -- . ":(exclude,literal)$F"
+				done
+			} 2>/dev/null | _REWORDS_PAIRED | while IFS=$'\1' read -r C L; do
+				CUR=${${L#*$'\1'}%%$'\1'*}
+				(( ${+BASE_LINES[$CUR]} )) || BASE_LINES[$CUR]=$(git -C "$WT" show "$BASE:$CUR" 2>/dev/null)
+				(( ${${(f)BASE_LINES[$CUR]}[(Ie)${L##*$'\1'}]} )) || NOT[-$C]=1 NOT[+${L%%$'\1'*}]=1
+			done
+			KEEP=()
+			for L in "${(@k)TOOK}"; do (( ${+NOT[$L]} )) || KEEP[$L]=1; done
+			TOOK=("${(@kv)KEEP}")
+		fi
 		(( ${#TOOK} )) || continue
 		# Each later pick's change to the file in one read, as "<commit>\t<hunk>\t<line>"
 		ENTRIES=("${(@f)$(print -rl -- "${LATER[@]}" | git -C "$WT" log --no-walk=unsorted --stdin --format='%x01%H' -p -U0 \
