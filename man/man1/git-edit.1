@@ -2752,8 +2752,11 @@ later commit removed counts where that commit holds the line its hunk put in
 its place, so a later edit of a single line counts whole. It does not count
 where that commit, rebuilt, still rewrites the line's place, or makes its
 rewrite on a line holding it, moved or extended since \(em its change
-rebased onto the stop's rather than taken in. A line that commit, rebuilt,
-still writes in another file counts as surviving, moved with its code, and so
+rebased onto the stop's rather than taken in. Nor where the stop's commit
+only removes and adds back, re\-indented or moved, a line whose text is new
+since before the commit it builds \(em one a paused edit wrote, say \(em unless
+an earlier stop took that text in. A line that commit, rebuilt, still writes
+in another file counts as surviving, moved with its code, and so
 does a rewrite it newly makes there putting in and taking out the same words,
 the line reworded on the way. At the stop, what its own commits write or rewrite
 that way counts as theirs in a file they never touch \(em a rewrite only where

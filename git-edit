@@ -22057,6 +22057,25 @@ _STOP_TOOK_IN () {
 	return 0
 }
 
+# Prints the lines of a stop's take-in, `TOOK`'s, that its rebuilt <commit> removes and adds back,
+# re-indented or moved, the text new since before the commit it builds – a pause's edit, say
+_STOP_CARRIED () {
+	# Args: <worktree> <stop's rebuilt commit> <file, from the top>
+	local WT=$1 T=$2 FILE=$3 L K PRIOR PAIR=""
+	local -A SIDES HAD
+	for L in "${(@f)TOOK[$T:$FILE]}"; do [ -n "$L" ] && SIDES[${L:0:1}${(j: :)${=${L:1}}}]=1; done
+	for K in "${(@k)SIDES}"; do [[ "$K" == -* ]] && (( ${+SIDES[+${K:1}]} )) && PAIR=1 && break; done
+	# A file that commit's parent lacks, or a stop on a root commit, carries nothing
+	[ -n "$PAIR" ] && [ -n "${PAIRED[$T]}" ] && PRIOR=$(git -C "$WT" cat-file blob "${PAIRED[$T]}^:$FILE" 2>/dev/null) || return 0
+	for L in "${(@f)PRIOR}"; do HAD[${(j: :)${=L}}]=1; done
+	for L in "${(@f)TOOK[$T:$FILE]}"; do
+		[ -n "$L" ] || continue
+		K=${(j: :)${=${L:1}}}
+		(( ${+SIDES[-$K]} && ${+SIDES[+$K]} && ! ${+HAD[$K]} )) && print -r -- "$L"
+	done
+	return 0
+}
+
 # Prints the lines of <original>'s change to <file> whose place a hunk of <rebuilt> still rewrites
 # – a removed line mapped onto the rebuilt commit's parent, an added one onto the rebuilt commit –
 # so that change rebased onto what now comes before it, not taken in by a stop
@@ -22257,6 +22276,7 @@ _GUARD_ABSORBED () {
 	local -i I P V SIG MOVED ALL_SIG LOST_SIG
 	local -a SH SB SF REBUILT LEFT_OUT FILES INTO LOSTL LOST LOST_WHY VO VR VL HUNKS SUPERSEDED LOST_FROM LOST_AT
 	local -A PAIRED CHAIN AT HELD TOOK LEFT_AT OWNS UNDONE HUNK_HELD SWAPPED HUNK_ADDS REPLACED REBASED ELSEWHERE
+	local -A TEXT_IN CARRIED CARRY SKIP
 	[ -n "$STATE_STOPS" ] && [ -n "$STATE_REPLAY" ] || return 0
 	# Each stop's tip, the commit it builds and its files, NUL-joined
 	for T in ${(z)STATE_STOPS}; do
@@ -22315,12 +22335,25 @@ _GUARD_ABSORBED () {
 			fi
 			# Its own change's lines the replay lost, as many times as it lost each
 			LOSTL=("${(@f)$(LC_ALL=C comm -23 <(_COMMIT_CHANGE_LINES "$WT" "$O" "$FILE" | LC_ALL=C sort) <([ -n "$R" ] && _COMMIT_CHANGE_LINES "$WT" "$R" "$FILE" | LC_ALL=C sort))}")
-			HELD=() UNDONE=()
+			HELD=() UNDONE=() TEXT_IN=() CARRIED=()
 			for T in "${INTO[@]}"; do
 				_STOP_GONE_PATHS "$WT" "$T"
 				(( ${+TOOK[$T:$FILE]} )) || TOOK[$T:$FILE]=$(_STOP_TOOK_IN "$WT" "$T" "$FILE")
 				(( ${+OWNS[$T:$FILE]} )) || OWNS[$T:$FILE]=$(_STOP_OWN_LINES "$WT" "$T" "$FILE")
-				for L in "${(@f)TOOK[$T:$FILE]}"; do [ -n "$L" ] && HELD[$L]=$T; done
+				(( ${+CARRY[$T:$FILE]} )) || CARRY[$T:$FILE]=$(_STOP_CARRIED "$WT" "$T" "$FILE")
+				SKIP=()
+				for L in "${(@f)CARRY[$T:$FILE]}"; do [ -n "$L" ] && SKIP[$L]=1; done
+				# A line carried through the stop is held only where an earlier stop took its text in
+				for L in "${(@f)TOOK[$T:$FILE]}"; do
+					[ -n "$L" ] || continue
+					K=${(j: :)${=${L:1}}}
+					if (( ${+SKIP[$L]} )); then
+						CARRIED[$K]=1
+						continue
+					fi
+					HELD[$L]=$T
+					[[ "$L" == +* ]] && (( ! ${+TEXT_IN[$K]} )) && TEXT_IN[$K]=$T
+				done
 				# Its own lines, sign flipped – a line the later commit adds that the stop's own removes
 				for L in "${(@f)OWNS[$T:$FILE]}"; do
 					case $L in
@@ -22328,6 +22361,12 @@ _GUARD_ABSORBED () {
 						-*) UNDONE[+${L:1}]=1 ;;
 					esac
 				done
+			done
+			# Carried on, a text an earlier stop took in stays held there
+			for L in "${LOSTL[@]}"; do
+				[[ "$L" == +* ]] && (( ! ${+HELD[$L]} )) || continue
+				K=${(j: :)${=${L:1}}}
+				(( ${+CARRIED[$K]} && ${+TEXT_IN[$K]} )) && HELD[$L]=${TEXT_IN[$K]}
 			done
 			SIG=0 MOVED=0 BY="" BY_LINE=""
 			# A line it removes is never held, the stop's commit holding what replaced it – so it moved
