@@ -31,6 +31,7 @@ _ST_EQ "the crossed commit's step stops in turn" "$RC" "2"
 _ST_RESOLVE "$(_ST_PZ_WT)" s.js "$(_RI_S "summary(runs); // counts every run" "")"
 _ST_RUN --continue
 _ST_EQ "resolved so, it lands, the tip as it was" "$RC:$(git rev-parse "HEAD^{tree}")" "0:$RI_TREE"
+_ST_OUT_HAS "its trailer naming no edit carried" '^git-edit: ok – refs/heads/main moved [0-9a-f]* → [0-9a-f]*$'
 _ST_EQ "the moved commit adding its note" "$(git show --format= HEAD~2 -- s.js | grep '^[-+]' | tr '\n' '|')" \
 	"--- a/s.js|+++ b/s.js|-	summary(runs);|+	summary(runs); // counts every run|"
 _ST_EQ "the crossed one only re-indenting" "$(git show --format= HEAD~1 -- s.js | grep -c -e '^+summary(runs); // counts')" "1"
@@ -74,6 +75,17 @@ if [ -z "$RI_OLD" ]; then
 	_ST_RUN --move="$RI_M" --after=HEAD~3
 	_ST_EQ "an edit touching the crossed commit's characters lands with it, the move landing" "$RC" "0"
 	_ST_OUT_HAS "named as carried" '(rt R widens the lookbehind) took the 2 edit(s) carried to it'
+	_ST_OUT_HAS "its trailer naming the first, as rebuilt, and how many more" \
+		"^git-edit: ok – refs/heads/main moved [0-9a-f]* → [0-9a-f]* – $(git rev-parse HEAD~2 | cut -c1-7)'s edits to f\.js landed with $(git rev-parse HEAD~1 | cut -c1-7) and 1 more\$"
+	# Landed by a resume, as past a verify pause, its trailer names them too
+	_RX_REPO rv '\s\w' '\s\d\w'
+	git config edit.verifyCmd false
+	_ST_RUN --move="$RI_M" --after=HEAD~3
+	_ST_EQ "a carrying move whose verify fails pauses" "$RC" "2"
+	_ST_RUN --no-verify --continue
+	_ST_EQ "applied anyway, it lands" "$RC" "0"
+	_ST_OUT_HAS "its trailer naming the edit carried" \
+		"^git-edit: ok – refs/heads/main moved [0-9a-f]* → [0-9a-f]* – $(git rev-parse HEAD~2 | cut -c1-7)'s edits to f\.js landed with $(git rev-parse HEAD~1 | cut -c1-7)\$"
 fi
 
 # Prints `r.js` with its block at the indent given and the check's comment

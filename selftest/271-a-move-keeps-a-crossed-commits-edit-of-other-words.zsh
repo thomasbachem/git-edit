@@ -54,5 +54,7 @@ if [ -z "$WK_OLD" ]; then
 	_ST_RUN --move="$WK_A" --after="$WK_B"
 	_ST_EQ "an edit touching the moved commit's words lands with it, the move landing" "$RC" "0"
 	_ST_OUT_HAS "named as carried" '(WK2 A adds the costly finder) took the 1 edit(s) carried to it'
+	_ST_OUT_HAS "its trailer naming the edit, as rebuilt" \
+		"^git-edit: ok – refs/heads/main moved [0-9a-f]* → [0-9a-f]* – $(git rev-parse HEAD~2 | cut -c1-7)'s edits to f\.js landed with $(git rev-parse HEAD~1 | cut -c1-7)\$"
 fi
 unfunction _WK_F

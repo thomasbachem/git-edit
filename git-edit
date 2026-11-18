@@ -114,7 +114,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_RERERE_PRE _RERERE_SCOPE_OWNED _RERERE_STATE_FILE _RESOLVED_SHA _REWORDED_TARGET _REWORDED_TIP \
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
-	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
+	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRAIL_CARRIED _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
 	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS
@@ -1053,7 +1053,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       A run losing the race to another caller runs itself again on the new tip, up to twice,\e[0m"
 	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -. GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
-	ECHO_E "\e[0;94m         git-edit: ok – <ref> moved <old-sha> → <new-sha>\e[0m"
+	ECHO_E "\e[0;94m         git-edit: ok – <ref> moved <old-sha> → <new-sha>[ – <sha>'s edits to <path> landed with <sha>\e[0m"
+	ECHO_E "\e[0;94m                           [ and <n> more]]\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – <ref> unchanged[, <why>]\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – dry run built <new-sha> on <old-sha>, <ref> unchanged\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – carried <n> path(s) across <old-sha>..<new-sha>\e[0m"
@@ -1550,7 +1551,7 @@ EMIT_STATUS () {
 	# The SHAs are the authority, not the flag – some callers pass a hardcoded `true` where a
 	# no-op rebase leaves `HEAD` put, and reporting a move there is a false success on `ok`
 	if [ "$3" = "true" ] && [ "$NEW" != "$SCRIPT_INITIAL_HEAD" ]; then
-		_EMIT_TRAILER "git-edit: ok – $REF moved $SCRIPT_INITIAL_HEAD → $NEW"
+		_EMIT_TRAILER "git-edit: ok – $REF moved $SCRIPT_INITIAL_HEAD → $NEW${_TRAIL_CARRIED:+ – $_TRAIL_CARRIED}"
 	else
 		_EMIT_TRAILER "git-edit: ok – $REF unchanged${4:+, $4}"
 	fi
@@ -18259,6 +18260,7 @@ GIT_REORDER () {
 		exit 1
 	fi
 	_RECORD_REF_MOVE "$REF" "$ORIG_HEAD" "$NEW_HEAD" "reorder ${OLDEST:0:7}..${NEWEST:0:7}"
+	_NOTE_CARRIED "$WT" "$REF" "$ORIG_HEAD" "$NEW_HEAD"
 
 	# Completion summary – tree identity, proven above, plus the rewritten span in its new order
 	_PRINT_REORDER_SUMMARY "$ORIG_HEAD" "$NEW_HEAD"
@@ -18351,6 +18353,41 @@ _FINISH_AUTO_RESOLVED_STEP () {
 		print -r -- "$OUTPUT" | _DROP_OWN_STEPS | tail -5 | _CARET_LINES --crlf | LC_ALL=C sed 's/^/  /' >&2
 	fi
 	return $RC
+}
+
+# Puts into `_TRAIL_CARRIED`, for the trailer, the first edit a move in <worktree> carried to
+# another commit and how many more, named as rebuilt – each commit giving away part of its change
+typeset -g _TRAIL_CARRIED=""
+_NOTE_CARRIED () {
+	# Args: <worktree> <ref> <old tip> <new tip>
+	local CD K KEY LAST GIVER FILE TAKER
+	local -a META
+	local -A SEEN
+	local -i N=0
+	[ -n "$_IN_LANDED_STEP" ] || { _LANDED_STEP "$0" "$@"; return; }
+	_TRAIL_CARRIED=""
+	_FACT CD -C "$1" rev-parse --path-format=absolute --git-path git-edit-carried 2>/dev/null && [ -f "$CD/n" ] || return 0
+	# Read past the landing, so nothing in it may fail the run
+	LAST=$(<"$CD/n")
+	[[ "$LAST" == <-> ]] || return 0
+	# "<taker>\n<kind>\n<old lines>\n<new lines>\n<giver>\n<path>" each
+	for (( K = 1; K <= LAST; K++ )); do
+		[ -f "$CD/$K.meta" ] || continue
+		META=("${(@f)$(<"$CD/$K.meta")}")
+		KEY="${META[5]} ${META[1]} ${META[6]}"
+		(( ${+SEEN[$KEY]} )) && continue
+		SEEN[$KEY]=1
+		N+=1
+		(( N == 1 )) && GIVER=${META[5]} TAKER=${META[1]} FILE=${META[6]}
+	done
+	(( N )) || return 0
+	_SPAN_COUNTERPART -i "$2" "$3" "$GIVER" "$4"
+	[[ "${REPLY%% *}" =~ '^[0-9a-f]{7,}$' ]] && GIVER=${REPLY%% *}
+	_SPAN_COUNTERPART -i "$2" "$3" "$TAKER" "$4"
+	[[ "${REPLY%% *}" =~ '^[0-9a-f]{7,}$' ]] && TAKER=${REPLY%% *}
+	_TRAIL_CARRIED="${GIVER:0:7}'s edits to $FILE landed with ${TAKER:0:7}"
+	(( N > 1 )) && _TRAIL_CARRIED+=" and $(( N - 1 )) more"
+	return 0
 }
 
 # Prints the completion summary for both reorder paths – tree identity, which each proves before it
@@ -20541,6 +20578,7 @@ _CONTINUE_REORDER () {
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
 	_RECORD_REF_MOVE "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD" "$LABEL"
+	_NOTE_CARRIED "$STATE_WORKTREE" "$STATE_BRANCH" "$STATE_ORIG_HEAD" "$NEW_HEAD"
 	# A placement leaves the checkout behind as any rewrite does
 	_SAME_TREE "$STATE_ORIG_HEAD" "$NEW_HEAD" || _PRINT_REWRITE_APPLY_HINT "${STATE_BRANCH#refs/heads/}" "$STATE_ORIG_HEAD" "$NEW_HEAD"
 

@@ -2423,7 +2423,7 @@ that a caller can dispatch on with
 .PP
 .nf
 .RS
-git\-edit: ok \(en <ref> moved <old-sha> \(-> <new-sha>
+git\-edit: ok \(en <ref> moved <old-sha> \(-> <new-sha>[ \(en <sha>'s edits to <path> landed with <sha>[ and <n> more]]
 git\-edit: ok \(en <ref> unchanged[, <why>]
 git\-edit: ok \(en dry run built <new-sha> on <old-sha>, <ref> unchanged
 git\-edit: ok \(en carried <n> path(s) across <old-sha>..<new-sha>
@@ -2443,6 +2443,9 @@ git\-edit: paused \(en a pause with no operation on record is <label>'s[ ("<name
 says what left the ref as it was \(em a dry run, a branch already landed or
 with nothing to land, a run that landed or replanted nothing, or another run
 that moved it meanwhile, with its move.
+A move that carried a commit's edits to another commit, the one writing those
+lines, names the first of them as rebuilt, and how many more \(em the giving
+commit no longer holds that part of its change.
 .I <name>
 is the
 .B GIT_EDIT_ACTOR_NAME
