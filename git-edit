@@ -15463,7 +15463,22 @@ _RESOLVE_STOPS_ON () {
 # an untouched word between the two spans
 _WORDS_APART () {
 	# Args: <old line> <mid line> <new line>
+	setopt local_options extended_glob
 	local -a O=(${=1}) M=(${=2}) N=(${=3})
+	# A change of whitespace alone edits no word
+	[[ "$O" == "$M" || "$N" == "$M" ]] && return 0
+	_WORDS_SPANS_APART && return 0
+	# Touching, read again by letter and digit runs and single other characters
+	# – a regex has no space – on lines up to 4 KB, a minified one's taking 20 s at 1 MB
+	(( ${#1} <= 4096 && ${#2} <= 4096 && ${#3} <= 4096 )) || return 1
+	O=(${=${1//(#m)[^[:alnum:]_[:space:]]/ $MATCH }}) M=(${=${2//(#m)[^[:alnum:]_[:space:]]/ $MATCH }})
+	N=(${=${3//(#m)[^[:alnum:]_[:space:]]/ $MATCH }})
+	_WORDS_SPANS_APART
+}
+
+# Answers whether the caller's word arrays `O` to `M` and `M` to `N`
+# change spans of `M` an untouched word apart, as `_WORDS_APART` reads them
+_WORDS_SPANS_APART () {
 	local -i A1 A2 B1 B2
 	_WORDS_CHANGED O M
 	A1=${reply[1]} A2=${reply[2]}
@@ -15484,9 +15499,11 @@ _WORDS_APART () {
 # it shares with array <other>, as its first word's offset and one past its last
 _WORDS_CHANGED () {
 	# Args: <other array> <mid array>
-	local -i P=0 S=0 NO=${#${(P)1}} NM=${#${(P)2}}
-	while (( P < NO && P < NM )) && [ "${${(P)1}[P + 1]}" = "${${(P)2}[P + 1]}" ]; do P+=1; done
-	while (( S < NO - P && S < NM - P )) && [ "${${(P)1}[NO - S]}" = "${${(P)2}[NM - S]}" ]; do S+=1; done
+	# Copied once, as each `(P)` read copies the whole array – a minified line's words ran quadratic
+	local -a WO=("${(@P)1}") WM=("${(@P)2}")
+	local -i P=0 S=0 NO=${#WO} NM=${#WM}
+	while (( P < NO && P < NM )) && [[ "${WO[P + 1]}" == "${WM[P + 1]}" ]]; do P+=1; done
+	while (( S < NO - P && S < NM - P )) && [[ "${WO[NO - S]}" == "${WM[NM - S]}" ]]; do S+=1; done
 	reply=($P $(( NM - S )))
 }
 
@@ -15865,7 +15882,7 @@ _MOVE_FILE_PLAN () {
 	setopt local_options no_multibyte
 	local WT=$1 P=$2 REV=$6 TD=$7
 	local -a CANDS=("${@:8}") _MV_B _MV_O _MV_T HO HT OLDL NEWL E_AT E_N E_NN E_TXT OWNS SUBS PO PN UNSURE ZONES
-	local -A MS MAP MAYBE TMAP OT
+	local -A MS MAP MAYBE TMAP OT _MV_RI
 	local -i I J S A AC N NC K L R PL PR NB NO NT X Y LO HI EXT UP DN SURE SKIP=0 ZA ZB TZA TZB OZA OZB
 	REPLY="it is binary or its last line lacks its line end"
 	_MOVE_BLOB_LINES "$WT" _MV_B "$3" && _MOVE_BLOB_LINES "$WT" _MV_O "$4" && _MOVE_BLOB_LINES "$WT" _MV_T "$5" || return 1
@@ -15995,8 +16012,13 @@ _MOVE_FILE_PLAN () {
 			if (( AC == NC )); then
 				for (( J = 0; J < AC; J++ )); do
 					X=$(( A + J ))
-					(( ${+MS[$X]} && ${+MAP[$X]} )) || continue
-					Y=${MAP[$X]}
+					(( ${+MS[$X]} )) || continue
+					if (( ${+MAP[$X]} )); then
+						Y=${MAP[$X]}
+					else
+						_MOVE_REINDENTED $X || continue
+						Y=$REPLY
+					fi
 					_WORDS_APART "${_MV_O[Y]}" "${_MV_B[X]}" "${_MV_T[N + J]}" || continue
 					REPLY="its change at line $X edits words a commit still to come left alone, on a line that commit rewrote – make it there on the line as it stands before this stop, keeping it this commit's own"
 					return 1
@@ -16076,6 +16098,36 @@ _MOVE_FILE_PLAN () {
 		OUT_LINES=("${(@)OUT_LINES[1,E_AT[I]-1]}" "${NEWL[@]}" "${(@)OUT_LINES[E_AT[I]+E_N[I],-1]}")
 	done
 	return 0
+}
+
+# Puts into `REPLY` the line of `_MOVE_FILE_PLAN`'s stage 2 that its stage 1 <line>, left unpaired
+# by a hunk replacing more lines, stands for there – whitespace aside alike, each once in the hunk
+_MOVE_REINDENTED () {
+	# Args: <stage 1 line>
+	local -i I J X=$1
+	local W=${(j: :)${=_MV_B[X]}} K
+	[ -n "$W" ] || return 1
+	for (( I = 1; I <= ${#HO}; I += 4 )); do
+		(( HO[I+1] && X >= HO[I] && X < HO[I] + HO[I+1] )) && break
+	done
+	(( I <= ${#HO} )) || return 1
+	# The hunk's lines by their words, once a plan – "<hunk> <side> <words>" to the line, `-` for two
+	if (( ! ${+_MV_RI[$I]} )); then
+		_MV_RI[$I]=1
+		for (( J = HO[I]; J < HO[I] + HO[I+1]; J++ )); do
+			K="$I b ${(j: :)${=_MV_B[J]}}"
+			(( ${+_MV_RI[$K]} )) && _MV_RI[$K]=- || _MV_RI[$K]=$J
+		done
+		for (( J = HO[I+2]; J < HO[I+2] + HO[I+3]; J++ )); do
+			K="$I o ${(j: :)${=_MV_O[J]}}"
+			(( ${+_MV_RI[$K]} )) && _MV_RI[$K]=- || _MV_RI[$K]=$J
+		done
+	fi
+	K="$I b $W"
+	[ "${_MV_RI[$K]}" = "$X" ] || return 1
+	K="$I o $W"
+	[[ "${_MV_RI[$K]}" == <-> ]] || return 1
+	REPLY=${_MV_RI[$K]}
 }
 
 # Puts into `REPLY` how often the run of array <run>'s lines occurs in array <name>
