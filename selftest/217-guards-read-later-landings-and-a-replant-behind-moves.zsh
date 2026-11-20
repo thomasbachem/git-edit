@@ -50,6 +50,18 @@ _ST_EQ "a stale file predating a peer's landing and the caller's own refuses" "$
 print -l 1 2A 3 4 5 6 7B 8 > f.txt
 GIT_EDIT_ACTOR=gl-b _ST_RUN --commit --text "GL1o B own undone" -- f.txt
 _ST_EQ "while one taking back only the caller's own landing lands" "$RC:$(git show HEAD:f.txt | sed -n 2p)" "0:2A"
+# A peer's landing a later one put back as it was, a third caller's landing between them so
+# no tip holds the file as before it: the caller taking out its own line since blames neither
+_ST_PZ_NEW gl1u
+print -l 1 2 3 4 5 6 7 8 > f.txt && git add -A && git commit -qm "GL base"
+GIT_EDIT_ACTOR=gl-a _ST_RUN --commit --text "GL A line 2" --edits '{"f.txt": [["2\n", "2A\n"]]}'
+GIT_EDIT_ACTOR=gl-c _ST_RUN --commit --text "GL C line 5" --edits '{"f.txt": [["5\n", "5C\n"]]}'
+GIT_EDIT_ACTOR=gl-a _ST_RUN --commit --text "GL A back" --edits '{"f.txt": [["2A\n", "2\n"]]}'
+GIT_EDIT_ACTOR=gl-b _ST_RUN --commit --text "GL B adds 9" --edits '{"f.txt": [["8\n", "8\n9\n"]]}'
+GIT_EDIT_ACTOR=gl-b _ST_RUN --commit --text "GL B drops 9" --edits '{"f.txt": [["8\n9\n", "8\n"]]}'
+_ST_EQ "taking back the caller's own line beside a peer's landing put back lands" \
+	"$RC:$(git log -1 --format=%s):$(git show HEAD:f.txt | wc -l | tr -d ' ')" "0:GL B drops 9:8"
+_ST_OUT_LACKS "naming no landing" 'would take back'
 
 # V2-3: an input on a small file a peer added is meant
 _ST_PZ_NEW gl3

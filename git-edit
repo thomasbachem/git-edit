@@ -13180,8 +13180,12 @@ _GUARD_WHOLE_LANDINGS () {
 				[ "${MODE_OF[$P]}" != 120000 ]; then
 				_MERGED_INTO "$TIP" "$BEFORE" "$AFTER"
 				MRC=$? MERGED=$REPLY
-				(( MRC <= 127 )) && [ "$MERGED" != "$TIP" ] && _EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER" && \
-					AFTER=$TIP LATER=", changed again since"
+				if (( MRC <= 127 )) && [ "$MERGED" != "$TIP" ] && _EDITS_MISS_LANDING "$O" "$BEFORE" "$AFTER"; then
+					# Not where the tip holds its lines as they were before it – the landing putting them
+					# back answers for itself, and the span would blame this one for the caller's own since
+					_MERGED_INTO "$TIP" "$AFTER" "$BEFORE"
+					(( $? == 0 )) && [ "$REPLY" = "$TIP" ] || AFTER=$TIP LATER=", changed again since"
+				fi
 			fi
 			# Content first, once – a `continue` in here finds it taking nothing back, leaving the mode
 			for KIND in carry; do
