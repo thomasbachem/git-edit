@@ -39,9 +39,16 @@ _ST_EQ "a fold losing the race once lands on its re-run, above the peer's commit
 RR_PEER=$(git rev-parse 'main@{1}')
 _ST_OUT_HAS "naming the loss, who moved the branch, its new tip and the try" \
 	"^Lost the race – a commit outside git-edit (commit 'RR peer') moved main to ${RR_PEER:0:7} – running it again on the new tip, re-run 1 of 2"
-_ST_EQ "ending in one trailer, the re-run's" "$(_RR_TRAILERS):${OUT##*$'\n'}" "1:git-edit: ok – refs/heads/main moved $RR_PEER → $(git rev-parse HEAD)"
+_ST_EQ "ending in one trailer, the re-run's, naming the race it lost" "$(_RR_TRAILERS):${OUT##*$'\n'}" \
+	"1:git-edit: ok – refs/heads/main moved $RR_PEER → $(git rev-parse HEAD) – after losing the race to a commit outside git-edit (commit 'RR peer')"
 _ST_OUT_HAS "its first gate stopping at the check after the move" \
 	"^Verification stopped after 1 of 2 commit(s) – main moved, so this result can't land$"
+
+# Losing twice, its second re-run lands, the trailer naming the last race lost
+_RR_NEW rr1b 2
+_ST_RUN --amend-into="$RR_TGT" --verify="$TMP/rr-race.sh" -- f.txt
+_ST_EQ "a fold losing the race twice lands on its second re-run, in one trailer saying so" "$RC:$(_RR_TRAILERS):${OUT##*$'\n'}" \
+	"0:1:git-edit: ok – refs/heads/main moved $(git rev-parse 'main@{1}') → $(git rev-parse HEAD) – after losing the race twice, last to a commit outside git-edit (commit 'RR peer')"
 
 # Losing every try – two re-runs, one trailer, the remedy on it
 _RR_NEW rr2 99

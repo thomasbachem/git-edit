@@ -209,7 +209,7 @@ git config edit.node_modules.installCmd 'npm ci --prefer-offline'
 Every run ends with a single status line, written as prose and anchored by `git-edit: <outcome>`:
 
 ```
-git-edit: ok – <ref> moved <old-sha> → <new-sha>[ – <sha>'s edits to <path> landed with <sha>[ and <n> more]]
+git-edit: ok – <ref> moved <old-sha> → <new-sha>[ – <sha>'s edits to <path> landed with <sha>[ and <n> more]][ – after losing the race[ twice, last] to <who>]
 git-edit: ok – <ref> unchanged[, <why>]
 git-edit: error – <reason>
 git-edit: conflict – resolve in <worktree> (<files>); then 'git edit --continue' or 'git edit --abort'
