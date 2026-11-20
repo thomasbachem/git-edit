@@ -26959,6 +26959,13 @@ for ARG in "$@"; do
 			PRINT_ERR "Unknown option: $ARG"
 			exit 1
 			;;
+		# One naming a commit with no value of its own reads `=<sha>` glued on as a bundle of letters
+		# – `-M=<sha>` refused as "-=" – so the form it takes is named instead
+		-[deMmS]=*|--(drop|edit|message|reword|resquash)=*)
+			_USAGE_POINT=1
+			PRINT_ERR "${ARG%%=*} takes no value – name the commit after it: git edit ${ARG%%=*} ${ARG#*=}"
+			exit 1
+			;;
 	esac
 done
 

@@ -35,6 +35,9 @@ _ST_RUN --commit --text "AG rm" --rmc.txt
 _ST_OUT_HAS "a value stuck to an input flag too" 'Unknown option: --rmc.txt'
 _ST_RUN --carryfoo
 _ST_OUT_HAS "and to a flag whose value is optional" 'Unknown option: --carryfoo'
+_ST_RUN -M=HEAD~1 --text "AG reworded"
+_ST_EQ "a commit glued onto -M refuses" "${RC}:$(git rev-parse HEAD)" "1:$AG_T"
+_ST_OUT_HAS "naming the form it takes" '^git-edit: error – -M takes no value – name the commit after it: git edit -M HEAD~1$'
 _ST_RUN --amend-into=HEAD~1 --verify=true --verify-span -- b.txt
 _ST_EQ "while --verify-span itself still gates the fold" "${RC}:$(git show HEAD~1:b.txt | tail -1)" "0:more"
 # A resume or cancel given a commit or a mode beside it refuses, the pause left as it was
