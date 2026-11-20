@@ -3031,7 +3031,8 @@ would invest more \(em before it writes a pause, before its gate, as a
 .B \-\-continue
 starts, and right before its compare\-and\-swap \(em and stops there with
 nothing applied once its branch moved off the tip it read, or another run
-paused on that branch since it started. The refusal names who moved the
+paused on that branch since it started. Its gate asks again between its
+checks whether the branch moved. The refusal names who moved the
 branch: a git\-edit run by its operation and
 .B GIT_EDIT_ACTOR
 label, or a commit outside git\-edit. The run then runs itself again on the

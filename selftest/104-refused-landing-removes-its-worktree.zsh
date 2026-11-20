@@ -8,8 +8,9 @@ PP_BRANCH=$(git symbolic-ref --short HEAD)
 PP_PEER=$(git commit-tree -p "$PP_LAST" -m "PP peer" "$PP_LAST^{tree}")
 PP_WORKTREES=$(git worktree list | wc -l | tr -d ' ')
 # The check stands in for a parallel session, landing on the branch and recording its own pause
-printf '#!/bin/sh\ngit update-ref refs/heads/%s %s\nprintf "operation=edit\\nworktree=/nonexistent/peer\\n" > "%s"\n' \
-	"$PP_BRANCH" "$PP_PEER" "$PP_SF" > "$TMP/pp-land.sh" && chmod +x "$TMP/pp-land.sh"
+# – at the gate's second and last check, so the landing's CAS is what refuses
+printf '#!/bin/sh\n[ -e "%s" ] || { : > "%s"; exit 0; }\ngit update-ref refs/heads/%s %s\nprintf "operation=edit\\nworktree=/nonexistent/peer\\n" > "%s"\n' \
+	"$TMP/pp-land.once" "$TMP/pp-land.once" "$PP_BRANCH" "$PP_PEER" "$PP_SF" > "$TMP/pp-land.sh" && chmod +x "$TMP/pp-land.sh"
 _ST_RUN --move="$PP_LAST" --before="$PP_FIRST" --verify="$TMP/pp-land.sh"
 _ST_EQ "the landing is refused" "$RC" "1"
 _ST_OUT_HAS "as the branch moved" 'moved during reorder'

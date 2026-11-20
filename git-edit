@@ -117,7 +117,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRAIL_CARRIED _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
-	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS
+	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS _GATE_GUARD
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RERUN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
@@ -1051,7 +1051,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
 	ECHO_E "\e[0;94m       proven identical commit for commit. GIT_EDIT_NO_REPLAY=1 keeps the commit-by-commit walk.\e[0m"
 	ECHO_E "\e[0;94m       A run losing the race to another caller runs itself again on the new tip, up to twice,\e[0m"
-	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -. GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
+	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -, its gate stopping once the branch moves.\e[0m"
+	ECHO_E "\e[0;94m       GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – <ref> moved <old-sha> → <new-sha>[ – <sha>'s edits to <path> landed with <sha>\e[0m"
 	ECHO_E "\e[0;94m                           [ and <n> more]]\e[0m"
@@ -8997,6 +8998,9 @@ _PAUSE_BEGAN () {
 	[ -z "$SB" ] || [ "refs/heads/${SB#refs/heads/}" = "$1" ]
 }
 
+# What `_REQUIRE_CURRENT` last checked a tip with, for a gate to ask again between its checks
+typeset -ga _GATE_GUARD=()
+
 # Refuses a run that can no longer land, before it pauses, gates, resumes or lands – its branch
 # moved off the tip it read, which its CAS would refuse, or another run's pause on that branch began
 # since it started, whose resolution its landing would strand – a resolution or typed message kept
@@ -9006,6 +9010,7 @@ _REQUIRE_CURRENT () {
 	# [<message typed in an editor> <command rerunning with it>]
 	local NOW
 	if [ -n "$2" ] && [[ "$1" == refs/* ]]; then
+		_GATE_GUARD=("$@")
 		NOW=$(git rev-parse -q --verify "$1" 2>/dev/null)
 		[ -n "$NOW" ] && [ "$NOW" != "$2" ] && _REFUSE_STALE "$1" "$2" "$NOW" "$3" "$4"
 	fi
@@ -23609,8 +23614,26 @@ _VERIFY_REWRITE () {
 		_STATE_NOTE "verify_result=$NEW_HEAD"
 		[ -n "$_STATE_OWNED" ] && STATE_VERIFY_RESULT=$NEW_HEAD
 	fi
+	# The branch and the tip its CAS expects, as the check before the gate named them – only while
+	# the branch still holds that tip, never one an earlier step named and the run since moved
+	local -a GUARD=()
+	local NOW
+	[ ${#_GATE_GUARD} -ge 2 ] && [ "$(git rev-parse -q --verify "${_GATE_GUARD[1]}" 2>/dev/null)" = "${_GATE_GUARD[2]}" ] && \
+		GUARD=("${_GATE_GUARD[@]}")
 	for C in "${COMMITS[@]}"; do
 		POSITION+=1
+		# A branch moved meanwhile fails the CAS, so no later check could make this result land
+		if (( POSITION > 1 && ${#GUARD} )); then
+			NOW=$(git rev-parse -q --verify "${GUARD[1]}" 2>/dev/null)
+			if [ -n "$NOW" ] && [ "$NOW" != "${GUARD[2]}" ]; then
+				PRINT_TEXT "Verification stopped after %s of %s commit(s) – %s moved, so this result can't land" 33 \
+					"$(( POSITION - 1 ))" "${#COMMITS[@]}" "${GUARD[1]#refs/heads/}"
+				_VERIFY_NOTE_LITTER
+				_VERIFY_DEPS_RESET "$WT"
+				git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
+				_REQUIRE_CURRENT "${GUARD[@]}"
+			fi
+		fi
 		ABSENT=""
 		for P in "${CMD_PATHS[@]}"; do
 			if ! git -C "$WT" cat-file -e "$C:$P" 2>/dev/null; then

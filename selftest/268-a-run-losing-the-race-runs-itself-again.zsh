@@ -38,6 +38,8 @@ RR_PEER=$(git rev-parse 'main@{1}')
 _ST_OUT_HAS "naming the loss, who moved the branch, its new tip and the try" \
 	"^Lost the race – a commit outside git-edit (commit 'RR peer') moved main to ${RR_PEER:0:7} – running it again on the new tip, re-run 1 of 2"
 _ST_EQ "ending in one trailer, the re-run's" "$(_RR_TRAILERS):${OUT##*$'\n'}" "1:git-edit: ok – refs/heads/main moved $RR_PEER → $(git rev-parse HEAD)"
+_ST_OUT_HAS "its first gate stopping at the check after the move" \
+	"^Verification stopped after 1 of 2 commit(s) – main moved, so this result can't land$"
 
 # Losing every try – two re-runs, one trailer, the remedy on it
 _RR_NEW rr2 99
@@ -48,7 +50,7 @@ _ST_EQ "after two re-runs, no third" \
 	"$(grep -c '^Lost the race – .* re-run [12] of 2' <<<"$OUT"):$(grep -c 're-run 3' <<<"$OUT")" "2:0"
 _ST_EQ "in one trailer" "$(_RR_TRAILERS)" "1"
 _ST_OUT_HAS "naming the tries and the rerun on it" \
-	"^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} during the fold – refusing to overwrite – lost on each of 3 tries, nothing was applied, so run it again$"
+	"^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} since this run read it – a commit outside git-edit (commit 'RR peer') – lost on each of 3 tries, nothing was applied, so run it again$"
 
 # A commit losing once lands on its re-run, while one whose message came from stdin refuses
 _RR_NEW rr3 1
@@ -122,7 +124,8 @@ export GIT_EDIT_NO_RERUN=1
 _ST_RUN --amend-into="$RR_TGT" --verify="$TMP/rr-race.sh" -- f.txt
 _ST_EQ "GIT_EDIT_NO_RERUN refuses the fold at its first loss" "$RC:$(git log -1 --format=%s):$(git diff --cached --name-only)" "1:RR peer:f.txt"
 _ST_OUT_LACKS "never running it again" 'Lost the race'
-_ST_OUT_HAS "the trailer naming the rerun" "^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} during the fold – refusing to overwrite – nothing was applied, so run it again$"
+# Its gate stops at its second check, the branch moved under the first
+_ST_OUT_HAS "the trailer naming the rerun" "^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} since this run read it – a commit outside git-edit (commit 'RR peer') – nothing was applied, so run it again$"
 
 unfunction _RR_NEW _RR_TRAILERS
 cd "$TMP/repo"

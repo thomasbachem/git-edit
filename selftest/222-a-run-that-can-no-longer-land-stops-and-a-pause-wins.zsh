@@ -169,7 +169,9 @@ export GIT_EDIT_ACTOR=
 print -r -- g9 > g.txt && git add g.txt
 S_OLD=$(git rev-parse HEAD)
 S_PEER=$(git commit-tree -p HEAD -m "S222 peer" "HEAD^{tree}")
-printf '#!/bin/sh\ngit update-ref refs/heads/main %s\n' "$S_PEER" > "$TMP/s222-race.sh" && chmod +x "$TMP/s222-race.sh"
+# Moving the branch at the gate's second and last check, as one moved earlier stops the gate there
+printf '#!/bin/sh\n[ -e "%s" ] || { : > "%s"; exit 0; }\ngit update-ref refs/heads/main %s\n' "$TMP/s222.once" "$TMP/s222.once" "$S_PEER" \
+	> "$TMP/s222-race.sh" && chmod +x "$TMP/s222-race.sh"
 export GIT_EDIT_ACTOR=s-me
 _ST_RUN --amend-into="$S_G" --verify="$TMP/s222-race.sh" -- g.txt
 export GIT_EDIT_ACTOR=
