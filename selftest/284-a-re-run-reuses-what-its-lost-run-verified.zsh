@@ -1,7 +1,7 @@
 # A run losing the race reruns only the checks it can't reuse:
 # • Its gate stops at the first check after the branch moved, as its CAS would refuse
 # • Its re-run takes over each check passed on a commit rebuilt alike – tree, parents' trees,
-#   author and message – and runs every other
+#   author and message – and runs every other, in the `PATH` the first run had, as a resume does
 _ST_SCENARIO "\e[1;96m[284] a re-run reuses what its lost run verified\e[0m"
 local RV_TGT
 
@@ -21,6 +21,7 @@ _RV_NEW () {
 #!/bin/sh
 S=\$(git log -1 --format=%s "\$GIT_EDIT_VERIFY_COMMIT")
 printf '%s\n' "\$S" >> "$TMP/rv-$1.log"
+printf '%s\n' "\$PATH" >> "$TMP/rv-$1.path"
 [ "\$S" = "$2" ] && [ ! -e "$TMP/rv-$1.moved" ] || exit 0
 : > "$TMP/rv-$1.moved"
 cd "$TMP/pz-$1" || exit 1
@@ -45,13 +46,17 @@ _RV_CHECKED () {
 export GIT_EDIT_NO_RERUN=
 
 # Losing at its last check, the re-run checks only the peer's commit – the rest passed unchanged
+# – each check in the first run's `PATH`, though a `.zshenv` prepends to it as each zsh starts
+mkdir -p "$TMP/rv-zdot"
+print -r -- 'export PATH="/rv-zshenv-marker:$PATH"' > "$TMP/rv-zdot/.zshenv"
 _RV_NEW rk "rk D" 'git update-ref refs/heads/main "$(git commit-tree -p "$M" -m "rk peer" "$M^{tree}")"'
-_ST_RUN --amend-into="$RV_TGT" --verify="$TMP/rv-rk.sh" --verify-span -- A.txt
+ZDOTDIR="$TMP/rv-zdot" _ST_RUN --amend-into="$RV_TGT" --verify="$TMP/rv-rk.sh" --verify-span -- A.txt
 _ST_EQ "a fold losing the race at its last check lands on its re-run" \
 	"$RC:$(git log --format=%s | tr '\n' ,):$(git show HEAD~4:A.txt)" "0:rk peer,rk D,rk C,rk B,rk A,rk base,:A2"
 _ST_OUT_HAS "naming the loss" '^Lost the race – .* re-run 1 of 2'
 _ST_EQ "its re-run checking only the commit the move brought" "$(_RV_CHECKED rk)" "rk A,rk B,rk C,rk D,rk peer,"
 _ST_OUT_HAS "counting the checks it took over" 'Verified 5 commit(s) with .* – 4 of them passed unchanged on the run that lost the race$'
+_ST_EQ "every check seeing the PATH the first run had" "$(sort -u "$TMP/rv-rk.path" | wc -l | tr -d ' ')" "1"
 
 # A peer rewording `B` runs its check again – `C` and `D` above it, rebuilt alike, reuse theirs
 _RV_NEW rw "rw D" 'NB=$(ct "$B" "$B^" "rw B reworded") && NC=$(ct "$C" "$NB" "rw C") && ND=$(ct "$M" "$NC" "rw D") &&
@@ -86,6 +91,23 @@ _ST_OUT_HAS "stopping its gate at the next check" "^Verification stopped after 1
 _ST_OUT_HAS "refused as moved since it read it" "^Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} since this run read it"
 _ST_EQ "the first run checking that one commit, its re-run the rest" "$(_RV_CHECKED es)" "es A,es B,es C,es D,es peer,"
 _ST_OUT_HAS "the one it checked taken over" 'Verified 5 commit(s) with .* – 1 of them passed unchanged on the run that lost the race$'
+
+# A terminal pause's resume, a run it starts in its own place, checks in the first run's `PATH` too
+_ST_PZ_NEW rt
+_ST_PZ_C a.txt a "rt a"
+_ST_PZ_C b.txt b "rt b"
+git config edit.verifyCmd "printf '%s\\n' \"\$PATH\" >> \"$TMP/rv-rt.path\""
+_ST_TTY_START "ZDOTDIR=$TMP/rv-zdot" -- HEAD~1
+if _ST_TTY_AT 'Make your changes in'; then
+	RV_TGT=$(_ST_PZ_WT)
+	print -r -- a2 > "${RV_TGT:-$ST_NO_WT}/a.txt"
+	zpty -wn ST_TTY $'\r'
+	_ST_TTY_AT 'to leave it paused' 2 && zpty -wn ST_TTY q
+fi
+_ST_TTY_END
+_ST_EQ "a terminal pause's resume lands, each check seeing the marker once" \
+	"$RC:$(wc -l < "$TMP/rv-rt.path" | tr -d ' '):$(grep -o rv-zshenv-marker "$TMP/rv-rt.path" | wc -l | tr -d ' ')" "0:2:2"
+git config --unset edit.verifyCmd
 
 unfunction _RV_NEW _RV_CHECKED
 cd "$TMP/repo"

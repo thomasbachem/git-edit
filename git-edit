@@ -191,6 +191,9 @@ _RERUN_ARGS=("$@")
 _RERUNS=0
 [[ "$GIT_EDIT_RERUNS" == <1-2> ]] && _RERUNS=$GIT_EDIT_RERUNS
 unset GIT_EDIT_RERUNS
+# A run this script started in its own place takes back the `PATH` it had – the new zsh read
+# the caller's `.zshenv` again, which may have grown it – so its checks see what the first saw
+{ [ -n "$_EXPECT_PAUSE" ] || (( _RERUNS )); } && [ -n "$GIT_EDIT_PATH" ] && PATH=$GIT_EDIT_PATH
 # The checks a re-run's lost run passed, each by its `_VERIFY_KEYS` key, in a file only it reads
 typeset -ga _VERIFY_PASSED=()
 typeset -gA _VERIFY_PRIOR=()
@@ -200,7 +203,7 @@ if (( _RERUNS )) && [[ "${GIT_EDIT_VERIFIED:t}" == git-edit-verified.* && -f "$G
 	done
 	rm -f "$GIT_EDIT_VERIFIED"
 fi
-unset GIT_EDIT_VERIFIED _V
+unset GIT_EDIT_PATH GIT_EDIT_VERIFIED _V
 
 # A relative `TMPDIR` taken from where the run starts – a worktree's git would resolve it in there,
 # an editor stand-in's path naming nothing, and one opening with `-` reads to `mktemp` as an option
@@ -25088,11 +25091,11 @@ _RESUME_EXEC () {
 	_EXEC_SELF "GIT_EDIT_EXPECT_PAUSE=$2" -- "$1"
 }
 
-# Runs the script with <arg>... in this run's place,
-# in the caller's environment plus each <name=value>
+# Runs the script with <arg>... in this run's place, in the caller's environment
+# plus each <name=value> and this run's `PATH`, for the new run to take back
 _EXEC_SELF () {
 	# Args: <name=value>... `--` <arg>...
-	local -a ENV=(-u GIT_CONFIG_PARAMETERS) RUN=("$_SELF")
+	local -a ENV=(-u GIT_CONFIG_PARAMETERS "GIT_EDIT_PATH=$PATH") RUN=("$_SELF")
 	while (( $# )) && [ "$1" != -- ]; do
 		ENV+=("$1")
 		shift
