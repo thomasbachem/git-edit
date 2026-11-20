@@ -16035,21 +16035,25 @@ _MOVE_FILE_PLAN () {
 		if (( AC && K && 2 * K >= AC )); then
 			# A line both commits edited in place, at words apart, holds an edit of the stop's
 			# commit's own that a carry would take from it – left to the hand instead
-			if (( AC == NC )); then
-				for (( J = 0; J < AC; J++ )); do
-					X=$(( A + J ))
-					(( ${+MS[$X]} )) || continue
-					if (( ${+MAP[$X]} )); then
-						Y=${MAP[$X]}
-					else
-						_MOVE_REINDENTED $X || continue
-						Y=$REPLY
-					fi
+			for (( J = 0; J < AC; J++ )); do
+				X=$(( A + J ))
+				(( ${+MS[$X]} )) || continue
+				if (( ${+MAP[$X]} )); then
+					Y=${MAP[$X]}
+				else
+					_MOVE_REINDENTED $X || continue
+					Y=$REPLY
+				fi
+				if (( AC == NC )); then
 					_WORDS_APART "${_MV_O[Y]}" "${_MV_B[X]}" "${_MV_T[N + J]}" || continue
-					REPLY="its change at line $X edits words a commit still to come left alone, on a line that commit rewrote – make it there on the line as it stands before this stop, keeping it this commit's own"
-					return 1
-				done
-			fi
+				else
+					# No line pairs across a hunk taking more lines or fewer – there a line the commit
+					# to come only re-indented decides alone, its words no edit of that commit's
+					[[ "${${=_MV_O[Y]}}" == "${${=_MV_B[X]}}" ]] || continue
+				fi
+				REPLY="its change at line $X edits words a commit still to come left alone, on a line that commit rewrote – make it there on the line as it stands before this stop, keeping it this commit's own"
+				return 1
+			done
 			OWNS=()
 			LO=A HI=$(( AC ? A + AC - 1 : A + 1 ))
 			for (( J = LO; J <= HI; J++ )); do

@@ -111,4 +111,51 @@ _ST_EQ "the crossed commit's step stops in turn" "$RC" "2"
 _ST_RESOLVE "$(_ST_PZ_WT)" r.js "$(_RR_F $'\t\t' " // first")"
 _ST_RUN --continue
 _ST_EQ "resolved so, it lands, the tip as it was" "$RC:$(git rev-parse "HEAD^{tree}")" "0:$RI_TREE"
-unfunction _RI_S _RX_F _RX_REPO _RR_F
+
+# Prints `c.js` with its save in a `wait(0)` where <wrap> is given, and where <named> is a
+# `takesSeries()` defined above, the check below rewritten as one comment line and a call to it
+_RC_F () {
+	# Args: <wrap> <named>
+	local I=$'\t\t'${1:+$'\t\t'}
+	print -lr -- 'function f() {' $'\tconst takesLocal = () => !!read();'
+	[ -z "$2" ] || print -lr -- $'\t// Checks whether a pick goes to the series' $'\tconst takesSeries = () => {' \
+		$'\t\tconst stored = load();' $'\t\treturn (stored?.inherit() !== undefined && stored.pick()?.[\'scope\'] !== \'this\');' $'\t};'
+	print -r -- $'\twatch(x => {'
+	[ -z "$1" ] || print -lr -- $'\t\t// Read later – the hook runs first' $'\t\treturn (' $'\t\t\twait(0)' $'\t\t\t.then(() => {'
+	print -lr -- "${I}const id = get();" "${I}const stored = load();"
+	if [ -n "$2" ]; then
+		print -lr -- "${I}// Written to the event alone where it isn't the series', as for a guest of one" "${I}const isAlone = !takesSeries();"
+	else
+		print -lr -- "${I}// Written to the event alone where no master passes a pick on, as for a guest" \
+			"${I}// invited to one occurrence, or it holds its own" \
+			"${I}const isAlone = (stored?.inherit() === undefined || stored.pick()?.['scope'] === 'this');"
+	fi
+	print -r -- "${I}return save(id, isAlone);"
+	[ -z "$1" ] || print -lr -- $'\t\t\t})' $'\t\t);'
+	print -lr -- $'\t});' '}'
+}
+# Its rewrite of lines the crossed commit only re-indented, into fewer lines than it replaces,
+# stays its own too – no line pairs across such a hunk, so the re-indent alone decides
+_ST_PZ_NEW rc
+git config rerere.enabled false
+_RC_F "" "" > c.js && git add . && git commit -qm "RC base"
+_RC_F 1 "" > c.js && git commit -qam "RC X waits a tick" && RC_X=$(git rev-parse HEAD)
+_RC_F 1 1 > c.js && git commit -qam "RC M names the check" && RI_M=$(git rev-parse HEAD)
+RI_TREE=$(git rev-parse "HEAD^{tree}")
+_ST_RUN --move="$RI_M" --before="$RC_X"
+_ST_EQ "moved past a commit only re-indenting lines it rewrites into fewer, the move stops at it" "$RC" "2"
+[ -n "$RI_OLD" ] || _ST_OUT_HAS "saying the rewrite stays its own" \
+	'c\.js: its change at line [0-9]* edits words a commit still to come left alone, on a line that commit rewrote'
+_ST_OUT_LACKS "never carrying it" 'carried to it'
+_ST_RESOLVE "$(_ST_PZ_WT)" c.js "$(_RC_F "" 1)"
+_ST_RUN --continue
+# The crossed commit's re-indent replays over the rewrite – where git
+# can't be sure of a line's identity, its step stops for the hand first
+if [ "$RC" = 2 ]; then
+	_ST_RESOLVE "$(_ST_PZ_WT)" c.js "$(_RC_F 1 1)"
+	_ST_RUN --continue
+fi
+_ST_EQ "resolved so, it lands, the tip as it was" "$RC:$(git rev-parse "HEAD^{tree}")" "0:$RI_TREE"
+_ST_EQ "the moved commit holding its rewrite" "$(git show --format= HEAD~1 -- c.js | grep -c -e '^+.*isAlone = !takesSeries')" "1"
+_ST_EQ "the crossed one only re-indenting it" "$(git show --format= HEAD -- c.js | grep -c -e "inherit() === ")" "0"
+unfunction _RI_S _RX_F _RX_REPO _RR_F _RC_F
