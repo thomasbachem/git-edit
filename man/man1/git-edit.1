@@ -1873,8 +1873,10 @@ a wrong one before the tip ever shows it.
 On a terminal, or where
 .B GIT_EDIT_PROGRESS
 is set, each commit is named on a line of its own as its check starts
-.RB ( "Checking 2 of 5 \(en <sha> <subject>" ),
-so a long gate can be followed. The command runs under git\-edit's own zsh,
+.RB ( "Checking 2 of 5 \(en <sha> <subject>" ,
+or
+.B "Passed 2 of 5 on the run that lost the race \(en <sha> <subject>"
+for one a re\-run takes over), so a long gate can be followed. The command runs under git\-edit's own zsh,
 which resets the options and aliases a caller's
 .B .zshenv
 sets. So an alias defined there does not resolve in it, while a function or a
@@ -3045,6 +3047,9 @@ a
 .B \-\-continue
 or a
 .BR "\-\-text \-" .
+A re\-run takes over each check its lost run passed on a commit it rebuilds
+alike \(em the same tree, parents' trees, author and message under the same
+command \(em and its verification line counts them.
 Past the last try the refusal stands, its trailer saying nothing was applied,
 so run it again;
 .B GIT_EDIT_NO_RERUN

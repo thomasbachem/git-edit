@@ -117,7 +117,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRAIL_CARRIED _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
-	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS _GATE_GUARD
+	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS _GATE_GUARD _VERIFY_PASSED _VERIFY_PRIOR
 
 # A switch set to 0, false, no or off is off, as most tools read one
 for _V in GIT_EDIT_NO_AUTO_OPEN GIT_EDIT_NO_RERUN GIT_EDIT_NO_RESOLVE GIT_EDIT_NO_REPLAY GIT_EDIT_NO_SELF_RESOLVE GIT_EDIT_PROGRESS; do
@@ -191,6 +191,16 @@ _RERUN_ARGS=("$@")
 _RERUNS=0
 [[ "$GIT_EDIT_RERUNS" == <1-2> ]] && _RERUNS=$GIT_EDIT_RERUNS
 unset GIT_EDIT_RERUNS
+# The checks a re-run's lost run passed, each by its `_VERIFY_KEYS` key, in a file only it reads
+typeset -ga _VERIFY_PASSED=()
+typeset -gA _VERIFY_PRIOR=()
+if (( _RERUNS )) && [[ "${GIT_EDIT_VERIFIED:t}" == git-edit-verified.* && -f "$GIT_EDIT_VERIFIED" ]]; then
+	for _V in ${(f)"$(<"$GIT_EDIT_VERIFIED")"}; do
+		[[ "$_V" =~ '^[0-9a-f]+$' ]] && _VERIFY_PRIOR[$_V]=1 && _VERIFY_PASSED+=("$_V")
+	done
+	rm -f "$GIT_EDIT_VERIFIED"
+fi
+unset GIT_EDIT_VERIFIED _V
 
 # A relative `TMPDIR` taken from where the run starts – a worktree's git would resolve it in there,
 # an editor stand-in's path naming nothing, and one opening with `-` reads to `mktemp` as an option
@@ -1051,8 +1061,8 @@ USAGE () {
 	ECHO_E "\e[0;94m       Plumbing modes rebuild a linear span in one 'git replay' pass (git 2.44+), kept only once\e[0m"
 	ECHO_E "\e[0;94m       proven identical commit for commit. GIT_EDIT_NO_REPLAY=1 keeps the commit-by-commit walk.\e[0m"
 	ECHO_E "\e[0;94m       A run losing the race to another caller runs itself again on the new tip, up to twice,\e[0m"
-	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -, its gate stopping once the branch moves.\e[0m"
-	ECHO_E "\e[0;94m       GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
+	ECHO_E "\e[0;94m       bar an --exec, a --continue or a --text -, reusing each check passed on a commit it rebuilt\e[0m"
+	ECHO_E "\e[0;94m       alike – its gate stops once the branch moves. GIT_EDIT_NO_RERUN=1 opts out.\e[0m"
 	ECHO_E "\e[0;94m       Every run ends with a status line (anchored by 'git-edit: <ok|error|conflict|paused>'):\e[0m"
 	ECHO_E "\e[0;94m         git-edit: ok – <ref> moved <old-sha> → <new-sha>[ – <sha>'s edits to <path> landed with <sha>\e[0m"
 	ECHO_E "\e[0;94m                           [ and <n> more]]\e[0m"
@@ -23494,6 +23504,45 @@ _VERIFY_DIAGNOSE () {
 	return 0
 }
 
+# Puts into `reply` a key for each <commit> under <cmd>, in order – its tree, its parents' trees,
+# author and message, so a commit rebuilt alike on a moved tip, only its committer new, keys alike
+_VERIFY_KEYS () {
+	# Args: <cmd> <commit>...
+	local CMD=$1 R D T P
+	local -a RECS WORDS PARENTS UNIQ PTREES
+	local -A PTREE
+	local -i I
+	shift
+	reply=()
+	(( $# )) || return 1
+	# NUL apart, as a message spans lines – unquoted, so the NUL ending the last yields no element
+	RECS=(${(0)"$(git log -z --no-walk=unsorted --format='%H %T %P%n%an <%ae> %ad%n%B' --date=raw "$@" 2>/dev/null)"})
+	(( ${#RECS} == $# )) || return 1
+	for R in "${RECS[@]}"; do
+		WORDS=(${=${R%%$'\n'*}})
+		PARENTS+=("${(@)WORDS[3,-1]}")
+	done
+	UNIQ=(${(u)PARENTS})
+	if (( ${#UNIQ} )); then
+		PTREES=(${(f)"$(git rev-parse "${(@)^UNIQ}^{tree}" 2>/dev/null)"})
+		(( ${#PTREES} == ${#UNIQ} )) || return 1
+		for (( I = 1; I <= ${#UNIQ}; I++ )); do PTREE[${UNIQ[I]}]=${PTREES[I]}; done
+	fi
+	# Each key's text a file of its own, hashed in one call
+	D=$(MKTEMP_DIR git-edit-verify-keys) || return 1
+	I=0
+	for R in "${RECS[@]}"; do
+		I+=1
+		WORDS=(${=${R%%$'\n'*}})
+		T=""
+		for P in "${(@)WORDS[3,-1]}"; do T+=" ${PTREE[$P]}"; done
+		print -r -- "$CMD"$'\n'"${WORDS[2]}$T"$'\n'"${R#*$'\n'}" >"$D/$I"
+	done
+	reply=(${(f)"$(for (( I = 1; I <= $#; I++ )); do print -r -- "$D/$I"; done | git hash-object --stdin-paths 2>/dev/null)"})
+	rm -rf "${D:?}"
+	(( ${#reply} == $# )) || { reply=(); return 1; }
+}
+
 # Runs the caller's verification over what a rewrite built, before the CAS applies it – the gate
 # for a result that landed semantically wrong yet green, taking `--verify=<cmd>` or a standing
 # `edit.verifyCmd`, at the commits a mode names, first rebuilt and resolved ones, the tip
@@ -23620,6 +23669,12 @@ _VERIFY_REWRITE () {
 	local NOW
 	[ ${#_GATE_GUARD} -ge 2 ] && [ "$(git rev-parse -q --verify "${_GATE_GUARD[1]}" 2>/dev/null)" = "${_GATE_GUARD[2]}" ] && \
 		GUARD=("${_GATE_GUARD[@]}")
+	# Each commit's content key, by which a check its lost run passed stands in its re-run
+	local -A VKEY=()
+	local -i REUSED=0 I
+	if _VERIFY_KEYS "$VERIFY_CMD" "${COMMITS[@]}"; then
+		for (( I = 1; I <= ${#COMMITS}; I++ )); do VKEY[${COMMITS[I]}]=${reply[I]}; done
+	fi
 	for C in "${COMMITS[@]}"; do
 		POSITION+=1
 		# A branch moved meanwhile fails the CAS, so no later check could make this result land
@@ -23644,6 +23699,12 @@ _VERIFY_REWRITE () {
 		if [ -n "$ABSENT" ]; then
 			PRINT_TEXT "Verify skipped at %s – \`%s\` doesn't exist at this commit" 90 "${C:0:7}" "$ABSENT"
 			SKIPPED+=1
+			continue
+		fi
+		if [ -n "${VKEY[$C]}" ] && [ -n "${_VERIFY_PRIOR[${VKEY[$C]}]}" ]; then
+			REUSED+=1
+			{ [ -t 1 ] || [ -n "$GIT_EDIT_PROGRESS" ]; } && \
+				_PRINT_COMMIT_LINE "$C" "Passed $POSITION of ${#COMMITS[@]} on the run that lost the race – %h %s"
 			continue
 		fi
 		if ! git -C "$WT" checkout -qf --detach "$C" 2>/dev/null; then
@@ -23703,6 +23764,8 @@ _VERIFY_REWRITE () {
 			_VERIFY_FAILED=$C
 			return 1
 		fi
+		# For a re-run this run may yet hand its place to, losing the race at its CAS
+		[ -n "${VKEY[$C]}" ] && _VERIFY_PASSED+=("${VKEY[$C]}")
 	done
 	local -i VERIFY_SECS=$(( SECONDS - VERIFY_T0 ))
 	_VERIFY_NOTE_LITTER
@@ -23722,6 +23785,7 @@ _VERIFY_REWRITE () {
 		TOTAL=$BUILT
 	fi
 	local -a SHORT=()
+	[ $REUSED -gt 0 ] && SHORT+=("$REUSED of them passed unchanged on the run that lost the race")
 	[ $RESOLVED_N -gt 0 ] && SHORT+=("$RESOLVED_N of them resolved at a stop")
 	[ $SKIPPED -gt 0 ] && SHORT+=("$SKIPPED skipped where a path the command names is absent")
 	[ $(( TOTAL - ${#COMMITS[@]} )) -gt 0 ] && SHORT+=("$(( TOTAL - ${#COMMITS[@]} )) unchecked in between, \`--verify-span\` covers them (also: edit.verifySpan)")
@@ -25021,13 +25085,18 @@ _RESUME_EXEC () {
 		rm -rf "$W"
 	done
 	cd "$_START_DIR" 2>/dev/null || cd "${$(_GIT_FACT rev-parse --path-format=absolute --git-common-dir 2>/dev/null):h}"
-	_EXEC_SELF "GIT_EDIT_EXPECT_PAUSE=$2" "$1"
+	_EXEC_SELF "GIT_EDIT_EXPECT_PAUSE=$2" -- "$1"
 }
 
-# Runs the script with <arg>... in this run's place, in the caller's environment plus <name=value>
+# Runs the script with <arg>... in this run's place,
+# in the caller's environment plus each <name=value>
 _EXEC_SELF () {
-	# Args: <name=value> <arg>...
-	local -a ENV=(-u GIT_CONFIG_PARAMETERS "$1") RUN=("$_SELF")
+	# Args: <name=value>... `--` <arg>...
+	local -a ENV=(-u GIT_CONFIG_PARAMETERS) RUN=("$_SELF")
+	while (( $# )) && [ "$1" != -- ]; do
+		ENV+=("$1")
+		shift
+	done
 	shift
 	[ -n "$_CALLER_GCP_SET" ] && ENV+=("GIT_CONFIG_PARAMETERS=$_CALLER_GCP")
 	# A copy run as `zsh git-edit` need not be executable itself
@@ -25072,7 +25141,12 @@ _RERUN_EXEC () {
 	cd "$_START_DIR" 2>/dev/null || return 0
 	# Ignored while the exit trap runs, which would carry over into the re-run
 	trap - HUP INT TERM
-	_EXEC_SELF "GIT_EDIT_RERUNS=$_RERUN_DUE" "${_RERUN_ARGS[@]}"
+	# The checks this run passed, in a file the re-run reads and removes
+	local VF=""
+	if (( ${#_VERIFY_PASSED} )) && VF=$(MKTEMP_FILE git-edit-verified 2>/dev/null); then
+		print -rl -- "${_VERIFY_PASSED[@]}" >"$VF" || VF=""
+	fi
+	_EXEC_SELF "GIT_EDIT_RERUNS=$_RERUN_DUE" ${VF:+"GIT_EDIT_VERIFIED=$VF"} -- "${_RERUN_ARGS[@]}"
 }
 
 # Ends a run at the pause it recorded – a caller resumes with `--continue`, so the run

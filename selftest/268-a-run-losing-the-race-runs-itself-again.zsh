@@ -18,7 +18,9 @@ _RR_NEW () {
 #!/bin/sh
 [ "\$(cat "$TMP/rr-$1.count" 2>/dev/null | wc -c)" -lt $2 ] || exit 0
 printf x >> "$TMP/rr-$1.count"
-git update-ref -m "commit: RR peer" refs/heads/main "\$(git commit-tree -p refs/heads/main -m "RR peer" "refs/heads/main^{tree}")"
+# Each peer authored apart, so a re-run rebuilds no tip alike and checks it again, never reusing it
+N=\$(wc -c < "$TMP/rr-$1.count" | tr -d ' ')
+git update-ref -m "commit: RR peer" refs/heads/main "\$(GIT_AUTHOR_DATE="@\$((1700000000 + N)) +0000" git commit-tree -p refs/heads/main -m "RR peer" "refs/heads/main^{tree}")"
 RACE
 	chmod +x "$TMP/rr-race.sh"
 }
@@ -50,7 +52,7 @@ _ST_EQ "after two re-runs, no third" \
 	"$(grep -c '^Lost the race – .* re-run [12] of 2' <<<"$OUT"):$(grep -c 're-run 3' <<<"$OUT")" "2:0"
 _ST_EQ "in one trailer" "$(_RR_TRAILERS)" "1"
 _ST_OUT_HAS "naming the tries and the rerun on it" \
-	"^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} since this run read it – a commit outside git-edit (commit 'RR peer') – lost on each of 3 tries, nothing was applied, so run it again$"
+	"^git-edit: error – Branch 'main' moved from [0-9a-f]\{7\} to [0-9a-f]\{7\} during the fold – refusing to overwrite – lost on each of 3 tries, nothing was applied, so run it again$"
 
 # A commit losing once lands on its re-run, while one whose message came from stdin refuses
 _RR_NEW rr3 1
