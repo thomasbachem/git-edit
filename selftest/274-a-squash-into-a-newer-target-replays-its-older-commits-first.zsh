@@ -70,19 +70,19 @@ _ST_EQ "one sharing the target's authorship still takes its message" \
 	"$RC:$(git log --format=%s | tr '\n' '|'):$(git log -1 --format=%b)" "0:SN6 rework|SN6 unrelated|SN6 base|:SN6 rework body"
 
 # Stops resolved as each commit holds it, the older one replayed past the commit beside its line
-# – `--text` carried through both resumes
+# – `--text` carried through both resumes, self-resolution off as it would merge the touching lines
 _SN_REPO sn7
 git reset -q --hard "$SN_P"
 print -l a "b pinned" "c changed" > f.txt && GIT_AUTHOR_DATE="2026-10-03T10:00:00+0000" git commit -qam "SN7 beside it"
 print -l a "b pinned and reworked" "c changed" > f.txt
 GIT_AUTHOR_NAME="SN Target" GIT_AUTHOR_DATE="2026-10-04T10:00:00+0000" git commit -qam "SN7 rework b" && SN_T=$(git rev-parse HEAD)
-_ST_RUN -s="$SN_T" "$SN_P" --text "SN7 pinned and reworked"
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN -s="$SN_T" "$SN_P" --text "SN7 pinned and reworked"
 _ST_EQ "the commit beside it stops" "$RC" 2
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'a\nb\nc changed'
-_ST_RUN --continue
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --continue
 _ST_EQ "as does the older one after it" "$RC" 2
 _ST_RESOLVE "$(_ST_PZ_WT)" f.txt $'a\nb pinned\nc changed'
-_ST_RUN --continue
+GIT_EDIT_NO_SELF_RESOLVE=1 _ST_RUN --continue
 _ST_EQ "resumed, the fold takes --text under the target's authorship" \
 	"$RC:$(git log --format=%s | tr '\n' '|'):$(git log -1 --format=%an)" "0:SN7 pinned and reworked|SN7 beside it|SN base|:SN Target"
 unfunction _SN_REPO

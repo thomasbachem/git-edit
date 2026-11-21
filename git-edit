@@ -9235,10 +9235,12 @@ _REBASE_DRIVE () {
 		GITDIR=$(git rev-parse --git-dir 2>/dev/null)
 		[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] || return 1
 		if [ -n "$(_UNMERGED_IN .)" ] || [[ "$REBASE_OUT" == *"CONFLICT ("* ]]; then
-			# A squash's stop its commits' line replacements resolve goes on, once per step
-			# so one coming back pauses – the gate checking one made by changed words alone
+			# A squash's stop its commits' line replacements, or edits to touching lines, resolve goes on
+			# once per step so one coming back pauses – the gate checking any not of whole-line replacements
+			# – a drop's pausing at touching lines, as nothing checks the tip it ends on
 			if _EDITS_STOP_STEP . && [ "$REPLY" != "$SQUASH_AT" ] && SQUASH_AT=$REPLY && \
-			   _SQUASH_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}"; then
+			   { _SQUASH_EDITS_RESOLVE_STOP . "${STATE_ORIG_HEAD:-$ORIG_HEAD}" || \
+				 { [ "${ACTION:-$STATE_ACTION}" = squash ] && _ADJACENT_RESOLVE . final; }; }; then
 				[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE .
 				_REBASE_CONTINUE_CMD --continue "$2" "$3"
 				CMD=$REPLY
@@ -15462,13 +15464,17 @@ _EDITS_RESUME_RUN () {
 	local -a RESOLVER=("${@:6}")
 	local -i STOPS=0 RC=0
 	(( ${#RESOLVER} )) || RESOLVER=(_EDITS_RESOLVE_STOP)
+	# A placement's or a move's stop of edits to touching lines merges both sides', as each refuses
+	# a tip off the one it built or began with – a fold's, an edit's or a plain reorder's pauses
+	local ADJ=""
+	[[ ${RESOLVER[1]} == (_PLACED_RESOLVE_STOP|_MOVE_RESOLVE_STOP) ]] && (( ${#RESOLVER} > 1 )) && ADJ=1
 	# A move's step taking carried edits stops made, so it is resolved before going on
 	[ -z "$STOPPED" ] && _MOVE_RECEIVE_DUE "$1" && STOPPED=1
 	until [ -z "$STOPPED" ] && OUT=$(_RENORM_EVAL "$1" "$4" "$4") && ! _MOVE_RECEIVE_DUE "$1"; do
 		STOPPED=""
-		{ _REBASE_RESOLVABLE "$1" "$OUT" || _MOVE_RECEIVE_DUE "$1"; } && "${RESOLVER[1]}" "$1" "${(@)RESOLVER[2,-1]}" || { RC=1; break; }
+		{ _REBASE_RESOLVABLE "$1" "$OUT" || _MOVE_RECEIVE_DUE "$1"; } && \
+			{ "${RESOLVER[1]}" "$1" "${(@)RESOLVER[2,-1]}" && STOPS+=1 || { [ -n "$ADJ" ] && _ADJACENT_RESOLVE "$1"; }; } || { RC=1; break; }
 		[ -n "$_NARROWED" ] && _NOTE_RESOLVED_TREE "$1"
-		STOPS+=1
 	done
 	(( STOPS )) && PRINT_TEXT "Made %s line replacements in the %s$LATER commit(s) the replay stopped at, each holding every replaced hunk, or its changed words, once." 90 "$WHOSE" "$STOPS"
 	REPLY=$OUT
@@ -16836,6 +16842,188 @@ _EDITS_STAGE_STOP () {
 	# Lines placed beside others noted for the landing, which then refuses a tip off the fold's
 	[ -n "$_INSERTED" ] && _ANCHORED=1 && _STATE_NOTE "anchored=1"
 	print -rN -- "${U[@]}" | git -C "$WT" checkout-index -f -z --stdin 2>/dev/null
+}
+
+# Puts into `reply` <base>'s lines – `_ADJ_BASE` – with what <ours> and <theirs> change in them,
+# read off git's `-U0` diffs – failing where both change one line or insert at one point, where
+# one inserts inside or beside lines the other changes or where position alone would place an edit
+_ADJACENT_MERGE () {
+	# Args: <base file> <ours file> <theirs file>
+	setopt local_options no_multibyte extended_glob
+	local F L DIFF
+	local -a HB HN HL HC NL OUT
+	local -A START GAP GONE
+	local -i I K E J S0 S1 NB=${#_ADJ_BASE} IN
+	for F in "$2" "$3"; do
+		IN=0
+		# One hunk per change – a context line `diff.interHunkContext` fuses in would go missing below
+		DIFF=$(git -c core.autocrlf=false -c core.attributesFile=/dev/null diff --no-index -U0 --inter-hunk-context=0 \
+			--diff-algorithm=myers --no-color --no-ext-diff --no-textconv -- "$1" "$F" 2>/dev/null)
+		(( $? <= 1 )) || return 1
+		for L in ${(f)DIFF}; do
+			if [[ "$L" =~ '^@@ -([0-9]+)(,([0-9]+))? \+[0-9]+(,[0-9]+)? @@' ]]; then
+				IN=1
+				HB+=(${match[1]}) HN+=(${match[3]:-1}) HL+=($(( ${#NL} + 1 ))) HC+=(0)
+			elif (( IN )); then
+				case $L in
+					+*) NL+=("${L:1}") HC[-1]=$(( HC[-1] + 1 )) ;;
+					-*) ;;
+					*) return 1 ;;
+				esac
+			fi
+		done
+		# One side's hunks end where the next side's begin
+		[ "$F" = "$2" ] && K=${#HB}
+	done
+	# Where position alone would place a side's edit
+	# – a changed line `_ADJ_TWINS` holds, or one moved within the block – a guess it never takes
+	for S0 in 1 $(( K + 1 )); do
+		(( S0 == 1 )) && S1=$K || S1=${#HB}
+		GONE=()
+		for (( I = S0; I <= S1; I++ )); do
+			for (( J = HB[I]; J < HB[I] + HN[I]; J++ )); do
+				(( ${+_ADJ_TWINS[x${_ADJ_BASE[J]}]} )) && return 1
+				GONE[x${_ADJ_BASE[J]}]=1
+			done
+		done
+		for (( I = S0; I <= S1; I++ )); do
+			for L in "${(@)NL[HL[I],HL[I]+HC[I]-1]}"; do
+				[[ "$L" == *[^[:space:]]* ]] && (( ${+GONE[x$L]} )) && return 1
+			done
+		done
+	done
+	# Clashes across the sides: one line both change, one point both insert at, an insertion inside
+	# or beside the other's lines – which the anchor rule or the hand places
+	for (( I = 1; I <= K; I++ )); do
+		for (( E = K + 1; E <= ${#HB}; E++ )); do
+			if (( HN[I] && HN[E] )); then
+				(( HB[I] <= HB[E] + HN[E] - 1 && HB[E] <= HB[I] + HN[I] - 1 )) && return 1
+			elif (( ! HN[I] && ! HN[E] )); then
+				(( HB[I] == HB[E] )) && return 1
+			elif (( ! HN[I] )); then
+				(( HB[E] - 1 <= HB[I] && HB[I] <= HB[E] + HN[E] - 1 )) && return 1
+			else
+				(( HB[I] - 1 <= HB[E] && HB[E] <= HB[I] + HN[I] - 1 )) && return 1
+			fi
+		done
+	done
+	for (( I = 1; I <= ${#HB}; I++ )); do
+		if (( HN[I] )); then START[${HB[I]}]=$I; else GAP[${HB[I]}]=$I; fi
+	done
+	(( ${+GAP[0]} )) && K=${GAP[0]} && OUT+=("${(@)NL[HL[K],HL[K]+HC[K]-1]}")
+	I=1
+	while (( I <= NB )); do
+		if (( ${+START[$I]} )); then
+			K=${START[$I]}
+			(( HC[K] )) && OUT+=("${(@)NL[HL[K],HL[K]+HC[K]-1]}")
+			I=$(( I + HN[K] ))
+		else
+			OUT+=("${_ADJ_BASE[I]}")
+			I+=1
+		fi
+		(( ${+GAP[$(( I - 1 ))]} )) && K=${GAP[$(( I - 1 ))]} && OUT+=("${(@)NL[HL[K],HL[K]+HC[K]-1]}")
+	done
+	reply=("${OUT[@]}")
+}
+
+# Resolves the stop the replay in <worktree> is at where each conflict is both sides editing
+# different lines, staging both as a resolver's `git add` would – failing, touching nothing,
+# at any other conflict or file, one not regular text or half rewritten by a side
+_ADJACENT_RESOLVE () {
+	# Args: <worktree> [final – a final step too, which no prover resolves]
+	setopt local_options no_multibyte
+	local WT=$1 L P D S T ID C GD TAB=$'\t'
+	local -A AT _ADJ_TWINS
+	local -a U INFO ML OUT BO BB BT STEPS _ADJ_BASE
+	local -i RC NC _ADJ_LINES
+	_NARROWED=""
+	[ -n "$GIT_EDIT_NO_SELF_RESOLVE" ] && return 1
+	if [ "$2" != final ]; then
+		_FACT GD -C "$WT" rev-parse --absolute-git-dir 2>/dev/null || return 1
+		STEPS=(${=$(_REBASE_STEP "$GD")})
+		(( ${STEPS[1]:-0} < ${STEPS[2]:-0} )) || return 1
+	fi
+	for L in ${(0)"$(git -C "$WT" ls-files -u -z 2>/dev/null)"}; do
+		AT[${${L%%$TAB*}##* }$TAB${L#*$TAB}]="${L%% *} ${${L#* }%% *}"
+		U+=("${L#*$TAB}")
+	done
+	U=("${(@u)U}")
+	(( ${#U} )) || return 1
+	D=$(MKTEMP_DIR git-edit-adjacent) || return 1
+	for P in "${U[@]}"; do
+		[[ "${AT[1$TAB$P]}" == 100(644|755)\ * && "${AT[2$TAB$P]}" == 100(644|755)\ * && "${AT[3$TAB$P]}" == 100(644|755)\ * ]] && \
+			[ "${AT[2$TAB$P]%% *}" = "${AT[3$TAB$P]%% *}" ] || break
+		for S in 1 2 3; do
+			git -C "$WT" cat-file blob "${AT[$S$TAB$P]#* }" > "$D/$S" 2>/dev/null || break 2
+			# Text alone, no line equal to a marker line `merge-file` writes below, as the reading there
+			# would take it for the marker – a last line unended that reading refuses
+			LC_ALL=C tr -d '\000' < "$D/$S" | cmp -s - "$D/$S" || break 2
+			LC_ALL=C grep -qE '^(<{7} o|\|{7} b|={7}|>{7} t)$' "$D/$S" && break 2
+		done
+		# Neither side rewriting half the file or more – a swap, a copy over it –
+		# where position alone places nothing, however many lines they share split the conflict
+		_ADJ_LINES=$(( $(wc -l < "$D/1") ))
+		for S in 2 3; do
+			L=$(git -c core.autocrlf=false -c core.attributesFile=/dev/null diff --no-index --numstat --diff-algorithm=myers \
+				--no-ext-diff --no-textconv -- "$D/1" "$D/$S" 2>/dev/null)
+			L=${${L#*$TAB}%%$TAB*}
+			[[ "${L:-0}" == <-> ]] && (( ! _ADJ_LINES || 2 * ${L:-0} < _ADJ_LINES )) || break 2
+		done
+		# Each text a version holds twice, which no changed line of the merge's may be
+		_ADJ_TWINS=()
+		for S in 1 2 3; do
+			L=$(LC_ALL=C sort -- "$D/$S" | LC_ALL=C uniq -d; print -n x)
+			L=${L%x}
+			[ -z "$L" ] || for T in "${(@f)${L%$'\n'}}"; do _ADJ_TWINS[x$T]=1; done
+		done
+		git -C "$WT" merge-file -p --diff3 -L o -L b -L t "$D/2" "$D/1" "$D/3" > "$D/m" 2>/dev/null
+		RC=$?
+		(( RC > 0 && RC < 128 )) || break
+		# Read whole, the blank lines it ends on too
+		L=$(cat -- "$D/m"; print -n x)
+		[[ "$L" == *$'\n'x ]] || break
+		ML=("${(@f)${L%$'\n'x}}") OUT=() S="" NC=0
+		for L in "${ML[@]}"; do
+			case "$S:$L" in
+				:'<<<<<<< o') S=o BO=() BB=() BT=() ;;
+				o:'||||||| b') S=b ;;
+				b:'=======') S=t ;;
+				t:'>>>>>>> t')
+					S="" NC+=1
+					(( ${#BB} )) && print -rl -- "${BB[@]}" > "$D/bb" || : > "$D/bb"
+					(( ${#BO} )) && print -rl -- "${BO[@]}" > "$D/bo" || : > "$D/bo"
+					(( ${#BT} )) && print -rl -- "${BT[@]}" > "$D/bt" || : > "$D/bt"
+					_ADJ_BASE=("${BB[@]}")
+					_ADJACENT_MERGE "$D/bb" "$D/bo" "$D/bt" || break 2
+					OUT+=("${reply[@]}")
+					;;
+				o:*) BO+=("$L") ;;
+				b:*) BB+=("$L") ;;
+				t:*) BT+=("$L") ;;
+				:*) OUT+=("$L") ;;
+				*) break 2 ;;
+			esac
+		done
+		# Each conflict `merge-file` counted parsed, none passed through as lines
+		[ -z "$S" ] && (( NC == RC || RC == 127 && NC > RC )) || break
+		ID=$( (( ${#OUT} )) && print -rl -- "${OUT[@]}" | git -C "$WT" hash-object -w --no-filters --stdin 2>/dev/null || \
+			git -C "$WT" hash-object -w --no-filters --stdin < /dev/null 2>/dev/null) && [ -n "$ID" ] || break
+		INFO+=("${AT[2$TAB$P]%% *} $ID$TAB$P")
+	done
+	rm -rf "${D:?}"
+	(( ${#INFO} == ${#U} )) || return 1
+	{
+		for P in "${U[@]}"; do
+			print -rn -- "0 ${(l:${#ID}::0:)}$TAB$P"$'\0'
+		done
+		print -rN -- "${INFO[@]}"
+	} | git -C "$WT" update-index -z --index-info 2>/dev/null || return 1
+	print -rN -- "${U[@]}" | git -C "$WT" checkout-index -f -z --stdin 2>/dev/null
+	# Edits placed beside others, which the gate checks as a resolver's own
+	_NARROWED=1
+	C=$(git -C "$WT" rev-parse -q --verify REBASE_HEAD 2>/dev/null)
+	[ -n "$C" ] && _PRINT_COMMIT_LINE "$C" "Merged both sides' edits to touching lines of ${${(j:, :)U}//\%/%%} at %h %s"
+	return 0
 }
 
 # Tells whether this git's `merge-tree` takes an explicit merge base, which 2.40 added

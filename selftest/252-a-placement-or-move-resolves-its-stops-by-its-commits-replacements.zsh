@@ -107,6 +107,8 @@ print -l h1 hb hN h2 > "$PM_WT/h" && git -C "$PM_WT" add h
 _ST_RUN --continue
 _ST_EQ "landing once that stop is resolved" "$RC:$(git log --format=%s | tr '\n' '|')" "0:PM beside|PM h|PM around it|PM fix|PM anchor|"
 fi
+# A file resolved by hand otherwise pauses the next stop
+# – its commit rewriting most of `f`, no touching lines merging there either
 _PM_PAUSED pm-own
 print -l x1 "the comment, fixed otherwise" x3 > "$PM_WT/f" && print -l h1 hN h2 > "$PM_WT/h" && git -C "$PM_WT" add f h
 _ST_RUN --continue

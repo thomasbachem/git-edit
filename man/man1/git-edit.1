@@ -1259,7 +1259,14 @@ that leaves each stop to you. A file the fold adds lines to with neither line
 beside them held once on the tip, or changes more than a text file's lines of
 \(em adds, removes, renames or gives another mode \(em derives no edit, and a
 stop where it conflicts pauses as before, as does one where any edit to a
-conflicted file places nowhere.
+conflicted file places nowhere. A squash's, a placement's or a move's stop
+whose conflicts are each both sides editing different lines, which git refuses
+as touching, takes both sides' edits, as each refuses a tip off the one it
+began with or built \(em a fold's, a drop's or an edit's pausing as before
+\(em bar a line both change, an insertion inside or beside the other's lines,
+a side rewriting half the file, a changed line's text held twice in any
+version or a line moved within the conflict, in a regular text file ending
+on a line end; the gate checks the commit.
 Where the target lacks a line the fold replaces \(em held nowhere there, nor
 its changed words, as a later commit wrote it \(em no edit resolves the fold's
 own step, as that change belongs in the commit writing the line or a later one.
@@ -3473,8 +3480,9 @@ instead of in one proven \fBgit replay\fR pass.
 .TP
 .B GIT_EDIT_NO_SELF_RESOLVE
 If set, the stops of a fold's, a squash's, a placement's, a move's or an
-edit's replay all pause for the resolver, none made by its line replacements
-or, a move's, by line identity; a fold's final step still resolves itself as
+edit's replay all pause for the resolver, none made by its line replacements,
+by both sides' edits to touching lines or, a move's, by line identity; a fold's
+final step still resolves itself as
 the staged tree.
 .TP
 .B GIT_EDIT_NO_RERUN
