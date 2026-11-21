@@ -83,7 +83,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	LEFT_ALONE LEFT_OUT LAND_BRANCH LAND_FROM LAND_NEW_HEAD LAND_REF LANDED LOCKED MARKED MATCHED MOVE_ANCHOR MOVE_ARGS MOVE_EMPTY MOVE_END \
 	MOVE_FIRST MOVE_FROM MOVE_FROM_RESOLVED \
 	MOVE_KIND MOVE_LAST MOVE_PART MOVE_RUN MOVE_SET MOVE_SORTED MOVE_SPAN MOVE_SPAN_NEW MOVE_SPAN_OLD MOVE_STALE MOVE_STEP \
-	MOVE_TO MSG_MAP OBJ_AT OLD ONTO_NEW_HEAD ONTO_ON_LINE ONTO_PINNED ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OUT_LINES OZA OZB OPT_ABORT OPT_AFTER \
+	MOVE_TO MSG_MAP OBJ_AT OLD ONTO_NEW_HEAD ONTO_ON_LINE ONTO_PINNED ONTO_REF ONTO_UPSTREAM OPEN_EDITOR_CMD OPEN_EDITOR_NAME OUT_LINES OZA OZB OPT_ABORT OPT_AFTER OPT_AT \
 	OPT_ALLOW_MODE_CHANGE OPT_ALLOW_NEW_PATH OPT_ALLOW_OTHER_ACTOR OPT_ALLOW_PUSHED OPT_AMEND_INTO \
 	OPT_BASE OPT_BEFORE OPT_CARRY OPT_CHMOD OPT_COMMIT OPT_CONTINUE OPT_DIR OPT_DROP OPT_DRY_RUN \
 	OPT_EDIT OPT_EDITS OPT_EXEC OPT_HELP OPT_JOBS OPT_LAND OPT_MESSAGE OPT_MOVE OPT_NO_VERIFY \
@@ -98,7 +98,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	STATE_ALLOW_MODE_CHANGE STATE_ALLOW_PUSHED STATE_AMENDED STATE_BELOW STATE_BRANCH STATE_CAPTURE STATE_CAUGHT STATE_DEPTH STATE_DROPPED STATE_FILES \
 	STATE_FIXUP STATE_FOLD STATE_FORK STATE_HEAD_WITH_FIXUP STATE_MAINDIR STATE_MARKED STATE_MESSAGE \
 	STATE_MODE_STRAY STATE_MOVED STATE_NO_VERIFY STATE_OPERATION STATE_ORIG_HEAD STATE_PATHSPECS STATE_PLACED \
-	STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
+	STATE_PLACE_AT STATE_PLACE_LABEL STATE_REBASEBASE STATE_REPLAY_TIP STATE_RESOLVED STATE_RRPRE STATE_RRPRE_SET \
 	STATE_ACTOR_ID STATE_ACTOR_NAME STATE_ACTOR_SET STATE_FLAG_SKIPS STATE_REPLAY STATE_SKIPPED STATE_SPAN STATE_SQUASH_GROUPS STATE_SQUASH_TARGET STATE_STAGEDTREE STATE_STOPS STATE_STOP_HEAD \
 	STATE_ABSORBED STATE_ANCHORED STATE_OFF_TREE STATE_TAKEIN_SEEN STATE_TARGET STATE_TARGETS STATE_TIP_REFUSED \
 	STATE_TODO_LEFT STATE_TREE STATE_UPSTREAM STATE_VERIFY_CMD STATE_VERIFY_FAILED \
@@ -117,6 +117,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRAIL_CARRIED _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
 	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
+	_AT_TAG _JOIN_TAGS _JOINED _MOVE_EXTRA \
 	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS _GATE_GUARD _VERIFY_PASSED _VERIFY_PRIOR \
 	_RERUN_BY _RACE_NOTE
 
@@ -1015,6 +1016,7 @@ USAGE () {
 	ECHO_E "\e[0;94m       --reorder <commit>...           Reorder a contiguous span, the arguments oldest-first\e[0m"
 	ECHO_E "\e[0;94m       --move=<sha>                    Move it to an anchor – repeated, or <oldest>..<newest>, several as one block\e[0m"
 	ECHO_E "\e[0;94m       --after|--before=<sha>          Where --move, --commit or --exec puts its commits: right after or before <sha>\e[0m"
+	ECHO_E "\e[0;94m       --at=<cut>                      Or as the last commits of the cut tag <cut> marks, edit.followTag naming it\e[0m"
 	ECHO_E "\e[0;94m       --onto=<upstream>               Replant this branch onto <upstream>, the fork point derived or named by --base\e[0m"
 	ECHO_E "\e[0;94m       --land=<branch>                 Land <branch>'s commits on this branch – a fast-forward or a replay\e[0m"
 	ECHO_E "\e[0;94m       --exec -- <cmd>...              Run <cmd> in an isolated worktree, landing what it commits\e[0m"
@@ -2614,10 +2616,18 @@ _MOVE_REF () {
 	# cut off before the sync leaves the next one's sync all it missed to bring
 	[ -n "$_MOVE_MARK" ] && _BROUGHT_HOLD "" "${W[-1]}" "${W[-3]}" "${_MOVE_MARK%/*}/git-edit-brought"
 	local SIG=$_DEFERRED_SIGNAL
+	local E
+	local -a EXTRA X
+	EXTRA=("${_MOVE_EXTRA[@]}") _MOVE_EXTRA=()
 	_LANDING=true
 	# A plain foreground command, as a signal waits for one – inside `$( … )` the trap runs at once,
 	# reading the ref unmoved while the orphaned `update-ref` still moves it
-	{ eval "$1" } 2>"${ERRF:-/dev/null}" >/dev/null
+	# The tags a placement takes in move in the branch's own transaction, all or none
+	if (( ${#EXTRA} )); then
+		{ git update-ref -m "${W[${W[(i)-m]}+1]}" --stdin <<<"update ${W[-3]} ${W[-2]} ${W[-1]}"$'\n'"${(F)EXTRA}" } 2>"${ERRF:-/dev/null}" >/dev/null
+	else
+		{ eval "$1" } 2>"${ERRF:-/dev/null}" >/dev/null
+	fi
 	RC=$?
 	[ -n "$ERRF" ] && ERR=$(<"$ERRF") && rm -f "$ERRF"
 	(( RC )) || return 0
@@ -2631,6 +2641,15 @@ _MOVE_REF () {
 	# Not moved, with a signal in meanwhile – one sent to the
 	# whole process group ended the `update-ref` itself
 	[ -z "$SIG" ] && _STOP_DEFERRED
+	# A tag the placement takes in, moved meanwhile, fails the whole transaction
+	if [ "$(git rev-parse -q --verify "${W[-3]}" 2>/dev/null)" = "${W[-1]}" ]; then
+		for E in "${EXTRA[@]}"; do
+			X=(${=E})
+			[ "$(git rev-parse -q --verify "${X[2]}" 2>/dev/null)" = "${X[4]}" ] && continue
+			PRINT_ERR "Tag ${X[2]#refs/tags/} moved while this run built, by another run or by hand – nothing was applied, so run it again"
+			_PAUSE_EXIT 1 retry
+		done
+	fi
 	# A hook vetoing the transaction leaves the ref where the run read it
 	# – refused, not moved, as the caller's message would have it
 	if [ "$(git rev-parse -q --verify "${W[-3]}" 2>/dev/null)" = "${W[-1]}" ]; then
@@ -3132,6 +3151,94 @@ _FOLLOWED_TAGS () {
 	reply=(${(f)"$(git tag -l --no-column --format='%(refname)' "${_FOLLOW_PATS[@]}" 2>/dev/null)"})
 }
 
+# The cut tag `--at` names, by full ref – "<tag ref> <value>" as its anchor resolves,
+# the line moving it in the landing's own transaction, all or none with the branch,
+# and what it took in as "<tag ref> <value> <new value> <commit> <from>"
+typeset -ga _JOIN_TAGS _MOVE_EXTRA _JOINED
+typeset -g _AT_TAG=""
+_JOIN_TAGS=() _MOVE_EXTRA=() _JOINED=()
+
+# Takes `--at=<cut>` as `--after` the commit tag <cut> marks, into `_AT_TAG`
+# – refusing a tag `edit.followTag` names not, or one off the branch
+_RESOLVE_AT () {
+	local V=${OPT_AT[2]#=} R
+	local -a T
+	_AT_TAG=""
+	[ ${#OPT_AT} -gt 0 ] || return 0
+	if [ ${#OPT_AFTER} -gt 0 ] || [ ${#OPT_BEFORE} -gt 0 ]; then
+		_USAGE_POINT=1
+		PRINT_ERR "Take one of --at=<cut>, --after=<sha> or --before=<sha>, not several"
+		exit 1
+	fi
+	R=refs/tags/${V#refs/tags/}
+	_FOLLOWED_TAGS
+	if ! git show-ref --verify -q "$R" 2>/dev/null || ! (( ${reply[(Ie)$R]} )); then
+		PRINT_ERR "--at=$V names no cut – it takes a tag edit.followTag names, a release's cut-v1.2.0 under cut-* say – nothing was done"
+		exit 1
+	fi
+	if ! git merge-base --is-ancestor "$R^{commit}" HEAD 2>/dev/null; then
+		PRINT_ERR "--at=$V marks $(git rev-parse --short=12 "$R^{commit}" 2>/dev/null), which this branch doesn't hold – nothing was done"
+		exit 1
+	fi
+	# One it couldn't move refuses here, as landing without it would hold back what it placed
+	T=(${=$(git for-each-ref --format='%(objecttype) %(*objecttype)' "$R" 2>/dev/null)})
+	if [ "${T[1]}" = tag ] && { [ "${T[2]}" != commit ] || [ -n "$(git for-each-ref --format='%(contents:signature)' "$R" 2>/dev/null)" ]; }; then
+		PRINT_ERR "--at=$V is signed or tags a tag, which a run can't move without losing what it holds – nothing was done"
+		exit 1
+	fi
+	_AT_TAG=$R
+	OPT_AFTER=(--after "=$R")
+}
+
+# Reads into `_JOIN_TAGS` tag <tag ref> where it still marks <anchor>, the commit the run places
+# its commits after, else saying it stays – none for an empty <tag ref>
+_JOIN_READ () {
+	# Args: <tag ref> <anchor>
+	local V
+	_JOIN_TAGS=()
+	[ -n "$1" ] || return 0
+	V=$(git rev-parse -q --verify "$1" 2>/dev/null)
+	if [ -n "$V" ] && [ "$(git rev-parse -q --verify "$V^{commit}" 2>/dev/null)" = "$2" ]; then
+		_JOIN_TAGS=("$1 $V")
+	else
+		PRINT_TEXT "Tag %s no longer marks %s, which this run places its commits after – it stays where it is now" 33 "${1#refs/tags/}" "${2:0:12}"
+	fi
+	return 0
+}
+
+# Readies `_JOIN_TAGS` to move onto the commit of <new tip> holding <top>, the newest one placed,
+# as `_MOVE_EXTRA` and `_JOINED` – refusing the landing where it can't, as it would hold them back
+_JOIN_PREPARE () {
+	# Args: <top> <old tip> <new tip>
+	local E TAGREF VAL J K C F=$'%an\x1f%ae\x1f%ad\x1f%s'
+	local -a HIT
+	_MOVE_EXTRA=() _JOINED=()
+	(( ${#_JOIN_TAGS} )) || return 0
+	# Itself where the run built it there, else the one commit of its author, date and subject
+	if _IS_ANCESTOR "$1" "$3" && ! _IS_ANCESTOR "$1" "$2"; then
+		J=$1
+	else
+		K=$(git log -1 --date=raw --format="$F" "$1" -- 2>/dev/null)
+		for C in ${(f)"$(git log --date=raw --format="%H $F" "$3" --not "$2" -- 2>/dev/null)"}; do
+			[ "${C#* }" = "$K" ] && HIT+=("${C%% *}")
+		done
+		(( ${#HIT} == 1 )) && J=${HIT[1]}
+	fi
+	for E in "${_JOIN_TAGS[@]}"; do
+		TAGREF=${E%% *} VAL=${E#* }
+		C=$(git rev-parse -q --verify "$VAL^{commit}" 2>/dev/null)
+		[ -z "$J" ] && REPLY="no one commit it made is the newest it placed"
+		if [ -z "$J" ] || ! _RETAG_VALUE "$TAGREF" "$VAL" "$J"; then
+			PRINT_ERR "Tag ${TAGREF#refs/tags/} can't take in what this run placed after ${C:0:12} – $REPLY – nothing was applied"
+			ECHO_E "\e[0;31m  Land it with --after=${C:0:12} instead, then move the tag by hand.\e[0m" >&2
+			_PAUSE_EXIT 1 retry
+		fi
+		_MOVE_EXTRA+=("update $TAGREF $REPLY $VAL")
+		_JOINED+=("$TAGREF" "$VAL" "$REPLY" "$J" "$C")
+	done
+	return 0
+}
+
 # Puts into `REPLY` the push that moves tag <tag> on each remote the repo knows to hold it – one
 # a fetch maps to `refs/remotes/<remote>/tags/`, as git keeps no record of pushed tags otherwise
 _PUSHED_TAG_CMD () {
@@ -3176,9 +3283,14 @@ _SAY_FOLLOWED_TAG () {
 		(rewrite) WHAT="its counterpart, what the rewrite made of it" ;;
 		(identity) WHAT="its counterpart, the one commit of its author and date" ;;
 		(squashed) WHAT="the commit its own was squashed into" ;;
+		(cut) WHAT="where the cut now falls, as the run reordered what it held" ;;
 		(*) WHAT="the nearest commit kept below the one dropped" ;;
 	esac
-	PRINT_TEXT "Tag %s followed the rewrite, %s → %s, to %s" 32 "$1" "${2:0:12}" "${3:0:12}" "$WHAT"
+	if [ "$4" = placed ]; then
+		PRINT_TEXT "Tag %s took in what this run placed after its commit, %s → %s" 32 "$1" "${2:0:12}" "${3:0:12}"
+	else
+		PRINT_TEXT "Tag %s followed the rewrite, %s → %s, to %s" 32 "$1" "${2:0:12}" "${3:0:12}" "$WHAT"
+	fi
 	# Where each commit of the old span went – by the run's own word, else by identity
 	_SPAN_IDENTITIES "$5" "$6" "$7"
 	for C in "${_REWRITE_PAIRS[@]}"; do LAND[${C%% *}]=${C#* }; done
@@ -3203,17 +3315,98 @@ _SAY_FOLLOWED_TAG () {
 	done
 	(( ${#LOST} )) && PRINT_TEXT "Tag %s's commit no longer holds the change of what this run moved above it: %s" 33 "$1" "$(_SOME_PATHS "${LOST[@]}")"
 	(( ${#GAINED} )) && PRINT_TEXT "Tag %s's commit now holds the change of what this run moved or squashed below it: %s" 33 "$1" "$(_SOME_PATHS "${GAINED[@]}")"
-	HOLD=(${(f)"$(git for-each-ref --format='%(refname:short)' --contains "$2" refs/heads 2>/dev/null)"})
+	HOLD=(${(f)"$(git for-each-ref --format='%(refname:short)' --contains "$2" --no-contains "$3" refs/heads 2>/dev/null)"})
 	(( ${#HOLD} )) && PRINT_TEXT "Tag %s no longer marks its old commit on the branches still holding it: %s" 33 "$1" "$(_SOME_PATHS "${HOLD[@]}")"
 	_PUSHED_TAG_CMD "$1"
 	[ -n "$REPLY" ] && PRINT_TEXT "Tag %s is pushed and stays there as it was – moving it there too is yours to do: %s" 33 "$1" "$REPLY"
 	return 0
 }
 
-# Moves tag <tag ref> off <commit> to <hit>, its counterpart in the move of <ref> from <old> to
-# <new> by <by>'s word – a dropped commit's tag down to the nearest commit below it the run kept –
-# by compare-and-swap from <value>, read before the counterpart was looked up, so a tag moved
-# meanwhile stays where it is now
+# Puts into `REPLY` where a cut tag on <commit> falls in the move of <ref> from <old> to <new>
+# – the commit leaving the most commits of the old span on their side of it, its own counterpart
+# on a tie, else the lower one – failing where the run's record misses one or the span holds a merge
+_CUT_AT () {
+	# Args: <ref> <old> <new> <commit>
+	local BASE C K O N S
+	local -i COST BEST I AT=0 OWN_AT=0 OWN_COST
+	local -a NEW NOT
+	local -A SIDE LAND IN_CUT ON_NEW OWNS
+	REPLY=""
+	# None where the run rewrote the root, the whole line then the span
+	BASE=$(git merge-base "$2" "$3" 2>/dev/null) && NOT=(--not "$BASE")
+	[ -z "$(git rev-list --merges -1 "$2" "$3" "${NOT[@]}" -- 2>/dev/null)" ] || return 1
+	NEW=(${(f)"$(git rev-list --reverse "$3" "${NOT[@]}" -- 2>/dev/null)"})
+	for N in "${NEW[@]}"; do ON_NEW[$N]=1; done
+	for K in ${(f)"$(git rev-list "$4" "${NOT[@]}" -- 2>/dev/null)"}; do IN_CUT[$K]=1; done
+	# Each kept commit's side marked on what it became – a split's halves both – where the record
+	# and identity place it on the new line, a squashed one going with the commit it went into
+	_SPAN_IDENTITIES "$1" "$2" "$3"
+	for C in "${_REWRITE_PAIRS[@]}"; do LAND[${C%% *}]+=" ${C#* }"; done
+	for C in "${_ID_OLD[@]}"; do
+		K=${C#* } O=${C%% *}
+		[[ "${_RUN_FATES[$O]}" == (dropped|squashed\ ?*) ]] && continue
+		N=${LAND[$O]# }
+		[ -z "$N" ] && (( ${_ID_OLD_N[$K]:-0} == 1 )) && [[ -n "${_ID_NEW[$K]}" && "${_ID_NEW[$K]}" != - ]] && N=${_ID_NEW[$K]}
+		[ -n "$N" ] || return 1
+		S=held
+		(( ${+IN_CUT[$O]} )) && S=cut
+		for N in ${=N}; do
+			(( ${+ON_NEW[$N]} )) && [[ -z "${SIDE[$N]}" || "${SIDE[$N]}" = "$S" ]] || return 1
+			SIDE[$N]=$S
+			[ "$O" = "$4" ] && OWNS[$N]=1
+		done
+	done
+	# Up the new line from below it all, the cost each commit of the cut left above and each held
+	# one taken in – its own counterpart's the newest of them, should the commit have split
+	COST=0
+	for N in "${NEW[@]}"; do [ "${SIDE[$N]}" = cut ] && (( COST++ )); done
+	BEST=$COST
+	for (( I = 1; I <= ${#NEW}; I++ )); do
+		case ${SIDE[${NEW[I]}]} in
+			(cut) (( COST-- )) ;;
+			(held) (( COST++ )) ;;
+		esac
+		(( ${+OWNS[${NEW[I]}]} )) && OWN_AT=$I OWN_COST=$COST
+		(( COST < BEST )) && BEST=$COST AT=$I
+	done
+	(( OWN_AT && OWN_COST == BEST )) && AT=$OWN_AT
+	if (( AT )); then REPLY=${NEW[AT]}; else REPLY=$BASE; fi
+	[ -n "$REPLY" ]
+}
+
+# Puts into `REPLY` the value tag <tag ref>, now <value>, takes to point at <commit>
+# – an annotated one re-made there, its message and tagger kept – failing
+# with the reason in `REPLY`: a signature a moved copy would lose, a tag of a tag
+_RETAG_VALUE () {
+	# Args: <tag ref> <value> <commit>
+	local -a T
+	T=(${=$(git for-each-ref --format='%(objecttype) %(*objecttype)' "$1" 2>/dev/null)})
+	REPLY=$3
+	if [ "${T[1]}" = tag ]; then
+		if [ "${T[2]}" != commit ]; then
+			REPLY="it tags another tag"
+			return 1
+		fi
+		if [ -n "$(git for-each-ref --format='%(contents:signature)' "$1" 2>/dev/null)" ]; then
+			REPLY="a moved copy would lose its signature"
+			return 1
+		fi
+		# The tag object as it was, its first line – what it points at – the only one changed, so
+		# what fsck only warns of, as an early tag's missing tagger, stays as git took it then
+		if ! REPLY=$({ print -r -- "object $3"; git cat-file tag "$2" | LC_ALL=C sed 1d; } | git mktag --no-strict 2>/dev/null) || [ -z "$REPLY" ]; then
+			REPLY="git refused to re-make it"
+			return 1
+		fi
+	elif [ "${T[1]}" != commit ]; then
+		REPLY="it tags no commit"
+		return 1
+	fi
+}
+
+# Moves tag <tag ref> off <commit> to where the cut it marks now falls in the move of <ref> from
+# <old> to <new>, else to <hit>, its counterpart by <by>'s word – a dropped commit's tag down to the
+# nearest commit below it the run kept – by compare-and-swap from <value>, read before the
+# counterpart was looked up, so a tag moved meanwhile stays where it is now
 # • An annotated tag is re-made pointing there, its message and tagger kept
 # • Follows only the run's own record or an identity it made – a match by the stale-SHA rule alone
 #   can be a commit the run never touched, a cherry-pick's original below the span say
@@ -3221,11 +3414,11 @@ _SAY_FOLLOWED_TAG () {
 #   moved copy would lose, a tag of a tag – for the hint to name its re-point as for any other tag
 _FOLLOW_TAG () {
 	# Args: <tag ref> <value> <commit> <hit> <by> <ref> <old> <new> <label>
-	local TAGREF=$1 VAL=$2 C=$3 HOW=${4#* } TO=${4%% *} NEWVAL F
-	local -a T
+	local TAGREF=$1 VAL=$2 C=$3 HOW=${4#* } TO=${4%% *} NEWVAL F CUT=""
+	_CUT_AT "$6" "$7" "$8" "$3" && CUT=$REPLY
 	case $HOW in
 		(patch-id|rewrite|squashed|identity)
-			if [ "$5" = stale ]; then
+			if [ "$5" = stale ] && [ -z "$CUT" ]; then
 				_NOT_FOLLOWED_WHY "a match by its change alone moves nothing"
 				return 1
 			fi ;;
@@ -3244,12 +3437,18 @@ _FOLLOW_TAG () {
 			done
 			HOW=below ;;
 		(subject)
-			_NOT_FOLLOWED_WHY "its counterpart is only a guess"
-			return 1 ;;
+			if [ -z "$CUT" ]; then
+				_NOT_FOLLOWED_WHY "its counterpart is only a guess"
+				return 1
+			fi ;;
 		(*)
-			_NOT_FOLLOWED_WHY "it has no counterpart to follow"
-			return 1 ;;
+			if [ -z "$CUT" ]; then
+				_NOT_FOLLOWED_WHY "it has no counterpart to follow"
+				return 1
+			fi ;;
 	esac
+	# Elsewhere than its own commit's counterpart where the run moved commits across the cut
+	[ -n "$CUT" ] && [ "$CUT" != "$TO" ] && TO=$CUT HOW=cut
 	if [ -z "$TO" ] || ! TO=$(git rev-parse -q --verify "$TO^{commit}" 2>/dev/null) || ! _IS_ANCESTOR "$TO" "$8"; then
 		REPLY="Not followed though edit.followTag names it – no commit below it was kept to follow"
 		[ "$HOW" = below ] || REPLY="Not followed though edit.followTag names it – its counterpart is not on the new line"
@@ -3260,27 +3459,11 @@ _FOLLOW_TAG () {
 		PRINT_TEXT "Tag %s moved meanwhile, by another run or by hand – left where it stands now" 33 "${TAGREF#refs/tags/}"
 		return 0
 	fi
-	T=(${=$(git for-each-ref --format='%(objecttype) %(*objecttype)' "$TAGREF" 2>/dev/null)})
-	NEWVAL=$TO
-	if [ "${T[1]}" = tag ]; then
-		if [ "${T[2]}" != commit ]; then
-			REPLY="Not followed though edit.followTag names it – it tags another tag"
-			return 1
-		fi
-		if [ -n "$(git for-each-ref --format='%(contents:signature)' "$TAGREF" 2>/dev/null)" ]; then
-			REPLY="Not followed though edit.followTag names it – a moved copy would lose its signature"
-			return 1
-		fi
-		# The tag object as it was, its first line – what it points at – the only one changed, so
-		# what fsck only warns of, as an early tag's missing tagger, stays as git took it then
-		if ! NEWVAL=$({ print -r -- "object $TO"; git cat-file tag "$VAL" | LC_ALL=C sed 1d; } | git mktag --no-strict 2>/dev/null) || [ -z "$NEWVAL" ]; then
-			REPLY="Not followed though edit.followTag names it – git refused to re-make it"
-			return 1
-		fi
-	elif [ "${T[1]}" != commit ]; then
-		REPLY="Not followed though edit.followTag names it – it tags no commit"
+	if ! _RETAG_VALUE "$TAGREF" "$VAL" "$TO"; then
+		REPLY="Not followed though edit.followTag names it – $REPLY"
 		return 1
 	fi
+	NEWVAL=$REPLY
 	if ! git update-ref -m "git edit: $9$_REFLOG_TAG" "$TAGREF" "$NEWVAL" "$VAL" 2>/dev/null; then
 		if [ "$(git rev-parse -q --verify "$TAGREF" 2>/dev/null)" != "$VAL" ]; then
 			PRINT_TEXT "Tag %s moved meanwhile, by another run or by hand – left where it stands now" 33 "${TAGREF#refs/tags/}"
@@ -3376,6 +3559,13 @@ _PRINT_REF_MOVE () {
 		for TAG TAGSHA TO HIT in "${_TAGS_FOLLOWED[@]}"; do _SAY_FOLLOWED_TAG "$TAG" "$TAGSHA" "$TO" "$HIT" "$1" "$2" "$3"; done
 	else
 		_TAGS_FOLLOWED=() _TAGS_FOLLOWED_FOR="$1 $2 $3"
+		# Each tag the placement took in, moved with the branch, kept for `--undo` to put back
+		for TAGREF TVAL TO HIT TAGSHA in "${_JOINED[@]}"; do
+			FNOTE=$(_FOLLOWED_TAGS_FILE) && _APPEND_LINE "$FNOTE" "$EPOCHSECONDS $1 $2 $3 $TAGREF $TVAL $TO"
+			_TAGS_FOLLOWED+=("${TAGREF#refs/tags/}" "$TAGSHA" "$HIT" placed)
+			_SAY_FOLLOWED_TAG "${TAGREF#refs/tags/}" "$TAGSHA" "$HIT" placed "$1" "$2" "$3"
+		done
+		_JOINED=()
 	fi
 	[ -n "$ORPHANED_TAGS" ] && _FOLLOWED_TAGS && FOLLOW=("${reply[@]}")
 	# A rewrite of another branch or a detached `HEAD` leaves the default branch and the tags it
@@ -10842,9 +11032,10 @@ _REFUSE_EXEC_BLANK_LINES () {
 
 # Resolves where `--commit` or `--exec` places the commits it adds, `--after` or `--before` an
 # anchor the tip reaches – a pushed commit or a merge above it refuses before anything is built
+# – reading the cut tag `--at` names, which takes them in
 _RESOLVE_PLACE () {
 	# Args: [<anchor pinned by an earlier call>]
-	EXEC_PLACE_KIND="" EXEC_PLACE_ANCHOR="" EXEC_PLACE_BASE=""
+	EXEC_PLACE_KIND="" EXEC_PLACE_ANCHOR="" EXEC_PLACE_BASE="" _JOIN_TAGS=()
 	[ ${#OPT_AFTER} -gt 0 ] || [ ${#OPT_BEFORE} -gt 0 ] || return 0
 	if [ ${#OPT_AFTER} -gt 0 ] && [ ${#OPT_BEFORE} -gt 0 ]; then
 		PRINT_ERR "Take exactly one of --after=<sha> or --before=<sha>, not both"
@@ -10853,7 +11044,8 @@ _RESOLVE_PLACE () {
 	local ANCHOR=${OPT_AFTER[2]#=}
 	EXEC_PLACE_KIND=after
 	[ ${#OPT_BEFORE} -gt 0 ] && { ANCHOR=${OPT_BEFORE[2]#=}; EXEC_PLACE_KIND=before; }
-	[ -n "$1" ] && ANCHOR=$1
+	# A cut read as it stands, after a wait too, as what it marks is where the run lands
+	[ -n "$1" ] && [ -z "$_AT_TAG" ] && ANCHOR=$1
 	if [ -z "$ANCHOR" ] || ! _PEEL_SHA "$ANCHOR" commit >/dev/null; then
 		PRINT_ERR "Unknown <sha>: $ANCHOR"
 		exit 1
@@ -10870,6 +11062,17 @@ _RESOLVE_PLACE () {
 		_GUARD_UNPUSHED "$FIRST"
 		_GUARD_NO_MERGE_SPAN "$FIRST"
 	fi
+	_JOIN_READ "$_AT_TAG" "$EXEC_PLACE_ANCHOR"
+	# A cut the anchor carries holds back what lands after it, said with what takes it in instead
+	local T
+	if [ $EXEC_PLACE_KIND = after ] && [ -z "$_AT_TAG" ]; then
+		_FOLLOWED_TAGS
+		for T in "${reply[@]}"; do
+			[ "$(git rev-parse -q --verify "$T^{commit}" 2>/dev/null)" = "$EXEC_PLACE_ANCHOR" ] || continue
+			PRINT_TEXT "Lands above the cut %s marks, held back – --at=%s lands it as the cut's last commit" 33 "${T#refs/tags/}" "${T#refs/tags/}"
+		done
+	fi
+	return 0
 }
 
 # Places the commits a `--commit` or an `--exec` command added on top `--after` or `--before`
@@ -10946,7 +11149,8 @@ _EXEC_PLACE () {
 			"orig_head=$ORIG_HEAD" \
 			"target=${REPLAY[1]}" \
 			"placed=$BUILT" \
-			"place_label=${EXEC_LABEL:-exec} $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7}"
+			"place_label=${EXEC_LABEL:-exec} $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7}" \
+			${_JOIN_TAGS:+"place_at=$_AT_TAG $EXEC_PLACE_ANCHOR ${ADDED[-1]}"}
 		_CLEANUP_HOOK=""
 		PRINT_ERR "Conflict placing it $EXEC_PLACE_KIND ${EXEC_PLACE_ANCHOR:0:7} – nothing landed; resolve in the worktree, then 'git edit --continue'"
 		PRINT_TEXT "Worktree: %s" 33 "$WT"
@@ -11179,6 +11383,8 @@ GIT_EXEC () {
 		PRINT_TEXT "Dry run – built %s on %s, neither verified nor applied." 33 "${NEW_HEAD:0:12}" "${ORIG_HEAD:0:12}"
 		[ -n "$MB" ] && PRINT_TEXT "Compare: %s" 33 "git range-diff ${MB:0:12}..${ORIG_HEAD:0:12} ${MB:0:12}..${NEW_HEAD:0:12}"
 		PRINT_TEXT "Land it: %s" 32 "git edit --exec --base=${ORIG_HEAD:0:12}$PUSHED_FLAG -- git reset -q --hard $NEW_HEAD"
+		# A landing so places nothing, so the cut `--at` named would stay below what it built
+		(( ${#_JOIN_TAGS} )) && PRINT_TEXT "That leaves %s below what this run placed – run it again without --dry-run for --at to take it in" 33 "${_AT_TAG#refs/tags/}"
 		EXEC_DRY_BUILT=$NEW_HEAD
 		return 0
 	fi
@@ -11212,6 +11418,7 @@ GIT_EXEC () {
 	# execution, such as a concurrent commit from another session
 	local UPDATE="git update-ref -m ${(q-)${:-git edit: $LABEL$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE"
+	[ -n "$EXEC_PLACED" ] && _JOIN_PREPARE "${EXEC_PLACED##* }" "$ORIG_HEAD" "$NEW_HEAD"
 	if ! _MOVE_REF "$UPDATE"; then
 		# A `--commit` sits on the old tip, so landing it would take back what moved the branch
 		# – refused as a tip moved before its gate is, the trailer saying nothing landed
@@ -18433,7 +18640,8 @@ GIT_REORDER () {
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
 			"target=$OLDEST" \
-			${OPT_MOVE:+"moved=${MOVE_SET[*]}"}
+			${OPT_MOVE:+"moved=${MOVE_SET[*]}"} \
+			${_JOIN_TAGS:+"place_at=$_AT_TAG $MOVE_ANCHOR $MOVE_LAST"}
 		_CLEANUP_HOOK=""
 
 		PRINT_ERR "Conflict while reordering – resolve in worktree, then 'git edit --continue'"
@@ -18463,7 +18671,8 @@ GIT_REORDER () {
 			"worktree=$WT" \
 			"branch=$REF" \
 			"orig_head=$ORIG_HEAD" \
-			"target=$OLDEST"
+			"target=$OLDEST" \
+			${_JOIN_TAGS:+"place_at=$_AT_TAG $MOVE_ANCHOR $MOVE_LAST"}
 		_CLEANUP_HOOK=""
 		EMIT_GATE_PAUSED "$WT" "$NEW_HEAD"
 		_PAUSE_EXIT 2 gate
@@ -18472,6 +18681,7 @@ GIT_REORDER () {
 	# Atomic CAS-update, guarded on the pre-op tip
 	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: reorder ${OLDEST:0:7}..${NEWEST:0:7}$_REFLOG_TAG}} ${(q-)REF} ${(q-)NEW_HEAD} ${(q-)ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
+	(( ${#OPT_MOVE} )) && _JOIN_PREPARE "$MOVE_LAST" "$ORIG_HEAD" "$NEW_HEAD"
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		PRINT_ERR "Branch '$REF' moved during reorder – refusing to overwrite"
 		_RERUN_LOST "$REF" && exit 1
@@ -20793,6 +21003,12 @@ _CONTINUE_REORDER () {
 
 	local UPDATE_CMD="git update-ref -m ${(q-)${:-git edit: $LABEL$_REFLOG_TAG}} ${(q-)STATE_BRANCH} ${(q-)NEW_HEAD} ${(q-)STATE_ORIG_HEAD}"
 	PRINT_CMD "$UPDATE_CMD" 90
+	# The cut `--at` named, read as it stands now – "<tag ref> <anchor> <newest placed>"
+	if [ -n "$STATE_PLACE_AT" ]; then
+		local -a AT_STATE=(${=STATE_PLACE_AT})
+		_JOIN_READ "${AT_STATE[1]}" "${AT_STATE[2]}"
+		_JOIN_PREPARE "${AT_STATE[3]}" "$STATE_ORIG_HEAD" "$NEW_HEAD"
+	fi
 	if ! _MOVE_REF "$UPDATE_CMD"; then
 		_REFUSE_MOVED_BRANCH "$STATE_BRANCH" "$STATE_WORKTREE"
 	fi
@@ -21645,6 +21861,7 @@ _LOAD_STATE () {
 	STATE_FLAG_SKIPS=""
 	STATE_PLACED=""
 	STATE_PLACE_LABEL=""
+	STATE_PLACE_AT=""
 	STATE_MOVED=""
 	STATE_TIP_REFUSED=""
 	STATE_ABSORBED=""
@@ -21717,6 +21934,7 @@ _LOAD_STATE () {
 			flag_skips)      STATE_FLAG_SKIPS=$VAL ;;
 			placed)          STATE_PLACED=$VAL ;;
 			place_label)     STATE_PLACE_LABEL=$VAL ;;
+			place_at)        STATE_PLACE_AT=$VAL ;;
 			moved)           STATE_MOVED=$VAL ;;
 			tip_refused)     STATE_TIP_REFUSED=$VAL ;;
 			absorbed)        STATE_ABSORBED=$VAL ;;
@@ -26709,6 +26927,8 @@ _RESOLVE_ACTION () {
 _PLAN_MOVE () {
 	# Args: <anchor> <`--move` value>...
 	MOVE_ANCHOR=$1
+	# A cut read as it stands, after a wait too
+	[ -n "$_AT_TAG" ] && MOVE_ANCHOR=$_AT_TAG
 	shift
 	MOVE_ARGS=("$@")
 	# Each value a commit or a run, read inclusive as every range here is – either way round,
@@ -26857,6 +27077,8 @@ _PLAN_MOVE () {
 	COMMITS=("${MOVE_SPAN[@]}")
 	# Before any wait, as the reorder guards it again
 	_GUARD_UNPUSHED "${COMMITS[1]}"
+	# The cut tag `--at` names, which takes the moved commits in
+	_JOIN_READ "$_AT_TAG" "$MOVE_ANCHOR"
 }
 
 # Names each record's commit by the SHA its header resolves to now, as a run
@@ -27165,7 +27387,7 @@ zmodload zsh/zutil
 # Its message names the argument it refused, which `-D` has already moved out of `$1` – lost
 # where no temp file can be made, so a missing `TMPDIR` still lets `--version` and `--abort` answer
 PARSE_ERR=$(MKTEMP_FILE git-edit-parse 2>/dev/null) && _TEMP_FILES+=("$PARSE_ERR")
-if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -land+:=OPT_LAND -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -patch+:=OPT_PATCH -put+:=OPT_PUT -edits+:=OPT_EDITS -rm+:=OPT_RM -chmod+:=OPT_CHMOD -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT -subject+:=OPT_SUBJECT -wait+:=OPT_WAIT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
+if ! zparseopts -D -E -F -- {e,-edit}=OPT_EDIT {m,-message}=OPT_MESSAGE {M,-reword}=OPT_REWORD {d,-drop}=OPT_DROP {s,-squash}+::=OPT_SQUASH {S,-resquash}=OPT_RESQUASH {C,-dir}+::=OPT_DIR -exec=OPT_EXEC -commit=OPT_COMMIT -whole=OPT_WHOLE -base+:=OPT_BASE -dry-run=OPT_DRY_RUN -amend-into+:=OPT_AMEND_INTO -split+:=OPT_SPLIT -reorder=OPT_REORDER -onto+:=OPT_ONTO -land+:=OPT_LAND -skip=OPT_SKIP -move+:=OPT_MOVE -after+:=OPT_AFTER -before+:=OPT_BEFORE -at+:=OPT_AT -continue=OPT_CONTINUE -abort=OPT_ABORT -undo=OPT_UNDO -status=OPT_STATUS -selftest+::=OPT_SELFTEST -jobs+::=OPT_JOBS -carry+::=OPT_CARRY -allow-pushed=OPT_ALLOW_PUSHED -allow-new-path=OPT_ALLOW_NEW_PATH -allow-mode-change=OPT_ALLOW_MODE_CHANGE -allow-other-actor=OPT_ALLOW_OTHER_ACTOR -tree+:=OPT_TREE -patch+:=OPT_PATCH -put+:=OPT_PUT -edits+:=OPT_EDITS -rm+:=OPT_RM -chmod+:=OPT_CHMOD -snapshot=OPT_SNAPSHOT -verify+:=OPT_VERIFY -no-verify=OPT_NO_VERIFY -verify-span=OPT_VERIFY_SPAN -no-verify-span=OPT_NO_VERIFY_SPAN -text+:=OPT_TEXT -subject+:=OPT_SUBJECT -wait+:=OPT_WAIT {y,-yes}=OPT_YES {h,-help}=OPT_HELP -version=OPT_VERSION 2>"${PARSE_ERR:-/dev/null}"; then
 	_USAGE_POINT=1
 	PARSE_MSG=""
 	[ -n "$PARSE_ERR" ] && PARSE_MSG=$(<"$PARSE_ERR")
@@ -27199,7 +27421,7 @@ fi
 for REPEAT_OPT REPEAT_ARR REPEAT_MAX REPEAT_WHAT in --amend-into OPT_AMEND_INTO 2 'names one commit' \
 		--split OPT_SPLIT 2 'names one commit' --onto OPT_ONTO 2 'names one commit' --land OPT_LAND 2 'names one branch' \
 		-s/--squash OPT_SQUASH 1 'names one commit' --after OPT_AFTER 2 'names one commit' \
-		--before OPT_BEFORE 2 'names one commit' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
+		--before OPT_BEFORE 2 'names one commit' --at OPT_AT 2 'names one cut' --base OPT_BASE 2 'names one commit' --tree OPT_TREE 2 'names one tree' \
 		--text OPT_TEXT 2 'takes one message' --subject OPT_SUBJECT 2 'takes one subject' \
 		--verify OPT_VERIFY 2 'runs one command' --edits OPT_EDITS 2 'takes one list of edits' \
 		-C/--dir OPT_DIR 1 'takes one directory' --selftest OPT_SELFTEST 1 'takes one list of scenarios' \
@@ -27215,7 +27437,7 @@ done
 # – `--amend-into=$(git log …)` – said as such, not as a usage screen or an unknown commit
 for REPEAT_OPT REPEAT_ARR REPEAT_WHAT REPEAT_MAX in --amend-into OPT_AMEND_INTO 'a commit' '<sha>' \
 		--split OPT_SPLIT 'a commit' '<sha>' --move OPT_MOVE 'a commit' '<sha>' --after OPT_AFTER 'a commit' '<sha>' \
-		--before OPT_BEFORE 'a commit' '<sha>' --base OPT_BASE 'a commit' '<sha>' \
+		--before OPT_BEFORE 'a commit' '<sha>' --at OPT_AT 'a cut tag' '<tag>' --base OPT_BASE 'a commit' '<sha>' \
 		--onto OPT_ONTO 'an upstream' '<upstream>' --land OPT_LAND 'a branch' '<branch>'; do
 	for (( I = 2; I <= ${#${(P)REPEAT_ARR}}; I += 2 )); do
 		[ -z "${${(P)REPEAT_ARR}[I]#=}" ] || continue
@@ -27523,7 +27745,7 @@ if [ ${#OPT_CONTINUE} -gt 0 ] || [ ${#OPT_ABORT} -gt 0 ]; then
 	RESUME_GOT=()
 	for STRAY_OPT STRAY_ARR in -e OPT_EDIT -m OPT_MESSAGE -M OPT_REWORD -d OPT_DROP -s OPT_SQUASH -S OPT_RESQUASH \
 			-C OPT_DIR --exec OPT_EXEC --commit OPT_COMMIT --amend-into OPT_AMEND_INTO --split OPT_SPLIT \
-			--reorder OPT_REORDER --onto OPT_ONTO --land OPT_LAND --move OPT_MOVE --after OPT_AFTER --before OPT_BEFORE \
+			--reorder OPT_REORDER --onto OPT_ONTO --land OPT_LAND --move OPT_MOVE --after OPT_AFTER --before OPT_BEFORE --at OPT_AT \
 			--tree OPT_TREE --base OPT_BASE --whole OPT_WHOLE --snapshot OPT_SNAPSHOT --dry-run OPT_DRY_RUN \
 			--patch OPT_PATCH --put OPT_PUT --edits OPT_EDITS --rm OPT_RM --chmod OPT_CHMOD \
 			--undo OPT_UNDO --status OPT_STATUS --carry OPT_CARRY --selftest OPT_SELFTEST --jobs OPT_JOBS; do
@@ -27945,11 +28167,12 @@ if [ ${#OPT_LAND} -gt 0 ] && [ ${#OPT_EDIT} -gt 0 -o ${#OPT_MESSAGE} -gt 0 -o ${
 	PRINT_ERR "Option --land cannot be combined with other modes or --text (it lands the commits of the branch it names, as they are)"
 	exit 1
 fi
-if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 ]; then
+if [ ${#OPT_MOVE} -eq 0 ] && [ ${#OPT_COMMIT} -eq 0 ] && [ ${#OPT_EXEC} -eq 0 ] && [ ${#OPT_AFTER} -gt 0 -o ${#OPT_BEFORE} -gt 0 -o ${#OPT_AT} -gt 0 ]; then
 	_USAGE_POINT=1
-	PRINT_ERR "--after/--before only apply to --move, --commit and --exec"
+	PRINT_ERR "--after/--before/--at only apply to --move, --commit and --exec"
 	exit 1
 fi
+_RESOLVE_AT
 # `-e` names the default mode rather than adding one, so it pairs with `-m`
 # and `-C` as the bare form does – every other mode contradicts it
 if [ ${#OPT_EDIT} -gt 0 ] && [ ${#OPT_REWORD} -gt 0 -o ${#OPT_DROP} -gt 0 -o ${#OPT_SQUASH} -gt 0 -o ${#OPT_RESQUASH} -gt 0 -o ${#OPT_EXEC} -gt 0 -o ${#OPT_AMEND_INTO} -gt 0 -o ${#OPT_SPLIT} -gt 0 -o ${#OPT_REORDER} -gt 0 -o ${#OPT_MOVE} -gt 0 -o ${#OPT_ONTO} -gt 0 ]; then

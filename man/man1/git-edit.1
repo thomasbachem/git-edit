@@ -22,11 +22,11 @@ which emits backspace\-overstruck text.
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} [\fB\-\-text\fR \fImsg\fR] [\fB\-\-tree=\fR\fItree\-ish\fR] [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-split=\fR\fIsha\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-\fR \fIpathspec\fR...]
 \fBgit edit\fR \fB\-\-reorder\fR \fIcommit\fR...
-\fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR}
+\fBgit edit\fR \fB\-\-move=\fR{\fIsha\fR | \fIoldest\fR\fB..\fR\fInewest\fR}... {\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR | \fB\-\-at=\fR\fIcut\fR}
 \fBgit edit\fR \fB\-\-onto=\fR\fIupstream\fR [\fB\-\-base=\fR\fIsha\fR]    # replant this branch onto \fIupstream\fR
 \fBgit edit\fR \fB\-\-land=\fR\fIbranch\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR]   # land \fIbranch\fR's commits on this branch
-\fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIcommand\fR...
-\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
+\fBgit edit\fR \fB\-\-exec\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-dry\-run\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR | \fB\-\-at=\fR\fIcut\fR] \fB\-\-\fR \fIcommand\fR...
+\fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR [\fB\-\-base=\fR\fIsha\fR] [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR | \fB\-\-at=\fR\fIcut\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR} \fB\-\-whole\fR [\fB\-\-base=\fR\fIsha\fR] \fB\-\-\fR \fIpath\fR...
 \fBgit edit\fR {\fB\-\-commit \-\-text\fR \fImsg\fR [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR] | \fB\-\-amend\-into=\fR{\fIsha\fR | \fBauto\fR}} [\fB\-\-base=\fR\fIsha\fR] {\fB\-\-edits=\fR\fIjson\fR | \fB\-\-patch=\fR\fIfile\fR | \fB\-\-put=\fR\fIpath\fR\fB=\fR\fIfile\fR | \fB\-\-rm=\fR\fIpath\fR | \fB\-\-chmod=\fR\fIpath\fR\fB=\fR{\fB+x\fR|\fB\-x\fR}}... [[\fB\-\-whole\fR] \fB\-\-\fR \fIpath\fR...]
 \fBgit edit\fR \fB\-\-commit\fR \fB\-\-text\fR \fImsg\fR \fB\-\-tree=\fR\fIcommit\fR [\fB\-\-after=\fR\fIsha\fR | \fB\-\-before=\fR\fIsha\fR]
@@ -651,6 +651,9 @@ takes it past.
 Reposition one commit directly after (or before) \fIanchor\fR, in either
 direction, deriving the minimal span and its new order and running them
 through \fB\-\-reorder\fR's machinery. A commit already in position is a clean no\-op.
+With
+.B \-\-at=\fIcut\fR
+in place of the anchor, the commits land as the cut's last ones.
 .IP
 Its replay resolves its own stops as a fold's does (see
 .BR \-\-amend\-into ),
@@ -1119,7 +1122,9 @@ other conflict pauses as
 does, with nothing landed, so
 .B \-\-abort
 leaves the branch as it was. A pushed commit or a merge above the anchor
-refuses before anything is built.
+refuses before anything is built. With
+.B \-\-at=\fIcut\fR
+it lands as the cut's last commit instead.
 .IP
 Where a file also holds another caller's uncommitted lines, taking it whole
 would take those too, so the inputs compose the commit from the caller's own
@@ -1372,7 +1377,7 @@ you stand or else from the top, its name from there. The worktree holds the
 tip alone: one that exists only uncommitted in your checkout names the absolute
 path to run instead. A \fIcommand\fR that fails in a subdirectory names it.
 .IP
-.BR \-\-after=\fIsha\fR " or " \-\-before=\fIsha\fR
+.BR \-\-after=\fIsha\fR ", " \-\-before=\fIsha\fR " or " \-\-at=\fIcut\fR
 places the commits \fIcommand\fR adds on top there, as
 .B \-\-commit
 places its commit \(em a \fIcommand\fR that rewrote history instead refuses.
@@ -1731,6 +1736,27 @@ conflict over content resolves this way \(em a rename or deletion meeting the
 fold refuses, as does
 .BR \-\-text .
 A commit the fold leaves empty stays and is named. Needs git 2.40 or later.
+.TP
+.B \-\-at=\fIcut\fR
+With
+.BR \-\-commit ,
+.B \-\-exec
+or
+.BR \-\-move ,
+in place of
+.BR \-\-after :
+land the commits as the last ones of the cut that tag \fIcut\fR marks
+(see
+.BR edit.followTag ),
+right after its commit, the tag moving onto the newest of them in the branch's
+own ref transaction. A tag moved while the run built refuses it, nothing
+applied, and
+.B \-\-undo
+puts the tag back. It takes only an unsigned tag
+.B edit.followTag
+names, on the branch, read again after any wait \(em a pause's resume
+leaving one moved meanwhile where it stands, saying so, and one it can't move
+there refusing the landing.
 .TP
 .B \-\-base=\fIsha\fR
 With
@@ -3178,8 +3204,9 @@ to skip it. Unset, it is five times the failing run's own duration
 (at least 30s).
 .TP
 .B edit.followTag
-Tags that follow a rewrite of the commit they point at, one tag name or
-pattern per value (repeatable), matched as
+Tags that mark a cut \(em the last commit a release takes, everything below it
+shipping with it and everything above it held back \(em and follow a rewrite of
+the branch as the cut, one tag name or pattern per value (repeatable), matched as
 .B "git tag \-l"
 matches one, a
 .B *
@@ -3195,9 +3222,16 @@ Where a fetch maps the remote's tags below
 .IR refs/remotes/remote/tags/ ,
 the run names that push, otherwise saying nothing. Opting a tag in says it follows the run's branch:
 once that branch has moved, each such tag on a commit the run rewrote goes to
-its counterpart \(em what the rewrite made of the commit, the commit a squash
-took it into, or, for a dropped commit, the nearest commit below it the run
-kept. Every mode landing a rewrite moves them,
+where the cut now falls \(em the commit leaving the most commits of the span on
+the side of it they were on, which for a fold, reword or drop below it is its
+counterpart: what the rewrite made of the commit, or, for a dropped one, the
+nearest commit below it the run kept. A reorder or a squash below it leaves it on
+top of the commits it held, its own commit moved or folded down or not, and a commit
+moved across it is held back or taken in as the move put it, on a tie the cut
+staying with its own commit. A commit a run adds or moves right after the cut's
+commit stays above the cut, as one landed at the tip does, unless
+.B \-\-at
+names the cut: then the tag moves onto the newest commit placed. Every mode landing a rewrite moves them,
 .B \-\-onto
 and
 .B \-\-exec

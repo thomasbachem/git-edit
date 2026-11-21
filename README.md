@@ -24,7 +24,7 @@ What it's good at:
 
 Pushed commits are refused unless you pass `--allow-pushed`, merge commits are rebuilt faithfully or refused but never flattened, and `git edit --undo` takes back the last operation.
 
-Only the branch being rewritten moves. A tag or another branch left on a replaced commit is named with the command that would re-point it – unless the repo opts the tag in: `git config --add edit.followTag 'cut-*'` makes each matching local tag follow its commit to what the rewrite made of it once the run lands, and `--undo` puts it back. A release's `v1.2.0`, which no pattern names, stays where it was.
+Only the branch being rewritten moves. A tag or another branch left on a replaced commit is named with the command that would re-point it – unless the repo opts in a release's cut: `git config --add edit.followTag 'cut-*'` keeps each matching local tag at the cut once the run lands – on top of the commits it held as the run reorders them – while `--commit … --at=cut-v1.2.0` lands a commit as the cut's last one, the tag moving in the branch's own ref update, and `--undo` puts it back. A release's `v1.2.0`, which no pattern names, stays where it was.
 
 ## Installation
 
