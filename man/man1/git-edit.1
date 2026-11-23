@@ -100,7 +100,9 @@ were (\fBTip tree identical\fR, \fBTrees unchanged\fR) or not (a fold's
 summary sits \(em its \fB\-B2\fR keeping the two lines above each match, where
 a refusal names its fix. A run that declined a gate says so too \(em
 .B "Verify skipped \(en --no-verify was passed, so `npm test` never ran"
-\(em so silence means only that the repo configured no gate.
+\(em as does one asked for a check it had nothing to run on,
+.BR "Verify not run \(en the run had nothing to check" ,
+so silence means only that the repo configured no gate.
 .IP \(bu 3
 Every rewrite reports its old\(->new map the way git does: notes are carried
 across it (honoring \fBnotes.rewriteRef\fR and \fBnotes.rewriteMode\fR, a no\-op
@@ -769,7 +771,14 @@ steps over it. A branch with no commits of its own past the fork moves to
 \fIupstream\fR by compare\-and\-swap, journaled, and says so, its checkout
 coming along the same way \(em a fast\-forward, unless \fIupstream\fR
 rewrote what the branch holds. Only a branch already on top of
-\fIupstream\fR ends unchanged.
+\fIupstream\fR ends unchanged. Asked for a check by
+.B \-\-verify
+or
+.BR \-\-verify\-span ,
+it has its own commits checked where they stand, at the tier asked, a failure
+refusing with the branch as it was \(em
+.B edit.verifyCmd
+alone gates only a replay.
 .TP
 .B \-\-land=\fIbranch\fR
 .nf
@@ -1893,7 +1902,10 @@ on one refuses. Every mode that can change a tree does verify, including
 and a split, the split in a throwaway worktree. Neither of those two pauses, so each refuses
 outright instead: a split re\-derives its halves from its own worktree, and
 .B \-\-exec
-leaves its built commits addressable by SHA.
+leaves its built commits addressable by SHA. An explicit check on a run that
+builds nothing \(em a reorder into the order it has, a branch already landed
+\(em says it never ran, above a trailer ending
+.BR "nothing verified" .
 .TP
 .B \-\-verify\-span
 Verify every rebuilt commit instead of just the default tier's \(em the
@@ -1909,7 +1921,9 @@ it raises a paused run to this tier for the rest of the operation, and
 refuses up front where no command is in hand. The default tier states how
 many of the commits it ran were resolved at a stop and how many in between it
 left unchecked; the span tier, what it ran beyond the default one and what
-the whole check took.
+the whole check took. Once the run has landed,
+.BI "git edit \-\-onto=" upstream " \-\-verify\-span"
+checks those it left, on a branch already on top of \fIupstream\fR.
 .TP
 .B \-\-no\-verify\-span
 Where
@@ -2347,8 +2361,8 @@ that a caller can dispatch on with
 .PP
 .nf
 .RS
-git\-edit: ok \(en <ref> moved <old-sha> \(-> <new-sha>[ \(en <sha>'s edits to <path> landed with <sha>[ and <n> more]][ \(en after losing the race[ twice, last] to <who>]
-git\-edit: ok \(en <ref> unchanged[, <why>]
+git\-edit: ok \(en <ref> moved <old-sha> \(-> <new-sha>[ \(en <sha>'s edits to <path> landed with <sha>[ and <n> more]][ \(en after losing the race[ twice, last] to <who>][ \(en nothing verified]
+git\-edit: ok \(en <ref> unchanged[, <why>][, nothing verified]
 git\-edit: ok \(en dry run built <new-sha> on <old-sha>, <ref> unchanged
 git\-edit: ok \(en carried <n> path(s) across <old-sha>..<new-sha>
 git\-edit: ok \(en no operation in flight
@@ -2372,6 +2386,12 @@ lines, names the first of them as rebuilt, and how many more \(em the giving
 commit no longer holds that part of its change.
 A run that lost the race and ran itself again names who moved the branch,
 the last time where it lost twice.
+.B "nothing verified"
+ends a run that
+.B \-\-verify
+or
+.B \-\-verify\-span
+asked for a check yet built nothing to check.
 .I <name>
 is the
 .B GIT_EDIT_ACTOR_NAME

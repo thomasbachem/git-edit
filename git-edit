@@ -115,7 +115,7 @@ _UNSET_OWN ACTION ALL_FILES AMEND_INTO_TARGET AMEND_NEW_HEAD AMEND_OLD_SHA AMEND
 	_REWRITES_GIT_DELIVERED _REWRITE_PAIRS _RUN_FATES _RUN_LOCK_HELD _SELF _SNAPSHOT_ERA _SNAPSHOT_RESOLVED_TREES \
 	_SNAPSHOT_STAGES _SNAPSHOT_TIP _SNAPSHOT_TREE _SQUASHED_AT _SQUASH_GROUPS _SQUASH_OWN _START_DIR _STATE_ID _STATE_OWNED _STATE_PATH _STATE_READ _STATUS_EMITTED _STOP_GONE \
 	_SYNC_DONE _SYNC_HELD _SYNC_VERDICT _SYNC_WHY _TEMP_FILES _TEMP_REFS _TEMP_WORKTREES _TODO _TODO_POINTER _TRAIL_CARRIED _TRACE_AT _TRACE_MAP _BL_SEEN _FP_UP _FP_STEP _FP_NAME _STEP_RENAMED _LINES_DIR CI CJ G SB _V _VERIFY_BYPASSED _VERIFY_FAILED _VERIFY_LITTER \
-	_VERIFY_NO_RESUME _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
+	_VERIFY_NO_RESUME _VERIFY_IN_PLACE _VERIFY_RAN _WAITING _WHOLE_WHAT _SLOT_NEEDED _WAIT_STOP _RERERE_SCOPE_FILE _VERIFY_LOG_HELD _SLOT_WAIT_END TZA TZB ZA ZB \
 	_COUNTERPART_BY _FOLLOW_PATS _FOLLOW_READ _FOREIGN_READ _FOREIGN_TIPS _IDENTITY_WHY _ID_FOR _ID_NEW _ID_OLD _ID_OLD_N _RUN_PREMAP _TAGS_FOLLOWED _TAGS_FOLLOWED_FOR \
 	_AT_TAG _JOIN_TAGS _JOINED _MOVE_EXTRA \
 	AT AT_RES MORE OUT SHOWN _READ_STDIN _RERUN_ARGS _RERUN_DUE _RERUNS _GATE_GUARD _VERIFY_PASSED _VERIFY_PRIOR \
@@ -531,6 +531,13 @@ _CLEANUP_HOOK=""
 # Set by the modes whose verification has no pause behind it – `--exec` and a split – so the
 # gate prints no hint pointing at a worktree its exit removes, or at a resume there is none of
 _VERIFY_NO_RESUME=false
+
+# Set while the gate checks commits that already stand, rebuilt by no one,
+# so nothing it reads replaces another – a branch `--onto` has nothing to replay for
+_VERIFY_IN_PLACE=false
+
+# Set once this run's gate starts checking – a check asked for that never ran says so in the trailer
+_VERIFY_RAN=""
 
 # The gate command a `--no-verify` run bypassed, printed once above the trailer
 # – a repo with no `edit.verifyCmd` prints nothing either, so without this the two read alike
@@ -1558,6 +1565,14 @@ EMIT_STATUS () {
 		PRINT_TEXT "Verify skipped – %s was passed, so \`%s\` never ran" 90 "--no-verify" "$_VERIFY_BYPASSED"
 		_VERIFY_BYPASSED=""
 	fi
+	# A check the command line asked for that never ran, the run having built nothing
+	# to check – its `ok` would read as a pass, so the trailer says it too
+	local UNCHECKED=""
+	if [ -z "$_VERIFY_RAN" ] && [ ${#OPT_NO_VERIFY} -eq 0 ] && [ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ]; then
+		_VERIFY_CONFIGURED
+		PRINT_TEXT "Verify not run – the run had nothing to check%s" 90 "${REPLY:+, so \`${REPLY%%$'\n'*}\` never ran}"
+		UNCHECKED="nothing verified"
+	fi
 	_PRINT_DEFERRED_SIGNAL
 	# A tip or ref read empty once the branch moved – its git call ended
 	# by the signal the landing deferred – is the move the journal holds
@@ -1572,9 +1587,9 @@ EMIT_STATUS () {
 	# The SHAs are the authority, not the flag – some callers pass a hardcoded `true` where a
 	# no-op rebase leaves `HEAD` put, and reporting a move there is a false success on `ok`
 	if [ "$3" = "true" ] && [ "$NEW" != "$SCRIPT_INITIAL_HEAD" ]; then
-		_EMIT_TRAILER "git-edit: ok – $REF moved $SCRIPT_INITIAL_HEAD → $NEW${_TRAIL_CARRIED:+ – $_TRAIL_CARRIED}${_RACE_NOTE:+ – $_RACE_NOTE}"
+		_EMIT_TRAILER "git-edit: ok – $REF moved $SCRIPT_INITIAL_HEAD → $NEW${_TRAIL_CARRIED:+ – $_TRAIL_CARRIED}${_RACE_NOTE:+ – $_RACE_NOTE}${UNCHECKED:+ – $UNCHECKED}"
 	else
-		_EMIT_TRAILER "git-edit: ok – $REF unchanged${4:+, $4}"
+		_EMIT_TRAILER "git-edit: ok – $REF unchanged${4:+, $4}${UNCHECKED:+, $UNCHECKED}"
 	fi
 	_STATUS_EMITTED=true
 }
@@ -18984,6 +18999,7 @@ GIT_ONTO () {
 	# Already replanted: the upstream tip is the fork, so there is nothing to move
 	if [ "$(git rev-parse "$FORK")" = "$UPSTREAM_FULL" ]; then
 		PRINT_TEXT "%s" 33 "Already on top of $ONTO_UPSTREAM – nothing to replay."
+		_ONTO_CHECK_IN_PLACE "$REF" "$ORIG_HEAD" "$FORK"
 		EMIT_STATUS "$ORIG_HEAD" "$REF" false
 		exit 0
 	fi
@@ -19044,6 +19060,36 @@ GIT_ONTO () {
 	_PRINT_ONTO_SUMMARY "$UPSTREAM_FULL" "$ONTO_NEW_HEAD" "${#SPAN[@]}"
 
 	ONTO_REF=$REF
+}
+
+# Checks a branch with nothing to replay where it stands, once the command line asks for a check
+# – its own commits at the tier asked, a failure refusing outright with no result to pause on
+_ONTO_CHECK_IN_PLACE () {
+	# Args: <ref> <tip> <fork>
+	[ ${#OPT_VERIFY} -gt 0 -o ${#OPT_VERIFY_SPAN} -gt 0 ] && [ ${#OPT_NO_VERIFY} -eq 0 ] || return 0
+	if ! _VERIFY_CONFIGURED; then
+		PRINT_ERR "--verify-span needs a command – pass --verify=<cmd> or set edit.verifyCmd"
+		exit 1
+	fi
+	PRINT_TEXT "Checking its own %s commit(s) where they stand." 36 "$(git rev-list --count "$3..$2" 2>/dev/null)"
+	local WT
+	WT=$(MKTEMP_DIR git-edit-verify) || exit 1
+	rmdir "$WT"
+	_TEMP_WORKTREES+=("$WT")
+	_WORKTREE_ADD "$WT" "$2" quiet || exit 1
+	_LINK_WORKTREE_EXTRAS "$WT"
+	_VERIFY_NO_RESUME=true _VERIFY_IN_PLACE=true
+	# A branch moved off them, between checks or after the last, runs again on its new tip
+	# – read alone, as a peer's pause begun meanwhile loses nothing to a run that lands nothing
+	_GATE_GUARD=("$1" "$2")
+	if ! _VERIFY_REWRITE "$WT" "$2" "$3"; then
+		ECHO_E "\e[0;31m  Fix that commit with $(_LIT "git edit ${_VERIFY_FAILED:0:7}"), then check again.\e[0m" >&2
+		exit 1
+	fi
+	_VERIFY_NO_RESUME=false _VERIFY_IN_PLACE=false
+	local NOW=$(git rev-parse -q --verify "$1" 2>/dev/null)
+	[ -n "$NOW" ] && [ "$NOW" != "$2" ] && _REFUSE_STALE "$1" "$2" "$NOW"
+	return 0
 }
 
 # Says where a replay's fork point came from – whether the old base still sits on what it replays
@@ -23843,12 +23889,14 @@ _VERIFY_DIAGNOSE () {
 	[ "$1" = "--" ] && shift
 	local -a PATHS=("$@")
 
-	local CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
-	# A new commit replaces none – its parent answers where the operation left that unchanged
+	local CP=""
+	[ "$_VERIFY_IN_PLACE" = true ] || CP=$(_VERIFY_COUNTERPART "$FAILED" "$ORIG" "$NEW")
+	# A new commit replaces none – its parent answers where the operation
+	# left that unchanged, as a check in place leaves every one
 	local BELOW=""
 	if [ -z "$CP" ]; then
 		BELOW=$(git rev-parse -q --verify "$FAILED^" 2>/dev/null)
-		if [ -n "$BELOW" ] && git merge-base --is-ancestor "$BELOW" "$ORIG" 2>/dev/null; then
+		if [ -n "$BELOW" ] && { [ "$_VERIFY_IN_PLACE" = true ] || git merge-base --is-ancestor "$BELOW" "$ORIG" 2>/dev/null; }; then
 			CP=$BELOW
 		else
 			BELOW=""
@@ -23859,6 +23907,8 @@ _VERIFY_DIAGNOSE () {
 	for P in "${PATHS[@]}"; do
 		git -C "$WT" cat-file -e "$CP:$P" 2>/dev/null || CP=""
 	done
+	# One the gate passed already answers without a run
+	[ -n "$CP" ] && (( ${_VERIFY_PASSED_AT[(Ie)$CP]} )) && CP=""
 	if [ -n "$CP" ] && git -C "$WT" checkout -qf --detach "$CP" 2>/dev/null; then
 		_VERIFY_RUN "$WT" "$CP" "$CMD" /dev/null
 		local CP_RC=$?
@@ -23918,7 +23968,7 @@ _VERIFY_DIAGNOSE () {
 		_VERIFY_CLEAN "$WT"
 	done
 	if [ -n "$FOUND" ]; then
-		PRINT_TEXT "The check passes again above it – that commit carries what the failing one now needs:" 33
+		PRINT_TEXT "The check passes again above it – that commit carries what the failing one %s:" 33 "${${_VERIFY_IN_PLACE:#true}:+now }needs"
 		_PRINT_COMMIT_LINE "$FOUND" '  first green: %h %s'
 	elif [ $CHECKED -gt 0 ]; then
 		PRINT_TEXT "No commit above it passes either – %s of %s checked within the walk budget" 33 "$CHECKED" "$ABOVE"
@@ -24063,6 +24113,7 @@ _VERIFY_REWRITE () {
 		[ -n "$P" ] && git -C "$WT" cat-file -e "$NEW_HEAD:$P" 2>/dev/null && CMD_PATHS+=("$P")
 	done
 	PRINT_CMD "$VERIFY_CMD # verify ${#COMMITS[@]} commit(s)" 90
+	_VERIFY_RAN=1
 	# The linked paths each check installs from its commit's own lockfile, and what stands where
 	local -a _DEPS_PATHS=()
 	local -A _DEPS_CMD _DEPS_LOCKS _DEPS_ORIGIN _DEPS_OKEY _DEPS_HAVE _DEPS_FAILED
@@ -24088,7 +24139,13 @@ _VERIFY_REWRITE () {
 	# The branch and the tip its CAS expects, as the check before the gate named them – only while
 	# the branch still holds that tip, never one an earlier step named and the run since moved
 	local -a GUARD=()
-	local NOW
+	local NOW MOVED_WHY="this result can't land" UNAPPLIED="nothing was applied"
+	if [ "$_VERIFY_IN_PLACE" = true ]; then
+		MOVED_WHY="the commits it checks are no longer its own"
+		UNAPPLIED="nothing was replayed, so the branch stays as it is"
+	fi
+	# What passed, for the diagnosis to take as answered
+	local -a _VERIFY_PASSED_AT=()
 	[ ${#_GATE_GUARD} -ge 2 ] && [ "$(git rev-parse -q --verify "${_GATE_GUARD[1]}" 2>/dev/null)" = "${_GATE_GUARD[2]}" ] && \
 		GUARD=("${_GATE_GUARD[@]}")
 	# Each commit's content key, by which a check its lost run passed stands in its re-run
@@ -24103,8 +24160,8 @@ _VERIFY_REWRITE () {
 		if (( POSITION > 1 && ${#GUARD} )); then
 			NOW=$(git rev-parse -q --verify "${GUARD[1]}" 2>/dev/null)
 			if [ -n "$NOW" ] && [ "$NOW" != "${GUARD[2]}" ]; then
-				PRINT_TEXT "Verification stopped after %s of %s commit(s) – %s moved, so this result can't land" 33 \
-					"$(( POSITION - 1 ))" "${#COMMITS[@]}" "${GUARD[1]#refs/heads/}"
+				PRINT_TEXT "Verification stopped after %s of %s commit(s) – %s moved, so %s" 33 \
+					"$(( POSITION - 1 ))" "${#COMMITS[@]}" "${GUARD[1]#refs/heads/}" "$MOVED_WHY"
 				_VERIFY_NOTE_LITTER
 				_VERIFY_DEPS_RESET "$WT"
 				git -C "$WT" checkout -qf --detach "$NEW_HEAD" 2>/dev/null
@@ -24125,6 +24182,7 @@ _VERIFY_REWRITE () {
 		fi
 		if [ -n "${VKEY[$C]}" ] && [ -n "${_VERIFY_PRIOR[${VKEY[$C]}]}" ]; then
 			REUSED+=1
+			_VERIFY_PASSED_AT+=("$C")
 			{ [ -t 1 ] || [ -n "$GIT_EDIT_PROGRESS" ]; } && \
 				_PRINT_COMMIT_LINE "$C" "Passed $POSITION of ${#COMMITS[@]} on the run that lost the race – %h %s"
 			continue
@@ -24159,7 +24217,7 @@ _VERIFY_REWRITE () {
 		# between would pad – the walk budget is the failing run's own duration
 		RUN_SECS=$(( SECONDS - RUN_T0 ))
 		if [ $RC -ne 0 ]; then
-			PRINT_ERR "Verification failed at ${C:0:7} – nothing was applied"
+			PRINT_ERR "Verification failed at ${C:0:7} – $UNAPPLIED"
 			_PRINT_COMMIT_LINE "$C" '  failing: %h %s'
 			[ -n "$OUT" ] && print -r -- "$OUT" | tail -15 | _CARET_LINES --crlf | LC_ALL=C sed "s/^/${_DIM}  | /;s/\$/${_OFF}/" >&2
 			PRINT_TEXT "Command: %s (exit %s, %ss)" 33 "$VERIFY_CMD" "$RC" "$RUN_SECS"
@@ -24188,6 +24246,7 @@ _VERIFY_REWRITE () {
 		fi
 		# For a re-run this run may yet hand its place to, losing the race at its CAS
 		[ -n "${VKEY[$C]}" ] && _VERIFY_PASSED+=("${VKEY[$C]}")
+		_VERIFY_PASSED_AT+=("$C")
 	done
 	local -i VERIFY_SECS=$(( SECONDS - VERIFY_T0 ))
 	_VERIFY_NOTE_LITTER
